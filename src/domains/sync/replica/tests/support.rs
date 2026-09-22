@@ -103,6 +103,7 @@ pub fn upsert(operation_id: &str, payload: &MemoryPayloadV1) -> Operation {
         payload: Some(serde_json::from_str(&bytes).expect("payload json")),
         observed_sequence: None,
         repository: Some("Falconiere/comemory".to_string()),
+        vector: None,
     }
 }
 
@@ -118,6 +119,7 @@ pub fn tombstone(operation_id: &str, entity_key: &str) -> Operation {
         payload: None,
         observed_sequence: None,
         repository: None,
+        vector: None,
     }
 }
 
@@ -156,4 +158,58 @@ fn the_fixture_saves_a_real_memory_and_builds_the_operation_a_peer_would_send() 
     );
     assert_eq!(home.epoch().len(), 32);
     assert!(operation.payload.is_some());
+}
+
+/// An upsert carrying `payload` plus the peer's embedding for it.
+///
+/// The embedding rides alongside the payload, never inside it: the same
+/// operation with and without a vector must hash to the same digest, which is
+/// what keeps re-embedding from minting a new revision.
+pub fn upsert_with_vector(
+    operation_id: &str,
+    payload: &MemoryPayloadV1,
+    vector: crate::domains::sync::exchange::SyncVector,
+) -> Operation {
+    Operation {
+        vector: Some(vector),
+        ..upsert(operation_id, payload)
+    }
+}
+
+/// A real base64 wire vector of `dims` little-endian `f32`s.
+pub fn wire_vector(model: &str, dims: u32) -> crate::domains::sync::exchange::SyncVector {
+    let mut values = vec![0.0_f32; dims as usize];
+    if let Some(first) = values.first_mut() {
+        *first = 1.0;
+    }
+    let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+    crate::domains::sync::exchange::SyncVector {
+        model: model.to_string(),
+        dims,
+        f32: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
+    }
+}
+
+/// Answer every outbox row this machine owes for `entity_key`, as a
+/// successful push would.
+///
+/// Since #251 an import is refused while a local change to the same entity is
+/// still pending, so a case about the IMPORT path has to get the local
+/// mutation off the outbox first.
+pub fn mark_pushed(conn: &Connection, entity_key: &str) {
+    use crate::store::replica_outbox::{self, Outcome};
+    for row in replica_outbox::pending(conn, 50).expect("pending") {
+        if row.entity_key == entity_key {
+            replica_outbox::record(
+                conn,
+                &row.operation_id,
+                Outcome::Accepted {
+                    sequence: Some(1),
+                    disposition: "accepted",
+                },
+                "2026-09-22T10:00:00Z",
+            )
+            .expect("record the push");
+        }
+    }
 }

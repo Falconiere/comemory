@@ -36,6 +36,12 @@ pub struct Positions {
 /// `at` is the mutation's provenance time, the same value the legacy
 /// `sync_log` row carries, so the two feeds describe one event.
 ///
+/// `operation_id` is `Some` when the caller already minted one — a local
+/// write records it in its [`crate::store::memory_intent`] row before the
+/// markdown moves, so the write that finishes (now, or at the next
+/// reconciliation) journals under exactly the id the intent named. Every
+/// other caller passes `None` and one is minted here.
+///
 /// # Errors
 /// Propagates payload serialization and SQLite failures.
 pub(crate) fn record_write(
@@ -45,6 +51,7 @@ pub(crate) fn record_write(
     body: &str,
     at: &str,
     origin: ReplicaOrigin,
+    operation_id: Option<&str>,
 ) -> Result<Positions> {
     let payload = MemoryPayloadV1::new(fm, body)?;
     let (bytes, digest) = payload.canonical()?;
@@ -53,7 +60,7 @@ pub(crate) fn record_write(
         legacy_seq,
         tx,
         &NewOperation {
-            operation_id: &mint_operation_id(&fm.id, op),
+            operation_id: &operation_id_for(operation_id, &fm.id, op),
             entity_kind: MEMORY_ENTITY_KIND,
             entity_key: &fm.id,
             op,
@@ -81,6 +88,7 @@ pub(crate) fn record_tombstone(
     repository: Option<&str>,
     at: &str,
     origin: ReplicaOrigin,
+    operation_id: Option<&str>,
 ) -> Result<Positions> {
     let legacy_seq = sync_log::append(
         tx,
@@ -94,7 +102,7 @@ pub(crate) fn record_tombstone(
         legacy_seq,
         tx,
         &NewOperation {
-            operation_id: &mint_operation_id(memory_id, ReplicaOp::Tombstone),
+            operation_id: &operation_id_for(operation_id, memory_id, ReplicaOp::Tombstone),
             entity_kind: MEMORY_ENTITY_KIND,
             entity_key: memory_id,
             op: ReplicaOp::Tombstone,
@@ -131,12 +139,18 @@ fn repository_of(fm: &Frontmatter) -> Option<&str> {
     (!fm.repo.is_empty()).then_some(fm.repo.as_str())
 }
 
+/// The id this mutation journals under: the one the caller already minted and
+/// recorded in its write intent, or a fresh one.
+fn operation_id_for(supplied: Option<&str>, entity_key: &str, op: ReplicaOp) -> String {
+    supplied.map_or_else(|| mint_operation_id(entity_key, op), str::to_string)
+}
+
 /// Mint `op-<yyyymmdd>-<8hex>` for one mutation.
 ///
 /// The seed carries the entity and the operation so two different mutations
 /// cannot collide on a slow clock, and `dated_id` mixes in nanoseconds so the
 /// same entity mutated twice yields two ids.
-fn mint_operation_id(entity_key: &str, op: ReplicaOp) -> String {
+pub(crate) fn mint_operation_id(entity_key: &str, op: ReplicaOp) -> String {
     dated_id(
         "op",
         &format!("{MEMORY_ENTITY_KIND}:{entity_key}:{}", op.as_str()),

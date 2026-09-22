@@ -29,6 +29,11 @@ use crate::store::Connection;
 /// into a second effect. `replica_staged_part` is the exception — an upload
 /// that never activated published nothing, so a peer re-stages it.
 ///
+/// `memory_needs_embedding` (#251) is copied for the same reason: which
+/// memories still owe a vector is a record of imports this engine refused,
+/// and markdown carries no embedding at all, so a rebuild that dropped the
+/// backlog would silently report a clean engine.
+///
 /// The three candidate-observation tables (#209) are copied for the strongest
 /// reason on this list: a reviewed relevance judgment is human work, and the
 /// bounded passage it was made against is a snapshot of content that may
@@ -68,6 +73,7 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "replica_operation",
     "replica_receipt",
     "replica_cursor",
+    "memory_needs_embedding",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.
@@ -99,6 +105,11 @@ pub(crate) const RECONSTRUCTABLE_TABLES: &[(&str, &str)] = &[
     (
         "replica_staged_part",
         "incomplete uploads; a peer re-stages what it never activated",
+    ),
+    (
+        "memory_write_intent",
+        "a rebuild replays every memory from markdown, which is the \
+         reconciliation an outstanding intent would ask for",
     ),
 ];
 

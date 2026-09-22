@@ -301,6 +301,28 @@ pub struct Ready<'a> {
     pub read_only: bool,
 }
 
+/// Finish any memory write a killed process left half-done, before the server
+/// accepts its first request.
+///
+/// Lives here rather than in `store::connection::open` because `store/` may
+/// not call into a domain (`scripts/architecture-check.sh`, #177).
+fn reconcile_pending(paths: &Paths, state: &AppState, read_only: bool) -> Result<()> {
+    let mut guard = state.conn.lock().map_err(|_| {
+        Error::Other("serve: the database mutex was poisoned before startup".to_string())
+    })?;
+    let report = crate::domains::memories::recover::reconcile_unless_read_only(
+        paths, &mut guard, read_only,
+    )?;
+    if !report.is_empty() {
+        tracing::info!(
+            finished = report.finished,
+            dropped = report.dropped,
+            "recovered memory writes an interrupted run left outstanding"
+        );
+    }
+    Ok(())
+}
+
 /// Open `comemory.db`, build the handler state + router, bind a loopback
 /// listener, hand the bound details to `ready`, and serve until the process is
 /// interrupted.
@@ -322,6 +344,10 @@ pub async fn serve(
     let port = opts.port;
     let read_only = opts.read_only;
     let state = AppState::new(paths, opts)?;
+    // Before the listener binds, so no request can observe a memory an
+    // interrupted run left on disk but never mirrored. A read-only session
+    // skips it: the intent keeps until the next writable open.
+    reconcile_pending(paths, &state, read_only)?;
     let token = state.token().to_string();
 
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))

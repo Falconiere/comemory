@@ -192,3 +192,100 @@ fn a_stored_disposition_round_trips_and_an_unknown_one_reads_as_invalid() {
         Disposition::RejectedInvalid
     );
 }
+
+// ---------------------------------------------------------------------------
+// #251: an import cannot overwrite a local change this machine still owes.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_import_is_refused_while_this_machine_owes_a_change_to_the_same_memory() {
+    // A real local save leaves a pending outbox row carrying its payload —
+    // the only record of that edit until it is pushed.
+    let mut home = Home::new();
+    let id = home.save(BODY, &["sync"]);
+    assert!(
+        crate::store::replica_outbox::has_pending_for(&home.conn, "memory", &id)
+            .expect("has pending"),
+        "a local save owes an upload"
+    );
+    let pending_before = crate::store::replica_outbox::pending(&home.conn, 10).expect("pending");
+
+    // A peer's version of the same memory arrives before the push happens.
+    let mut peer = Home::new();
+    let remote_id = peer.save(BODY, &["sync", "remote"]);
+    assert_eq!(remote_id, id, "same body, same content-derived id");
+    let remote = peer.payload(&remote_id);
+    let operation = upsert("op-20260922-remote01", &remote);
+
+    let mut ctx = home.ctx();
+    let disposition = validate::decide(&mut ctx, &operation).expect("decide");
+
+    assert_eq!(
+        disposition,
+        Disposition::RejectedStale,
+        "the local edit is the only copy of itself; the peer waits for the push"
+    );
+    let pending_after = crate::store::replica_outbox::pending(&home.conn, 10).expect("pending");
+    assert_eq!(
+        pending_after, pending_before,
+        "and the payload the outbox holds is untouched"
+    );
+}
+
+#[test]
+fn the_same_import_is_accepted_once_the_local_change_has_been_pushed() {
+    let mut home = Home::new();
+    let id = home.save(BODY, &["sync"]);
+    let owed = crate::store::replica_outbox::pending(&home.conn, 10).expect("pending");
+    assert_eq!(owed.len(), 1);
+
+    // The push lands: the outbox row is answered, so nothing is owed for this
+    // entity any more.
+    crate::store::replica_outbox::record(
+        &home.conn,
+        &owed[0].operation_id,
+        crate::store::replica_outbox::Outcome::Accepted {
+            sequence: Some(7),
+            disposition: "accepted",
+        },
+        "2026-09-22T10:00:00Z",
+    )
+    .expect("record the push");
+    assert!(
+        !crate::store::replica_outbox::has_pending_for(&home.conn, "memory", &id)
+            .expect("has pending")
+    );
+
+    let mut peer = Home::new();
+    let remote_id = peer.save(BODY, &["sync"]);
+    let remote = peer.payload(&remote_id);
+    let operation = upsert("op-20260922-remote02", &remote);
+    let mut ctx = home.ctx();
+
+    assert_ne!(
+        validate::decide(&mut ctx, &operation).expect("decide"),
+        Disposition::RejectedStale,
+        "with nothing owed, ordinary revision ordering decides"
+    );
+}
+
+#[test]
+fn a_pending_change_to_one_memory_does_not_refuse_an_import_of_another() {
+    let mut home = Home::new();
+    home.save(BODY, &["sync"]);
+
+    let mut peer = Home::new();
+    let other_id = peer.save(
+        "a different memory entirely: the writer reservation precedes the walk",
+        &["sync"],
+    );
+    let other = peer.payload(&other_id);
+    let operation = upsert("op-20260922-other001", &other);
+
+    let mut ctx = home.ctx();
+    assert_ne!(
+        validate::decide(&mut ctx, &operation).expect("decide"),
+        Disposition::RejectedStale,
+        "the guard is per entity, not a global import freeze"
+    );
+}

@@ -65,6 +65,7 @@ One line per file:
 | `0020_candidate_observations.sql` | v20: candidate observation capture — `candidate_query_observations` (the per-query envelope), `candidate_observations` (each candidate's bounded text and content version) and `candidate_judgments` (reviewed verdicts resolved against them) |
 | `0021_activity_log.sql` | v21: the activity feed — `activity_log` (one row per instrumented command run, the SSE cursor being its `AUTOINCREMENT` id) and `gc_runs.activity_rows` |
 | `0022_replica_journal.sql` | v22: the `replica-v1` journal (#250) — `replica_stream` (this database's epoch), `replica_payload` (immutable content-addressed bytes), `replica_feed` (the server-ordered acceptance record), `replica_revision`, `replica_operation` (the outgoing outbox), `replica_receipt`, `replica_cursor` and `replica_staged_part`. Its post-apply pass mints the stream epoch |
+| `0023_memory_write_intent.sql` | v23: the memory write lifecycle (#251) — `memory_write_intent` (the crash-recovery marker written before the markdown moves and cleared with the mirror) and `memory_needs_embedding` (memories whose imported vector was refused, with the reason) |
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

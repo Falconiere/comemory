@@ -13,7 +13,8 @@ use crate::config::paths::Paths;
 use crate::domains::memories::MemoryStore;
 use crate::domains::memories::journal;
 use crate::prelude::*;
-use crate::store::replica_journal::ReplicaOrigin;
+use crate::store::memory_intent::{self, Intent, IntentKind};
+use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::store::{Connection, memory_purge, memory_row};
 use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
@@ -80,7 +81,30 @@ pub(crate) fn soft_delete(
     journal_as: Option<ReplicaOrigin>,
     at: Option<&str>,
 ) -> Result<SoftDeleted> {
-    let removed = MemoryStore::new(paths.clone()).delete(id)?;
+    let store = MemoryStore::new(paths.clone());
+    // Resolved before the markdown moves, so the intent below names the
+    // canonical id and the live path rather than the caller's argument. The
+    // second load inside `delete` hits the warmed path cache.
+    let found = store.load(id)?;
+    let operation_id = journal::mint_operation_id(&found.frontmatter.id, ReplicaOp::Tombstone);
+    if journal_as.is_some() {
+        // A deletion that replicates owes an operation, so it owes an intent:
+        // a process killed between the `.trash/` move and the transaction
+        // below would otherwise leave a memory gone from disk whose deletion
+        // no peer will ever hear about. A heal (`journal_as: None`) makes no
+        // new deletion and owes nothing.
+        memory_intent::record(
+            conn,
+            &Intent {
+                entity_key: found.frontmatter.id.clone(),
+                kind: IntentKind::Delete,
+                md_path: found.path.to_string_lossy().into_owned(),
+                operation_id: operation_id.clone(),
+                started_at: memory_row::iso_format(OffsetDateTime::now_utc())?,
+            },
+        )?;
+    }
+    let removed = store.delete(id)?;
     let content_hash = removed.frontmatter.content_hash.clone();
     let repository = removed.frontmatter.repo.clone();
     let id = removed.frontmatter.id;
@@ -89,6 +113,7 @@ pub(crate) fn soft_delete(
         repository: (!repository.is_empty()).then_some(repository.as_str()),
         origin,
         at,
+        operation_id: operation_id.as_str(),
     });
     let (derived_stale, journalled) = mirror_soft_delete(conn, &id, tombstone)?;
     Ok(SoftDeleted {
@@ -126,6 +151,9 @@ pub(crate) struct Tombstone<'a> {
     /// Provenance time to record. `None` stamps the delete's own clock, which
     /// is right for a local deletion; an import passes the time the peer sent.
     pub at: Option<&'a str>,
+    /// The operation id the write intent named, so the deletion that finishes
+    /// — now, or at the next reconciliation — journals under one id.
+    pub operation_id: &'a str,
 }
 
 /// Mirror a soft-delete into `comemory.db` in one transaction: stamp
@@ -160,7 +188,11 @@ pub(crate) fn mirror_soft_delete(
             tombstone.repository,
             tombstone.at.unwrap_or(now.as_str()),
             tombstone.origin,
+            Some(tombstone.operation_id),
         )?);
+        // Inside the delete's own transaction, for the same reason the
+        // tombstone is: an aborted delete must still owe reconciliation.
+        memory_intent::clear(&tx, id)?;
     }
     tx.commit()?;
     // After the commit, so a failed refresh cannot roll back a delete that

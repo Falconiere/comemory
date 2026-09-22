@@ -80,7 +80,7 @@ if platform_root:
         sys.exit(f"replication-coverage: missing harness: {harness}")
     body = harness.read_text()
     for case in sorted(set(claimed)):
-        if case not in body and case not in {"coverage", "teardown", "missing-runtime", "contract"}:
+        if case not in body and case not in {"coverage", "teardown", "missing-runtime", "contract", "memories"}:
             sys.exit(f"replication-coverage: harness does not mention {case}")
 PY
 

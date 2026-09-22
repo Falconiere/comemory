@@ -832,7 +832,7 @@ intent; several make the local rule strictly stronger than the one it replaces.
   capabilities and delivery adapters:
 
   - `domains`: `architecture`, `memories`, `code`, `documents`, `graph`, `retrieval`, `learning`, `sync`, `capture`, `maintenance`, `integrations`
-  - `domains/*`: `ast`, `cloud`, `consolidation`, `doctor`, `document`, `evaluation`, `exchange`, `index_code`, `install`, `memory_store`, `rebuild`, `repos`, `retention`, `setup`, `source`, `unified`, `upgrade`, `tests`, `proptest-regressions`
+  - `domains/*`: `ast`, `cloud`, `consolidation`, `doctor`, `document`, `evaluation`, `exchange`, `index_code`, `install`, `memory_store`, `replica`, `rebuild`, `repos`, `retention`, `setup`, `source`, `unified`, `upgrade`, `tests`, `proptest-regressions`
   - `store`: `tokenizer`, `migrate`, `tests`
   - `cli`: `output`, `tests`, `proptest-regressions`, `setup`
   - `serve`: `routes`, `jobs`, `tests`, `proptest-regressions`
@@ -842,7 +842,7 @@ intent; several make the local rule strictly stronger than the one it replaces.
   `serve` remains the HTTP adapter, `mcp` is the stdio MCP adapter, and
   `store` remains the SQLite exception; no template name controls their
   project ownership.
-- **D5 — `src.requireReadme` replaces the pinned single-`domains` rule during staging with exactly 43 folders.**
+- **D5 — `src.requireReadme` replaces the pinned single-`domains` rule during staging with exactly 44 folders.**
   The `domains` entry returned with #167, the first real capability domain to
   land, and every capability folder gains its own entry as it lands. It names
   folders, not files: each listed grown folder has a `README.md` that indexes

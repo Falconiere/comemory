@@ -68,6 +68,7 @@ pub mod repository_policy;
 /// The local `[sync] skip_repos` glob matcher, applied after repository policy.
 pub mod skip_repos;
 /// Manifest compare and bucket repair.
+pub mod vector_rule;
 pub mod verify;
 /// `comemory watch`: hold the workspace channel and pull on every nudge.
 pub mod watch;

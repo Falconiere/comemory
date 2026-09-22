@@ -257,10 +257,57 @@ pub enum Cmd {
     Capture(capture::Args),
 }
 
+/// Finish any memory write a killed process left half-done, before the
+/// subcommand runs.
+///
+/// This is the CLI's half of `memories::recover` — `store::connection::open`
+/// cannot call it, because `store/` may not reach into a domain
+/// (`scripts/architecture-check.sh`, #177).
+///
+/// Skipped entirely when the database file is not there yet: a fresh install
+/// has nothing to reconcile, and a subcommand that never touches the store
+/// must not be the thing that creates one. Skipped too when the database is
+/// ahead of this build, so the forward-compat contract stays the
+/// subcommand's. `serve` and `mcp` are skipped by the caller — see [`run`].
+fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
+    let paths = Paths::new(crate::config::paths::resolve_data_dir(
+        data_dir.map(std::path::Path::to_path_buf),
+    ));
+    if !paths.db_path().exists() {
+        return Ok(());
+    }
+    let mut conn = match crate::store::connection::open(paths.db_path()) {
+        Ok(conn) => conn,
+        // A database written by a newer build is one this binary must not
+        // touch. Returning here leaves the forward-compat contract to the
+        // subcommand, which is what owns it: `doctor` falls back to a
+        // read-only report, every other command exits 70 naming the unknown
+        // migration key. Any other open failure propagates.
+        Err(Error::SchemaTooNew(_)) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let report = crate::domains::memories::recover::reconcile(&paths, &mut conn)?;
+    if !report.is_empty() {
+        tracing::info!(
+            finished = report.finished,
+            dropped = report.dropped,
+            "recovered memory writes an interrupted run left outstanding"
+        );
+    }
+    Ok(())
+}
+
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
 /// place that knows about every variant, keeping individual subcommand modules
 /// free of cross-references.
 pub async fn run(cli: Cli) -> Result<()> {
+    // `serve` and `mcp` reconcile from inside their own startup, where they
+    // know whether the session is read-only; doing it here too would write
+    // through a `--read-only` session, which is exactly what that flag
+    // forbids. Every other subcommand is a writable one by definition.
+    if !matches!(cli.cmd, Cmd::Serve(_) | Cmd::Mcp(_)) {
+        reconcile_pending(cli.data_dir.as_deref())?;
+    }
     match cli.cmd {
         Cmd::Architecture(a) => architecture::run(a, cli.json, cli.data_dir).await,
         Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,

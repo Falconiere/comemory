@@ -35,7 +35,7 @@ pub struct Check {
 impl Check {
     /// Attach the remedy route for a non-`ok` result; an `ok` check keeps
     /// `None` — there is nothing to fix.
-    fn with_remedy(mut self, remedy: &str) -> Self {
+    pub(super) fn with_remedy(mut self, remedy: &str) -> Self {
         if self.status != "ok" {
             self.remedy = Some(remedy.to_string());
         }
@@ -44,7 +44,7 @@ impl Check {
 }
 
 /// Build a [`Check`] with the given `status`.
-fn check(name: &str, status: &str, detail: impl Into<String>) -> Check {
+pub(super) fn check(name: &str, status: &str, detail: impl Into<String>) -> Check {
     Check {
         name: name.to_string(),
         status: status.to_string(),
@@ -59,12 +59,12 @@ pub(crate) fn ok(name: &str, detail: impl Into<String>) -> Check {
 }
 
 /// Build an advisory, non-fatal [`Check`].
-fn warn(name: &str, detail: impl Into<String>) -> Check {
+pub(super) fn warn(name: &str, detail: impl Into<String>) -> Check {
     check(name, "warn", detail)
 }
 
 /// Build a failing [`Check`].
-fn fail(name: &str, detail: impl Into<String>) -> Check {
+pub(super) fn fail(name: &str, detail: impl Into<String>) -> Check {
     check(name, "fail", detail)
 }
 
@@ -131,11 +131,12 @@ pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) ->
     let (backup_check, backup_path, backup_bytes) = super::backup::migration_backup(paths)?;
     checks.push(backup_check);
 
-    let (tokenizer_check, tokenizer_registered) = tokenizer(conn);
+    let (tokenizer_check, tokenizer_registered) = super::checks_vector::tokenizer(conn);
     checks.push(tokenizer_check);
 
     let sqlite_vec_loaded = vector::is_loaded(conn);
-    let (vec_check, memory_vec_dim, code_vec_dim) = vector_dims(conn, sqlite_vec_loaded);
+    let (vec_check, memory_vec_dim, code_vec_dim) =
+        super::checks_vector::vector_dims(conn, sqlite_vec_loaded);
     checks.push(vec_check);
 
     let (repo_check, repo_roots_ok, repo_roots_total) = repo_roots(conn)?;
@@ -144,6 +145,7 @@ pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) ->
     let (embed_cmd, embed_probe_ms) =
         push_embed_and_counts(conn, paths, markdown_files, &mut checks)?;
 
+    checks.push(super::checks_vector::needs_embedding_check(conn)?);
     checks.push(sync_daemon_check(paths));
 
     Ok(Extras {
@@ -174,7 +176,7 @@ fn push_embed_and_counts(
     checks: &mut Vec<Check>,
 ) -> Result<(Option<String>, Option<u64>)> {
     let embed_cmd = env_parse::<String>("COMEMORY_EMBED_CMD")?;
-    let (embed_check, embed_probe_ms) = embed_probe(embed_cmd.as_deref());
+    let (embed_check, embed_probe_ms) = super::checks_vector::embed_probe(embed_cmd.as_deref());
     checks.push(embed_check);
     checks.push(markdown_db_counts(conn, markdown_files)?);
     checks.push(data_dir_layout(paths));
@@ -277,38 +279,6 @@ pub(crate) fn newest_matching(
     Ok(newest.map(|(_, path, size)| (path, size)))
 }
 
-/// Check 5: the FTS5 `identifier` tokenizer (`src/store/tokenizer/`)
-/// registers cleanly on `conn`. Re-registration is idempotent (see
-/// `tokenizer::ffi::register`'s own doc), so this doubles as a direct
-/// functional proof rather than an indirect FTS query.
-fn tokenizer(conn: &Connection) -> (Check, bool) {
-    match crate::store::tokenizer::ffi::register(conn) {
-        Ok(()) => (ok("fts5 tokenizer", "registered"), true),
-        Err(e) => (fail("fts5 tokenizer", format!("failed: {e}")), false),
-    }
-}
-
-/// Check 6: `sqlite-vec` loaded, with the `memory_vec` / `code_vec` dims
-/// read from `schema_meta` rather than hardcoded.
-fn vector_dims(conn: &Connection, sqlite_vec_loaded: bool) -> (Check, Option<u32>, Option<u32>) {
-    let memory_dim = crate::store::vector::dim_memory(conn)
-        .ok()
-        .and_then(|d| u32::try_from(d).ok());
-    let code_dim = crate::store::vector::dim_code(conn)
-        .ok()
-        .and_then(|d| u32::try_from(d).ok());
-    let detail = format!(
-        "sqlite-vec loaded={sqlite_vec_loaded}, memory_vec dim={memory_dim:?}, \
-         code_vec dim={code_dim:?}"
-    );
-    let result = if sqlite_vec_loaded && memory_dim.is_some() && code_dim.is_some() {
-        ok("sqlite-vec", detail)
-    } else {
-        warn("sqlite-vec", detail)
-    };
-    (result, memory_dim, code_dim)
-}
-
 /// Check 7: `repo_marker.root_path` entries that still exist on disk. The
 /// remedy names the repos that failed rather than a `{name}` template: the
 /// operator reading a doctor report should be able to run the suggestion
@@ -356,30 +326,6 @@ fn archive_remedy(missing: &[String]) -> Option<String> {
             .collect::<Vec<_>>()
             .join("; "),
     )
-}
-
-/// Check 8: run the configured `COMEMORY_EMBED_CMD` (`crate::utilities::embed`) and
-/// time it. A missing command or a failing probe is `"warn"`, never a hard
-/// error — see the module doc's "Forward-compat fallback" sibling
-/// invariant: `doctor`'s job is to report a broken state, not become one.
-fn embed_probe(cmd: Option<&str>) -> (Check, Option<u64>) {
-    let Some(cmd) = cmd else {
-        return (warn("embed command", "COMEMORY_EMBED_CMD is not set"), None);
-    };
-    let started = std::time::Instant::now();
-    match crate::utilities::embed::embed_query(cmd, "comemory doctor embed probe") {
-        Ok(vector) => {
-            let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-            (
-                ok(
-                    "embed command",
-                    format!("probe returned a {}-dim vector", vector.len()),
-                ),
-                Some(elapsed),
-            )
-        }
-        Err(e) => (warn("embed command", format!("probe failed: {e}")), None),
-    }
 }
 
 /// Check 9: markdown file count vs `memories` row count.

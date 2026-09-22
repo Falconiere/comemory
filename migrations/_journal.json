@@ -132,6 +132,12 @@
       "name": "0022_replica_journal.sql",
       "hash": "sha256:19d6e3dbcddb926a47ef606e9e5b0fff3664ed40887bbf7acc132106d8eda52b",
       "created_at": 1790008769
+    },
+    {
+      "idx": 22,
+      "name": "0023_memory_write_intent.sql",
+      "hash": "sha256:cba3c46e7410f377ebf19c7658a1ee3d49d30bc4a4c832c26db645ae2b0eeb24",
+      "created_at": 1790091150
     }
   ]
 }

@@ -358,3 +358,60 @@ fn run_aborts_when_the_rebuild_backup_path_is_blocked_and_leaves_the_live_db_int
         "the live db must remain fully usable after an aborted rebuild"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #251: a rebuild re-derives local state from markdown. It is materialization,
+// not a mutation, so it must journal nothing — and it must not lose the
+// positions it already handed to peers.
+// ---------------------------------------------------------------------------
+
+/// Feed positions as `"<op>:<entity_key>"`, oldest first.
+fn feed_ops(conn: &Connection) -> Vec<String> {
+    comemory::store::replica_read::page(conn, 0, 50, None)
+        .expect("page")
+        .into_iter()
+        .map(|row| format!("{}:{}", row.op.as_str(), row.entity_key))
+        .collect()
+}
+
+#[test]
+fn a_rebuild_replays_every_memory_and_adds_no_feed_position() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "rebuild subject one"]);
+    run_save(&home, &["--kind", "note", "rebuild subject two"]);
+    let before = {
+        let conn = open_db(&home);
+        feed_ops(&conn)
+    };
+    let outbox_before = {
+        let conn = open_db(&home);
+        comemory::store::replica_outbox::pending_count(&conn).expect("count")
+    };
+    assert_eq!(before.len(), 2, "two saves, two positions");
+
+    run_rebuild_api(&home).expect("rebuild");
+
+    let conn = open_db(&home);
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM memories"),
+        2,
+        "the replay demonstrably rebuilt the mirror"
+    );
+    assert_eq!(
+        feed_ops(&conn),
+        before,
+        "a rebuild re-derives local state; it neither invents nor drops a \
+         position a peer already holds a receipt for"
+    );
+    assert_eq!(
+        comemory::store::replica_outbox::pending_count(&conn).expect("count"),
+        outbox_before,
+        "and it owes no new upload"
+    );
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM memory_write_intent"),
+        0,
+        "a rebuild IS the reconciliation an outstanding intent would ask for, \
+         so it leaves none behind"
+    );
+}

@@ -14,7 +14,10 @@ use super::schema_learning::{
     BanditArms, CandidateJudgments, CandidateObservations, CandidateQueryObservations,
     CodeFeedback, Feedback, FeedbackEvents, QueryExpansions, RetrievalLog,
 };
-use super::schema_memory::{Memories, MemoryFts, MemorySubstring, MemoryTags, MemoryVec};
+use super::schema_memory::{
+    Memories, MemoryFts, MemoryNeedsEmbedding, MemorySubstring, MemoryTags, MemoryVec,
+    MemoryWriteIntent,
+};
 use super::schema_replica::{
     ReplicaCursor, ReplicaFeed, ReplicaOperation, ReplicaPayload, ReplicaReceipt, ReplicaRevision,
     ReplicaStagedPart, ReplicaStream,
@@ -49,9 +52,11 @@ pub const DECLARED_TABLES: &[&str] = &[
     "indexed_files",
     "memories",
     "memory_fts",
+    "memory_needs_embedding",
     "memory_substring",
     "memory_tags",
     "memory_vec",
+    "memory_write_intent",
     "query_expansions",
     "replica_cursor",
     "replica_feed",
@@ -101,9 +106,11 @@ pub fn registry() -> SchemaRegistry {
         IndexedFiles::table_def(),
         Memories::table_def(),
         MemoryFts::table_def(),
+        MemoryNeedsEmbedding::table_def(),
         MemorySubstring::table_def(),
         MemoryTags::table_def(),
         MemoryVec::table_def(),
+        MemoryWriteIntent::table_def(),
         QueryExpansions::table_def(),
         ReplicaCursor::table_def(),
         ReplicaFeed::table_def(),

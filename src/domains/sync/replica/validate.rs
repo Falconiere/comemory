@@ -12,7 +12,7 @@ use crate::domains::sync::replica::accept::needs_payload;
 use crate::domains::sync::replica::contract::{CursorRef, Disposition, Operation};
 use crate::prelude::*;
 use crate::store::replica_journal::ReplicaOp;
-use crate::store::replica_read;
+use crate::store::{replica_outbox, replica_read};
 use crate::utilities::canonical_json;
 use crate::utilities::context::Ctx;
 use crate::utilities::digest::sha256_hex;
@@ -71,6 +71,14 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
         && replica_read::is_erased(conn, digest)?
     {
         return Ok(Disposition::PayloadErased);
+    }
+    // A local mutation this machine has not yet pushed is the only record of
+    // that edit: the outbox holds its payload, and materializing the peer's
+    // version would overwrite the markdown the pending operation describes.
+    // Refusing keeps the local edit intact and makes the peer's write wait
+    // for the push that will order the two properly.
+    if replica_outbox::has_pending_for(conn, &operation.entity_kind, &operation.entity_key)? {
+        return Ok(Disposition::RejectedStale);
     }
     let revision = replica_read::revision(conn, &operation.entity_kind, &operation.entity_key)?;
     Ok(order(operation, revision.as_ref()))
@@ -148,7 +156,9 @@ fn order(operation: &Operation, revision: Option<&replica_read::RevisionRow>) ->
 pub fn reason(disposition: Disposition) -> Option<String> {
     let text = match disposition {
         Disposition::RejectedStale => {
-            "the observed revision is behind this entity's deletion".to_string()
+            "the observed revision is behind this entity's deletion, or this \
+             machine still owes an unpushed change to it"
+                .to_string()
         }
         Disposition::RejectedUnsupported => {
             "unknown entity kind or payload schema version".to_string()

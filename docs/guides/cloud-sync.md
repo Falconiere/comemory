@@ -248,3 +248,49 @@ See [The HTTP API](http-api.md) § Cloud sync. `auth` and `sync` themselves are
    derives the workspace from key scope.
 2. Have organization members run `comemory auth login`. That is the whole
    client-side rollout.
+
+## What replicates, and what does not
+
+Every write that changes a memory a peer can observe produces exactly one
+replication operation — `comemory save`, an edit, a restore, a delete, and
+`comemory prune --apply`, whichever surface made it (CLI, HTTP or MCP).
+
+Three commands deliberately produce none. `refresh_refs` re-pins a code
+anchor, `comemory doctor --reembed` recomputes vectors, and `comemory rebuild`
+replays the mirror from markdown: each changes local state, none changes the
+memory a peer holds, so journalling them would hand peers positions for
+changes they cannot observe.
+
+A save never depends on the network. Logged out, offline, or with
+`COMEMORY_API` pointing at nothing, `comemory save` still succeeds and the
+operation is queued for whenever the push works. A real persistence failure —
+a read-only data directory, say — fails loudly instead.
+
+## Embeddings across machines
+
+An imported embedding is only usable when it came from the model this engine
+queries with, at the dimension its vector table was built for. One that is
+not is refused, the memory's text is stored regardless, and the id is recorded
+as needing an embedding. `comemory doctor` reports the backlog as a warning
+with the route that drains it, and `GET /api/v1/sync/replica/manifest` carries
+the count.
+
+So two machines on different embedders replicate every memory correctly, and
+the one importing answers semantic search short until it re-embeds. Run
+`comemory doctor --reembed` (or `POST /api/v1/doctor/reembed`) to fix it.
+
+## An unpushed edit is not overwritten
+
+A memory edited on this machine and not yet pushed exists in exactly one
+place: the operation queued for it. A pull carrying a peer's version of that
+same memory is refused (`rejected_stale`) rather than overwriting the local
+edit. Push first, and the two changes order properly.
+
+## An interrupted write
+
+A memory write places its markdown and then mirrors it into the database.
+A process killed in between is finished by the next command that opens the
+data directory — the memory is mirrored, its operation is journalled, and the
+upload it owes is queued. Running the same command twice changes nothing
+further. A `--read-only` session writes nothing and leaves the recovery for
+the next writable open.

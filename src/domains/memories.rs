@@ -29,6 +29,7 @@ pub mod mirror;
 /// before a save.
 pub mod prior;
 /// Versioned code references (`Ref`) with string-or-struct serde.
+pub mod recover;
 pub mod references;
 /// `POST /memories/{id}/references/refresh`: re-pin anchors to HEAD.
 pub mod refresh_refs;
@@ -41,12 +42,14 @@ pub mod restore;
 pub mod save;
 /// The `save` activity summary: the asked-for fields and the JSON they build.
 pub mod save_activity;
+pub mod save_persist;
 /// `comemory show` / `GET /memories/{id}`: one memory in full.
 pub mod show;
 /// Filesystem-safe slug derivation for memory filenames.
 pub mod slug;
 /// Markdown-backed memory store: save / load / list / soft-delete.
 pub mod store;
+pub mod store_trash;
 /// `GET /trash`: soft-deleted memories with their days until gc.
 pub mod trash;
 /// `PATCH /memories/{id}`: frontmatter patch or superseding re-save.

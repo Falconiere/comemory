@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories)
 
 case_name=""
 platform_root=""
@@ -113,6 +113,18 @@ run_contract() {
   log_ok "replication" "contract suite passed"
 }
 
+# The memory-mutation surface (#251): every writer produces one operation, an
+# interrupted write is recovered, and the identity/ordering rules hold. Two
+# real spawned engines and the real CLI, in-repo like the contract case — no
+# platform runtime to stand up.
+run_memories() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_memories --test replica_memories_2
+  )
+  log_ok "replication" "memory mutation suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -195,5 +207,6 @@ case "$case_name" in
   teardown) run_teardown ;;
   coverage) run_coverage ;;
   contract) run_contract ;;
+  memories) run_memories ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

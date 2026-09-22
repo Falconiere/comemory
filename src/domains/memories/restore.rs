@@ -21,11 +21,13 @@
 use std::time::Instant;
 
 use serde::Serialize;
+use time::OffsetDateTime;
 
 use crate::domains::memories::journal;
 use crate::domains::memories::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey};
+use crate::store::memory_intent::{self, Intent, IntentKind};
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::store::{Connection, memory_row};
 use crate::utilities::activity::{self, Outcome, command};
@@ -81,6 +83,29 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 /// `save::run_with` instead of `save::run`.
 pub(crate) fn restore_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let store = MemoryStore::new(ctx.paths.clone());
+    // Before the markdown leaves `.trash/`: a process killed between the move
+    // back and the journal below would otherwise leave a memory live on disk
+    // whose restore no peer will ever hear about.
+    let trashed = store.trashed_record(id)?;
+    let file_name = trashed.path.file_name().ok_or_else(|| {
+        Error::Other(format!(
+            "trashed memory path has no file name: {}",
+            trashed.path.display()
+        ))
+    })?;
+    let live_path = ctx.paths.memories_dir().join(file_name);
+    let operation_id = journal::mint_operation_id(&trashed.frontmatter.id, ReplicaOp::Restore);
+    let started_at = memory_row::iso_format(OffsetDateTime::now_utc())?;
+    memory_intent::record(
+        ctx.conn()?,
+        &Intent {
+            entity_key: trashed.frontmatter.id.clone(),
+            kind: IntentKind::Write,
+            md_path: live_path.to_string_lossy().into_owned(),
+            operation_id: operation_id.clone(),
+            started_at,
+        },
+    )?;
     let record = store.restore(id)?;
     let derived_stale = mirror(ctx, &store, &record).map_err(|e| {
         Error::Other(format!(
@@ -90,7 +115,7 @@ pub(crate) fn restore_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
             e
         ))
     })?;
-    append_local_restore(ctx.conn()?, &record)?;
+    append_local_restore(ctx.conn()?, &record, &operation_id)?;
     Ok(Response {
         id: record.frontmatter.id.clone(),
         path: record.path.to_string_lossy().into_owned(),
@@ -159,7 +184,11 @@ fn relink_incoming(conn: &Connection, live: &[MemoryRecord], id: &str) -> Result
 
 /// Journal a restore after the mirror succeeds: the legacy `sync_log` row,
 /// the replica feed position and the outbox row it owes, in one transaction.
-fn append_local_restore(conn: &mut Connection, record: &MemoryRecord) -> Result<()> {
+fn append_local_restore(
+    conn: &mut Connection,
+    record: &MemoryRecord,
+    operation_id: &str,
+) -> Result<()> {
     let fm = &record.frontmatter;
     let at = memory_row::iso_format(fm.created)?;
     let tx = conn.transaction()?;
@@ -170,7 +199,12 @@ fn append_local_restore(conn: &mut Connection, record: &MemoryRecord) -> Result<
         &record.body,
         &at,
         ReplicaOrigin::Local,
+        Some(operation_id),
     )?;
+    // The intent clears in the LAST transaction the restore owes, not the
+    // mirror one: a restore whose row landed but whose operation did not is
+    // still unfinished.
+    memory_intent::clear(&tx, &fm.id)?;
     tx.commit()?;
     Ok(())
 }

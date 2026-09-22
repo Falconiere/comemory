@@ -28,14 +28,11 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::domains::memories::journal;
 use crate::domains::memories::save_activity::{Asked, activity_summary};
-use crate::domains::memories::{
-    Kind, MemoryStore, Prior, References, Relations, SaveParams, id, mirror,
-};
+use crate::domains::memories::save_persist;
+use crate::domains::memories::{Kind, MemoryStore, Prior, References, Relations, SaveParams, id};
 use crate::prelude::*;
-use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
-use crate::store::{Connection, embed, memory_row, vector};
+use crate::store::{Connection, embed, vector};
 use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::digest;
@@ -245,7 +242,7 @@ pub fn run_with(
     let duplicate_of = near_duplicate(conn, &req.body, &new_id, cfg.rank.near_dup_hamming);
 
     let params = build_params(&req, relations, references, prior.as_ref());
-    let rec = persist(conn, &store, params, vector.as_deref())?;
+    let rec = save_persist::persist(conn, &store, params, vector.as_deref())?;
     // No sync hook here on purpose: this function also runs inside `comemory
     // serve`, where `reqwest::blocking` panics on drop and where pushing a
     // tenant's memories outward would be wrong. The CLI pushes in `cli::save`
@@ -346,35 +343,6 @@ fn build_params<'a>(
     }
 }
 
-/// Write the markdown record (source of truth), then mirror it into
-/// `comemory.db` in one transaction. A mirror failure keeps the markdown and
-/// names it plus the `rebuild` recovery path.
-fn persist(
-    conn: &mut Connection,
-    store: &MemoryStore,
-    params: SaveParams<'_>,
-    vector_opt: Option<&[f32]>,
-) -> Result<crate::domains::memories::MemoryRecord> {
-    let tags = params.tags.to_vec();
-    let rec = store.save(params)?;
-    let md_path = rec.path.clone();
-    write_sqlite_mirror(conn, &rec, &tags, vector_opt).map_err(|e| {
-        if crate::store::busy::is_locked(&e) {
-            // Keep the retryable error class through CLI, HTTP and MCP.
-            // Retrying this content-derived save safely repairs the mirror.
-            return e;
-        }
-        Error::Other(format!(
-            "save: markdown at {} was written but SQLite mirror failed: {}; \
-             run `comemory rebuild` to reconcile",
-            md_path.display(),
-            e
-        ))
-    })?;
-    let _stale = crate::domains::graph::derived::refresh_derived_best_effort(conn);
-    Ok(rec)
-}
-
 /// Discover the git working-tree root containing the process cwd, or `None`
 /// when not run inside a repo. See the module doc for the HTTP caveat: this
 /// resolves the *server process's* cwd over HTTP.
@@ -423,38 +391,6 @@ fn near_duplicate_inner(
             .min_by_key(|(_, d)| *d)
             .map(|(id, _)| id),
     )
-}
-
-/// Mirror the markdown record into `comemory.db` in a single transaction:
-/// `memories`, `memory_tags`, `memory_fts`, optional `memory_vec`, and the
-/// graph `edges` table. The non-vector branch is delegated to
-/// [`memory_row::insert`] so save and `comemory rebuild` cannot drift.
-fn write_sqlite_mirror(
-    conn: &mut Connection,
-    rec: &crate::domains::memories::MemoryRecord,
-    tags: &[String],
-    vector_opt: Option<&[f32]>,
-) -> Result<()> {
-    let tx = crate::store::connection::write_transaction(conn)?;
-    let fm = &rec.frontmatter;
-    let md_path = rec.path.to_string_lossy();
-    mirror::insert_row(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;
-    if let Some(v) = vector_opt {
-        // A re-save of the same id must replace, not duplicate, its
-        // memory_vec row (see `store::vector::replace_memory`'s doc).
-        vector::replace_memory(&tx, &fm.id, v)?;
-    }
-    let at = memory_row::iso_format(fm.created)?;
-    journal::record_write(
-        &tx,
-        ReplicaOp::Upsert,
-        fm,
-        &rec.body,
-        &at,
-        ReplicaOrigin::Local,
-    )?;
-    tx.commit()?;
-    Ok(())
 }
 
 /// Validate `raw` (the `supersedes` field) via the shared [`parse_id_csv`] —

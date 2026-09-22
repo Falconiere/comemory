@@ -13,7 +13,7 @@ use crate::domains::sync::replica::contract_views::{
 };
 use crate::prelude::*;
 use crate::store::replica_journal::stream_epoch;
-use crate::store::replica_read;
+use crate::store::{needs_embedding, replica_read};
 use crate::utilities::context::Ctx;
 
 /// Report the stream, its head, the per-kind digests and seeding progress.
@@ -49,6 +49,7 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
             state: progress.state,
             seeded,
         },
+        needs_embedding: i64::try_from(needs_embedding::pending(conn)?.len()).unwrap_or(i64::MAX),
     })
 }
 
