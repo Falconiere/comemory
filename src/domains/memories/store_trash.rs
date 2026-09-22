@@ -18,9 +18,6 @@ use crate::domains::memories::store::{
 use crate::prelude::*;
 
 impl MemoryStore {
-    /// Bring a soft-deleted memory back: move `.trash/{id}-{slug}.md` back
-    /// into `memories/` and return the record parsed from the restored file.
-    /// The exact reverse of [`MemoryStore::delete`]'s file move; the SQLite
     /// The trashed record for `id`, read where it lies.
     ///
     /// Lets a caller record what a restore is about to do — the canonical id
@@ -42,12 +39,20 @@ impl MemoryStore {
         })
     }
 
+    /// Bring a soft-deleted memory back: move `.trash/{id}-{slug}.md` back
+    /// into `memories/` and return the record parsed from the restored file.
+    ///
+    /// The exact reverse of [`MemoryStore::delete`]'s file move; the SQLite
     /// mirror is the caller's half (`memories::restore`).
     ///
     /// `Error::BadRequest` when `id` names a live memory — checked BEFORE the
     /// trash is consulted, so a stale trash copy can never be renamed over a
     /// live file (see [`MemoryStore::find_in_trash`]) — and `Error::NotFound`
     /// when it is in neither place.
+    ///
+    /// # Errors
+    /// Propagates the trash lookup, the rename, the read and the frontmatter
+    /// parse.
     pub fn restore(&self, id: &str) -> Result<MemoryRecord> {
         let trash_path = self.find_in_trash(id)?;
         let file_name = trash_path
