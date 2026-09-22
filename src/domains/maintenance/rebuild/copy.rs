@@ -34,6 +34,13 @@ use crate::store::Connection;
 /// and markdown carries no embedding at all, so a rebuild that dropped the
 /// backlog would silently report a clean engine.
 ///
+/// The #252 code generations are copied for the same reason as the replica
+/// journal: a generation a peer accepted cannot be re-derived from a local
+/// checkout, and dropping it would re-offer positions the peer already holds a
+/// receipt for. The copy narrows to non-`staged` rows and carries the three
+/// pulled-projection tables with the generations that survived, so a rebuild
+/// never leaves a projection whose generation is gone.
+///
 /// The three candidate-observation tables (#209) are copied for the strongest
 /// reason on this list: a reviewed relevance judgment is human work, and the
 /// bounded passage it was made against is a snapshot of content that may
@@ -74,6 +81,10 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "replica_receipt",
     "replica_cursor",
     "memory_needs_embedding",
+    "code_generation",
+    "remote_code_file",
+    "remote_code_symbol",
+    "remote_code_edge",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.

@@ -39,7 +39,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "23";
+pub const CURRENT_VERSION: &str = "24";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -145,6 +145,10 @@ pub const M_V22: &str = include_str!("../../migrations/0022_replica_journal.sql"
 /// tests can replay historical schema states exactly as an old binary created
 /// them.
 pub const M_V23: &str = include_str!("../../migrations/0023_memory_write_intent.sql");
+/// 0024 SQL (code generations and the pulled-projection tables). Public so
+/// tests can replay historical schema states exactly as an old binary created
+/// them.
+pub const M_V24: &str = include_str!("../../migrations/0024_code_generation.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply

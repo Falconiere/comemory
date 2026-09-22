@@ -180,6 +180,7 @@ pub mod schema;
 /// Declared code-index tables: `code_symbols`, `code_fts`, `code_vec`, `repo_marker`.
 pub mod schema_code;
 /// Declared tables no domain owns: `schema_meta`, `edge_fts`.
+pub mod schema_code_generation;
 pub mod schema_core;
 /// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod schema_documents;

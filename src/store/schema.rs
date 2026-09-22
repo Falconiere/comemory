@@ -5,6 +5,9 @@
 use toolu_orm::core::schema::SchemaRegistry;
 use toolu_orm::core::table::TableSchema;
 
+use super::schema_code_generation::{
+    CodeGeneration, RemoteCodeEdge, RemoteCodeFile, RemoteCodeSymbol,
+};
 use super::schema_code::{CodeFts, CodeSymbols, CodeVec, IndexedFiles, RepoMarker};
 use super::schema_core::{EdgeFts, SchemaMeta};
 use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFiles, SourceRoots};
@@ -35,6 +38,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "candidate_query_observations",
     "code_feedback",
     "code_fts",
+    "code_generation",
     "code_ref",
     "code_symbols",
     "code_vec",
@@ -58,6 +62,9 @@ pub const DECLARED_TABLES: &[&str] = &[
     "memory_vec",
     "memory_write_intent",
     "query_expansions",
+    "remote_code_edge",
+    "remote_code_file",
+    "remote_code_symbol",
     "replica_cursor",
     "replica_feed",
     "replica_operation",
@@ -88,6 +95,7 @@ pub fn registry() -> SchemaRegistry {
         CandidateObservations::table_def(),
         CandidateQueryObservations::table_def(),
         CodeFeedback::table_def(),
+        CodeGeneration::table_def(),
         CodeFts::table_def(),
         CodeRef::table_def(),
         CodeSymbols::table_def(),
@@ -112,6 +120,9 @@ pub fn registry() -> SchemaRegistry {
         MemoryVec::table_def(),
         MemoryWriteIntent::table_def(),
         QueryExpansions::table_def(),
+        RemoteCodeEdge::table_def(),
+        RemoteCodeFile::table_def(),
+        RemoteCodeSymbol::table_def(),
         ReplicaCursor::table_def(),
         ReplicaFeed::table_def(),
         ReplicaOperation::table_def(),

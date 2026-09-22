@@ -9,7 +9,7 @@ use rusqlite::Connection;
 
 use super::{
     M_BOOTSTRAP, M_V2, M_V3, M_V4, M_V5, M_V6, M_V7, M_V8, M_V9, M_V10, M_V11, M_V12, M_V13, M_V14,
-    M_V15, M_V16, M_V17, M_V18, M_V19, M_V20, M_V21, M_V22, M_V23, backfill_memory_simhash,
+    M_V15, M_V16, M_V17, M_V18, M_V19, M_V20, M_V21, M_V22, M_V23, M_V24, backfill_memory_simhash,
     mint_replica_epoch, rehash_simhashes,
 };
 use crate::prelude::*;
@@ -221,6 +221,13 @@ pub const MIGRATIONS: &[Migration] = &[
         class: Class::Additive,
         post: None,
         markers: &["0023_memory_write_intent"],
+    },
+    Migration {
+        key: "0024_code_generation",
+        sql: M_V24,
+        class: Class::Additive,
+        post: None,
+        markers: &["0024_code_generation"],
     },
 ];
 
