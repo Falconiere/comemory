@@ -229,16 +229,17 @@ const COLUMNS: [&dyn toolu_orm::core::query_column::ColumnRef; 9] = [
 /// Run a single-row query built by narrowing the standard projection.
 fn one<F>(conn: &Connection, narrow: F) -> Result<Option<Generation>>
 where
-    F: FnOnce(
-        toolu_orm::query::select::SelectBuilder,
-    ) -> toolu_orm::query::select::SelectBuilder,
+    F: FnOnce(toolu_orm::query::select::SelectBuilder) -> toolu_orm::query::select::SelectBuilder,
 {
     let select = narrow(CodeGeneration::select().columns_typed(&COLUMNS));
     Ok(rows(conn, select.to_sql())?.into_iter().next())
 }
 
 /// Decode a projected result set.
-fn rows(conn: &Connection, sql: (String, Vec<toolu_orm::core::value::Value>)) -> Result<Vec<Generation>> {
+fn rows(
+    conn: &Connection,
+    sql: (String, Vec<toolu_orm::core::value::Value>),
+) -> Result<Vec<Generation>> {
     orm::query_all(conn, sql, row)?
         .into_iter()
         .map(|(generation, origin, state)| {

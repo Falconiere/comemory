@@ -31,6 +31,7 @@
 /// Symbol extraction and AST pattern search via ast-grep.
 pub mod ast;
 /// Repo/author detection, blob lookup, and Git-hook installation helpers.
+pub mod generation;
 pub mod git_utils;
 /// `comemory hooks`: read and toggle the git reindex hooks.
 pub mod hooks;

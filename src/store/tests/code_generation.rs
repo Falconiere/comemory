@@ -61,7 +61,10 @@ fn activation_makes_one_generation_active_and_supersedes_the_one_it_replaces() {
     let (_dir, conn) = migrated_db();
     record(&conn, &generation("gen1", None, ReplicaOrigin::Local));
     code_generation::activate(&conn, REPO, "gen1", "2026-09-22T10:01:00Z").expect("activate one");
-    record(&conn, &generation("gen2", Some("gen1"), ReplicaOrigin::Local));
+    record(
+        &conn,
+        &generation("gen2", Some("gen1"), ReplicaOrigin::Local),
+    );
 
     code_generation::activate(&conn, REPO, "gen2", "2026-09-22T10:02:00Z").expect("activate two");
 
@@ -104,11 +107,17 @@ fn a_generation_planned_against_a_superseded_parent_is_refused() {
     let (_dir, conn) = migrated_db();
     record(&conn, &generation("gen1", None, ReplicaOrigin::Local));
     code_generation::activate(&conn, REPO, "gen1", "2026-09-22T10:01:00Z").expect("activate one");
-    record(&conn, &generation("gen2", Some("gen1"), ReplicaOrigin::Local));
+    record(
+        &conn,
+        &generation("gen2", Some("gen1"), ReplicaOrigin::Local),
+    );
     code_generation::activate(&conn, REPO, "gen2", "2026-09-22T10:02:00Z").expect("activate two");
     // Planned against gen1 while the repo has already moved to gen2 — the
     // concurrent-generation case. Merging it would union two heads.
-    record(&conn, &generation("gen3", Some("gen1"), ReplicaOrigin::Local));
+    record(
+        &conn,
+        &generation("gen3", Some("gen1"), ReplicaOrigin::Local),
+    );
 
     let refused = code_generation::activate(&conn, REPO, "gen3", "2026-09-22T10:03:00Z")
         .expect_err("a stale plan must be refused so the caller replans");

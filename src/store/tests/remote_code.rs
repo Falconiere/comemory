@@ -109,7 +109,9 @@ fn replacing_one_generation_leaves_every_other_generation_alone() {
     remote_code::replace_generation(&conn, REPO, "gen2", &Projection::default()).expect("empty");
 
     assert_eq!(
-        remote_code::files(&conn, REPO, "gen1").expect("files").len(),
+        remote_code::files(&conn, REPO, "gen1")
+            .expect("files")
+            .len(),
         2,
         "gen1 is untouched"
     );

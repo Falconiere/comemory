@@ -5,10 +5,10 @@
 use toolu_orm::core::schema::SchemaRegistry;
 use toolu_orm::core::table::TableSchema;
 
+use super::schema_code::{CodeFts, CodeSymbols, CodeVec, IndexedFiles, RepoMarker};
 use super::schema_code_generation::{
     CodeGeneration, RemoteCodeEdge, RemoteCodeFile, RemoteCodeSymbol,
 };
-use super::schema_code::{CodeFts, CodeSymbols, CodeVec, IndexedFiles, RepoMarker};
 use super::schema_core::{EdgeFts, SchemaMeta};
 use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFiles, SourceRoots};
 use super::schema_graph::{CodeRef, Edges};
