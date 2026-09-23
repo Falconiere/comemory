@@ -561,3 +561,127 @@ fn gc_sweeps_abandoned_uploads_and_spares_the_active_generation() {
         "only the upload that never finished is gone"
     );
 }
+
+// ---------------------------------------------------------------------------
+// AC-13: `gc` leaves the pulled document cache and the share mapping alone,
+// while still doing the sweeping it exists for. Both halves are asserted, or
+// "it removed nothing" would also pass for a `gc` that did nothing at all.
+// ---------------------------------------------------------------------------
+
+const SHARE_REPO: &str = "Falconiere/comemory";
+const SHARE_AT: &str = "2026-09-23T10:00:00Z";
+
+/// Put a real pulled revision and an approval in `conn`.
+fn seed_pulled_revision(conn: &rusqlite::Connection) -> String {
+    use comemory::domains::documents::document::DocumentFormat;
+    use comemory::domains::documents::document::extract::extract;
+    use comemory::store::remote_document::{self, Chunk, Link, Revision};
+
+    let path = "docs/guides/cloud-sync.md";
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+    let bytes = std::fs::read(&file).expect("read the real guide");
+    let doc = extract(DocumentFormat::Markdown, &bytes, "doc").expect("real extraction");
+    let shared_id = comemory::domains::documents::share::shared_id(SHARE_REPO, path);
+    let revision = Revision {
+        repo: SHARE_REPO.to_string(),
+        shared_id: shared_id.clone(),
+        path: path.to_string(),
+        title: doc.title.clone(),
+        format: "markdown".to_string(),
+        revision_hash: "a".repeat(64),
+        chunk_count: doc.chunks.len() as i64,
+    };
+    let chunks: Vec<Chunk> = doc
+        .chunks
+        .iter()
+        .map(|c| Chunk {
+            ordinal: c.ordinal as i64,
+            heading_path: c.heading_path.join(" > "),
+            char_range: (c.char_range.0 as i64, c.char_range.1 as i64),
+            line_range: (c.line_range.0 as i64, c.line_range.1 as i64),
+            simhash: c.simhash as i64,
+            text: c.text.clone(),
+        })
+        .collect();
+    remote_document::replace_revision(
+        conn,
+        &revision,
+        &chunks,
+        &[Link {
+            ordinal: 0,
+            target: "docs/guides/http-api.md".to_string(),
+        }],
+        SHARE_AT,
+    )
+    .expect("hold a pulled revision");
+    comemory::store::repository_approval::replace_all(
+        conn,
+        &[(SHARE_REPO.to_string(), SHARE_REPO.to_string())],
+        SHARE_AT,
+    )
+    .expect("approve");
+    shared_id
+}
+
+/// An upload part abandoned long enough for the sweep to reclaim it.
+fn seed_abandoned_part(conn: &rusqlite::Connection) {
+    let long_ago =
+        comemory::store::memory_row::iso_format(OffsetDateTime::now_utc() - Duration::hours(48))
+            .expect("stamp");
+    conn.execute(
+        "INSERT INTO replica_staged_part(staging_id, part_index, part_count, bytes, created_at) \
+         VALUES ('staging-abandoned', 0, 2, 'partial', ?1)",
+        [&long_ago],
+    )
+    .expect("seed an abandoned part");
+}
+
+fn table_count(conn: &rusqlite::Connection, table: &str) -> i64 {
+    conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+        .expect("count")
+}
+
+#[test]
+fn gc_sweeps_abandoned_parts_and_touches_no_pulled_document() {
+    let home = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(home.path()).expect("create data dir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    let cfg = Config::defaults();
+    let mut conn = comemory::store::connection::open(db_path(&home)).expect("open + migrate");
+    let shared_id = seed_pulled_revision(&conn);
+    seed_abandoned_part(&conn);
+    let before = [
+        table_count(&conn, "remote_document"),
+        table_count(&conn, "remote_document_chunk"),
+        table_count(&conn, "remote_document_link"),
+        table_count(&conn, "remote_document_fts"),
+        table_count(&conn, "repository_approval"),
+    ];
+    assert!(before.iter().all(|n| *n > 0), "seeded: {before:?}");
+
+    let response = gc(&paths, &cfg, &mut conn);
+
+    assert!(
+        response.staged_rows > 0,
+        "gc really swept something, so the untouched counts below are not the \
+         result of a run that did nothing: {response:?}"
+    );
+    assert_eq!(
+        [
+            table_count(&conn, "remote_document"),
+            table_count(&conn, "remote_document_chunk"),
+            table_count(&conn, "remote_document_link"),
+            table_count(&conn, "remote_document_fts"),
+            table_count(&conn, "repository_approval"),
+        ],
+        before,
+        "gc has no retention policy for documents, local or pulled"
+    );
+    assert!(
+        comemory::store::remote_document::revision(&conn, SHARE_REPO, &shared_id)
+            .expect("read")
+            .is_some(),
+        "and the revision is still the one this machine holds"
+    );
+}
