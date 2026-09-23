@@ -150,6 +150,10 @@
     },
     {
       "source": "domains::sync",
+      "target": "domains::documents"
+    },
+    {
+      "source": "domains::sync",
       "target": "domains::graph"
     },
     {

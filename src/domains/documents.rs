@@ -15,6 +15,9 @@
 pub mod document;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
+/// The `document_revision` wire payload: its canonical bytes, its digest and
+/// the identity its repository and path earn.
+pub mod replica_payload;
 /// A document's portable name: the digest of its canonical repository and
 /// its normalized repository-relative path.
 pub mod share;
