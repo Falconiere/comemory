@@ -63,3 +63,29 @@ pub struct SyncBinding {
     /// RFC3339 time of that override.
     pub secret_override_at: Text,
 }
+
+/// `repository_approval`: the label -> canonical repository map the last
+/// policy load resolved, kept locally so a capture can answer "is this
+/// repository approved, and what is it called upstream" without the network.
+///
+/// The platform's allowlist is only ever seen inside a policy fetch, and a
+/// local `comemory index` has neither auth nor a connection. But a shared
+/// document's identity is a digest OVER the canonical repository, so a capture
+/// that guessed would mint an id no other machine computes. This table is the
+/// answer: whatever the last policy load resolved, readable offline.
+///
+/// Absence is a refusal, not an unknown — a label with no row here is
+/// withheld. Before the first policy load nothing is approved, which is the
+/// correct answer for a machine that has not joined a workspace yet.
+#[table(name = "repository_approval")]
+pub struct RepositoryApproval {
+    /// The operator's label, reduced by `utilities::repo_label::normalize`.
+    #[column(primary_key)]
+    pub label: Text,
+    /// Canonical `owner/name` the policy resolved this label to.
+    #[column(not_null)]
+    pub canonical: Text,
+    /// RFC3339 time of the policy load that wrote this row.
+    #[column(not_null)]
+    pub updated_at: Text,
+}

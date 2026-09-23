@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::documents::document::deletions;
 use crate::domains::documents::document::writer::{self, UpdateOutcome};
 use crate::domains::documents::source::SourceEntry;
 use crate::domains::documents::source::discover::{self, Candidate};
@@ -180,7 +181,7 @@ fn reconcile_source(
         )?;
         record_outcome(&mut report, c, outcome);
     }
-    report.removed = writer::reconcile_deletions(conn, entry.id.as_str(), &seen)?;
+    report.removed = deletions::reconcile_deletions(conn, entry.id.as_str(), &seen)?;
     Ok(report)
 }
 

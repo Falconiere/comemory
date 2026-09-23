@@ -185,6 +185,9 @@ pub mod repo_marker_roots;
 /// The `repo_marker` join behind `comemory repos`: one row per indexed repo
 /// plus its per-repo file/symbol/memory counters.
 pub mod repos_inventory;
+/// The label to canonical-repository map the last policy load resolved, so an
+/// offline run can tell whether a repository is approved.
+pub mod repository_approval;
 /// `retrieval_log` reads — the raw `returned_ids` window query behind the
 /// search→edit lookback, plus the `(query_id, query, at)` scan behind
 /// `eval::mine`.

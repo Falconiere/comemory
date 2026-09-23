@@ -18,7 +18,7 @@ use comemory::config::{Config, Paths};
 use comemory::domains::documents::replica_payload::{ChunkWire, DocumentRevisionV1};
 use comemory::domains::documents::{index, share, sources};
 use comemory::store::document_share::{self, Share};
-use comemory::store::{connection, documents};
+use comemory::store::{connection, documents, repository_approval};
 use tempfile::TempDir;
 
 const REPO: &str = "docs-corpus";
@@ -163,4 +163,122 @@ fn a_source_holding_nothing_back_reports_an_empty_list() {
         "nothing is withheld, got {:?}",
         rows[0].withheld
     );
+}
+
+// ---------------------------------------------------------------------------
+// AC-2: a source that shares nothing says which of the four reasons it was.
+// ---------------------------------------------------------------------------
+
+/// Index the real fixtures with NO repository label — a source registered
+/// without `--repo`, which is the common case.
+fn indexed_fixtures_unlabelled() -> (TempDir, TempDir, rusqlite::Connection) {
+    let home = TempDir::new().expect("home");
+    let workspace = TempDir::new().expect("workspace");
+    let docs = docs_fixtures::seed(workspace.path());
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    let cfg = Config::defaults();
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    {
+        let mut ctx = comemory::utilities::context::Ctx::borrowed(&paths, &cfg, &mut conn);
+        index::run(
+            &mut ctx,
+            index::Request {
+                path: vec![docs.to_str().expect("utf8 path").to_string()],
+                repo: None,
+                strict: false,
+            },
+        )
+        .expect("index the real fixtures");
+    }
+    (home, workspace, conn)
+}
+
+/// Approve `label` as `canonical` the way a policy load would.
+fn approve(conn: &rusqlite::Connection, label: &str, canonical: &str) {
+    repository_approval::replace_all(conn, &[(label.to_string(), canonical.to_string())], AT)
+        .expect("approve");
+}
+
+/// Record an indexed working-tree root for `label`.
+fn record_root(conn: &rusqlite::Connection, label: &str, root: &std::path::Path) {
+    conn.execute(
+        "INSERT INTO repo_marker (repo, root_path) VALUES (?1, ?2) \
+         ON CONFLICT(repo) DO UPDATE SET root_path = excluded.root_path",
+        rusqlite::params![label, root.to_str().expect("utf8 root")],
+    )
+    .expect("record the root");
+}
+
+#[test]
+fn a_source_with_no_label_says_so() {
+    let (home, _workspace, mut conn) = indexed_fixtures_unlabelled();
+
+    let rows = listing(&home, &mut conn);
+
+    assert_eq!(rows[0].shared_as, None);
+    assert_eq!(
+        rows[0].unshared_reason.as_deref(),
+        Some("no repository label"),
+        "the operator never said which repository this is"
+    );
+}
+
+#[test]
+fn a_source_says_when_no_policy_has_loaded_yet() {
+    let (home, _workspace, mut conn, _source_id) = indexed_fixtures();
+
+    // The source IS labelled; nothing has been approved yet.
+    let rows = listing(&home, &mut conn);
+
+    assert_eq!(
+        rows[0].unshared_reason.as_deref(),
+        Some("no sync policy has been loaded"),
+        "nothing is approved yet, which is different from being refused"
+    );
+}
+
+#[test]
+fn a_source_says_when_its_repository_is_not_approved() {
+    let (home, _workspace, mut conn, _source_id) = indexed_fixtures();
+    approve(&conn, "Falconiere/other", "Falconiere/other");
+
+    let rows = listing(&home, &mut conn);
+
+    assert_eq!(
+        rows[0].unshared_reason.as_deref(),
+        Some("repository `docs-corpus` is not approved"),
+        "a policy HAS loaded; this repository is simply not on it"
+    );
+}
+
+#[test]
+fn a_source_says_when_its_repository_has_no_indexed_root() {
+    let (home, _workspace, mut conn, _source_id) = indexed_fixtures();
+    approve(&conn, REPO, "Falconiere/comemory");
+
+    let rows = listing(&home, &mut conn);
+
+    assert_eq!(
+        rows[0].unshared_reason.as_deref(),
+        Some("repository `docs-corpus` has no indexed root on this machine"),
+        "approved, but there is no root to make a path relative to"
+    );
+}
+
+#[test]
+fn an_approved_and_rooted_source_reports_the_name_it_shares_under() {
+    let (home, workspace, mut conn, _source_id) = indexed_fixtures();
+    approve(&conn, REPO, "Falconiere/comemory");
+    let root = std::fs::canonicalize(workspace.path()).expect("canonicalize");
+    record_root(&conn, REPO, &root);
+
+    let rows = listing(&home, &mut conn);
+
+    assert_eq!(
+        rows[0].shared_as.as_deref(),
+        Some("Falconiere/comemory"),
+        "the canonical name, not the operator's label"
+    );
+    assert_eq!(rows[0].unshared_reason, None);
 }

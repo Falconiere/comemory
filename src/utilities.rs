@@ -57,6 +57,8 @@ pub mod progress;
 pub mod query_id;
 /// Collect the `--ref-file` / `--ref-symbol` values into a `References` block.
 pub mod ref_args;
+/// One comparable form for an operator-typed repository label.
+pub mod repo_label;
 /// Repository-root resolution and `file:<repo>:<path>` node addressing.
 pub mod repo_root;
 /// The curated secret scan both sync and the documents capability run.

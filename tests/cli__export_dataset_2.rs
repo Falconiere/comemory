@@ -305,7 +305,7 @@ fn the_manifest_reports_the_filtering_configuration_and_the_split_plan() {
     assert!(manifest["counts"]["candidates_filtered_by_domain"].as_u64() >= Some(1));
     assert!(manifest["by_label"].is_array());
     assert_eq!(
-        manifest["schema_version"], "25",
+        manifest["schema_version"], "26",
         "the manifest pins the schema the observations were captured under"
     );
     let on_disk: Value =

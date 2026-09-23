@@ -69,5 +69,7 @@ One line per file:
 | `0024_code_generation.sql` | v24: code-index replication (#252) — `code_generation` (one row per generation of a repo's index, local or pulled, with its parent and activation state) and the pulled projection it activates: `remote_code_file`, `remote_code_symbol` and `remote_code_edge`, all snippet-free by construction |
 | `0025_document_revision.sql` | v25: document replication (#253) — the pulled revision cache (`remote_document` with its `staged`/`active`/`superseded` lifecycle, plus `remote_document_chunk`, `remote_document_link` and the `remote_document_fts` index of its own) and `document_share`, the mapping that gives a local document a portable name keyed by canonical repo and normalized repository-relative path |
 
+| `0026_repository_approval.sql` | v26: document replication (#253) — `repository_approval`, the label to canonical-repository map the last policy load resolved, kept locally so an offline index run can tell whether a document's repository is approved and what it is called upstream without a policy fetch |
+
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

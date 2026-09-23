@@ -18,6 +18,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::deletions;
 use comemory::domains::documents::document::writer::{self, UpdateOutcome};
 use comemory::store::sources;
 use comemory::store::{document_fts, documents};
@@ -219,7 +220,7 @@ fn reconcile_deletions_removes_derived_rows_and_tombstones() {
     // A fresh, authoritative scan only saw guide.md this time.
     let mut seen = HashSet::new();
     seen.insert("guide.md".to_string());
-    let removed = writer::reconcile_deletions(&mut conn, SOURCE_ID, &seen).expect("reconcile");
+    let removed = deletions::reconcile_deletions(&mut conn, SOURCE_ID, &seen).expect("reconcile");
     assert_eq!(removed, 1);
 
     let files = sources::list_files_by_source(&conn, SOURCE_ID).expect("list");
@@ -263,10 +264,10 @@ fn reconcile_deletions_is_idempotent_for_already_deleted_rows() {
 
     let mut seen = HashSet::new();
     seen.insert("guide.md".to_string());
-    writer::reconcile_deletions(&mut conn, SOURCE_ID, &seen).expect("first reconcile");
+    deletions::reconcile_deletions(&mut conn, SOURCE_ID, &seen).expect("first reconcile");
 
     let removed_again =
-        writer::reconcile_deletions(&mut conn, SOURCE_ID, &seen).expect("second reconcile");
+        deletions::reconcile_deletions(&mut conn, SOURCE_ID, &seen).expect("second reconcile");
     assert_eq!(removed_again, 0, "already-deleted rows are left alone");
 }
 
@@ -406,5 +407,320 @@ fn non_canonical_symlink_alias_of_the_source_root_still_indexes() {
     assert!(
         matches!(outcome, UpdateOutcome::Indexed { .. }),
         "a non-canonical source_root alias must still resolve and index, got {outcome:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-4: the capture rides the transactions that already exist. One operation
+// per successful index, one per tombstone, and nothing at all for a document
+// this machine may not share.
+// ---------------------------------------------------------------------------
+
+const REPO: &str = "Falconiere/comemory";
+
+/// Make `REPO` shareable: approve the label the way a policy load would, and
+/// give it the indexed working-tree root a path is made relative TO. Both are
+/// real rows in the real tables — the writer reads no other source of truth.
+fn approve(conn: &Connection, root: &std::path::Path) {
+    comemory::store::repository_approval::replace_all(
+        conn,
+        &[(REPO.to_string(), REPO.to_string())],
+        "2026-09-23T10:00:00Z",
+    )
+    .expect("approve the repository");
+    conn.execute(
+        "INSERT INTO repo_marker (repo, root_path) VALUES (?1, ?2) \
+         ON CONFLICT(repo) DO UPDATE SET root_path = excluded.root_path",
+        params![REPO, root.to_str().expect("utf8 root")],
+    )
+    .expect("record the indexed root");
+}
+
+/// Index `name` under `REPO` — the labelled variant of `support::index`.
+fn index_shared(conn: &mut Connection, path: &std::path::Path, name: &str) -> UpdateOutcome {
+    let c = candidate(name, path, DocumentFormat::Markdown);
+    let root = fs::canonicalize(path.parent().expect("parent")).expect("canonicalize");
+    writer::update_file(conn, SOURCE_ID, Some(REPO), &c, &root, MAX_BYTES).expect("update_file")
+}
+
+/// Every journalled operation, oldest first.
+fn feed_rows(conn: &Connection) -> Vec<(String, String, String)> {
+    let mut statement = conn
+        .prepare("SELECT entity_kind, entity_key, op FROM replica_feed ORDER BY sequence")
+        .expect("prepare");
+    statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("collect")
+}
+
+/// The one `documents` row in a single-fixture database.
+fn document_id_of(conn: &Connection) -> String {
+    conn.query_row("SELECT id FROM documents", [], |r| r.get(0))
+        .expect("one document row")
+}
+
+#[test]
+fn an_approved_document_journals_exactly_one_operation() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    approve(
+        &conn,
+        &fs::canonicalize(tmp.path()).expect("canonicalize tmp"),
+    );
+
+    let outcome = index_shared(&mut conn, &path, "guide.md");
+
+    assert!(
+        matches!(outcome, UpdateOutcome::Indexed { .. }),
+        "{outcome:?}"
+    );
+    let share = comemory::store::document_share::by_shared_id(
+        &conn,
+        REPO,
+        &comemory::domains::documents::share::shared_id(REPO, "guide.md"),
+    )
+    .expect("share read")
+    .expect("the document earned a portable name");
+    assert_eq!(share.path, "guide.md");
+    assert_eq!(share.blocked_reason, None);
+    assert_eq!(
+        feed_rows(&conn),
+        vec![(
+            "document_revision".to_string(),
+            share.shared_id.clone(),
+            "upsert".to_string()
+        )],
+        "one operation, keyed by the portable name"
+    );
+}
+
+#[test]
+fn a_re_index_of_unchanged_content_journals_nothing_further() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    approve(
+        &conn,
+        &fs::canonicalize(tmp.path()).expect("canonicalize tmp"),
+    );
+
+    index_shared(&mut conn, &path, "guide.md");
+    let after_first = feed_rows(&conn).len();
+    let second = index_shared(&mut conn, &path, "guide.md");
+
+    assert!(matches!(second, UpdateOutcome::Unchanged), "{second:?}");
+    assert_eq!(after_first, 1, "the first index really journalled one");
+    assert_eq!(
+        feed_rows(&conn).len(),
+        1,
+        "an unchanged file is not a new revision"
+    );
+}
+
+#[test]
+fn the_journal_shares_the_writer_transaction() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    approve(
+        &conn,
+        &fs::canonicalize(tmp.path()).expect("canonicalize tmp"),
+    );
+    // Make the journal append fail, in SQLite itself, after the document rows
+    // of the same transaction have been written. If the two were separate
+    // transactions the document would survive the journal's failure.
+    conn.execute_batch(
+        "CREATE TRIGGER refuse_feed BEFORE INSERT ON replica_feed \
+         BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+    )
+    .expect("arm the trigger");
+
+    let c = candidate("guide.md", &path, DocumentFormat::Markdown);
+    let root = fs::canonicalize(tmp.path()).expect("canonicalize");
+    let failed = writer::update_file(&mut conn, SOURCE_ID, Some(REPO), &c, &root, MAX_BYTES);
+
+    assert!(failed.is_err(), "the refused append must surface");
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM documents", [], |r| r.get::<_, i64>(0))
+            .expect("count documents"),
+        0,
+        "the document write rolled back WITH the journal, so they are one \
+         transaction"
+    );
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM document_share", [], |r| r
+            .get::<_, i64>(0))
+            .expect("count shares"),
+        0
+    );
+}
+
+#[test]
+fn an_unlabelled_document_is_indexed_and_journals_nothing() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    approve(
+        &conn,
+        &fs::canonicalize(tmp.path()).expect("canonicalize tmp"),
+    );
+
+    // `None` label — the common case for a source registered without `--repo`.
+    let outcome = index(&mut conn, &path, "guide.md", DocumentFormat::Markdown);
+
+    assert!(
+        matches!(outcome, UpdateOutcome::Indexed { .. }),
+        "{outcome:?}"
+    );
+    assert!(
+        chunk_count(&conn, &document_id_of(&conn)) > 0,
+        "it is indexed locally, which is what makes the empty feed meaningful"
+    );
+    assert!(feed_rows(&conn).is_empty(), "nothing to share");
+}
+
+#[test]
+fn a_document_under_an_unapproved_label_journals_nothing() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    // A root is recorded, but the policy approves a DIFFERENT repository.
+    comemory::store::repository_approval::replace_all(
+        &conn,
+        &[(
+            "Falconiere/other".to_string(),
+            "Falconiere/other".to_string(),
+        )],
+        "2026-09-23T10:00:00Z",
+    )
+    .expect("approve another repository");
+    conn.execute(
+        "INSERT INTO repo_marker (repo, root_path) VALUES (?1, ?2)",
+        params![REPO, tmp.path().to_str().expect("utf8")],
+    )
+    .expect("record the root");
+
+    let outcome = index_shared(&mut conn, &path, "guide.md");
+
+    assert!(
+        matches!(outcome, UpdateOutcome::Indexed { .. }),
+        "{outcome:?}"
+    );
+    assert!(
+        feed_rows(&conn).is_empty(),
+        "unapproved repositories share nothing"
+    );
+    assert_eq!(
+        comemory::store::document_share::by_document(&conn, &document_id_of(&conn))
+            .expect("share read"),
+        None,
+        "and no portable name was minted for it"
+    );
+}
+
+#[test]
+fn a_document_whose_repository_has_no_indexed_root_journals_nothing() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    // Approved, but never indexed here: there is no root to make the path
+    // relative to, so any id minted now would be one no peer computes.
+    comemory::store::repository_approval::replace_all(
+        &conn,
+        &[(REPO.to_string(), REPO.to_string())],
+        "2026-09-23T10:00:00Z",
+    )
+    .expect("approve");
+
+    let outcome = index_shared(&mut conn, &path, "guide.md");
+
+    assert!(
+        matches!(outcome, UpdateOutcome::Indexed { .. }),
+        "{outcome:?}"
+    );
+    assert!(feed_rows(&conn).is_empty());
+}
+
+#[test]
+fn a_file_that_cannot_be_read_journals_nothing() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    approve(
+        &conn,
+        &fs::canonicalize(tmp.path()).expect("canonicalize tmp"),
+    );
+    // The read fails before extraction — the failure the writer records as
+    // `error` on the `source_files` row rather than propagating.
+    fs::remove_file(&path).expect("remove the file");
+
+    let outcome = index_shared(&mut conn, &path, "guide.md");
+
+    assert!(matches!(outcome, UpdateOutcome::Error(_)), "{outcome:?}");
+    assert!(
+        feed_rows(&conn).is_empty(),
+        "a document that never extracted has no revision to share"
+    );
+}
+
+#[test]
+fn a_tombstone_journals_exactly_one_operation_for_a_shared_document() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    approve(
+        &conn,
+        &fs::canonicalize(tmp.path()).expect("canonicalize tmp"),
+    );
+    index_shared(&mut conn, &path, "guide.md");
+    let shared_id = comemory::domains::documents::share::shared_id(REPO, "guide.md");
+
+    // A complete walk that no longer sees the file.
+    let removed = deletions::reconcile_deletions(&mut conn, SOURCE_ID, &HashSet::<String>::new())
+        .expect("reconcile");
+
+    assert_eq!(removed, 1);
+    assert_eq!(
+        feed_rows(&conn),
+        vec![
+            (
+                "document_revision".to_string(),
+                shared_id.clone(),
+                "upsert".to_string()
+            ),
+            (
+                "document_revision".to_string(),
+                shared_id,
+                "tombstone".to_string()
+            ),
+        ],
+        "the revision, then its removal, under one portable name"
+    );
+}
+
+#[test]
+fn a_tombstone_for_a_document_that_was_never_shared_journals_nothing() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    // Indexed with no label, so it was never shared.
+    index(&mut conn, &path, "guide.md", DocumentFormat::Markdown);
+    assert!(
+        documents::get_document(&conn, &document_id_of(&conn))
+            .expect("read")
+            .is_some(),
+        "the local rows existed, so the empty feed below is not vacuous"
+    );
+
+    let removed = deletions::reconcile_deletions(&mut conn, SOURCE_ID, &HashSet::<String>::new())
+        .expect("reconcile");
+
+    assert_eq!(removed, 1, "it really was tombstoned locally");
+    assert!(
+        feed_rows(&conn).is_empty(),
+        "a peer that never received the revision must not be told to delete it"
     );
 }

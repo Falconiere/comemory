@@ -28,7 +28,7 @@ use super::schema_replica::{
     ReplicaCursor, ReplicaFeed, ReplicaOperation, ReplicaPayload, ReplicaReceipt, ReplicaRevision,
     ReplicaStagedPart, ReplicaStream,
 };
-use super::schema_sync::{SyncBinding, SyncLog, SyncState};
+use super::schema_sync::{RepositoryApproval, SyncBinding, SyncLog, SyncState};
 
 /// Every table `registry()` declares, by name, sorted. The fidelity test
 /// asserts the registry equals this list, so adding a struct without
@@ -82,6 +82,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "replica_staged_part",
     "replica_stream",
     "repo_marker",
+    "repository_approval",
     "retrieval_log",
     "schema_meta",
     "source_files",
@@ -145,6 +146,7 @@ pub fn registry() -> SchemaRegistry {
         ReplicaStagedPart::table_def(),
         ReplicaStream::table_def(),
         RepoMarker::table_def(),
+        RepositoryApproval::table_def(),
         RetrievalLog::table_def(),
         SchemaMeta::table_def(),
         SourceFiles::table_def(),

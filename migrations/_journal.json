@@ -150,6 +150,12 @@
       "name": "0025_document_revision.sql",
       "hash": "sha256:dc3b01662f396a149cf6a8de8a77c118218d2e65abab8799085a71e4ade9a41e",
       "created_at": 1790192145
+    },
+    {
+      "idx": 25,
+      "name": "0026_repository_approval.sql",
+      "hash": "sha256:5a73d9e3912439f4ebec65f45771aaccee8de14c85ca45b2e5c30b5e0d238987",
+      "created_at": 1790193520
     }
   ]
 }

@@ -15,7 +15,7 @@ use crate::domains::documents::source::mirror;
 use crate::domains::documents::source::registry::Registry;
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::{document_share, sources};
+use crate::store::{document_share, repo_marker, repository_approval, sources};
 use crate::utilities::context::Ctx;
 
 /// `comemory sources` / `GET /api/v1/sources` request.
@@ -56,6 +56,13 @@ pub struct Row {
     /// `(repository-relative path, rule)`. Empty when nothing is withheld —
     /// an operator has to be able to see WHY a document stayed local.
     pub withheld: Vec<(String, String)>,
+    /// Canonical repository every document under this source is shared as,
+    /// or `None` when none of them is shared at all.
+    pub shared_as: Option<String>,
+    /// Why nothing under this source is shared, when nothing is. `None` when
+    /// it IS shared. Four things can be missing and an operator cannot tell
+    /// them apart from the counts, so each says which one it was.
+    pub unshared_reason: Option<String>,
 }
 
 /// List every registered source, reconciling the SQLite mirror against
@@ -70,9 +77,11 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Vec<Row>> {
         mirror::reconcile(conn, &registry.load()?)?;
     }
     let mut rows = Vec::new();
+    let policy_loaded = repository_approval::len(conn)? > 0;
     for root in sources::list(conn)? {
         let counts = sources::file_status_counts(conn, &root.id)?;
         let id = root.id.clone();
+        let sharing = sharing_of(conn, root.repo.as_deref(), policy_loaded)?;
         rows.push(Row {
             id: root.id,
             canonical_path: root.canonical_path,
@@ -84,9 +93,38 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Vec<Row>> {
             stale: counts.stale,
             last_checked: root.updated_at,
             withheld: document_share::blocked_for_source(conn, &id)?,
+            shared_as: sharing.clone().ok(),
+            unshared_reason: sharing.err(),
         });
     }
     Ok(rows)
+}
+
+/// What this source's label resolves to for sharing, or the reason it does
+/// not. The same four refusals the capture applies, reported rather than
+/// logged — a document that stayed local for a fixable reason (an unapproved
+/// repository, a repository never indexed here) is only fixable if an
+/// operator can see which reason it was.
+fn sharing_of(
+    conn: &Connection,
+    label: Option<&str>,
+    policy_loaded: bool,
+) -> Result<std::result::Result<String, String>> {
+    let Some(label) = label.map(str::trim).filter(|l| !l.is_empty()) else {
+        return Ok(Err("no repository label".to_string()));
+    };
+    if !policy_loaded {
+        return Ok(Err("no sync policy has been loaded".to_string()));
+    }
+    let Some(canonical) = repository_approval::canonical_for(conn, label)? else {
+        return Ok(Err(format!("repository `{label}` is not approved")));
+    };
+    if repo_marker::root_path(conn, label)?.is_none() {
+        return Ok(Err(format!(
+            "repository `{label}` has no indexed root on this machine"
+        )));
+    }
+    Ok(Ok(canonical))
 }
 
 #[cfg(test)]

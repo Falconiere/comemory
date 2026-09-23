@@ -12,8 +12,12 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use crate::prelude::*;
 
 /// Lowercase trimmed repo label (`CodaSignal/Foo` → `codasignal/foo`).
+///
+/// Delegates to [`crate::utilities::repo_label::normalize`]: the reduction is
+/// shared with `store::repository_approval`, which keys rows by it, so there
+/// is one definition rather than one per caller.
 pub fn normalize_repo_label(label: &str) -> String {
-    label.trim().to_lowercase()
+    crate::utilities::repo_label::normalize(label)
 }
 
 /// Compiled `[sync] skip_repos` patterns, matched against normalized labels.

@@ -144,12 +144,12 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// at all — and `document_share` with them, being the only record of what a
 /// local document is called upstream.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_fifty_five_tables() {
+fn migration_integrity_derived_live_set_has_exactly_fifty_six_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        55,
-        "expected exactly 55 live tables, got {}: {live:?}",
+        56,
+        "expected exactly 56 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -182,6 +182,7 @@ fn migration_integrity_derived_live_set_has_exactly_fifty_five_tables() {
         "remote_document_link",
         "remote_document_fts",
         "document_share",
+        "repository_approval",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),

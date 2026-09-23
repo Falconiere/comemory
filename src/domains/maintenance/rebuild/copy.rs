@@ -78,6 +78,10 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "sync_log",
     "sync_state",
     "sync_binding",
+    // Server state, not local state: dropping it would leave every shared
+    // document withheld until the next policy load, which a rebuild gives no
+    // sign of needing.
+    "repository_approval",
     "candidate_query_observations",
     "candidate_observations",
     "candidate_judgments",

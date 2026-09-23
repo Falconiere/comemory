@@ -5,6 +5,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
+use time::format_description::well_known::Iso8601;
 
 use crate::domains::code::git_utils;
 use crate::domains::sync::AuthFile;
@@ -15,7 +17,7 @@ use crate::domains::sync::repository_identity::{
 };
 use crate::domains::sync::skip_repos::normalize_repo_label;
 use crate::prelude::*;
-use crate::store::{Connection, repo_marker, sync_manifest, sync_state};
+use crate::store::{Connection, repo_marker, repository_approval, sync_manifest, sync_state};
 
 const IMPORT_GATE: &str = "repository_allowlist";
 
@@ -44,6 +46,7 @@ impl RepositoryPolicy {
         let secret = auth.effective_secret();
         let status = client_policy::fetch_with_timeout(&auth.api_url, &secret, timeout)?;
         let policy = Self::resolve(conn, status, &auth.workspace_id)?;
+        policy.persist_resolved_labels(conn)?;
         sync_state::ensure(conn, &auth.workspace_id, &auth.api_url)?;
         let fingerprint = policy.fingerprint(&auth.api_url);
         let _ = sync_state::reconcile_policy(conn, &auth.workspace_id, &fingerprint)?;
@@ -54,6 +57,46 @@ impl RepositoryPolicy {
     #[must_use]
     pub const fn revision(&self) -> i64 {
         self.revision
+    }
+
+    /// Every label this policy resolves, paired with its canonical name.
+    ///
+    /// An allowed canonical name resolves to itself, since
+    /// [`Self::memory_repository`] accepts one directly. Mappings and local
+    /// checkout identities are included only when the allowlist still covers
+    /// them, so the result is exactly the set of labels that would resolve.
+    #[must_use]
+    pub fn resolved_labels(&self) -> Vec<(String, String)> {
+        let mut out: BTreeMap<String, String> = BTreeMap::new();
+        for canonical in &self.allowed {
+            out.insert(normalize_repo_label(canonical), canonical.clone());
+        }
+        for source in [&self.mappings, &self.local_identities] {
+            for (label, canonical) in source {
+                if self.allowed.contains(canonical) {
+                    out.insert(normalize_repo_label(label), canonical.clone());
+                }
+            }
+        }
+        out.into_iter().collect()
+    }
+
+    /// Write [`Self::resolved_labels`] where an offline run can read it.
+    ///
+    /// One transaction, so a machine never observes a half-replaced map: a
+    /// capture reading it mid-write would withhold a document whose repository
+    /// is in fact approved, or worse, share one whose approval was revoked.
+    ///
+    /// # Errors
+    /// Propagates SQLite failures.
+    pub fn persist_resolved_labels(&self, conn: &mut Connection) -> Result<()> {
+        let at = OffsetDateTime::now_utc()
+            .format(&Iso8601::DEFAULT)
+            .map_err(|e| Error::Other(format!("timestamp: {e}")))?;
+        let tx = conn.transaction()?;
+        repository_approval::replace_all(&tx, &self.resolved_labels(), &at)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Canonical allowed repository for one local memory label.

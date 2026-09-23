@@ -71,9 +71,13 @@ fn emit(json_flag: bool, rows: &[sources::Row]) -> Result<()> {
             r.stale,
             r.last_checked,
         )?;
-        // A withheld document is the one thing in this listing an operator
-        // cannot infer from the counts: it was indexed like any other, it just
-        // never leaves the machine. Name it and name the rule.
+        // Neither of the next two lines can be inferred from the counts: a
+        // document is indexed the same whether or not it is shared.
+        match (&r.shared_as, &r.unshared_reason) {
+            (Some(repo), _) => writeln!(out, "    shared as {repo}")?,
+            (None, Some(reason)) => writeln!(out, "    not shared: {reason}")?,
+            (None, None) => {}
+        }
         for (path, rule) in &r.withheld {
             writeln!(out, "    withheld  {path}  ({rule})")?;
         }
