@@ -46,7 +46,7 @@ fn insert_then_match_finds_the_row() {
 
     let hits = document_fts::search(&conn, "cargo install", 10).expect("search");
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].document_id, "doc-a");
+    assert_eq!(local_id(&hits[0].source), "doc-a");
     assert_eq!(hits[0].ordinal, 0);
 }
 
@@ -103,7 +103,8 @@ fn search_ranks_the_denser_match_first() {
     let hits = document_fts::search(&conn, "rate limiter", 10).expect("search");
     assert!(!hits.is_empty());
     assert_eq!(
-        hits[0].document_id, "doc-on-topic",
+        local_id(&hits[0].source),
+        "doc-on-topic",
         "denser match must rank first"
     );
 }
@@ -122,4 +123,14 @@ fn empty_query_and_zero_k_return_empty() {
             .expect("search")
             .is_empty()
     );
+}
+
+/// The `documents.id` a local hit carries, for assertions that expect one.
+fn local_id(source: &comemory::store::document_fts::HitSource) -> &str {
+    match source {
+        comemory::store::document_fts::HitSource::Local(id) => id.as_str(),
+        shared @ comemory::store::document_fts::HitSource::Shared { .. } => {
+            panic!("expected a local hit, got {shared:?}")
+        }
+    }
 }

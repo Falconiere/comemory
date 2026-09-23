@@ -158,6 +158,9 @@ pub mod remote_code_view;
 /// The pulled document cache: the revision of a shared document this machine
 /// holds, its passages, its links and its own FTS index.
 pub mod remote_document;
+/// The shared half of document search, and the reads a pulled hit resolves
+/// through.
+pub mod remote_document_view;
 /// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
 pub mod replica_cursor;
 /// `replica-v1` journal writes: the payload row, the feed append and the

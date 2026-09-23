@@ -904,6 +904,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/remote_code.rs | comemory::store::remote_code; preserve | src/store/tests/remote_code.rs | none | infrastructure::store | src/store/remote_code.rs | retain |
 | src/store/remote_code_view.rs | comemory::store::remote_code_view; preserve | src/store/tests/remote_code_view.rs | none | infrastructure::store | src/store/remote_code_view.rs | retain |
 | src/store/remote_document.rs | comemory::store::remote_document; preserve | src/store/tests/remote_document.rs | none | infrastructure::store | src/store/remote_document.rs | retain |
+| src/store/remote_document_view.rs | comemory::store::remote_document_view; preserve | src/store/tests/remote_document_view.rs | none | infrastructure::store | src/store/remote_document_view.rs | retain |
 | src/store/replica_cursor.rs | comemory::store::replica_cursor; preserve | src/store/tests/replica_cursor.rs | none | infrastructure::store | src/store/replica_cursor.rs | retain |
 | src/store/replica_staging.rs | comemory::store::replica_staging; preserve | src/store/tests/replica_staging.rs | none | infrastructure::store | src/store/replica_staging.rs | retain |
 | src/store/memory_intent.rs | comemory::store::memory_intent; preserve | src/store/tests/memory_intent.rs | none | infrastructure::store | src/store/memory_intent.rs | retain |

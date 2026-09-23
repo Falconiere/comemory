@@ -18,7 +18,7 @@ use serde::Serialize;
 
 use crate::cli::output::{json, tty};
 use crate::config::Config;
-use crate::domains::retrieval::doc_route::{self, DocHit};
+use crate::domains::retrieval::doc_route::{self, DocHit, DocOrigin};
 use crate::domains::retrieval::pipeline;
 use crate::domains::retrieval::scope::{self, Domain, Domains, Filters};
 use crate::prelude::*;
@@ -100,6 +100,11 @@ struct DocRow<'a> {
     title: &'a str,
     /// The winning chunk's passage text.
     snippet: &'a str,
+    /// `"local"` for a document indexed from a file here, else the canonical
+    /// repository a peer shared it from.
+    shared_from: Option<&'a str>,
+    /// The sender's revision of a shared document; absent for a local one.
+    revision: Option<&'a str>,
     /// Where the snippet came from.
     citation: Citation<'a>,
 }
@@ -118,11 +123,20 @@ struct Citation<'a> {
 }
 
 fn doc_row(h: &DocHit) -> DocRow<'_> {
+    let (shared_from, revision) = match &h.origin {
+        DocOrigin::Local => (None, None),
+        DocOrigin::Shared {
+            repo,
+            revision_hash,
+        } => (Some(repo.as_str()), Some(revision_hash.as_str())),
+    };
     DocRow {
         domain: "document",
         document_id: &h.document_id,
         title: &h.title,
         snippet: &h.snippet,
+        shared_from,
+        revision,
         citation: Citation {
             path: &h.path,
             heading_path: &h.heading_path,
@@ -136,10 +150,17 @@ fn doc_row(h: &DocHit) -> DocRow<'_> {
 /// per hit, dim snippet beneath, then the shared page footer.
 fn write_tty(out: &mut impl std::io::Write, page: &Page<DocHit>) -> Result<()> {
     for hit in &page.items {
+        // A shared passage has no file behind it on this machine, so saying
+        // where it came from is the difference between a citation an operator
+        // can open and one they cannot.
+        let from = match &hit.origin {
+            DocOrigin::Local => String::new(),
+            DocOrigin::Shared { repo, .. } => format!("  shared from {repo}"),
+        };
         writeln!(
             out,
-            "{}  {} ({}:{}-{})",
-            hit.document_id, hit.title, hit.path, hit.line_range.0, hit.line_range.1
+            "{}  {} ({}:{}-{}){}",
+            hit.document_id, hit.title, hit.path, hit.line_range.0, hit.line_range.1, from
         )?;
         writeln!(out, "{}", tty::dim(&hit.snippet))?;
     }

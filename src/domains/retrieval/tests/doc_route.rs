@@ -329,3 +329,121 @@ fn empty_query_returns_empty_without_a_match() {
             .is_empty()
     );
 }
+
+// ---------------------------------------------------------------------------
+// AC-8, AC-9 and AC-12 at route granularity: one leg over two indexes, the
+// local side winning, and a pulled hit carrying where it came from.
+// ---------------------------------------------------------------------------
+
+const SHARE_REPO: &str = "Falconiere/comemory";
+const SHARE_AT: &str = "2026-09-23T10:00:00Z";
+
+/// Put a real pulled revision of `path` in the cache and approve its repo.
+fn hold_shared(conn: &Connection, path: &str, revision_hash: &str) -> String {
+    use comemory::domains::documents::document::extract::extract;
+    use comemory::store::remote_document::{self, Chunk, Revision};
+
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+    let bytes = std::fs::read(&file).unwrap_or_else(|e| panic!("read real {path}: {e}"));
+    let doc = extract(DocumentFormat::Markdown, &bytes, "doc").expect("real extraction");
+    let shared_id = comemory::domains::documents::share::shared_id(SHARE_REPO, path);
+    let revision = Revision {
+        repo: SHARE_REPO.to_string(),
+        shared_id: shared_id.clone(),
+        path: path.to_string(),
+        title: doc.title.clone(),
+        format: "markdown".to_string(),
+        revision_hash: revision_hash.to_string(),
+        chunk_count: doc.chunks.len() as i64,
+    };
+    let chunks: Vec<Chunk> = doc
+        .chunks
+        .iter()
+        .map(|c| Chunk {
+            ordinal: c.ordinal as i64,
+            heading_path: c.heading_path.join(" > "),
+            char_range: (c.char_range.0 as i64, c.char_range.1 as i64),
+            line_range: (c.line_range.0 as i64, c.line_range.1 as i64),
+            simhash: c.simhash as i64,
+            text: c.text.clone(),
+        })
+        .collect();
+    remote_document::replace_revision(conn, &revision, &chunks, &[], SHARE_AT)
+        .expect("hold revision");
+    comemory::store::repository_approval::replace_all(
+        conn,
+        &[(SHARE_REPO.to_string(), SHARE_REPO.to_string())],
+        SHARE_AT,
+    )
+    .expect("approve");
+    shared_id
+}
+
+/// A term the real cloud-sync guide uses.
+const SHARED_TERM: &str = "workspace";
+
+#[test]
+fn a_pulled_revision_is_returned_with_its_provenance() {
+    let tmp = TempDir::new().expect("tempdir");
+    let conn = open_db(&tmp);
+    let shared_id = hold_shared(&conn, "docs/guides/cloud-sync.md", &"e".repeat(64));
+
+    let hits = route_documents(&conn, SHARED_TERM, Filters::none(), &[], K).expect("route");
+
+    let hit = hits
+        .iter()
+        .find(|h| h.document_id == shared_id)
+        .unwrap_or_else(|| panic!("the pulled revision must answer: {hits:?}"));
+    assert_eq!(
+        hit.origin,
+        comemory::retrieval::doc_route::DocOrigin::Shared {
+            repo: SHARE_REPO.to_string(),
+            revision_hash: "e".repeat(64),
+        },
+        "a reader has to be able to tell there is no file behind this passage"
+    );
+    assert_eq!(
+        hit.path, "docs/guides/cloud-sync.md",
+        "the repository-relative path, not a path on this machine"
+    );
+    assert!(!hit.snippet.is_empty(), "with the passage that matched");
+}
+
+#[test]
+fn a_document_held_on_both_sides_is_returned_once_from_the_local_row() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut conn = open_db(&tmp);
+    // Index the fixture locally, then map it onto the shared name a peer uses.
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let UpdateOutcome::Indexed { document_id } =
+        index(&mut conn, &path, "guide.md", DocumentFormat::Markdown, None)
+    else {
+        panic!("expected Indexed")
+    };
+    let shared_id = hold_shared(&conn, "docs/guides/cloud-sync.md", &"e".repeat(64));
+    comemory::store::document_share::record(
+        &conn,
+        &comemory::store::document_share::Share {
+            document_id: document_id.clone(),
+            repo: SHARE_REPO.to_string(),
+            shared_id: shared_id.clone(),
+            path: "docs/guides/cloud-sync.md".to_string(),
+            blocked_reason: None,
+        },
+        SHARE_AT,
+    )
+    .expect("record the mapping");
+
+    let hits = route_documents(&conn, SHARED_TERM, Filters::none(), &[], K).expect("route");
+
+    assert_eq!(
+        hits.iter().filter(|h| h.document_id == shared_id).count(),
+        0,
+        "the pulled half is dropped for a document the local index holds: {hits:?}"
+    );
+    assert!(
+        hits.iter()
+            .all(|h| h.origin == comemory::retrieval::doc_route::DocOrigin::Local),
+        "so every hit has a file behind it: {hits:?}"
+    );
+}

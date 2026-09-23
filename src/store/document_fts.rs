@@ -12,15 +12,36 @@ use super::{
 };
 use crate::prelude::*;
 use crate::store::fts;
+use crate::store::remote_document_view;
 use toolu_orm::core::query_column::CommonOps;
 
-/// One `document_fts` MATCH hit: the chunk's owning document, its
-/// ordinal within that document, and a higher-is-better relevance
-/// score (negated `bm25()`, matching the `RoutedHit` lexical
-/// convention `store::edge_fts::EdgeFtsHit` also follows).
+/// Which index a hit came from, and the key that identifies it there.
+///
+/// The two sides cannot share one id: a local document is keyed by the hash of
+/// a path on THIS machine, and a pulled revision by the hash of a repository
+/// and a repository-relative path. Carrying the distinction in the hit is what
+/// lets the reader fetch the right rows and say which side answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HitSource {
+    /// A locally indexed document, by its `documents.id`.
+    Local(String),
+    /// A pulled revision, by canonical repository and shared id.
+    Shared {
+        /// Canonical repository.
+        repo: String,
+        /// 32 lowercase hex chars over `repo` and the document's path.
+        shared_id: String,
+    },
+}
+
+/// One document MATCH hit: where its chunk lives, the ordinal within that
+/// document, and a higher-is-better relevance score (negated `bm25()`,
+/// matching the `RoutedHit` lexical convention `store::edge_fts::EdgeFtsHit`
+/// also follows).
+#[derive(Debug, Clone, PartialEq)]
 pub struct DocumentFtsHit {
-    /// Owning `documents.id`.
-    pub document_id: String,
+    /// Which index matched, and its key there.
+    pub source: HitSource,
     /// 0-based chunk position within the document.
     pub ordinal: i64,
     /// Higher-is-better relevance score.
@@ -70,32 +91,66 @@ pub fn delete_document(conn: &Connection, document_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Run a BM25 search over `document_fts` and return the top-`k` chunk
-/// hits, best first. FTS5 MATCH parse errors are downgraded to an
-/// empty result, same as [`fts::search_code`].
+/// The local half: every matching passage of a document this machine indexed.
+const LOCAL_PASSAGES: &str = "SELECT \
+         '' AS repo, \
+         document_fts.document_id AS key, \
+         CAST(document_fts.ordinal AS INTEGER) AS ordinal, \
+         -bm25(document_fts) AS score \
+       FROM document_fts \
+      WHERE document_fts MATCH ?1";
+
+/// Run a BM25 search over BOTH document indexes and return the top-`k` chunk
+/// hits, best first. FTS5 MATCH parse errors are downgraded to an empty
+/// result, same as [`fts::search_code`].
+///
+/// The union sits INSIDE the limit, so `k` bounds the corpus rather than each
+/// half: a query where the pulled side scores higher throughout still gets `k`
+/// hits, and one where the local side does is unaffected by how much a peer
+/// shared. Putting the limit above the union — one `k` per side, trimmed after
+/// — would make the ranking depend on which machines had synced.
+///
+/// Hand-written because the builder has no compound-select form; the shared
+/// half is [`remote_document_view::SHARED_PASSAGES`] verbatim, so the
+/// precedence and approval rules have one definition.
 pub fn search(conn: &Connection, query: &str, k: usize) -> Result<Vec<DocumentFtsHit>> {
     let match_expr = fts::build_match_query(query);
     if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
     }
-    let score =
-        toolu_orm::core::fts5::bm25(col::document_id.table, &[]).map_err(orm::build_error)?;
-    let predicate = toolu_orm::core::expr::Expr::table_match(col::document_id.table, match_expr)
-        .map_err(orm::build_error)?;
-    let (sql, params) = DocumentFts::select()
-        .columns_typed(&[&col::document_id, &col::ordinal])
-        .column_expr(&format!("-{}", score.sql()), "score")
-        .filter(predicate)
-        .order_by(toolu_orm::core::expr::OrderBy::alias_desc("score"))
-        .limit(k as i64)
-        .to_sql();
-    fts::run_fts_query(conn, &sql, params_from_iter(params), |row| {
-        Ok(DocumentFtsHit {
-            document_id: row.get(0)?,
-            ordinal: row.get(1)?,
-            score: row.get(2)?,
-        })
-    })
+    let shared = remote_document_view::SHARED_PASSAGES;
+    let sql = format!(
+        "SELECT repo, key, ordinal, score FROM ({LOCAL_PASSAGES}) \
+         UNION ALL \
+         SELECT repo, shared_id AS key, ordinal, score FROM ({shared}) \
+          ORDER BY score DESC, repo ASC, key ASC, ordinal ASC \
+          LIMIT ?2"
+    );
+    fts::run_fts_query(
+        conn,
+        &sql,
+        params_from_iter(vec![
+            rusqlite::types::Value::from(match_expr),
+            rusqlite::types::Value::from(i64::try_from(k).unwrap_or(i64::MAX)),
+        ]),
+        |row| {
+            let repo: String = row.get(0)?;
+            let key: String = row.get(1)?;
+            let source = if repo.is_empty() {
+                HitSource::Local(key)
+            } else {
+                HitSource::Shared {
+                    repo,
+                    shared_id: key,
+                }
+            };
+            Ok(DocumentFtsHit {
+                source,
+                ordinal: row.get(2)?,
+                score: row.get(3)?,
+            })
+        },
+    )
 }
 
 #[cfg(test)]

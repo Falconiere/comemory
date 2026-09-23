@@ -294,7 +294,8 @@ fn fts_match_finds_a_guide_phrase_and_ranks_it_first() {
         "must find the guide's troubleshooting passage"
     );
     assert_eq!(
-        hits[0].document_id, guide_id,
+        local_id(&hits[0].source),
+        guide_id,
         "on-topic chunk must rank first"
     );
 }
@@ -723,4 +724,14 @@ fn a_tombstone_for_a_document_that_was_never_shared_journals_nothing() {
         feed_rows(&conn).is_empty(),
         "a peer that never received the revision must not be told to delete it"
     );
+}
+
+/// The `documents.id` a local hit carries, for assertions that expect one.
+fn local_id(source: &comemory::store::document_fts::HitSource) -> &str {
+    match source {
+        comemory::store::document_fts::HitSource::Local(id) => id.as_str(),
+        shared @ comemory::store::document_fts::HitSource::Shared { .. } => {
+            panic!("expected a local hit, got {shared:?}")
+        }
+    }
 }
