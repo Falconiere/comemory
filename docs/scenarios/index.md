@@ -53,7 +53,25 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
   source is rejected with "overlaps" on stderr.
 - **Covered by:** `tests/cli__index.rs`
 
-### index-05 Document journey
+### index-05 An unreadable directory makes no deletions
+
+A run that could not read every entry under a source reports
+`walk_complete: false` and removes nothing — not even a file that genuinely is
+gone. A short candidate list would otherwise tombstone files that still exist,
+and a document tombstone is replicated to every peer holding that repository.
+Fix the permission and index again; the next complete run makes the real
+deletions.
+
+- **Flags:** `--json`
+- **Setup:** a source with one subdirectory `chmod 000`
+- **Command:** `comemory index /tmp/docs --json`
+- **Expect:** `walk_complete: false` and `removed: 0`, with every readable file
+  still indexed. The same run with permission restored reports
+  `walk_complete: true` and the real `removed` count.
+- **Covered by:**
+  `src/domains/documents/tests/index.rs::an_incomplete_walk_journals_no_deletion_and_a_complete_one_journals_the_real_ones`
+
+### index-06 Document journey
 
 - **Flags:** _(none extra)_
 - **Command:** `index` → `sources` → `find --domain document` → `unindex`

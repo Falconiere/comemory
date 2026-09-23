@@ -77,7 +77,7 @@ fn each_allowlisted_fixture_classifies_correctly() {
     }
     let root = root.canonicalize().expect("canonicalize root");
 
-    let mut found = discover(&root, SourceKind::Dir, &memories_dir);
+    let mut found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
     found.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     let got: Vec<(String, Classification)> = found
         .into_iter()
@@ -109,7 +109,7 @@ fn deterministic_order_matches_sorted_relative_paths() {
     fs::copy(fixture("data.csv"), root.join("data.csv")).expect("copy top");
     let root = root.canonicalize().expect("canonicalize root");
 
-    let found = discover(&root, SourceKind::Dir, &memories_dir);
+    let found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
     let rels = rel_names(&found);
     let mut sorted = rels.clone();
     sorted.sort();
@@ -127,7 +127,7 @@ fn hidden_files_are_excluded() {
     fs::copy(fixture("changelog.txt"), root.join(".hidden.txt")).expect("copy hidden");
     let root = root.canonicalize().expect("canonicalize root");
 
-    let found = discover(&root, SourceKind::Dir, &memories_dir);
+    let found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
     assert_eq!(rel_names(&found), vec!["guide.md".to_string()]);
 }
 
@@ -142,7 +142,7 @@ fn comemoryignore_negation_reincludes_a_pattern() {
         .expect("write ignore file");
     let root = root.canonicalize().expect("canonicalize root");
 
-    let found = discover(&root, SourceKind::Dir, &memories_dir);
+    let found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
     assert_eq!(rel_names(&found), vec!["drafts/guide.md".to_string()]);
 }
 
@@ -171,7 +171,7 @@ fn managed_memories_dir_is_excluded_from_a_directory_source() {
         .join("data")
         .canonicalize()
         .expect("canonicalize root");
-    let found = discover(&root, SourceKind::Dir, &memories_dir);
+    let found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
 
     assert_eq!(
         rel_names(&found),
@@ -187,7 +187,7 @@ fn single_file_source_inside_memories_dir_is_ignored() {
     fs::copy(fixture("guide.md"), &file).expect("seed managed memory file");
     let file = file.canonicalize().expect("canonicalize file");
 
-    let found = discover(&file, SourceKind::File, &memories_dir);
+    let found = discover(&file, SourceKind::File, &memories_dir).candidates;
 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].classification, Classification::Ignored);
@@ -200,7 +200,7 @@ fn single_file_source_outside_memories_dir_classifies_normally() {
     fs::copy(fixture("guide.md"), &file).expect("seed file");
     let file = file.canonicalize().expect("canonicalize file");
 
-    let found = discover(&file, SourceKind::File, &memories_dir);
+    let found = discover(&file, SourceKind::File, &memories_dir).candidates;
 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].relative_path, Path::new("standalone-guide.md"));
@@ -223,7 +223,7 @@ fn directory_symlink_is_not_followed() {
     symlink(&real_dir, root.join("linked_dir")).expect("symlink dir");
     let root = root.canonicalize().expect("canonicalize root");
 
-    let found = discover(&root, SourceKind::Dir, &memories_dir);
+    let found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
     assert!(
         found.is_empty(),
         "a directory symlink must not be followed: {found:?}"
@@ -241,7 +241,7 @@ fn in_boundary_symlinked_file_is_accepted() {
     symlink(&real_file, root.join("linked_guide.md")).expect("symlink file");
     let root = root.canonicalize().expect("canonicalize root");
 
-    let found = discover(&root, SourceKind::Dir, &memories_dir);
+    let found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
     let rels: BTreeSet<String> = rel_names(&found).into_iter().collect();
 
     assert_eq!(found.len(), 2);
@@ -270,9 +270,95 @@ fn escaping_symlinked_file_is_rejected() {
     symlink(&outside_file, root.join("escape.md")).expect("symlink outside");
     let root = root.canonicalize().expect("canonicalize root");
 
-    let found = discover(&root, SourceKind::Dir, &memories_dir);
+    let found = discover(&root, SourceKind::Dir, &memories_dir).candidates;
     assert!(
         found.is_empty(),
         "an out-of-boundary symlink target must be rejected: {found:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AC-15: a walk that could not read everything says so, because its absences
+// are about to decide what gets tombstoned on every peer.
+// ---------------------------------------------------------------------------
+
+/// A docs tree with one real fixture at the root and one in a subdirectory.
+#[cfg(unix)]
+fn tree_with_subdirectory(tmp: &TempDir) -> PathBuf {
+    let root = tmp.path().join("docs");
+    let sub = root.join("deep");
+    fs::create_dir_all(&sub).expect("mkdir");
+    fs::copy(fixture("guide.md"), root.join("guide.md")).expect("copy root fixture");
+    fs::copy(fixture("changelog.txt"), sub.join("changelog.txt")).expect("copy sub fixture");
+    root.canonicalize().expect("canonicalize root")
+}
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).expect("set permissions");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fully_readable_walk_reports_itself_complete() {
+    let (tmp, memories_dir) = sandbox();
+    let root = tree_with_subdirectory(&tmp);
+
+    let found = discover(&root, SourceKind::Dir, &memories_dir);
+
+    assert!(
+        found.complete,
+        "nothing was denied, so an incomplete verdict below would prove nothing"
+    );
+    assert_eq!(found.candidates.len(), 2, "{:?}", found.candidates);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_subdirectory_makes_the_walk_incomplete() {
+    let (tmp, memories_dir) = sandbox();
+    let root = tree_with_subdirectory(&tmp);
+    set_mode(&root.join("deep"), 0o000);
+
+    let found = discover(&root, SourceKind::Dir, &memories_dir);
+
+    // Restore before any assertion can unwind with the directory unreadable,
+    // or the TempDir cannot clean itself up.
+    set_mode(&root.join("deep"), 0o755);
+
+    assert!(
+        !found.complete,
+        "an entry was skipped, so absences are not evidence of deletion"
+    );
+    assert_eq!(
+        found
+            .candidates
+            .iter()
+            .map(|c| c.relative_path.to_string_lossy().to_string())
+            .collect::<Vec<_>>(),
+        vec!["guide.md".to_string()],
+        "the readable half is still indexed — a denied subdirectory must not \
+         stop the rest of a source"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn permission_denied_on_the_root_itself_is_incomplete_and_empty() {
+    let (tmp, memories_dir) = sandbox();
+    let root = tree_with_subdirectory(&tmp);
+    set_mode(&root, 0o000);
+
+    let found = discover(&root, SourceKind::Dir, &memories_dir);
+
+    set_mode(&root, 0o755);
+
+    assert!(!found.complete, "the root itself could not be read");
+    assert!(
+        found.candidates.is_empty(),
+        "and nothing was found, which is exactly the list that must NOT be \
+         treated as authoritative: {:?}",
+        found.candidates
     );
 }

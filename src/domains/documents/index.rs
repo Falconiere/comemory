@@ -73,8 +73,16 @@ pub struct SourceReport {
     pub unsupported: usize,
     /// Files skipped by the ignore-file rules.
     pub ignored: usize,
-    /// Previously-indexed files no longer seen by this walk.
+    /// Previously-indexed files no longer seen by this walk. Always `0` when
+    /// [`Self::walk_complete`] is false — see the note there.
     pub removed: usize,
+    /// Whether the discovery walk read every entry under the source.
+    ///
+    /// `false` means at least one entry was unreadable, so this run made no
+    /// deletions at all: a short candidate list would otherwise tombstone
+    /// files that still exist, and a document tombstone is replicated to every
+    /// peer. Fix the permission and index again.
+    pub walk_complete: bool,
     /// Per-file diagnostics (`too_large` + `error` outcomes).
     pub errors: Vec<FileError>,
 }
@@ -155,7 +163,7 @@ fn reconcile_source(
     max_file_bytes: u64,
     paths: &crate::config::Paths,
 ) -> Result<SourceReport> {
-    let candidates = discover::discover(&entry.canonical_path, entry.kind, &paths.memories_dir());
+    let discovered = discover::discover(&entry.canonical_path, entry.kind, &paths.memories_dir());
     let mut report = SourceReport {
         source_id: entry.id.to_string(),
         canonical_path: entry.canonical_path.to_string_lossy().into_owned(),
@@ -166,11 +174,34 @@ fn reconcile_source(
         unsupported: 0,
         ignored: 0,
         removed: 0,
+        walk_complete: discovered.complete,
         errors: Vec::new(),
     };
-    let mut seen = HashSet::with_capacity(candidates.len());
-    for c in &candidates {
-        seen.insert(c.relative_path.to_string_lossy().into_owned());
+    // What the walk saw, independent of what indexing each file does with it —
+    // which is why the deletion pass can run first.
+    let seen: HashSet<String> = discovered
+        .candidates
+        .iter()
+        .map(|c| c.relative_path.to_string_lossy().into_owned())
+        .collect();
+    // Deletions BEFORE writes, so a renamed document journals the old path's
+    // tombstone ahead of the new path's revision and never has both rows at
+    // once. Only an authoritative walk's absences mean anything, though:
+    // `reconcile_deletions` requires `seen` to be the FULL set of paths the
+    // walk saw, and a walk that skipped an unreadable entry did not produce
+    // one — reconciling it would tombstone files that still exist, and a
+    // document tombstone is journalled for every peer to act on. A per-file
+    // failure is NOT incompleteness: the path is in `seen` either way, so an
+    // unreadable single FILE keeps its rows.
+    if discovered.complete {
+        report.removed = deletions::reconcile_deletions(conn, entry.id.as_str(), &seen)?;
+    } else {
+        tracing::warn!(
+            source_id = %entry.id,
+            "discovery walk was incomplete; keeping every known file"
+        );
+    }
+    for c in &discovered.candidates {
         let outcome = writer::update_file(
             conn,
             entry.id.as_str(),
@@ -181,7 +212,6 @@ fn reconcile_source(
         )?;
         record_outcome(&mut report, c, outcome);
     }
-    report.removed = deletions::reconcile_deletions(conn, entry.id.as_str(), &seen)?;
     Ok(report)
 }
 
