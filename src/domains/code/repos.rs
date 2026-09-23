@@ -11,15 +11,25 @@
 //! [`git_state`] owns the HEAD comparison, remote/branch lookup, and
 //! changed-file count — and never returns an error (see its module doc).
 //!
+//! A repo a peer shared has no `repo_marker` row here until this machine
+//! indexes a checkout of it, so the inventory also reads
+//! [`crate::domains::code::remote_view::repos`]. The two sides merge by
+//! label: a repo this machine indexed AND a peer shared is one row carrying
+//! both revisions, never two rows for one repository.
+//!
 //! **Must-not-create-the-db invariant** (the same rule `maintenance::stats` keeps):
 //! a read command must not create and migrate a database as a side effect
 //! of being asked which repos are indexed. On a data dir with no
 //! `comemory.db`, `run` never calls [`Ctx::conn`] and reports an empty
 //! inventory.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
+use crate::domains::code::remote_view;
 use crate::prelude::*;
+use crate::store::remote_code_view::SharedRepo;
 use crate::store::repos_inventory::{self, RepoMarkerRow};
 use crate::utilities::context::Ctx;
 
@@ -83,6 +93,15 @@ pub struct Row {
     /// omit the field entirely.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indexing_job: Option<String>,
+    /// The head of the generation a peer shared for this repo, when one is
+    /// active here. Independent of [`Row::last_head`]: that is what THIS
+    /// machine indexed, this is what a peer did, and a repo can carry both
+    /// at once — or only this one, on a machine with no checkout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_head: Option<String>,
+    /// Files in the shared manifest, when a shared generation is active.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared_files: Option<u64>,
 }
 
 /// The indexed-repository inventory as emitted under `--json` and in the
@@ -101,13 +120,50 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     }
     let conn = ctx.conn()?;
     let markers = repos_inventory::fetch(conn, req.repo.as_deref())?;
-    let repos = markers.into_iter().map(build_row).collect();
+    let mut shared: BTreeMap<String, SharedRepo> = remote_view::repos(conn)?
+        .into_iter()
+        .filter(|s| req.repo.as_ref().is_none_or(|want| *want == s.repo))
+        .map(|s| (s.repo.clone(), s))
+        .collect();
+    let mut repos: Vec<Row> = markers
+        .into_iter()
+        .map(|m| {
+            let shared = shared.remove(&m.repo);
+            build_row(m, shared.as_ref())
+        })
+        .collect();
+    // What is left is shared-only: a repo this machine has never indexed, so
+    // it has no marker to join against and would otherwise be invisible.
+    repos.extend(shared.into_values().map(shared_only_row));
+    repos.sort_by(|a, b| a.repo.cmp(&b.repo));
     Ok(Response { repos })
 }
 
+/// A repo known only because a peer shared it: the same row shape over an
+/// empty marker — no root, no local head, no counters — reported as
+/// `"shared"` rather than a git freshness this machine cannot resolve
+/// without a working tree.
+fn shared_only_row(shared: SharedRepo) -> Row {
+    let marker = RepoMarkerRow {
+        repo: shared.repo.clone(),
+        root_path: None,
+        last_head: None,
+        last_indexed_at: None,
+        files: 0,
+        symbols: 0,
+        memories: 0,
+        archived: false,
+    };
+    Row {
+        status: "shared".to_string(),
+        ..build_row(marker, Some(&shared))
+    }
+}
+
 /// Resolve one [`RepoMarkerRow`] into its final [`Row`], filling in the
-/// git-derived fields via [`git_state::resolve`].
-fn build_row(m: RepoMarkerRow) -> Row {
+/// git-derived fields via [`git_state::resolve`] and the shared revision when
+/// a peer's generation is active for the same label.
+fn build_row(m: RepoMarkerRow, shared: Option<&SharedRepo>) -> Row {
     let git = git_state::resolve(m.root_path.as_deref(), m.last_head.as_deref());
     Row {
         repo: m.repo,
@@ -127,6 +183,8 @@ fn build_row(m: RepoMarkerRow) -> Row {
         changed_files: git.changed_files,
         archived: m.archived,
         indexing_job: None,
+        shared_head: shared.map(|s| s.head.clone()),
+        shared_files: shared.map(|s| u64::try_from(s.file_count).unwrap_or(0)),
     }
 }
 

@@ -137,14 +137,16 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// cannot be re-derived, while its staged upload parts are not; v23's
 /// embedding backlog is copied because markdown carries no vectors, while its
 /// write-intent marker is not, a rebuild being the very reconciliation an
-/// outstanding intent would ask for.
+/// outstanding intent would ask for; v24's generations and their pulled
+/// projections are copied because a peer's acceptance cannot be re-derived
+/// from a local checkout.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_forty_six_tables() {
+fn migration_integrity_derived_live_set_has_exactly_fifty_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        46,
-        "expected exactly 46 live tables, got {}: {live:?}",
+        50,
+        "expected exactly 50 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -168,6 +170,10 @@ fn migration_integrity_derived_live_set_has_exactly_forty_six_tables() {
         "replica_receipt",
         "replica_cursor",
         "memory_needs_embedding",
+        "code_generation",
+        "remote_code_file",
+        "remote_code_symbol",
+        "remote_code_edge",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),

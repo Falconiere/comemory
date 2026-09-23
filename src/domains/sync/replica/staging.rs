@@ -9,7 +9,7 @@
 
 use crate::domains::sync::replica::accept;
 use crate::domains::sync::replica::contract::{
-    Disposition, MAX_ENVELOPE_BYTES, Operation, OperationResult, PROTOCOL,
+    MAX_ENVELOPE_BYTES, Operation, OperationResult, PROTOCOL,
 };
 use crate::domains::sync::replica::contract_views::{ActivateRequest, StageRequest, StageResponse};
 use crate::domains::sync::replica::validate;
@@ -70,7 +70,9 @@ pub fn stage(ctx: &mut Ctx<'_>, request: StageRequest) -> Result<StageResponse> 
 /// Returns [`Error::BadRequest`] for a wrong protocol or an operation that
 /// already carries a payload, [`Error::EpochMismatch`] for a foreign cursor,
 /// and [`Error::Conflict`] (`staging_incomplete`) while a declared part is
-/// still missing — a truncated revision is never published.
+/// still missing — a truncated revision is never published. An incomplete
+/// upload keeps its parts for the retry; one that acceptance has answered,
+/// accepted or refused alike, is discarded.
 pub fn activate(ctx: &mut Ctx<'_>, request: ActivateRequest) -> Result<OperationResult> {
     if request.protocol != PROTOCOL {
         return Err(Error::BadRequest(format!(
@@ -101,10 +103,18 @@ pub fn activate(ctx: &mut Ctx<'_>, request: ActivateRequest) -> Result<Operation
     };
     let operation = with_payload(request.operation, &bytes)?;
     let result = accept::apply_one(ctx, &epoch, &operation)?;
-    if result.disposition == Disposition::Accepted {
-        let conn = ctx.conn()?;
-        replica_staging::discard(conn, &request.staging_id)?;
-    }
+    // Answered is finished, whatever the answer was. A refusal records a
+    // receipt, and a receipt is keyed on the bytes that arrived, so the same
+    // operation id can never accept afterwards: resending it with the part
+    // corrected is a conflict, not a second chance.
+    //
+    // An Err above is NOT an answer — a SQLite failure, say — and takes the
+    // `?` instead, deliberately leaving the parts where they are so the
+    // sender can retry the activation without re-uploading every part. What
+    // reclaims those is [`crate::store::replica_sweep`], which `gc` runs over
+    // parts older than a day.
+    let conn = ctx.conn()?;
+    replica_staging::discard(conn, &request.staging_id)?;
     Ok(result)
 }
 

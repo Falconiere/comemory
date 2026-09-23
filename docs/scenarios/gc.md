@@ -13,6 +13,14 @@ also redacts its captured passages — the candidate row, its pool position and
 its reference stay, so the recorded pool keeps its shape, but the body is
 blanked and the candidate is marked unresolvable.
 
+It also sweeps the rows an interrupted replica upload leaves behind:
+`replica_staged_part` rows whose last part never arrived, and code
+generations still `staged`, both once they are over a day old. That window is
+its own — an unfinished upload published nothing, so it does not wait out a
+retention window meant for telemetry. An `active` generation, its projection
+and every receipt are untouched: sweeping a receipt would turn a peer's retry
+into a second acceptance. The count is reported as `staged_rows`.
+
 **Runnable tests:** `tests/cli__gc.rs`, `tests/cli_scenario_maintenance.rs`,
 `tests/cli__judge.rs`
 
@@ -34,8 +42,8 @@ _None besides globals._
 
 - **Flags:** `--json`
 - **Command:** `comemory gc --json`
-- **Expect:** `removed=0`, `log_rows=0`, `event_rows=0`, `observation_rows=0`;
-  no `comemory.db`.
+- **Expect:** `removed=0`, `log_rows=0`, `event_rows=0`, `observation_rows=0`,
+  `staged_rows=0`; no `comemory.db`.
 - **Covered by:** `tests/cli__gc.rs::gc_on_fresh_dir_does_not_create_db`
 
 ### gc-02 Aged trash
@@ -70,3 +78,17 @@ _None besides globals._
   refused.
 - **Covered by:** `tests/cli__judge.rs::gc_evicts_unjudged_observations_and_keeps_judged_ones`,
   `tests/cli__judge.rs::purging_a_memory_redacts_its_captured_text_and_keeps_the_pool_shape`
+
+### gc-05 Abandoned replica upload
+
+- **Flags:** `--json`
+- **Setup:** one active code generation with its receipt, plus a staged part
+  and a staged generation left over from an upload that never finished, both
+  backdated past a day
+- **Command:** `comemory gc --json`
+- **Expect:** `staged_rows=2`; the active generation, its projection and the
+  receipt all survive, and a replay of the accepted operation is still
+  answered from its receipt.
+- **Covered by:**
+  `src/domains/maintenance/tests/gc.rs::gc_sweeps_abandoned_uploads_and_spares_the_active_generation`,
+  `src/domains/sync/replica/tests/code_accept.rs::a_sweep_leaves_an_accepted_generations_replay_replaying`

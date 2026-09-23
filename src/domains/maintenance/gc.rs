@@ -6,6 +6,10 @@
 //! `prune.learning_retention_days`. Moved out of `cli::gc::run` (Binding
 //! Rule 1). Both windows are the `GET|PUT /api/v1/gc/policy` knobs.
 //!
+//! It also runs the abandoned-stage sweep ([`replica_sweep`]), whose window
+//! is its own: an unfinished upload is debris within a day, and it published
+//! nothing, so it does not wait out a telemetry retention window.
+//!
 //! A reaped file's `memories` row must go with it: a row left behind is a
 //! zombie — `GET /api/v1/trash` lists it with `path: null` forever,
 //! `POST /trash/{id}/restore` answers 404, and `stats.trashed` only ever
@@ -27,7 +31,7 @@ use crate::domains::memories::trash::trash_entry_id;
 use crate::prelude::*;
 use crate::store::{
     Connection, activity, candidate_observations, gc_learning, gc_runs, memory_purge, memory_row,
-    random_id,
+    random_id, replica_sweep,
 };
 use crate::utilities::context::Ctx;
 
@@ -64,6 +68,12 @@ pub struct Response {
     /// (`deleted_at` past the window, trash file already gone). `0` when
     /// `comemory.db` does not exist.
     pub purged_rows: u64,
+    /// Rows of uploads that never finished: staged parts whose last part
+    /// never arrived, plus generations still `staged`, both past
+    /// [`replica_sweep::ABANDONED_AFTER_HOURS`]. An active generation, its
+    /// projection and every receipt are untouched — a swept receipt would
+    /// turn a peer's retry into a second acceptance.
+    pub staged_rows: u64,
     /// The purge left the derived artifacts stale: `edge_fts` could not be
     /// rebuilt after the rows went. The purge itself committed — this is a
     /// freshness warning, not a failure — but relation search is behind
@@ -102,7 +112,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
     let trash_days = ctx.cfg.prune.trash_retention_days;
     let sweep = sweep_trash(&ctx.paths.trash_dir(), trash_days);
 
-    let (counts, observation_rows, activity_rows, purge) = if ctx.paths.db_path().exists() {
+    let (counts, observation_rows, activity_rows, purge, staged) = if ctx.paths.db_path().exists() {
         let retention_days = ctx.cfg.prune.learning_retention_days;
         let conn = ctx.conn()?;
         let now = OffsetDateTime::now_utc();
@@ -121,10 +131,19 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
         // and `feedback_events`, so it ages out under the same window rather
         // than under a second one of its own.
         let activity_rows = activity::delete_before(conn, &cutoff)?;
+        // An upload that never finished published nothing, so its rows are
+        // debris on their own window rather than on the telemetry one.
+        let staged = replica_sweep::run(conn, now)?;
         record_run(conn, &sweep, counts, activity_rows, now)?;
-        (counts, observation_rows, activity_rows, purge)
+        (counts, observation_rows, activity_rows, purge, staged)
     } else {
-        ((0, 0), 0, 0, Purge::default())
+        (
+            (0, 0),
+            0,
+            0,
+            Purge::default(),
+            replica_sweep::Swept::default(),
+        )
     };
     let (log_rows, event_rows) = counts;
 
@@ -136,6 +155,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
         observation_rows,
         activity_rows,
         purged_rows: purge.rows,
+        staged_rows: staged.parts + staged.generations,
         derived_stale: purge.derived_stale,
     })
 }

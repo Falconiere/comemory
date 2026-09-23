@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code)
 
 case_name=""
 platform_root=""
@@ -125,6 +125,18 @@ run_memories() {
   log_ok "replication" "memory mutation suite passed"
 }
 
+# The code-generation surface (#252): one generation per indexed revision,
+# a repository-sized manifest crossing whole, an import that never touches a
+# local row, and the readers that see both sides. Real spawned engines and the
+# real CLI over real git checkouts, in-repo like the contract case.
+run_code() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_code --test replica_code_2
+  )
+  log_ok "replication" "code generation suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -208,5 +220,6 @@ case "$case_name" in
   coverage) run_coverage ;;
   contract) run_contract ;;
   memories) run_memories ;;
+  code) run_code ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

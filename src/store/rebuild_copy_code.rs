@@ -1,7 +1,8 @@
 //! The code-index half of [`super::rebuild_copy`]'s preservation copy:
 //! `code_symbols`, `indexed_files`, the mined `co_changed`/`imports`/
 //! `co_activated` edges, the per-repo `schema_meta`/`repo_marker` cursors,
-//! and the `code_fts`/`code_vec` virtual tables.
+//! the `code_fts`/`code_vec` virtual tables, and the #252 code generations
+//! with the pulled projections they activate.
 //!
 //! A pre-v4 `code_symbols` lacks `access_count`/`last_accessed` (added by
 //! migration 0004), so those two are sourced conditionally: carried over
@@ -21,8 +22,68 @@ pub(crate) fn copy_code_tables_inner(conn: &Connection) -> Result<()> {
     copy_code_index_tables(conn)?;
     copy_mined_edges(conn)?;
     copy_code_markers(conn)?;
+    copy_code_generations(conn)?;
     copy_code_virtual_tables(conn)
 }
+
+/// Run `sql` only when the old database has `table`.
+///
+/// Every copy below is conditional on the source table existing — a store
+/// rebuilt from a database predating that table has nothing to carry over —
+/// so the guard is stated here once rather than at each call.
+fn copy_if_present(conn: &Connection, table: &str, sql: &str) -> Result<()> {
+    if old_table_exists(conn, table)? {
+        conn.execute_batch(sql)?;
+    }
+    Ok(())
+}
+
+/// Copy the code generations and the pulled projections they activate.
+///
+/// A generation a peer accepted cannot be re-derived from a local checkout —
+/// dropping it would have the machine re-offer positions the peer already
+/// holds a receipt for. `staged` rows are the exception and are left behind:
+/// an upload that never activated published nothing, so a peer re-stages it.
+/// The three projection tables follow the generations that survived that
+/// filter, so a rebuild never leaves a projection whose generation is gone.
+fn copy_code_generations(conn: &Connection) -> Result<()> {
+    copy_if_present(
+        conn,
+        "code_generation",
+        "INSERT OR IGNORE INTO main.code_generation(\
+             repo, generation_id, parent_id, head, mined_commit, origin, state, \
+             file_count, manifest_digest, created_at, activated_at) \
+         SELECT repo, generation_id, parent_id, head, mined_commit, origin, state, \
+             file_count, manifest_digest, created_at, activated_at \
+         FROM old.code_generation WHERE state <> 'staged';",
+    )?;
+    for (table, columns) in PROJECTION {
+        copy_if_present(
+            conn,
+            table,
+            &format!(
+                "INSERT OR IGNORE INTO main.{table}({columns}) SELECT {columns} \
+                 FROM old.{table} WHERE (repo, generation_id) IN \
+                 (SELECT repo, generation_id FROM main.code_generation);"
+            ),
+        )?;
+    }
+    Ok(())
+}
+
+/// `(table, columns)` for each pulled-projection table, narrowed by the
+/// generations [`copy_code_generations`] carried over.
+const PROJECTION: &[(&str, &str)] = &[
+    ("remote_code_file", "repo, generation_id, path, blob_oid"),
+    (
+        "remote_code_symbol",
+        "repo, generation_id, path, symbol, kind, lang, line_start, line_end",
+    ),
+    (
+        "remote_code_edge",
+        "repo, generation_id, rel, src_path, dst_path, weight, anchor",
+    ),
+];
 
 /// Copy the `code_symbols` rows and the `indexed_files` cursors.
 fn copy_code_index_tables(conn: &Connection) -> Result<()> {
@@ -48,13 +109,12 @@ fn copy_code_index_tables(conn: &Connection) -> Result<()> {
              FROM old.code_symbols;"
         ))?;
     }
-    if old_table_exists(conn, "indexed_files")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.indexed_files(repo, path, blob_oid, indexed_at) \
-             SELECT repo, path, blob_oid, indexed_at FROM old.indexed_files;",
-        )?;
-    }
-    Ok(())
+    copy_if_present(
+        conn,
+        "indexed_files",
+        "INSERT OR IGNORE INTO main.indexed_files(repo, path, blob_oid, indexed_at) \
+         SELECT repo, path, blob_oid, indexed_at FROM old.indexed_files;",
+    )
 }
 
 /// Copy the mined/earned code-graph edges. The rel filter narrows to the
@@ -133,17 +193,16 @@ fn copy_code_markers(conn: &Connection) -> Result<()> {
 /// so each row is copied via named columns: `code_fts` through the FTS5
 /// content-table shape, `code_vec` as blobs tied to `symbol_id`.
 fn copy_code_virtual_tables(conn: &Connection) -> Result<()> {
-    if old_table_exists(conn, "code_fts")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.code_fts(symbol_id, symbol, snippet, path_tokens) \
-             SELECT symbol_id, symbol, snippet, path_tokens FROM old.code_fts;",
-        )?;
-    }
-    if old_table_exists(conn, "code_vec")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.code_vec(symbol_id, embedding) \
-             SELECT symbol_id, embedding FROM old.code_vec;",
-        )?;
-    }
-    Ok(())
+    copy_if_present(
+        conn,
+        "code_fts",
+        "INSERT OR IGNORE INTO main.code_fts(symbol_id, symbol, snippet, path_tokens) \
+         SELECT symbol_id, symbol, snippet, path_tokens FROM old.code_fts;",
+    )?;
+    copy_if_present(
+        conn,
+        "code_vec",
+        "INSERT OR IGNORE INTO main.code_vec(symbol_id, embedding) \
+         SELECT symbol_id, embedding FROM old.code_vec;",
+    )
 }

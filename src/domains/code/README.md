@@ -27,8 +27,9 @@ One line per file, named after its primary item:
 | `install_hooks.rs` | `Request` | Shared middle of `comemory install-hooks` / `POST /api/v1/hooks/install` — preflight every target first, then refresh the comemory-owned reindex hooks, leaving foreign hooks alone unless forced |
 | `pattern_search.rs` | `Request` | Shared middle of `comemory ast` / `POST /api/v1/code/ast` — one ast-grep pattern against one source file, paged `(line, text)` matches; conn-free |
 | `reindex_policy.rs` | `should_reindex` | The pure half of the lazy reindex: the staleness/debounce decision, the `schema_meta` trigger marker (`lazy_reindex_head:<repo>`), and the repo label / working-tree resolution it needs — no process or terminal I/O, so the detached launch stays in `cli::lazy_reindex` |
+| `remote_view.rs` | `repos`, `graph_edges` | The union local + shared for the two readers that must see a repo a peer shared: the inventory and the code graph. Source search is deliberately not unioned — a pulled generation carries no snippet, so there is nothing for `search-code` to return |
 | `repo_admin.rs` | `ConnectRequest` | Console-only: `POST /api/v1/repos`, `PATCH /repos/{name}`, `POST /repos/{name}/archive`, `DELETE /repos/{name}` — the explicit repo lifecycle the CLI gets implicitly by running `index-code` |
-| `repos.rs` + `repos/` | `Request` | Shared middle of `comemory repos` / `GET /api/v1/repos` — the `repo_marker` join plus per-repo counters; the git freshness probe lives in `repos/git_state.rs` and degrades to `status: "unknown"` rather than failing the inventory |
+| `repos.rs` + `repos/` | `Request` | Shared middle of `comemory repos` / `GET /api/v1/repos` — the `repo_marker` join plus per-repo counters, merged by label with the repos a peer shared (`shared_head` / `shared_files`, and `status: "shared"` for one this machine has never indexed); the git freshness probe lives in `repos/git_state.rs` and degrades to `status: "unknown"` rather than failing the inventory |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/domains/code.rs` (`pub mod
