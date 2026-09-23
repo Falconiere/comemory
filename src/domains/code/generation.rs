@@ -70,6 +70,10 @@ pub fn plan(conn: &Connection, repo: &str) -> Result<Option<Planned>> {
 
 /// Read the whole projection: the manifest, every file's symbols, its resolved
 /// imports, and the repo's mined co-change pairs.
+///
+/// Every list is sorted before it is returned: the generation's id is minted
+/// from these bytes, so two runs over the same tree must agree on their order
+/// as well as their contents.
 fn project(conn: &Connection, repo: &str) -> Result<Projection> {
     let mut files: Vec<File> = indexed_files::list_for_repo(conn, repo)?
         .into_iter()
@@ -78,16 +82,23 @@ fn project(conn: &Connection, repo: &str) -> Result<Projection> {
     files.sort_by(|a, b| a.path.cmp(&b.path));
 
     let mut symbols = Vec::new();
-    let mut edges = Vec::new();
     for file in &files {
-        symbols.extend(symbols_of(conn, repo, file)?);
-        edges.extend(imports_of(conn, repo, file)?);
+        for row in code_sync::parent_symbols_for_file(conn, repo, &file.path)? {
+            symbols.push(Symbol {
+                path: file.path.clone(),
+                symbol: row.symbol,
+                kind: row.kind,
+                lang: row.lang,
+                line_start: row.line_start,
+                line_end: row.line_end,
+            });
+        }
     }
-    edges.extend(co_changes_of(conn, repo)?);
-
     symbols.sort_by(|a, b| {
         (&a.path, a.line_start, &a.symbol).cmp(&(&b.path, b.line_start, &b.symbol))
     });
+
+    let mut edges = edges_of(conn, repo, &files)?;
     edges.sort_by(|a, b| {
         (&a.rel, &a.src_path, &a.dst_path).cmp(&(&b.rel, &b.src_path, &b.dst_path))
     });
@@ -98,50 +109,33 @@ fn project(conn: &Connection, repo: &str) -> Result<Projection> {
     })
 }
 
-/// One file's top-level symbols, snippet-free.
-fn symbols_of(conn: &Connection, repo: &str, file: &File) -> Result<Vec<Symbol>> {
-    Ok(code_sync::parent_symbols_for_file(conn, repo, &file.path)?
-        .into_iter()
-        .map(|row| Symbol {
-            path: file.path.clone(),
-            symbol: row.symbol,
-            kind: row.kind,
-            lang: row.lang,
-            line_start: row.line_start,
-            line_end: row.line_end,
-        })
-        .collect())
-}
-
-/// One file's resolved imports, each anchored at the blob it was resolved
-/// from so a reader can tell which revision the edge describes.
-fn imports_of(conn: &Connection, repo: &str, file: &File) -> Result<Vec<Edge>> {
-    Ok(code_sync::import_targets(conn, repo, &file.path)?
-        .into_iter()
-        .map(|dst_path| Edge {
-            rel: "imports".to_string(),
-            src_path: file.path.clone(),
-            dst_path,
-            weight: 1,
-            anchor: Some(file.blob_oid.clone()),
-        })
-        .collect())
-}
-
-/// The repo's mined co-change pairs, anchored at the commit they were mined
-/// through.
-fn co_changes_of(conn: &Connection, repo: &str) -> Result<Vec<Edge>> {
+/// Every edge the local index can state, each carrying the revision it
+/// describes: a resolved import is anchored at the blob it was resolved from,
+/// and a mined co-change pair at the commit it was mined through.
+fn edges_of(conn: &Connection, repo: &str, files: &[File]) -> Result<Vec<Edge>> {
+    let mut edges = Vec::new();
+    for file in files {
+        for dst_path in code_sync::import_targets(conn, repo, &file.path)? {
+            edges.push(Edge {
+                rel: "imports".to_string(),
+                src_path: file.path.clone(),
+                dst_path,
+                weight: 1,
+                anchor: Some(file.blob_oid.clone()),
+            });
+        }
+    }
     let mined = repo_marker::last_mined_commit(conn, repo)?;
-    Ok(code_sync::co_changed_pairs(conn, repo)?
-        .into_iter()
-        .map(|(src_path, dst_path, weight)| Edge {
+    for (src_path, dst_path, weight) in code_sync::co_changed_pairs(conn, repo)? {
+        edges.push(Edge {
             rel: "co_changed".to_string(),
             src_path,
             dst_path,
             weight,
             anchor: mined.clone(),
-        })
-        .collect())
+        });
+    }
+    Ok(edges)
 }
 
 #[cfg(test)]

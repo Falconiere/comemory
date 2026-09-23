@@ -3,10 +3,52 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**275 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 495 production `.rs` files under `src/`. That
+**285 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 530 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number rose from 275 (#252).** Code-generation replication added
+four declared tables and the store modules that read and write them, which is
+the single largest grandfathered class here — per-table row mappers. The raw
+increase was **fifteen** pairs; **five were burned down before recording the
+rest**, and only the ten below are inherited:
+
+- `domains/code/generation.rs` (3 burned). `symbols_of` / `imports_of` /
+  `co_changes_of` had been split out purely to keep `project` under the
+  50-line ceiling, which made three same-shaped map-to-wire helpers. The symbol
+  walk moved back into `project` where the manifest it belongs to is built, and
+  the two edge sources became one `edges_of`, since "every edge the local index
+  can state" is one idea.
+- `store/rebuild_copy_code.rs` (2 burned). Every copy here was
+  `if old_table_exists(…) { execute_batch(…) }`; the guard is now stated once
+  in `copy_if_present`, and `copy_code_generations` no longer reports against
+  any of its neighbours.
+- `sync/replica/validate.rs` (1 burned, 1 inherited). `payload_shape` and
+  `code_payload_shape` ran the same three checks — payload-vs-tombstone,
+  digest-covers-bytes, decode — before diverging, so they collapsed into one
+  `shape` taking the kind's identity rule. The two identity rules themselves
+  still report against each other; they encode genuinely different contracts
+  (a memory's id hashes its body, a generation's id is earned by its manifest)
+  and one cannot serve the other.
+- `store/remote_code.rs` (1 burned of 6, 5 inherited). `files` / `symbols` /
+  `edges` became one `projection` reader — a generation is written and read as
+  a unit, so three readers that could be called out of step with each other
+  were wrong independently of this count. What remains is irreducible: three
+  `read` row-mappers, one per projection row type, and `projection` reporting
+  against `replace_generation` and `purge_generation`, which are the select,
+  insert and delete halves of the same three tables.
+- `store/code_generation.rs` (3 inherited). `active`, `active_local` and `all`
+  are 3-to-10-line accessors over one table returning `Option` and `Vec`.
+  `active_local` could be inlined as `active(…).filter(…)` at its one call
+  site, which would clear two of the three — it is kept because "the active
+  generation this machine built" is the invariant that prevents a replication
+  loop, and spreading it into the caller to satisfy a similarity score would
+  trade a named contract for a number.
+
+None of the ten is a case where one implementation could serve both callers.
+A raise is not the ratchet's normal direction: it is recorded here rather than
+left silent so the next burn-down knows exactly which rows it inherited.
 
 **Why this number rose from 266.** The activity feed added per-table query
 projections and short route adapters — the two largest grandfathered classes
@@ -144,6 +186,12 @@ gate **fails in CI** and **skips locally with a loud warning** that names the
 pinned install command and states plainly that it did not run.
 
 ## The 235 pairs by area
+
+> **This table is stale and was already stale before #252.** It enumerates the
+> 235 pairs measured at #216 and was not re-authored when the ratchet rose to
+> 275, so its total no longer sums to `dup-baseline.txt`. The ratchet itself
+> re-scans and does not read this table. Re-deriving it is its own task; the
+> rows below remain accurate for the pairs they name.
 
 Counts sum to the recorded baseline; if they ever stop matching, one of the two
 is stale.

@@ -239,3 +239,60 @@ fn a_symbol_in_the_projection_carries_no_source_text() {
         assert!(symbol.line_end >= symbol.line_start, "{symbol:?}");
     }
 }
+
+/// A [`comemory::utilities::progress::ProgressSink`] that reports cancelled at
+/// every file boundary — the same seam `serve::jobs::worker` cancels a real
+/// job through. Everything else in this case is real: a real git checkout,
+/// the production indexer, and the database it would have written.
+struct CancellingSink;
+
+impl comemory::utilities::progress::ProgressSink for CancellingSink {
+    fn on_progress(&self, _done: u64, _total: u64) {}
+
+    fn on_log(&self, _line: &str) {}
+
+    fn is_cancelled(&self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn an_index_run_cancelled_mid_walk_leaves_no_generation_to_offer() {
+    let home = tempdir().expect("tempdir");
+    let workspace = tempdir().expect("workspace");
+    let repo_path = git_sample::build_sample_repo(workspace.path());
+    let (paths, cfg, mut conn) = ctx_over(home.path());
+
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let cancelled = crate::domains::code::index_code::run_with_progress(
+        &mut ctx,
+        Request {
+            repo: REPO.into(),
+            path: repo_path.to_str().expect("utf8 path").to_string(),
+            mode: IndexMode::Incremental,
+        },
+        Some(&CancellingSink),
+    )
+    .expect_err("a cancelled walk does not return a response");
+
+    assert!(
+        matches!(cancelled, comemory::errors::Error::Cancelled),
+        "got {cancelled:?}"
+    );
+    assert!(
+        indexed_files::list_for_repo(&conn, REPO)
+            .expect("indexed_files")
+            .is_empty(),
+        "the cancelled run rolled its transaction back"
+    );
+    assert!(
+        crate::domains::code::generation::plan(&conn, REPO)
+            .expect("plan")
+            .is_none(),
+        "an index that recorded nothing has no generation to offer"
+    );
+    assert!(
+        code_generation::all(&conn, REPO).expect("all").is_empty(),
+        "and nothing was staged behind it"
+    );
+}

@@ -90,17 +90,23 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
 fn kind_and_shape(operation: &Operation) -> Option<Disposition> {
     match operation.entity_kind.as_str() {
         MEMORY_ENTITY_KIND if operation.schema_version == MEMORY_PAYLOAD_VERSION => {
-            payload_shape(operation)
+            shape(operation, memory_identity)
         }
         CODE_ENTITY_KIND if operation.schema_version == CODE_PAYLOAD_VERSION => {
-            code_payload_shape(operation)
+            shape(operation, code_identity)
         }
         _ => Some(Disposition::RejectedUnsupported),
     }
 }
 
-/// A code generation's shape and its content-derived identity.
-fn code_payload_shape(operation: &Operation) -> Option<Disposition> {
+/// What every kind's payload must satisfy before its own identity rules run:
+/// a tombstone carries nothing, an upsert carries bytes, and the declared
+/// digest covers the bytes that arrived. `identity` then applies the rules
+/// only that kind can state.
+fn shape(
+    operation: &Operation,
+    identity: impl FnOnce(&Operation, &str) -> Option<Disposition>,
+) -> Option<Disposition> {
     if !needs_payload(operation.op) {
         return (operation.payload.is_some()).then_some(Disposition::RejectedInvalid);
     }
@@ -108,12 +114,16 @@ fn code_payload_shape(operation: &Operation) -> Option<Disposition> {
         Ok(text) => text,
         Err(problem) => return Some(problem),
     };
-    let Ok(decoded) = CodeGenerationV1::decode(&text) else {
+    identity(operation, &text)
+}
+
+/// A code generation's identity is its manifest: the id must be the one its
+/// contents earn, exactly as a memory's id must hash its body, and the entity
+/// is the repo, so the key has to name one.
+fn code_identity(operation: &Operation, text: &str) -> Option<Disposition> {
+    let Ok(decoded) = CodeGenerationV1::decode(text) else {
         return Some(Disposition::RejectedUnsupported);
     };
-    // The entity is the repo, so the key names it; the payload's own id must
-    // be the one its contents earn, exactly as a memory's id must hash its
-    // body.
     let owns = decoded.owns_its_id().unwrap_or(false);
     (!owns || operation.entity_key.is_empty()).then_some(Disposition::RejectedInvalid)
 }
@@ -136,23 +146,11 @@ fn canonical_text(operation: &Operation) -> std::result::Result<String, Disposit
     String::from_utf8(bytes).map_err(|_| Disposition::RejectedInvalid)
 }
 
-/// Validate what a memory operation carries, independent of stored state.
-fn payload_shape(operation: &Operation) -> Option<Disposition> {
-    if !needs_payload(operation.op) {
-        return (operation.payload.is_some()).then_some(Disposition::RejectedInvalid);
-    }
-    let text = match canonical_text(operation) {
-        Ok(text) => text,
-        Err(problem) => return Some(problem),
-    };
-    let Ok(decoded) = MemoryPayloadV1::decode(&text) else {
+/// The content-derived identity rules a memory keeps on every surface.
+fn memory_identity(operation: &Operation, text: &str) -> Option<Disposition> {
+    let Ok(payload) = MemoryPayloadV1::decode(text) else {
         return Some(Disposition::RejectedUnsupported);
     };
-    memory_identity(operation, &decoded)
-}
-
-/// The content-derived identity rules a memory keeps on every surface.
-fn memory_identity(operation: &Operation, payload: &MemoryPayloadV1) -> Option<Disposition> {
     let body_hash = sha256_hex(payload.body.trim_end().as_bytes());
     let mismatch = operation.entity_key != payload.id
         || !is_valid_memory_id(&payload.id)

@@ -23,6 +23,33 @@ fn migrated_db() -> (TempDir, Connection) {
     (dir, conn)
 }
 
+/// The stored manifest of one generation.
+fn files(
+    conn: &Connection,
+    repo: &str,
+    generation_id: &str,
+) -> comemory::prelude::Result<Vec<File>> {
+    Ok(remote_code::projection(conn, repo, generation_id)?.files)
+}
+
+/// The stored symbols of one generation.
+fn symbols(
+    conn: &Connection,
+    repo: &str,
+    generation_id: &str,
+) -> comemory::prelude::Result<Vec<Symbol>> {
+    Ok(remote_code::projection(conn, repo, generation_id)?.symbols)
+}
+
+/// The stored edges of one generation.
+fn edges(
+    conn: &Connection,
+    repo: &str,
+    generation_id: &str,
+) -> comemory::prelude::Result<Vec<Edge>> {
+    Ok(remote_code::projection(conn, repo, generation_id)?.edges)
+}
+
 /// A projection shaped like a real one: two files, their symbols, an import
 /// edge between them and a mined co-change pair.
 fn projection(weight: i64) -> Projection {
@@ -70,14 +97,14 @@ fn a_projection_round_trips_per_generation() {
     remote_code::replace_generation(&conn, REPO, "gen1", &projection(3)).expect("replace");
 
     assert_eq!(
-        remote_code::files(&conn, REPO, "gen1").expect("files"),
+        files(&conn, REPO, "gen1").expect("files"),
         projection(3).files
     );
     assert_eq!(
-        remote_code::symbols(&conn, REPO, "gen1").expect("symbols"),
+        symbols(&conn, REPO, "gen1").expect("symbols"),
         projection(3).symbols
     );
-    let edges = remote_code::edges(&conn, REPO, "gen1").expect("edges");
+    let edges = edges(&conn, REPO, "gen1").expect("edges");
     assert_eq!(edges.len(), 2);
     assert_eq!(edges[0].rel, "co_changed", "ascending by relation");
     assert_eq!(edges[0].weight, 3);
@@ -92,7 +119,7 @@ fn replacing_a_generation_replaces_its_weights_rather_than_accumulating_them() {
     // The same generation applied again — a replay. Weights must not double.
     remote_code::replace_generation(&conn, REPO, "gen1", &projection(3)).expect("replay");
 
-    let edges = remote_code::edges(&conn, REPO, "gen1").expect("edges");
+    let edges = edges(&conn, REPO, "gen1").expect("edges");
     assert_eq!(edges.len(), 2, "a replay writes the same rows, not more");
     assert_eq!(
         edges[0].weight, 3,
@@ -109,16 +136,12 @@ fn replacing_one_generation_leaves_every_other_generation_alone() {
     remote_code::replace_generation(&conn, REPO, "gen2", &Projection::default()).expect("empty");
 
     assert_eq!(
-        remote_code::files(&conn, REPO, "gen1")
-            .expect("files")
-            .len(),
+        files(&conn, REPO, "gen1").expect("files").len(),
         2,
         "gen1 is untouched"
     );
     assert!(
-        remote_code::files(&conn, REPO, "gen2")
-            .expect("files")
-            .is_empty(),
+        files(&conn, REPO, "gen2").expect("files").is_empty(),
         "gen2 is now empty"
     );
 }
@@ -130,21 +153,9 @@ fn purging_a_generation_removes_all_three_of_its_tables() {
 
     remote_code::purge_generation(&conn, REPO, "gen1").expect("purge");
 
-    assert!(
-        remote_code::files(&conn, REPO, "gen1")
-            .expect("files")
-            .is_empty()
-    );
-    assert!(
-        remote_code::symbols(&conn, REPO, "gen1")
-            .expect("symbols")
-            .is_empty()
-    );
-    assert!(
-        remote_code::edges(&conn, REPO, "gen1")
-            .expect("edges")
-            .is_empty()
-    );
+    assert!(files(&conn, REPO, "gen1").expect("files").is_empty());
+    assert!(symbols(&conn, REPO, "gen1").expect("symbols").is_empty());
+    assert!(edges(&conn, REPO, "gen1").expect("edges").is_empty());
 }
 
 #[test]
@@ -154,11 +165,7 @@ fn an_empty_projection_is_a_real_state_not_an_error() {
     remote_code::replace_generation(&conn, REPO, "gen1", &Projection::default())
         .expect("an authoritative empty generation is writable");
 
-    assert!(
-        remote_code::files(&conn, REPO, "gen1")
-            .expect("files")
-            .is_empty()
-    );
+    assert!(files(&conn, REPO, "gen1").expect("files").is_empty());
 }
 
 #[test]
@@ -167,7 +174,7 @@ fn one_repos_projection_is_not_another_repos() {
     remote_code::replace_generation(&conn, REPO, "gen1", &projection(3)).expect("replace");
 
     assert!(
-        remote_code::files(&conn, "Falconiere/other", "gen1")
+        files(&conn, "Falconiere/other", "gen1")
             .expect("files")
             .is_empty()
     );

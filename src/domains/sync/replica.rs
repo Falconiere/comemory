@@ -19,6 +19,7 @@ pub mod bootstrap;
 /// `GET /sync/replica/changes` — the ordered page above a cursor.
 pub mod changes;
 /// The wire contract: envelopes, operations and dispositions.
+pub mod code_accept;
 pub mod contract;
 /// The read and staging shapes: changes, manifest, stage and activate.
 pub mod contract_views;

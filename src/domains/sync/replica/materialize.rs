@@ -11,6 +11,7 @@
 
 use crate::domains::memories::replica_payload::MemoryPayloadV1;
 use crate::domains::memories::{MemoryStore, SaveParams, journal, mirror};
+use crate::domains::sync::replica::code_accept;
 use crate::domains::sync::replica::contract::{Disposition, Operation, OperationResult};
 use crate::domains::sync::vector_rule;
 use crate::prelude::*;
@@ -31,6 +32,12 @@ pub(crate) fn apply(
     operation: &Operation,
 ) -> Result<OperationResult> {
     let at = memory_row::iso_format(time::OffsetDateTime::now_utc())?;
+    // A code generation has no markdown half: its whole state is rows, so it
+    // records, writes its projection, activates and journals in one
+    // transaction of its own.
+    if code_accept::handles(operation) {
+        return code_accept::apply(ctx, epoch, operation, &at);
+    }
     // The markdown tree is the source of truth and cannot join a SQLite
     // transaction, so it moves first; the database half then commits as one
     // unit below.

@@ -740,6 +740,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/replica/accept.rs | comemory::domains::sync::replica::accept; preserve | src/domains/sync/replica/tests/accept.rs | none | domains::sync | src/domains/sync/replica/accept.rs | retain |
 | src/domains/sync/replica/bootstrap.rs | comemory::domains::sync::replica::bootstrap; preserve | src/domains/sync/replica/tests/bootstrap.rs | none | domains::sync | src/domains/sync/replica/bootstrap.rs | retain |
 | src/domains/sync/replica/changes.rs | comemory::domains::sync::replica::changes; preserve | src/domains/sync/replica/tests/changes.rs | none | domains::sync | src/domains/sync/replica/changes.rs | retain |
+| src/domains/sync/replica/code_accept.rs | comemory::domains::sync::replica::code_accept; preserve | src/domains/sync/replica/tests/code_accept.rs | none | domains::sync | src/domains/sync/replica/code_accept.rs | retain |
 | src/domains/sync/replica/contract.rs | comemory::domains::sync::replica::contract; preserve | none | none | domains::sync | src/domains/sync/replica/contract.rs | retain |
 | src/domains/sync/replica/contract_views.rs | comemory::domains::sync::replica::contract_views; preserve | none | none | domains::sync | src/domains/sync/replica/contract_views.rs | retain |
 | src/domains/sync/replica/events.rs | comemory::domains::sync::replica::events; preserve | src/domains/sync/replica/tests/events.rs | none | domains::sync | src/domains/sync/replica/events.rs | retain |
