@@ -168,8 +168,11 @@ pub struct RemoteDocumentFts {
 #[primary_key(document_id)]
 #[unique_index("uq_document_share_shared", repo, shared_id)]
 pub struct DocumentShare {
-    /// The local `documents.id`, unchanged.
-    #[column(not_null)]
+    /// The local `documents.id`, unchanged. The cascade is the whole
+    /// lifecycle: a portable name means nothing without the document it
+    /// names, and both local deletion paths (`documents::tombstone` and
+    /// `unindex`) drop the parent row, so neither can leave a share behind.
+    #[column(not_null, references = "documents(id)", on_delete = "cascade")]
     pub document_id: Text,
     /// Canonical repo this document shares under.
     #[column(not_null)]

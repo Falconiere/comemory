@@ -4,6 +4,13 @@
 //! portable name beside it. The unique index over `(repo, shared_id)` is the
 //! rule, not a hint: two local documents that normalize onto one shared name
 //! are unrelated files, and merging them would lose one of them.
+//!
+//! There is no deletion function here on purpose. `document_id` is declared
+//! `REFERENCES documents(id) ON DELETE CASCADE`, so the row goes when the
+//! document does — which is what both local deletion paths already do
+//! (`document::writer::tombstone` deletes the `documents` row, `unindex`
+//! deletes the `source_roots` row above it). A hand-called purge would be one
+//! more thing for a third deletion path to forget.
 
 use rusqlite::Connection;
 use toolu_orm::core::query_column::CommonOps;
@@ -31,12 +38,13 @@ pub struct Share {
 ///
 /// # Errors
 /// [`Error::Conflict`] when another document already claims that
-/// `(repo, shared_id)`.
+/// `(repo, shared_id)`; [`Error::NotFound`] when `document_id` names no
+/// `documents` row.
 ///
 /// The read below exists only to name the holder in that message. What
 /// actually guarantees the rule is `uq_document_share_shared`, so a writer
-/// that raced past the read still loses: the constraint violation is mapped to
-/// the same refusal rather than escaping as a driver error.
+/// that raced past the read still loses: see [`constraint_violation`] for how
+/// each constraint becomes an answer rather than a driver error.
 pub fn record(conn: &Connection, share: &Share, at: &str) -> Result<()> {
     if let Some(other) = by_shared_id(conn, &share.repo, &share.shared_id)?
         && other.document_id != share.document_id
@@ -54,7 +62,7 @@ pub fn record(conn: &Connection, share: &Share, at: &str) -> Result<()> {
             .filter(col::document_id.eq(share.document_id.as_str()))
             .to_sql(),
     )
-    .map_err(|e| unique_violation(e, share))?;
+    .map_err(|e| constraint_violation(e, share))?;
     if updated == 0 {
         orm::execute(
             conn,
@@ -67,7 +75,7 @@ pub fn record(conn: &Connection, share: &Share, at: &str) -> Result<()> {
                 .set(&col::updated_at, at)
                 .to_sql(),
         )
-        .map_err(|e| unique_violation(e, share))?;
+        .map_err(|e| constraint_violation(e, share))?;
     }
     Ok(())
 }
@@ -80,21 +88,31 @@ fn collision(holder: &Share, wanted: &Share) -> Error {
     ))
 }
 
-/// Turn `uq_document_share_shared` into the same refusal a read would have
-/// produced, so a racing writer is answered rather than handed a driver error.
-fn unique_violation(error: Error, wanted: &Share) -> Error {
-    let is_unique = matches!(
-        &error,
-        Error::Sqlite(rusqlite::Error::SqliteFailure(inner, _))
-            if inner.code == rusqlite::ErrorCode::ConstraintViolation
-    );
-    if is_unique {
-        return Error::Conflict(format!(
+/// Turn this table's two constraints into answers rather than driver errors.
+///
+/// The extended code is what distinguishes them, and it has to: mapping every
+/// `ConstraintViolation` to the name collision would report "already shares"
+/// for a missing parent row, which is a different problem with a different
+/// fix. Anything else propagates untouched.
+fn constraint_violation(error: Error, wanted: &Share) -> Error {
+    let Error::Sqlite(rusqlite::Error::SqliteFailure(inner, _)) = &error else {
+        return error;
+    };
+    match inner.extended_code {
+        // `uq_document_share_shared`: the refusal a read would have produced,
+        // so a writer that raced past that read still loses.
+        rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE => Error::Conflict(format!(
             "another document already shares {} as {}",
             wanted.path, wanted.shared_id
-        ));
+        )),
+        // `document_id REFERENCES documents(id)`: a portable name may not
+        // outlive, or precede, the document it names.
+        rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY => Error::NotFound(format!(
+            "no document {} to share as {}",
+            wanted.document_id, wanted.shared_id
+        )),
+        _ => error,
     }
-    error
 }
 
 /// One local document's portable name, if it has one.
@@ -117,20 +135,6 @@ pub fn by_shared_id(conn: &Connection, repo: &str, shared_id: &str) -> Result<Op
             .filter(col::repo.eq(repo))
             .filter(col::shared_id.eq(shared_id))
     })
-}
-
-/// Forget one document's portable name — its local row is going away.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn forget(conn: &Connection, document_id: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        DocumentShare::delete()
-            .filter(col::document_id.eq(document_id))
-            .to_sql(),
-    )?;
-    Ok(())
 }
 
 /// The columns [`row`] reads, in order.
@@ -160,6 +164,27 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Share> {
         path: r.get(3)?,
         blocked_reason: r.get(4)?,
     })
+}
+
+/// Every blocked document under one source's tree, as `(path, reason)`.
+///
+/// Joined through `source_files` so a source can report what it is holding
+/// back without the documents capability having to know this table's shape.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn blocked_for_source(conn: &Connection, source_id: &str) -> Result<Vec<(String, String)>> {
+    let mut statement = conn.prepare(
+        "SELECT s.path, s.blocked_reason FROM document_share s \
+           JOIN documents d ON d.id = s.document_id \
+           JOIN source_files f ON f.id = d.source_file_id \
+          WHERE f.source_id = ?1 AND s.blocked_reason IS NOT NULL \
+          ORDER BY s.path",
+    )?;
+    let rows = statement
+        .query_map([source_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 #[cfg(test)]

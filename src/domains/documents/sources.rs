@@ -15,7 +15,7 @@ use crate::domains::documents::source::mirror;
 use crate::domains::documents::source::registry::Registry;
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::sources;
+use crate::store::{document_share, sources};
 use crate::utilities::context::Ctx;
 
 /// `comemory sources` / `GET /api/v1/sources` request.
@@ -52,6 +52,10 @@ pub struct Row {
     pub stale: usize,
     /// Row last-update timestamp.
     pub last_checked: String,
+    /// Documents under this source that are withheld from sharing, as
+    /// `(repository-relative path, rule)`. Empty when nothing is withheld —
+    /// an operator has to be able to see WHY a document stayed local.
+    pub withheld: Vec<(String, String)>,
 }
 
 /// List every registered source, reconciling the SQLite mirror against
@@ -68,6 +72,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
     for root in sources::list(conn)? {
         let counts = sources::file_status_counts(conn, &root.id)?;
+        let id = root.id.clone();
         rows.push(Row {
             id: root.id,
             canonical_path: root.canonical_path,
@@ -78,7 +83,12 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Vec<Row>> {
             error: counts.error,
             stale: counts.stale,
             last_checked: root.updated_at,
+            withheld: document_share::blocked_for_source(conn, &id)?,
         });
     }
     Ok(rows)
 }
+
+#[cfg(test)]
+#[path = "tests/sources.rs"]
+mod tests;

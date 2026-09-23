@@ -15,7 +15,9 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+use crate::domains::documents::replica_payload::DocumentRevisionV1;
 use crate::prelude::*;
+use crate::utilities::secret_scan;
 
 /// How many digest BYTES a shared id carries — sixteen, rendered as 32 hex
 /// characters, the same width as the local `document_id` it sits beside.
@@ -174,6 +176,34 @@ fn split_utf8(path: &Path) -> Result<Vec<String>> {
         }
     }
     Ok(parts)
+}
+
+/// The rule that refuses to let this revision leave, if any.
+///
+/// Every part of the revision is scanned, not just the body: a credential in
+/// a heading, a title or a link target leaves the machine just as surely as
+/// one in a passage. The answer is a reason rather than a redaction, because
+/// a document is shared whole or not at all — publishing it with holes would
+/// hand a reader a document that does not exist anywhere.
+#[must_use]
+pub fn blocked_reason(revision: &DocumentRevisionV1) -> Option<String> {
+    if let Some(rule) = secret_scan::scan(&revision.title) {
+        return Some(rule);
+    }
+    for chunk in &revision.chunks {
+        if let Some(rule) = secret_scan::scan(&chunk.text) {
+            return Some(rule);
+        }
+        if let Some(rule) = secret_scan::scan(&chunk.heading_path) {
+            return Some(rule);
+        }
+    }
+    for link in &revision.links {
+        if let Some(rule) = secret_scan::scan(&link.target) {
+            return Some(rule);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

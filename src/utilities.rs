@@ -59,6 +59,8 @@ pub mod query_id;
 pub mod ref_args;
 /// Repository-root resolution and `file:<repo>:<path>` node addressing.
 pub mod repo_root;
+/// The curated secret scan both sync and the documents capability run.
+pub mod secret_scan;
 /// 64-bit SimHash and Hamming distance over tokenized bodies.
 pub mod simhash;
 /// The persisted retrieval-log / feedback vocabularies.

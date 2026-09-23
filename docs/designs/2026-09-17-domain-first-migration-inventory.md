@@ -544,7 +544,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/documents/source/discover.rs | comemory::domains::documents::source::discover; crate-root-alias | src/domains/documents/source/tests/discover.rs | none | domains::documents | src/domains/documents/source/discover.rs | retain |
 | src/domains/documents/source/mirror.rs | comemory::domains::documents::source::mirror; crate-root-alias | src/domains/documents/source/tests/mirror.rs | none | domains::documents | src/domains/documents/source/mirror.rs | retain |
 | src/domains/documents/source/registry.rs | comemory::domains::documents::source::registry; crate-root-alias | src/domains/documents/source/tests/registry.rs | none | domains::documents | src/domains/documents/source/registry.rs | retain |
-| src/domains/documents/sources.rs | comemory::domains::documents::sources; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::documents | src/domains/documents/sources.rs | retain |
+| src/domains/documents/sources.rs | comemory::domains::documents::sources; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/documents/tests/sources.rs | none | domains::documents | src/domains/documents/sources.rs | retain |
 | src/domains/documents/unindex.rs | comemory::domains::documents::unindex; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::documents | src/domains/documents/unindex.rs | retain |
 | src/domains/graph.rs | comemory::domains::graph; crate-root-alias | none | none | domains::graph | src/domains/graph.rs | retain |
 | src/domains/graph/coactivate.rs | comemory::domains::graph::coactivate; crate-root-alias | src/domains/graph/tests/coactivate.rs | none | domains::graph | src/domains/graph/coactivate.rs | retain |
@@ -738,7 +738,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/pull.rs | comemory::domains::sync::pull; crate-root-alias | src/domains/sync/tests/pull.rs | none | domains::sync | src/domains/sync/pull.rs | retain |
 | src/domains/sync/push.rs | comemory::domains::sync::push; crate-root-alias | src/domains/sync/tests/push.rs | none | domains::sync | src/domains/sync/push.rs | retain |
 | src/domains/sync/push_on_save.rs | comemory::domains::sync::push_on_save; crate-root-alias | src/domains/sync/tests/push_on_save.rs | none | domains::sync | src/domains/sync/push_on_save.rs | retain |
-| src/domains/sync/redact.rs | comemory::domains::sync::redact; crate-root-alias | src/domains/sync/tests/redact.rs | src/domains/sync/rules.toml | domains::sync | src/domains/sync/redact.rs | retain |
+| src/domains/sync/redact.rs | comemory::domains::sync::redact; crate-root-alias | src/domains/sync/tests/redact.rs | none | domains::sync | src/domains/sync/redact.rs | retain |
 | src/domains/sync/replica.rs | comemory::domains::sync::replica; preserve | src/domains/sync/replica/tests/support.rs | none | domains::sync | src/domains/sync/replica.rs | retain |
 | src/domains/sync/replica/accept.rs | comemory::domains::sync::replica::accept; preserve | src/domains/sync/replica/tests/accept.rs | none | domains::sync | src/domains/sync/replica/accept.rs | retain |
 | src/domains/sync/replica/bootstrap.rs | comemory::domains::sync::replica::bootstrap; preserve | src/domains/sync/replica/tests/bootstrap.rs | none | domains::sync | src/domains/sync/replica/bootstrap.rs | retain |
@@ -921,6 +921,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/utilities/context.rs | comemory::utilities::context; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/utilities/tests/context.rs | none | shared::utilities | src/utilities/context.rs | retain |
 | src/utilities/dated_id.rs | private | src/utilities/tests/dated_id.rs | none | shared::utilities | src/utilities/dated_id.rs | retain |
 | src/utilities/canonical_json.rs | comemory::utilities::canonical_json; preserve | src/utilities/tests/canonical_json.rs | none | shared::utilities | src/utilities/canonical_json.rs | retain |
+| src/utilities/secret_scan.rs | comemory::utilities::secret_scan; preserve | src/utilities/tests/secret_scan.rs | src/utilities/rules.toml | shared::utilities | src/utilities/secret_scan.rs | retain |
 | src/utilities/digest.rs | private | src/utilities/tests/digest.rs | none | shared::utilities | src/utilities/digest.rs | retain |
 | src/utilities/embed.rs | comemory::utilities::embed; crate-root-alias | src/utilities/tests/embed.rs | none | shared::utilities | src/utilities/embed.rs | retain |
 | src/utilities/embedding_input.rs | private | src/utilities/tests/embedding_input.rs | none | shared::utilities | src/utilities/embedding_input.rs | retain |

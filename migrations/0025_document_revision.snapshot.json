@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dialect": "sqlite",
-  "id": "3e4921dc-3aae-4c0d-bba8-22ab369828ad",
+  "id": "79c8c38b-9404-4b0f-83e9-f17df93c94ba",
   "prev_id": "a4f926d1-4d68-4f3e-a4bb-1a64f543925a",
   "tables": {
     "activity_log": {
@@ -1406,7 +1406,19 @@
           "unique": true
         }
       },
-      "foreign_keys": {},
+      "foreign_keys": {
+        "fk_document_share_document_id": {
+          "name": "fk_document_share_document_id",
+          "columns": [
+            "document_id"
+          ],
+          "references_table": "documents",
+          "references_columns": [
+            "id"
+          ],
+          "on_delete": "Cascade"
+        }
+      },
       "check_constraints": {},
       "primary_key": [
         "document_id"

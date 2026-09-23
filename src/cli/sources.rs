@@ -71,6 +71,12 @@ fn emit(json_flag: bool, rows: &[sources::Row]) -> Result<()> {
             r.stale,
             r.last_checked,
         )?;
+        // A withheld document is the one thing in this listing an operator
+        // cannot infer from the counts: it was indexed like any other, it just
+        // never leaves the machine. Name it and name the rule.
+        for (path, rule) in &r.withheld {
+            writeln!(out, "    withheld  {path}  ({rule})")?;
+        }
     }
     Ok(())
 }

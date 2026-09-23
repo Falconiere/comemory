@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS "document_share" (
-    "document_id" TEXT NOT NULL,
+    "document_id" TEXT NOT NULL REFERENCES "documents"("id") ON DELETE CASCADE,
     "repo" TEXT NOT NULL,
     "shared_id" TEXT NOT NULL,
     "path" TEXT NOT NULL,
