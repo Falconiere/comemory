@@ -236,8 +236,13 @@ fn local_hit(conn: &Connection, document_id: &str, ordinal: i64) -> Result<Optio
     }))
 }
 
-/// Resolve a pulled revision's hit. Its path is already repository-relative,
-/// so `--path` globs compare against the same shape a local path has.
+/// Resolve a pulled revision's hit.
+///
+/// Its path is relative to the REPOSITORY, where a local hit's is relative to
+/// its registered source root — `docs/guides/x.md` against `x.md` for a source
+/// rooted at `docs/guides`. A `--path` glob therefore sees two shapes, and one
+/// written for local hits may not match a pulled one. Normalizing them would
+/// mean inventing a source root for a document that has no file here.
 fn shared_hit(
     conn: &Connection,
     repo: &str,
