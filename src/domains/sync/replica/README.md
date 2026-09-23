@@ -25,6 +25,7 @@ The durable contract is
 | `accept.rs` | `run`, `apply_one` | The import path: refuse the envelope this engine will not read at all, answer a replay from its receipt, persist a refusal so the replay reads the same answer, and hand an accepted operation to `materialize` |
 | `materialize.rs` | `apply` | The write half — markdown first (it cannot join a SQLite transaction; recovery is issue 251), then one transaction carrying the mirror row, both journal feeds and the receipt |
 | `code_accept.rs` | `handles`, `apply` | The write half for a code generation, which has no markdown: record it, replace the repo's pulled projection, activate it, journal the position and receipt it in ONE transaction, so the whole generation becomes visible at a single instant and a stale parent publishes nothing |
+| `document_accept.rs` | `handles`, `apply` | The write half for a document revision: replace the pulled cache for that one document, journal the position and receipt it in ONE transaction. That commit IS the activation — there is no staged state, and an upload still arriving never reaches here |
 | `changes.rs` | `run` | The ordered page above a cursor, carrying the payload each position *named* rather than today's bytes |
 | `manifest.rs` | `run` | Holdings, head, per-kind bucket digests, and the capability that stays empty until seeding completes |
 | `events.rs` | `frames` | Notification-only frames (`sequence`, `entity_kind`) — enough to prompt a pull, never content |

@@ -97,6 +97,11 @@ Understanding-oriented background:
   an immutable, content-addressed generation that becomes visible whole: why
   source never leaves, why a pulled generation never writes a local row, and
   which readers see both sides.
+- **[Document revision replication](designs/2026-09-23-document-revision-replication.md)** —
+  what one machine extracted from a document, carried to a machine that may not
+  hold the file: the portable name two checkouts agree on, the approval map that
+  makes it answerable offline, the secret scan that blocks a revision whole, and
+  one search leg over both indexes with the local side winning.
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.

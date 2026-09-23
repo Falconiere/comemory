@@ -26,6 +26,9 @@ One line per file, named after its primary item:
 | `index.rs` | `run` | `comemory index`: register one or more roots, then walk, extract and write every candidate |
 | `source.rs` | `SourceId` | Source identity (`SourceKind`, `SourceEntry`) and the `source/` declarations |
 | `sources.rs` | `run` | `comemory sources`: list registered sources, with a skippable reconcile side effect |
+| `journal.rs` | `record_revision`, `record_tombstone` | What a document mutation owes the `replica-v1` feed, written inside the caller's transaction — at index time rather than push time, because once a tombstone has run nothing is left to describe what was removed |
+| `replica_payload.rs` | `DocumentRevisionV1` | The wire revision and the id it must own: `shared_id` is the digest of the repository and the document's repository-relative path, so a payload altered in flight no longer owns its key |
+| `share.rs` | `name_for`, `shared_id`, `blocked_reason` | The portable name a document is shared under, and the secret scan that refuses a revision whole — title, passages, headings and link targets alike |
 | `unindex.rs` | `run` | `comemory unindex`: unregister one source and drop its derived rows |
 
 Sub-folders: `document/` (extraction, chunking, fingerprinting, the index
