@@ -28,7 +28,7 @@ The durable contract is
 | `changes.rs` | `run` | The ordered page above a cursor, carrying the payload each position *named* rather than today's bytes |
 | `manifest.rs` | `run` | Holdings, head, per-kind bucket digests, and the capability that stays empty until seeding completes |
 | `events.rs` | `frames` | Notification-only frames (`sequence`, `entity_kind`) — enough to prompt a pull, never content |
-| `staging.rs` | `stage`, `activate` | Parts of an oversized revision and their activation: invisible until every declared part has arrived, then accepted through the ordinary path. An incomplete upload keeps its parts for the retry; one acceptance has answered is discarded, accepted or refused alike, because a receipt is keyed on the bytes that arrived and the same operation id can never accept afterwards |
+| `staging.rs` | `stage`, `activate` | Parts of an oversized revision and their activation: invisible until every declared part has arrived, then accepted through the ordinary path. An incomplete upload keeps its parts for the retry; once acceptance has answered — accepted or refused alike — the parts are discarded, because a receipt is keyed on the bytes that arrived and the same operation id can never accept afterwards |
 | `bootstrap.rs` | `advance`, `progress` | Seeding memories that predate the journal, 200 per replica call, restartable and idempotent, gating the advertised capability |
 
 Tests live beside the modules under `tests/`, sharing `tests/support.rs` — a
