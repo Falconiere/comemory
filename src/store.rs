@@ -196,6 +196,9 @@ pub mod schema_code;
 pub mod schema_code_generation;
 /// Declared tables no domain owns: `schema_meta`, `edge_fts`.
 pub mod schema_core;
+/// Declared document-replication tables: the `remote_document*` pulled
+/// revision cache and the `document_share` local-to-portable mapping.
+pub mod schema_document_revision;
 /// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod schema_documents;
 /// Declared graph tables: `edges`, `code_ref`.
