@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dialect": "sqlite",
-  "id": "79c8c38b-9404-4b0f-83e9-f17df93c94ba",
+  "id": "d1a9e6d4-28d9-4f2a-ae85-6291c22de56e",
   "prev_id": "a4f926d1-4d68-4f3e-a4bb-1a64f543925a",
   "tables": {
     "activity_log": {
@@ -3079,28 +3079,19 @@
         "format",
         "revision_hash",
         "chunk_count",
-        "state",
-        "created_at",
-        "activated_at"
+        "accepted_at"
       ],
       "columns": {
-        "activated_at": {
-          "name": "activated_at",
+        "accepted_at": {
+          "name": "accepted_at",
           "column_type": "Text",
           "primary_key": false,
-          "not_null": false,
+          "not_null": true,
           "unique": false
         },
         "chunk_count": {
           "name": "chunk_count",
           "column_type": "Integer",
-          "primary_key": false,
-          "not_null": true,
-          "unique": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "column_type": "Text",
           "primary_key": false,
           "not_null": true,
           "unique": false
@@ -3140,14 +3131,6 @@
           "not_null": true,
           "unique": false
         },
-        "state": {
-          "name": "state",
-          "column_type": "Text",
-          "primary_key": false,
-          "not_null": true,
-          "default": "'staged'",
-          "unique": false
-        },
         "title": {
           "name": "title",
           "column_type": "Text",
@@ -3168,24 +3151,11 @@
             }
           ],
           "unique": false
-        },
-        "idx_remote_document_state": {
-          "name": "idx_remote_document_state",
-          "columns": [
-            {
-              "name": "repo"
-            },
-            {
-              "name": "state"
-            }
-          ],
-          "unique": false
         }
       },
       "foreign_keys": {},
       "check_constraints": {
-        "format": "CHECK (format IN ('txt', 'markdown', 'html', 'delimited'))",
-        "state": "CHECK (state IN ('staged', 'active', 'superseded'))"
+        "format": "CHECK (format IN ('txt', 'markdown', 'html', 'delimited'))"
       },
       "primary_key": [
         "repo",
@@ -4101,6 +4071,40 @@
           "column_type": "Text",
           "primary_key": false,
           "not_null": false,
+          "unique": false
+        }
+      },
+      "indexes": {},
+      "foreign_keys": {},
+      "check_constraints": {},
+      "strict": false
+    },
+    "repository_approval": {
+      "column_order": [
+        "label",
+        "canonical",
+        "updated_at"
+      ],
+      "columns": {
+        "canonical": {
+          "name": "canonical",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "label": {
+          "name": "label",
+          "column_type": "Text",
+          "primary_key": true,
+          "not_null": false,
+          "unique": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
           "unique": false
         }
       },

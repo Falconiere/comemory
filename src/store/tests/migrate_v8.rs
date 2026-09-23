@@ -87,7 +87,7 @@ fn v8_extends_edges_check_and_adds_feedback_provenance() {
         )
         .expect("v");
     assert_eq!(v, migrate::CURRENT_VERSION);
-    assert_eq!(migrate::CURRENT_VERSION, "26");
+    assert_eq!(migrate::CURRENT_VERSION, "25");
 }
 
 /// After v8 migration, `feedback_events.provenance` exists and defaults to

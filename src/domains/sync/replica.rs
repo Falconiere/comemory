@@ -25,6 +25,8 @@ pub mod code_accept;
 pub mod contract;
 /// The read and staging shapes: changes, manifest, stage and activate.
 pub mod contract_views;
+/// Acceptance for a pulled document revision: one transaction, no local row.
+pub mod document_accept;
 /// `GET /sync/replica/events` — notification-only frames.
 pub mod events;
 /// `GET /sync/replica/manifest` — holdings, capability and seeding progress.

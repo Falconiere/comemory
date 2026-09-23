@@ -18,9 +18,7 @@ CREATE TABLE IF NOT EXISTS "remote_document" (
     "format" TEXT NOT NULL CHECK (format IN ('txt', 'markdown', 'html', 'delimited')),
     "revision_hash" TEXT NOT NULL,
     "chunk_count" INTEGER NOT NULL,
-    "state" TEXT NOT NULL DEFAULT ('staged') CHECK (state IN ('staged', 'active', 'superseded')),
-    "created_at" TEXT NOT NULL,
-    "activated_at" TEXT,
+    "accepted_at" TEXT NOT NULL,
     PRIMARY KEY ("repo", "shared_id")
 );
 
@@ -56,11 +54,15 @@ CREATE TABLE IF NOT EXISTS "remote_document_link" (
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX IF NOT EXISTS "uq_document_share_shared" ON "document_share" ("repo", "shared_id");
+CREATE TABLE IF NOT EXISTS "repository_approval" (
+    "label" TEXT PRIMARY KEY,
+    "canonical" TEXT NOT NULL,
+    "updated_at" TEXT NOT NULL
+);
 
 --> statement-breakpoint
 
-CREATE INDEX IF NOT EXISTS "idx_remote_document_state" ON "remote_document" ("repo", "state");
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_document_share_shared" ON "document_share" ("repo", "shared_id");
 
 --> statement-breakpoint
 

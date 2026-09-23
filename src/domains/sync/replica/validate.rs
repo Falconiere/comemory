@@ -7,6 +7,9 @@
 use crate::domains::code::replica_payload::{
     CODE_ENTITY_KIND, CODE_PAYLOAD_VERSION, CodeGenerationV1,
 };
+use crate::domains::documents::replica_payload::{
+    DOCUMENT_ENTITY_KIND, DOCUMENT_PAYLOAD_VERSION, DocumentRevisionV1,
+};
 use crate::domains::memories::id::{is_valid_memory_id, memory_id};
 use crate::domains::memories::replica_payload::{
     MEMORY_ENTITY_KIND, MEMORY_PAYLOAD_VERSION, MemoryPayloadV1,
@@ -84,16 +87,19 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
 /// Refuse an entity kind or schema version this build cannot read, then
 /// validate what the operation carries.
 ///
-/// The two replicated kinds share every ordering rule below — `order`,
+/// The replicated kinds share every ordering rule below — `order`,
 /// `check_cursor` and `check_position` never look at the kind — so only the
 /// payload's own shape and identity differ.
 fn kind_and_shape(operation: &Operation) -> Option<Disposition> {
     match operation.entity_kind.as_str() {
         MEMORY_ENTITY_KIND if operation.schema_version == MEMORY_PAYLOAD_VERSION => {
-            shape(operation, memory_identity)
+            shape(operation, identity::<MemoryPayloadV1>)
         }
         CODE_ENTITY_KIND if operation.schema_version == CODE_PAYLOAD_VERSION => {
-            shape(operation, code_identity)
+            shape(operation, identity::<CodeGenerationV1>)
+        }
+        DOCUMENT_ENTITY_KIND if operation.schema_version == DOCUMENT_PAYLOAD_VERSION => {
+            shape(operation, identity::<DocumentRevisionV1>)
         }
         _ => Some(Disposition::RejectedUnsupported),
     }
@@ -101,7 +107,7 @@ fn kind_and_shape(operation: &Operation) -> Option<Disposition> {
 
 /// What every kind's payload must satisfy before its own identity rules run:
 /// a tombstone carries nothing, an upsert carries bytes, and the declared
-/// digest covers the bytes that arrived. `identity` then applies the rules
+/// digest covers the bytes that arrived. [`identity`] then applies the rule
 /// only that kind can state.
 fn shape(
     operation: &Operation,
@@ -117,27 +123,72 @@ fn shape(
     identity(operation, &text)
 }
 
-/// A code generation's identity is its manifest: the id must be the one its
-/// contents earn, exactly as a memory's id must hash its body.
+/// What a replicated payload must satisfy before its kind's writer sees it.
 ///
-/// The repo is NOT checked against the payload, because the payload has no
-/// repo in it — [`CodeGenerationV1`] carries the manifest and nothing that
-/// names a repository. That is deliberate: the entity IS the repo, so
-/// `entity_key` names it and is the only place it appears. `code_accept`
-/// derives its repo from that one value, so there is no second value here to
-/// disagree with it. Folding a repo into the payload would fold it into the
-/// digest and therefore into the generation id, which would make the same
-/// tree indexed under two labels two different generations.
+/// One rule per kind, stated by the kind itself: the invariant is a property of
+/// the payload rather than of the validator that happens to ask, so a third
+/// kind adds a rule and not a third copy of the decode-and-refuse skeleton.
+trait Identity: serde::de::DeserializeOwned {
+    /// Whether the payload holds together under `entity_key`.
+    fn holds_for(&self, entity_key: &str) -> bool;
+}
+
+impl Identity for MemoryPayloadV1 {
+    /// The content-derived identity rules a memory keeps on every surface.
+    fn holds_for(&self, entity_key: &str) -> bool {
+        entity_key == self.id
+            && is_valid_memory_id(&self.id)
+            && self.id == memory_id(&self.body)
+            && self.content_hash == sha256_hex(self.body.trim_end().as_bytes())
+            && (1..=5).contains(&self.quality)
+            && self.created_at().is_ok()
+    }
+}
+
+impl Identity for CodeGenerationV1 {
+    /// A code generation's identity is its manifest: the id must be the one its
+    /// contents earn, exactly as a memory's id must hash its body.
+    ///
+    /// The repo is NOT checked against the payload, because the payload has no
+    /// repo in it — the entity IS the repo, so `entity_key` names it and is the
+    /// only place it appears. Folding a repo into the payload would fold it
+    /// into the digest and therefore into the generation id, which would make
+    /// the same tree indexed under two labels two different generations. So the
+    /// only thing to require of the key is that there IS one.
+    fn holds_for(&self, entity_key: &str) -> bool {
+        self.owns_its_id().unwrap_or(false) && !entity_key.is_empty()
+    }
+}
+
+impl Identity for DocumentRevisionV1 {
+    /// A document revision's identity is its NAME: the id must be the one its
+    /// repo and path earn and the key must equal it, so text filed under
+    /// another document's name is refused before a reader can be shown it. The
+    /// passages must also run contiguously from zero and every link must name a
+    /// passage the revision has — a revision assembled from parts that did not
+    /// all arrive fails both.
+    fn holds_for(&self, entity_key: &str) -> bool {
+        entity_key == self.shared_id
+            && self.owns_its_id()
+            && self.chunks_are_contiguous()
+            && self.links_resolve()
+    }
+}
+
+/// Decode and judge one kind's payload.
 ///
-/// So the only thing to require of the key is that there IS one: a memory's
-/// key must equal a content-derived id, a repo label is whatever the operator
-/// chose to call the checkout.
-fn code_identity(operation: &Operation, text: &str) -> Option<Disposition> {
-    let Ok(decoded) = CodeGenerationV1::decode(text) else {
+/// The two refusals are different answers, which is the whole reason this is
+/// shared: a payload this build cannot READ is unsupported and the sender
+/// should stop offering it, while one that reads but does not hold together is
+/// invalid and the sender has a bug.
+fn identity<T: Identity>(operation: &Operation, text: &str) -> Option<Disposition> {
+    // Deserialized here rather than through each type's own `decode`: those
+    // differ only in the error message they build, and the message is thrown
+    // away — all this needs to know is whether the bytes read at all.
+    let Ok(payload) = serde_json::from_str::<T>(text) else {
         return Some(Disposition::RejectedUnsupported);
     };
-    let owns = decoded.owns_its_id().unwrap_or(false);
-    (!owns || operation.entity_key.is_empty()).then_some(Disposition::RejectedInvalid)
+    (!payload.holds_for(&operation.entity_key)).then_some(Disposition::RejectedInvalid)
 }
 
 /// The operation's payload as canonical text, with the declared digest
@@ -156,21 +207,6 @@ fn canonical_text(operation: &Operation) -> std::result::Result<String, Disposit
         return Err(Disposition::RejectedInvalid);
     }
     String::from_utf8(bytes).map_err(|_| Disposition::RejectedInvalid)
-}
-
-/// The content-derived identity rules a memory keeps on every surface.
-fn memory_identity(operation: &Operation, text: &str) -> Option<Disposition> {
-    let Ok(payload) = MemoryPayloadV1::decode(text) else {
-        return Some(Disposition::RejectedUnsupported);
-    };
-    let body_hash = sha256_hex(payload.body.trim_end().as_bytes());
-    let mismatch = operation.entity_key != payload.id
-        || !is_valid_memory_id(&payload.id)
-        || payload.id != memory_id(&payload.body)
-        || payload.content_hash != body_hash
-        || !(1..=5).contains(&payload.quality)
-        || payload.created_at().is_err();
-    mismatch.then_some(Disposition::RejectedInvalid)
 }
 
 /// Order the operation against the entity's current revision.

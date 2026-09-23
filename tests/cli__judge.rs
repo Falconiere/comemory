@@ -236,7 +236,7 @@ fn an_observation_records_the_complete_effective_filters() {
         serde_json::from_str(&retrieval_json).expect("retrieval is JSON");
     assert_eq!(retrieval["knobs_hash"], knobs_hash);
     assert_eq!(retrieval["corpus"]["digest"], corpus_digest);
-    assert_eq!(retrieval["schema_version"], "26");
+    assert_eq!(retrieval["schema_version"], "25");
     assert!(
         retrieval["corpus"]["repos"]
             .as_array()

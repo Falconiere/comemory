@@ -9,20 +9,25 @@
 use toolu_orm::core::column::{Integer, Text};
 use toolu_orm::{fts5_table, table};
 
-/// `remote_document`: one row per revision of one shared document.
+/// `remote_document`: the revision of one shared document this machine holds.
 ///
 /// Keyed by canonical repo plus `shared_id`, which is the digest of that repo
 /// and the document's normalized repository-relative path — neither of them a
 /// machine path. Two machines that indexed the same file from different
 /// checkouts therefore agree on this key, which is the whole point.
 ///
-/// `state` carries the same three-way lifecycle a code generation has: a
-/// revision is `staged` until every part of it has arrived and verified,
-/// `active` once it has, and `superseded` once a later revision replaced it.
-/// The last complete accepted revision wins.
+/// ONE row per document, replaced wholesale: the last complete accepted
+/// revision wins, and the one before it is gone rather than retained. There is
+/// deliberately no `state` column, unlike `code_generation`. A code generation
+/// is staged locally before upload and so needs a lifecycle; a pulled document
+/// has no local staging (`document_share` is the local half) and an incomplete
+/// upload never reaches acceptance at all — its parts sit in
+/// `replica_staged_part`. What makes a revision appear whole is the acceptance
+/// transaction: this row, its chunks, its links and its FTS rows commit
+/// together or not at all. A `state` column here could only ever hold one
+/// reachable value.
 #[table(name = "remote_document")]
 #[primary_key(repo, shared_id)]
-#[index("idx_remote_document_state", repo, state)]
 #[index("idx_remote_document_path", repo, path)]
 pub struct RemoteDocument {
     /// Canonical repo — the identity the workspace binding resolved, never a
@@ -49,19 +54,11 @@ pub struct RemoteDocument {
     /// compares the assembled parts against.
     #[column(not_null)]
     pub chunk_count: Integer,
-    /// `staged` until complete, `active` once it is, `superseded` after a
-    /// later revision replaced it.
-    #[column(
-        not_null,
-        check = "state IN ('staged', 'active', 'superseded')",
-        default = "'staged'"
-    )]
-    pub state: Text,
-    /// When this row was recorded.
+    /// When this machine accepted the revision it now holds. Replaced with the
+    /// revision, so it dates THIS text rather than the document's first
+    /// appearance — which is what a reader citing a passage needs.
     #[column(not_null)]
-    pub created_at: Text,
-    /// When this revision became the active one; `NULL` while staged.
-    pub activated_at: Text,
+    pub accepted_at: Text,
 }
 
 /// `remote_document_chunk`: the passages of one pulled revision.
