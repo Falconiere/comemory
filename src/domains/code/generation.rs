@@ -37,7 +37,14 @@ pub fn plan(conn: &Connection, repo: &str) -> Result<Option<Planned>> {
     };
     let mined_commit = repo_marker::last_mined_commit(conn, repo)?;
     let projection = project(conn, repo)?;
-    let parent_id = code_generation::active_local(conn, repo)?.map(|g| g.generation_id);
+    // The chain belongs to the REPOSITORY, not to an origin: a generation
+    // extends whatever the repo is currently at, whoever built it. Deriving
+    // the parent from the locally built generation only would mute this
+    // machine for good the first time a peer's generation became active —
+    // its next plan would claim to be the repo's first, and no peer could
+    // accept that. Which generation may be UPLOADED is the separate question
+    // `code_generation::active_local` answers.
+    let parent_id = code_generation::active(conn, repo)?.map(|g| g.generation_id);
     // One derivation, in the payload that also verifies it on the receiving
     // side: the id is the 32-hex prefix of the payload's digest taken with
     // the id field blank, and `manifest_digest` is the digest of the payload

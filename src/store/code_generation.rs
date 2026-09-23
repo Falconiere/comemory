@@ -75,7 +75,13 @@ pub struct Generation {
 /// `(repo, generation_id)`.
 ///
 /// A re-recorded generation is the same generation — the id is the digest of
-/// its contents — so this is an upsert rather than a conflict.
+/// its contents — so this is an upsert rather than a conflict. It refreshes
+/// only what the contents determine: `state` and `origin` are this machine's
+/// own history of the row, not something the sender restates, and are left to
+/// [`activate`] and [`set_state`]. Overwriting them here would reset an
+/// already-active generation to `staged` the moment a second peer sent the
+/// same contents under a different operation id, and would relabel a
+/// generation this machine built as one it pulled.
 ///
 /// # Errors
 /// Propagates SQLite failures.
@@ -99,8 +105,6 @@ pub fn record(conn: &Connection, generation: &Generation, at: &str) -> Result<()
                     .set(&col::parent_id, generation.parent_id.as_deref())
                     .set(&col::head, generation.head.as_str())
                     .set(&col::mined_commit, generation.mined_commit.as_deref())
-                    .set(&col::origin, generation.origin.as_str())
-                    .set(&col::state, generation.state.as_str())
                     .set(&col::file_count, generation.file_count)
                     .set(&col::manifest_digest, generation.manifest_digest.as_str()),
             )
@@ -127,11 +131,11 @@ pub fn activate(tx: &Connection, repo: &str, generation_id: &str, at: &str) -> R
         )));
     };
     let current = active(tx, repo)?;
-    if current.as_ref().map(|g| g.generation_id.as_str()) == Some(generation_id) {
+    let current_id = current.as_ref().map(|g| g.generation_id.as_str());
+    if current_id == Some(generation_id) {
         return Ok(());
     }
-    let current_id = current.as_ref().map(|g| g.generation_id.as_str());
-    if target.parent_id.as_deref() != current_id {
+    if !extends(target.parent_id.as_deref(), generation_id, current_id) {
         return Err(Error::Conflict(format!(
             "code generation {generation_id} was planned against {:?}, but {repo} is at {current_id:?}",
             target.parent_id
@@ -141,6 +145,32 @@ pub fn activate(tx: &Connection, repo: &str, generation_id: &str, at: &str) -> R
         set_state(tx, repo, &current.generation_id, State::Superseded, None)?;
     }
     set_state(tx, repo, generation_id, State::Active, Some(at))
+}
+
+/// Whether a generation with `parent_id` may become `repo`'s active one when
+/// the repo is currently at `current_id`.
+///
+/// One rule, asked in two places: [`activate`] enforces it where the state
+/// moves, and an acceptance asks it BEFORE writing anything, so a stale plan
+/// is answered as a refusal rather than unwound. A generation that is already
+/// the active one extends itself — re-applying it is a no-op, not a conflict.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn may_activate(conn: &Connection, repo: &str, generation: &Generation) -> Result<bool> {
+    let current = active(conn, repo)?;
+    let current_id = current.as_ref().map(|g| g.generation_id.as_str());
+    Ok(current_id == Some(generation.generation_id.as_str())
+        || extends(
+            generation.parent_id.as_deref(),
+            &generation.generation_id,
+            current_id,
+        ))
+}
+
+/// The chain rule itself: a generation extends exactly what the repo is at.
+fn extends(parent_id: Option<&str>, generation_id: &str, current_id: Option<&str>) -> bool {
+    parent_id == current_id || current_id == Some(generation_id)
 }
 
 /// The repo's active generation, if it has one.

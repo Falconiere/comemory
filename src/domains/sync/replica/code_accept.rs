@@ -1,6 +1,11 @@
 //! Materialize an accepted code generation: record it, write its projection,
 //! activate it and journal the position — all in one transaction.
 //!
+//! A generation planned against a parent the repo has already moved past is
+//! refused BEFORE any of that runs, and the refusal is a disposition with a
+//! receipt rather than an error: the rest of the envelope still applies, and
+//! the sender's retry reads back the same answer.
+//!
 //! Atomicity is the point. A reader between a half-written projection and its
 //! activation would see a repo that never existed: some files at the old head,
 //! some at the new, with import edges pointing at both. Activation is the
@@ -49,6 +54,18 @@ pub(crate) fn apply(
 
     let conn = ctx.conn()?;
     let tx = conn.transaction()?;
+    // Asked before anything is written. A generation planned against a parent
+    // the repo has already moved past is the concurrent-push case, and it is
+    // an ANSWER, not a failure: the envelope's other operations still apply,
+    // and the receipt is what makes the sender's retry read back the same
+    // refusal instead of failing identically forever.
+    if let Some(payload) = payload.as_ref()
+        && !code_generation::may_activate(&tx, &repo, &row(&repo, payload)?)?
+    {
+        let result = refuse(&tx, operation, epoch, at)?;
+        tx.commit()?;
+        return Ok(result);
+    }
     // The absent payload is a tombstone, which for this kind means the
     // authoritative generation is empty — the repo still exists, it just
     // holds nothing. It never means the sender lost its checkout.
@@ -89,6 +106,22 @@ pub(crate) fn apply(
     })
 }
 
+/// The row this payload describes.
+fn row(repo: &str, payload: &CodeGenerationV1) -> Result<Generation> {
+    let projection = payload.projection();
+    Ok(Generation {
+        repo: repo.to_string(),
+        generation_id: payload.generation_id.clone(),
+        parent_id: payload.parent_id.clone(),
+        head: payload.head.clone(),
+        mined_commit: payload.mined_commit.clone(),
+        origin: ReplicaOrigin::Sync,
+        state: State::Staged,
+        file_count: i64::try_from(projection.files.len()).unwrap_or(i64::MAX),
+        manifest_digest: payload.canonical()?.1,
+    })
+}
+
 /// Record the generation, write its projection and make it the active one.
 fn activate_generation(
     tx: &Connection,
@@ -96,26 +129,38 @@ fn activate_generation(
     payload: &CodeGenerationV1,
     at: &str,
 ) -> Result<()> {
-    let projection = payload.projection();
-    let file_count = i64::try_from(projection.files.len()).unwrap_or(i64::MAX);
-    let manifest_digest = payload.canonical()?.1;
-    code_generation::record(
+    code_generation::record(tx, &row(repo, payload)?, at)?;
+    remote_code::replace_generation(tx, repo, &payload.generation_id, &payload.projection())?;
+    code_generation::activate(tx, repo, &payload.generation_id, at)
+}
+
+/// Record the refusal of a stale plan, so the sender's retry reads it back.
+fn refuse(
+    tx: &Connection,
+    operation: &Operation,
+    epoch: &str,
+    at: &str,
+) -> Result<OperationResult> {
+    let reason = "code generation was planned against a parent this repo has moved past";
+    replica_receipt::record(
         tx,
-        &Generation {
-            repo: repo.to_string(),
-            generation_id: payload.generation_id.clone(),
-            parent_id: payload.parent_id.clone(),
-            head: payload.head.clone(),
-            mined_commit: payload.mined_commit.clone(),
-            origin: ReplicaOrigin::Sync,
-            state: State::Staged,
-            file_count,
-            manifest_digest,
+        &Receipt {
+            operation_id: operation.operation_id.clone(),
+            epoch: epoch.to_string(),
+            sequence: None,
+            disposition: Disposition::RejectedStale.as_str().to_string(),
+            payload_digest: operation.payload_digest.clone(),
+            reason: Some(reason.to_string()),
         },
         at,
     )?;
-    remote_code::replace_generation(tx, repo, &payload.generation_id, &projection)?;
-    code_generation::activate(tx, repo, &payload.generation_id, at)
+    Ok(OperationResult {
+        operation_id: operation.operation_id.clone(),
+        disposition: Disposition::RejectedStale,
+        sequence: None,
+        payload_digest: operation.payload_digest.clone(),
+        reason: Some(reason.to_string()),
+    })
 }
 
 /// Drop the repo's pulled projection for an authoritative empty generation.

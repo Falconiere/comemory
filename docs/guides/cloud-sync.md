@@ -159,8 +159,10 @@ What that buys you:
   reconnecting the volume resumes pushing.
 
 If two machines build a generation from the same parent, the first accepted
-wins and the second is refused: it replans against the new one rather than
-merging two heads into a tree neither machine has. The full contract is
+wins and the second is answered `rejected_stale`: it replans against the new
+one rather than merging two heads into a tree neither machine has. One stale
+generation never fails the batch it travelled in, and a retry reads the same
+answer back. The full contract is
 [code generation replication](../designs/2026-09-22-code-generation-replication.md).
 
 - at the end of `comemory auth login`'s first sync;

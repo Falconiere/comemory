@@ -220,14 +220,16 @@ fn a_generation_planned_against_a_stale_parent_never_activates() {
     // the concurrent case. Accepting it would union two heads.
     let stale = payload(Some(&first.generation_id), "head-3", 1);
 
+    let operation = upsert("op-20260922-gen00007", &stale);
     let mut ctx = home.ctx();
-    let refused = accept::run(
-        &mut ctx,
-        envelope(vec![upsert("op-20260922-gen00007", &stale)]),
-    );
+    let response = accept::run(&mut ctx, envelope(vec![operation.clone()])).expect("accept");
 
-    // The activation refuses inside the transaction, so nothing is written.
-    assert!(refused.is_err(), "a stale plan cannot activate");
+    assert_eq!(
+        response.results[0].disposition,
+        Disposition::RejectedStale,
+        "a stale plan is answered, not thrown: {:?}",
+        response.results[0]
+    );
     let active = code_generation::active(&home.conn, REPO)
         .expect("active")
         .expect("row");
@@ -240,6 +242,168 @@ fn a_generation_planned_against_a_stale_parent_never_activates() {
             .expect("files")
             .is_empty(),
         "the refused generation published nothing"
+    );
+    assert!(
+        code_generation::by_id(&home.conn, REPO, &stale.generation_id)
+            .expect("by_id")
+            .is_none(),
+        "and left no row of its own behind"
+    );
+    // The receipt is what makes the sender's retry read back the same answer
+    // rather than failing identically forever.
+    let mut ctx = home.ctx();
+    let replay = accept::run(&mut ctx, envelope(vec![operation])).expect("replay");
+    assert_eq!(replay.results[0].disposition, Disposition::RejectedStale);
+    assert_eq!(
+        replica_read::head(&home.conn).expect("head"),
+        2,
+        "and neither attempt earned a feed position"
+    );
+}
+
+#[test]
+fn a_stale_operation_does_not_abort_the_rest_of_its_envelope() {
+    let mut home = Home::new();
+    let first = payload(None, "head-1", 3);
+    {
+        let mut ctx = home.ctx();
+        accept::run(
+            &mut ctx,
+            envelope(vec![upsert("op-20260922-gen00020", &first)]),
+        )
+        .expect("first");
+    }
+    // One stale generation for this repo, and one perfectly good generation
+    // for another, in the same envelope.
+    let stale = payload(None, "head-rival", 5);
+    let mut other = upsert("op-20260922-gen00022", &first);
+    other.entity_key = "Falconiere/other".to_string();
+    other.repository = Some("Falconiere/other".to_string());
+
+    let mut ctx = home.ctx();
+    let response = accept::run(
+        &mut ctx,
+        envelope(vec![upsert("op-20260922-gen00021", &stale), other]),
+    )
+    .expect("the envelope still applies");
+
+    assert_eq!(response.results[0].disposition, Disposition::RejectedStale);
+    assert_eq!(
+        response.results[1].disposition,
+        Disposition::Accepted,
+        "one operation's refusal is not the envelope's failure: {:?}",
+        response.results[1]
+    );
+    assert_eq!(
+        code_generation::active(&home.conn, "Falconiere/other")
+            .expect("active")
+            .expect("row")
+            .generation_id,
+        first.generation_id,
+        "and the good operation really landed"
+    );
+}
+
+#[test]
+fn the_same_generation_under_a_new_operation_id_is_still_a_no_op() {
+    let mut home = Home::new();
+    let first = payload(None, "head-1", 3);
+    {
+        let mut ctx = home.ctx();
+        accept::run(
+            &mut ctx,
+            envelope(vec![upsert("op-20260922-gen00030", &first)]),
+        )
+        .expect("first");
+    }
+    let second = payload(Some(&first.generation_id), "head-2", 9);
+    {
+        let mut ctx = home.ctx();
+        accept::run(
+            &mut ctx,
+            envelope(vec![upsert("op-20260922-gen00031", &second)]),
+        )
+        .expect("second");
+    }
+
+    // A second peer sends the SAME generation under its own operation id: the
+    // content is the identity, so re-recording it must not undo its state.
+    let mut ctx = home.ctx();
+    let response = accept::run(
+        &mut ctx,
+        envelope(vec![upsert("op-20260922-gen00032", &second)]),
+    )
+    .expect("accept");
+
+    assert_eq!(
+        response.results[0].disposition,
+        Disposition::Accepted,
+        "re-applying what the repo is already at is cheap, not a conflict: {:?}",
+        response.results[0]
+    );
+    let active = code_generation::active(&home.conn, REPO)
+        .expect("active")
+        .expect("row");
+    assert_eq!(active.generation_id, second.generation_id);
+    assert_eq!(
+        active.state,
+        code_generation::State::Active,
+        "and it is still an activated row, not one reset to staged"
+    );
+    assert_eq!(
+        code_generation::by_id(&home.conn, REPO, &first.generation_id)
+            .expect("by_id")
+            .expect("row")
+            .state,
+        code_generation::State::Superseded,
+        "the generation it superseded stayed superseded"
+    );
+}
+
+#[test]
+fn a_locally_built_generation_keeps_its_origin_when_a_peer_sends_it_back() {
+    let mut home = Home::new();
+    let mine = payload(None, "head-1", 3);
+    code_generation::record(
+        &home.conn,
+        &code_generation::Generation {
+            repo: REPO.to_string(),
+            generation_id: mine.generation_id.clone(),
+            parent_id: None,
+            head: mine.head.clone(),
+            mined_commit: mine.mined_commit.clone(),
+            origin: crate::store::replica_journal::ReplicaOrigin::Local,
+            state: code_generation::State::Staged,
+            file_count: 2,
+            manifest_digest: "d".repeat(64),
+        },
+        "2026-09-22T10:00:00Z",
+    )
+    .expect("record");
+    code_generation::activate(
+        &home.conn,
+        REPO,
+        &mine.generation_id,
+        "2026-09-22T10:01:00Z",
+    )
+    .expect("activate");
+
+    // The peer this machine pushed to sends the same generation back.
+    let mut ctx = home.ctx();
+    accept::run(
+        &mut ctx,
+        envelope(vec![upsert("op-20260922-gen00040", &mine)]),
+    )
+    .expect("accept");
+
+    assert_eq!(
+        code_generation::by_id(&home.conn, REPO, &mine.generation_id)
+            .expect("by_id")
+            .expect("row")
+            .origin,
+        crate::store::replica_journal::ReplicaOrigin::Local,
+        "what this machine built stays its own, or upload selection would \
+         silently stop offering it"
     );
 }
 
@@ -812,13 +976,14 @@ fn a_pulled_generation_is_not_offered_as_this_machines_next_parent() {
         .expect("row");
     assert_eq!(
         next.generation.parent_id.as_deref(),
-        None,
-        "the peer's generation is active, and it is not this machine's base"
+        Some(peer.generation_id.as_str()),
+        "the chain belongs to the repo: this machine's next generation extends \
+         what the repo is at, whoever built it"
     );
     assert_eq!(
         code_generation::active_local(&home.conn, REPO).expect("active_local"),
         None,
-        "upload selection offers nothing while a pulled generation is active"
+        "but a pulled projection is not itself offered back for upload"
     );
     assert_eq!(
         code_generation::by_id(&home.conn, REPO, &local.generation.generation_id)

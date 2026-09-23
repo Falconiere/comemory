@@ -22,8 +22,8 @@
 mod replica_support;
 
 use replica_support::{
-    CODE_REPO, Engine, active_generation, cli_raw, code_envelope, pinned_repo, planned_generation,
-    publish_locally, shared_paths,
+    CODE_REPO, Engine, active_generation, cli_raw, code_envelope, git, pinned_repo,
+    planned_generation, publish_locally, shared_paths,
 };
 
 /// Over `MAX_BATCH_FILES`, so the manifest crosses the bound a push cuts on.
@@ -179,9 +179,18 @@ fn a_severed_upload_leaves_the_peer_at_the_generation_it_had() {
     assert_eq!(status, 200);
     let settled = active_generation(&peer.data_dir(), CODE_REPO).expect("first generation");
 
-    // A second generation uploaded in two parts, of which only the first
-    // arrives — the connection is severed before the rest.
-    let bytes = serde_json::to_string(&payload).expect("bytes");
+    // A real second generation: the author's tree moves, and the upload of
+    // what that produced is cut off after its first part.
+    std::fs::write(root.join("file_9999.rs"), "pub fn added_later() {}\n").expect("write");
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "add a file"]);
+    index_cli(&author, &root);
+    let next = planned_generation(&author.data_dir(), CODE_REPO).expect("second generation");
+    assert_ne!(
+        next["generation_id"], payload["generation_id"],
+        "the tree moved, so this is a different generation"
+    );
+    let bytes = serde_json::to_string(&next).expect("bytes");
     let mut half = bytes.len() / 2;
     while !bytes.is_char_boundary(half) {
         half += 1;
@@ -203,6 +212,10 @@ fn a_severed_upload_leaves_the_peer_at_the_generation_it_had() {
         active_generation(&peer.data_dir(), CODE_REPO),
         Some(settled),
         "the peer is still at the generation that completed"
+    );
+    assert!(
+        !shared_paths(&peer.data_dir(), CODE_REPO).contains(&"file_9999.rs".to_string()),
+        "and holds nothing the severed upload was carrying"
     );
     let (status, changes) = peer.get("/api/v1/sync/replica/changes?since=0&limit=100");
     assert_eq!(status, 200, "{changes}");
@@ -253,15 +266,15 @@ fn two_engines_planning_from_one_parent_do_not_union_two_heads() {
     assert_eq!(body["data"]["results"][0]["disposition"], "accepted");
     let winner = active_generation(&peer.data_dir(), CODE_REPO).expect("winner");
 
-    let refused = peer.post_expecting_refusal(
+    let (status, body) = peer.post(
         "/api/v1/sync/replica/import",
         &code_envelope("op-20260922-race0003", CODE_REPO, &rival("head-b", "b2")),
     );
 
+    assert_eq!(status, 200, "the envelope itself is fine: {body}");
     assert_eq!(
-        refused,
-        Some(409),
-        "a stale plan is a conflict, not a merge"
+        body["data"]["results"][0]["disposition"], "rejected_stale",
+        "the loser is answered, not merged and not thrown: {body}"
     );
     assert_eq!(
         active_generation(&peer.data_dir(), CODE_REPO),

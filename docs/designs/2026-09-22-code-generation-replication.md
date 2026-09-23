@@ -60,14 +60,23 @@ rather than each inventing a rule:
 
 Upload selection reads `code_generation.origin`: only a generation this
 machine built is ever offered, which is how a replication loop is prevented
-rather than detected.
+rather than detected. That is a separate question from the parent chain above
+— a machine whose repo is currently at a peer's generation still plans its
+next one on top of it, and offers that.
 
 ## Concurrency, deletion, disconnection
 
 **Two machines, one parent.** Each plans against the generation the repo is
-at. The first accepted wins; the second is refused with a conflict, because
-accepting it would union two heads into a tree neither machine has. It
-replans against the new active generation.
+at — whatever its origin, because the chain belongs to the repository rather
+than to whoever built a link in it. The first accepted wins; the second is
+answered `rejected_stale` and replans, because accepting it would union two
+heads into a tree neither machine has.
+
+That refusal is a **disposition with a receipt**, not an error. Two things
+follow, and both matter: the rest of the envelope still applies, so one stale
+generation cannot stop a batch; and the sender's retry reads the same answer
+back from the receipt instead of failing identically forever. Nothing is
+written before the check, so a refused generation leaves no row of its own.
 
 **A tracked file is deleted.** Nothing announces it. The next generation
 simply does not name the path, and activation replaces the whole projection,
@@ -113,7 +122,7 @@ projection whose generation is gone.
 | Module | What it owns |
 | --- | --- |
 | `store/schema_code_generation.rs` | The four declared tables |
-| `store/code_generation.rs` | Row lifecycle: record, activate, supersede, read what a repo is at |
+| `store/code_generation.rs` | Row lifecycle: record, activate, supersede, read what a repo is at. `record` is an upsert of CONTENT — it never touches `state` or `origin`, which are this machine's own history of the row, so the same generation arriving twice under two operation ids cannot reset an active row to `staged` or relabel a locally built one as pulled |
 | `store/remote_code.rs` | The projection, written and read per generation |
 | `store/remote_code_view.rs` | Repo-scoped reads over the ACTIVE generation, and the one definition of the shared half of the graph |
 | `store/replica_sweep.rs` | The abandoned-stage sweep |

@@ -186,7 +186,7 @@ fn the_next_generation_names_the_active_local_one_as_its_parent() {
 }
 
 #[test]
-fn a_pulled_generation_is_never_offered_as_a_parent() {
+fn a_pulled_generation_is_the_next_parent_but_is_never_offered_for_upload() {
     let fixture = indexed();
     let conn = &fixture.conn;
     let mut pulled = crate::domains::code::generation::plan(conn, REPO)
@@ -204,8 +204,17 @@ fn a_pulled_generation_is_never_offered_as_a_parent() {
         .expect("row");
 
     assert_eq!(
-        next.generation.parent_id, None,
-        "a peer's generation is not this machine's base — upload selection is local-only"
+        next.generation.parent_id.as_deref(),
+        Some(pulled.generation_id.as_str()),
+        "the chain is the repository's: this machine's next generation extends \
+         what the repo is at, whoever built it. Claiming to be the repo's \
+         first instead would mute this machine for good — no peer could \
+         accept a generation whose parent is not the one they are at"
+    );
+    assert_eq!(
+        code_generation::active_local(conn, REPO).expect("active_local"),
+        None,
+        "and the pulled projection itself is never offered back for upload"
     );
 }
 
