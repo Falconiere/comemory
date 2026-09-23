@@ -17,6 +17,7 @@ use crate::domains::documents::replica_payload::{
 use crate::domains::documents::share;
 use crate::domains::sync::replica::accept;
 use crate::domains::sync::replica::contract::{Disposition, Operation};
+use crate::store::remote_document::{Chunk, Link};
 use crate::store::replica_journal::ReplicaOp;
 use crate::store::{remote_document, replica_read};
 
@@ -128,14 +129,14 @@ fn an_accepted_revision_becomes_searchable_whole() {
     assert_eq!(held.chunk_count, sent.chunks.len() as i64);
     assert!(held.chunk_count > 1, "the real document has passages");
     assert_eq!(
-        remote_document::chunks(&home.conn, REPO, &sent.shared_id)
+        remote_document::all::<Chunk>(&home.conn, REPO, &sent.shared_id)
             .expect("chunks")
             .len(),
         sent.chunks.len(),
         "every passage landed with the header"
     );
     assert_eq!(
-        remote_document::links(&home.conn, REPO, &sent.shared_id)
+        remote_document::all::<Link>(&home.conn, REPO, &sent.shared_id)
             .expect("links")
             .len(),
         1,
@@ -208,7 +209,7 @@ fn re_accepting_the_revision_already_held_changes_no_row() {
         envelope(vec![upsert("op-20260923-doc00004", &sent)]),
     )
     .expect("first");
-    let before = remote_document::chunks(&home.conn, REPO, &sent.shared_id).expect("chunks");
+    let before = remote_document::all::<Chunk>(&home.conn, REPO, &sent.shared_id).expect("chunks");
     let head_before = replica_read::head(&home.conn).expect("head");
 
     // The same revision under a NEW operation id: the receipt cannot answer
@@ -222,7 +223,7 @@ fn re_accepting_the_revision_already_held_changes_no_row() {
 
     assert_eq!(response.results[0].disposition, Disposition::Accepted);
     assert_eq!(
-        remote_document::chunks(&home.conn, REPO, &sent.shared_id).expect("chunks"),
+        remote_document::all::<Chunk>(&home.conn, REPO, &sent.shared_id).expect("chunks"),
         before,
         "the same text, neither duplicated nor reordered"
     );
@@ -382,4 +383,236 @@ fn a_tombstone_forgets_that_one_document() {
         "the other document is untouched"
     );
     assert!(fts_rows(&home.conn, &kept.shared_id) > 0);
+}
+
+// ---------------------------------------------------------------------------
+// AC-8, AC-9 and AC-14: what an import may NOT touch. The local rows are
+// captured before and compared after, and the comparison is only meaningful
+// because the fixture first proves they are non-empty.
+// ---------------------------------------------------------------------------
+
+/// Every local document row that an import must leave alone, as text.
+fn local_rows(conn: &rusqlite::Connection) -> Vec<String> {
+    let mut out = Vec::new();
+    for sql in [
+        "SELECT id, source_file_id, title, repo, revision_hash, created_at, updated_at \
+           FROM documents ORDER BY id",
+        "SELECT document_id, ordinal, heading_path, char_start, char_end, line_start, \
+                line_end, simhash, text FROM document_chunks ORDER BY document_id, ordinal",
+        "SELECT document_id, ordinal, title, headings, passage, path_tokens \
+           FROM document_fts ORDER BY document_id, ordinal",
+        "SELECT id, canonical_path, kind, repo FROM source_roots ORDER BY id",
+        "SELECT id, source_id, relative_path, classification, status FROM source_files \
+          ORDER BY id",
+        "SELECT rel, src_kind, src_id, dst_kind, dst_id FROM edges ORDER BY rel, src_id, dst_id",
+    ] {
+        let mut statement = conn.prepare(sql).expect("prepare");
+        let columns = statement.column_count();
+        let rows = statement
+            .query_map([], move |r| {
+                let mut cells = Vec::with_capacity(columns);
+                for i in 0..columns {
+                    cells.push(
+                        r.get::<_, Option<String>>(i)
+                            .or_else(|_| r.get::<_, i64>(i).map(|v| Some(v.to_string())))
+                            .unwrap_or(None)
+                            .unwrap_or_default(),
+                    );
+                }
+                Ok(cells.join("\u{1f}"))
+            })
+            .expect("query")
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .expect("collect");
+        out.extend(rows);
+    }
+    out
+}
+
+/// Every file under `dir`, with its bytes hashed, so a written file shows up.
+fn tree(dir: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        for entry in std::fs::read_dir(&next).expect("read_dir") {
+            let path = entry.expect("entry").path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let bytes = std::fs::read(&path).expect("read file");
+            out.push(format!(
+                "{} {}",
+                path.strip_prefix(dir).expect("prefix").display(),
+                bytes.len()
+            ));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Index this repository's own `docs/guides` into `home`, under `REPO`, and
+/// return the workspace it was indexed from.
+fn index_guides(home: &mut Home) -> tempfile::TempDir {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let docs = workspace.path().join("docs").join("guides");
+    std::fs::create_dir_all(&docs).expect("mkdir");
+    for name in ["cloud-sync.md", "http-api.md"] {
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("docs/guides")
+                .join(name),
+            docs.join(name),
+        )
+        .expect("copy real guide");
+    }
+    crate::store::repository_approval::replace_all(
+        &home.conn,
+        &[(REPO.to_string(), REPO.to_string())],
+        "2026-09-23T09:00:00Z",
+    )
+    .expect("approve");
+    let root = std::fs::canonicalize(workspace.path()).expect("canonicalize");
+    home.conn
+        .execute(
+            "INSERT INTO repo_marker (repo, root_path) VALUES (?1, ?2)",
+            rusqlite::params![REPO, root.to_str().expect("utf8")],
+        )
+        .expect("record the root");
+
+    let mut ctx = home.ctx();
+    let output = crate::domains::documents::index::run(
+        &mut ctx,
+        crate::domains::documents::index::Request {
+            path: vec![docs.to_str().expect("utf8 path").to_string()],
+            repo: Some(REPO.to_string()),
+            strict: false,
+        },
+    )
+    .expect("index the real guides");
+    assert_eq!(output.sources[0].indexed, 2, "{output:?}");
+    workspace
+}
+
+#[test]
+fn importing_a_revision_of_a_locally_indexed_document_changes_no_local_row() {
+    let mut home = Home::new();
+    let workspace = index_guides(&mut home);
+    let before_rows = local_rows(&home.conn);
+    let before_tree = tree(workspace.path());
+    assert!(
+        before_rows.len() > 10,
+        "the fixture indexed real content, so the comparison below is not vacuous: \
+         {} rows",
+        before_rows.len()
+    );
+
+    // A peer's revision of the SAME document, at a different revision_hash.
+    let sent = payload(GUIDE, &"f".repeat(64));
+    let mut ctx = home.ctx();
+    let response = accept::run(
+        &mut ctx,
+        envelope(vec![upsert("op-20260923-doc00020", &sent)]),
+    )
+    .expect("accept");
+
+    assert_eq!(response.results[0].disposition, Disposition::Accepted);
+    assert_eq!(
+        local_rows(&home.conn),
+        before_rows,
+        "every local document, chunk, FTS, source and edge row is untouched"
+    );
+    assert_eq!(
+        tree(workspace.path()),
+        before_tree,
+        "and no file was written into the checkout"
+    );
+    // The pulled side DID land, so the equality above is not the result of the
+    // import quietly doing nothing.
+    assert_eq!(
+        remote_document::revision(&home.conn, REPO, &sent.shared_id)
+            .expect("read")
+            .expect("row")
+            .revision_hash,
+        "f".repeat(64)
+    );
+}
+
+#[test]
+fn a_machine_with_no_registration_at_all_still_holds_the_revision() {
+    let mut home = Home::new();
+    let sent = payload(GUIDE, &"a".repeat(64));
+    let mut ctx = home.ctx();
+
+    accept::run(
+        &mut ctx,
+        envelope(vec![upsert("op-20260923-doc00021", &sent)]),
+    )
+    .expect("accept");
+
+    assert_eq!(
+        home.conn
+            .query_row("SELECT COUNT(*) FROM source_roots", [], |r| r
+                .get::<_, i64>(0))
+            .expect("count"),
+        0,
+        "no registration was invented to hold it"
+    );
+    assert_eq!(
+        home.conn
+            .query_row("SELECT COUNT(*) FROM source_files", [], |r| r
+                .get::<_, i64>(0))
+            .expect("count"),
+        0
+    );
+    assert_eq!(
+        home.conn
+            .query_row("SELECT COUNT(*) FROM documents", [], |r| r.get::<_, i64>(0))
+            .expect("count"),
+        0,
+        "nor a local document row"
+    );
+    let held = remote_document::revision(&home.conn, REPO, &sent.shared_id)
+        .expect("read")
+        .expect("the machine holds it all the same");
+    assert_eq!(held.path, GUIDE, "with its provenance: repo and path");
+    assert_eq!(held.repo, REPO);
+    assert!(
+        fts_rows(&home.conn, &sent.shared_id) > 0,
+        "and it is searchable"
+    );
+}
+
+#[test]
+fn a_revisions_links_land_beside_it_and_write_no_graph_edge() {
+    let mut home = Home::new();
+    let sent = payload(GUIDE, &"a".repeat(64));
+    let edges_before = home
+        .conn
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get::<_, i64>(0))
+        .expect("count");
+    let mut ctx = home.ctx();
+
+    accept::run(
+        &mut ctx,
+        envelope(vec![upsert("op-20260923-doc00022", &sent)]),
+    )
+    .expect("accept");
+
+    assert_eq!(
+        remote_document::all::<Link>(&home.conn, REPO, &sent.shared_id).expect("links"),
+        vec![Link {
+            ordinal: 0,
+            target: "docs/guides/http-api.md".to_string(),
+        }],
+        "the link is carried, resolvable by the reader"
+    );
+    assert_eq!(
+        home.conn
+            .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get::<_, i64>(0))
+            .expect("count"),
+        edges_before,
+        "`edges` is a local table and an import may not write one"
+    );
 }

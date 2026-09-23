@@ -93,12 +93,12 @@ fn a_revision_lands_whole_and_reads_back_as_extracted() {
         Some(revision.clone())
     );
     assert_eq!(
-        remote_document::chunks(&conn, REPO, &revision.shared_id).expect("read chunks"),
+        remote_document::all::<Chunk>(&conn, REPO, &revision.shared_id).expect("read chunks"),
         chunks,
         "every range, heading and passage survives the round trip"
     );
     assert_eq!(
-        remote_document::links(&conn, REPO, &revision.shared_id).expect("read links"),
+        remote_document::all::<Link>(&conn, REPO, &revision.shared_id).expect("read links"),
         links
     );
     assert_eq!(
@@ -147,7 +147,7 @@ fn a_shorter_revision_leaves_no_passage_of_the_longer_one_behind() {
         "the later revision is the one held"
     );
     assert_eq!(
-        remote_document::chunks(&conn, REPO, &short.shared_id)
+        remote_document::all::<Chunk>(&conn, REPO, &short.shared_id)
             .expect("read")
             .len(),
         1,
@@ -159,7 +159,7 @@ fn a_shorter_revision_leaves_no_passage_of_the_longer_one_behind() {
         "and search cannot still match them"
     );
     assert!(
-        remote_document::links(&conn, REPO, &short.shared_id)
+        remote_document::all::<Link>(&conn, REPO, &short.shared_id)
             .expect("read")
             .is_empty(),
         "nor can a link the sender removed still resolve"

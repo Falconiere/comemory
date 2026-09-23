@@ -83,10 +83,21 @@ pub fn replace_revision(
     at: &str,
 ) -> Result<()> {
     purge(tx, &revision.repo, &revision.shared_id)?;
-    write_header(tx, revision, at)?;
+    orm::execute(
+        tx,
+        RemoteDocument::insert()
+            .set(&col::repo, revision.repo.as_str())
+            .set(&col::shared_id, revision.shared_id.as_str())
+            .set(&col::path, revision.path.as_str())
+            .set(&col::title, revision.title.as_str())
+            .set(&col::format, revision.format.as_str())
+            .set(&col::revision_hash, revision.revision_hash.as_str())
+            .set(&col::chunk_count, revision.chunk_count)
+            .set(&col::accepted_at, at)
+            .to_sql(),
+    )?;
     for chunk in chunks {
-        write_chunk(tx, revision, chunk)?;
-        write_fts(tx, revision, chunk)?;
+        write_passage(tx, revision, chunk)?;
     }
     for link in links {
         orm::execute(
@@ -102,26 +113,16 @@ pub fn replace_revision(
     Ok(())
 }
 
-/// The header row for one revision.
-fn write_header(tx: &Connection, revision: &Revision, at: &str) -> Result<()> {
-    orm::execute(
-        tx,
-        RemoteDocument::insert()
-            .set(&col::repo, revision.repo.as_str())
-            .set(&col::shared_id, revision.shared_id.as_str())
-            .set(&col::path, revision.path.as_str())
-            .set(&col::title, revision.title.as_str())
-            .set(&col::format, revision.format.as_str())
-            .set(&col::revision_hash, revision.revision_hash.as_str())
-            .set(&col::chunk_count, revision.chunk_count)
-            .set(&col::accepted_at, at)
-            .to_sql(),
-    )?;
-    Ok(())
-}
-
-/// One passage row.
-fn write_chunk(tx: &Connection, revision: &Revision, chunk: &Chunk) -> Result<()> {
+/// One passage and the row that makes it searchable.
+///
+/// Written together because they describe the same passage: an FTS row without
+/// its chunk matches text nothing can explain, and a chunk without its FTS row
+/// is text search cannot reach.
+///
+/// `path_tokens` carries the raw path — the `identifier` tokenizer splits `/`,
+/// `.`, `-` and camelCase itself, so pre-lowercasing would destroy those
+/// boundaries, the same reason `document_fts::insert` passes it verbatim.
+fn write_passage(tx: &Connection, revision: &Revision, chunk: &Chunk) -> Result<()> {
     orm::execute(
         tx,
         RemoteDocumentChunk::insert()
@@ -137,14 +138,6 @@ fn write_chunk(tx: &Connection, revision: &Revision, chunk: &Chunk) -> Result<()
             .set(&chunk_col::text, chunk.text.as_str())
             .to_sql(),
     )?;
-    Ok(())
-}
-
-/// One searchable row. `path_tokens` carries the raw path: the `identifier`
-/// tokenizer splits `/`, `.`, `-` and camelCase itself, so pre-lowercasing
-/// would destroy those boundaries — the same reason `document_fts::insert`
-/// passes the path verbatim.
-fn write_fts(tx: &Connection, revision: &Revision, chunk: &Chunk) -> Result<()> {
     orm::execute(
         tx,
         RemoteDocumentFts::insert()
@@ -160,39 +153,32 @@ fn write_fts(tx: &Connection, revision: &Revision, chunk: &Chunk) -> Result<()> 
     Ok(())
 }
 
+/// Every table one pulled document's rows live in, children before parents.
+///
+/// `remote_document_fts` is a virtual table with no foreign key, so its rows
+/// are deleted explicitly — the same obligation `document_fts` has. The other
+/// three are listed rather than cascaded because they all share one key, which
+/// is also why one loop can clear them.
+const PULLED_TABLES: [&str; 4] = [
+    "remote_document_fts",
+    "remote_document_chunk",
+    "remote_document_link",
+    "remote_document",
+];
+
 /// Forget everything this machine holds for one document — what a tombstone
-/// does, and what `replace_revision` does before writing.
+/// does, and what [`replace_revision`] does before writing.
 ///
 /// # Errors
 /// Propagates SQLite failures.
 pub fn purge(tx: &Connection, repo: &str, shared_id: &str) -> Result<()> {
-    // `remote_document_fts` is a virtual table with no foreign key, so its
-    // rows are deleted explicitly — the same obligation `document_fts` has.
-    tx.execute(
-        "DELETE FROM remote_document_fts WHERE repo = ?1 AND shared_id = ?2",
-        rusqlite::params![repo, shared_id],
-    )?;
-    orm::execute(
-        tx,
-        RemoteDocumentChunk::delete()
-            .filter(chunk_col::repo.eq(repo))
-            .filter(chunk_col::shared_id.eq(shared_id))
-            .to_sql(),
-    )?;
-    orm::execute(
-        tx,
-        RemoteDocumentLink::delete()
-            .filter(link_col::repo.eq(repo))
-            .filter(link_col::shared_id.eq(shared_id))
-            .to_sql(),
-    )?;
-    orm::execute(
-        tx,
-        RemoteDocument::delete()
-            .filter(col::repo.eq(repo))
-            .filter(col::shared_id.eq(shared_id))
-            .to_sql(),
-    )?;
+    for table in PULLED_TABLES {
+        // The table name comes from the const above, never from a caller.
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE repo = ?1 AND shared_id = ?2"),
+            rusqlite::params![repo, shared_id],
+        )?;
+    }
     Ok(())
 }
 
@@ -230,48 +216,58 @@ pub fn revision(conn: &Connection, repo: &str, shared_id: &str) -> Result<Option
     )
 }
 
-/// Every passage of one pulled revision, in order.
+/// A child row of one pulled document, read by [`all`].
 ///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn chunks(conn: &Connection, repo: &str, shared_id: &str) -> Result<Vec<Chunk>> {
-    let mut statement = conn.prepare(
-        "SELECT ordinal, heading_path, char_start, char_end, line_start, line_end, simhash, text \
-           FROM remote_document_chunk \
-          WHERE repo = ?1 AND shared_id = ?2 \
-          ORDER BY ordinal",
-    )?;
-    let rows = statement
-        .query_map([repo, shared_id], |r| {
-            Ok(Chunk {
-                ordinal: r.get(0)?,
-                heading_path: r.get(1)?,
-                char_range: (r.get(2)?, r.get(3)?),
-                line_range: (r.get(4)?, r.get(5)?),
-                simhash: r.get(6)?,
-                text: r.get(7)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+/// Both queries take `(repo, shared_id)` as their two parameters, because
+/// every table here is keyed that way.
+pub trait PulledRow: Sized {
+    /// The query, taking `?1` repo and `?2` shared_id.
+    const SQL: &'static str;
+
+    /// Read one row of [`Self::SQL`]'s column list.
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self>;
 }
 
-/// Every link of one pulled revision, in `(ordinal, target)` order.
+impl PulledRow for Chunk {
+    const SQL: &'static str = "SELECT ordinal, heading_path, char_start, char_end, line_start, \
+                                      line_end, simhash, text \
+                                 FROM remote_document_chunk \
+                                WHERE repo = ?1 AND shared_id = ?2 \
+                                ORDER BY ordinal";
+
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            ordinal: row.get(0)?,
+            heading_path: row.get(1)?,
+            char_range: (row.get(2)?, row.get(3)?),
+            line_range: (row.get(4)?, row.get(5)?),
+            simhash: row.get(6)?,
+            text: row.get(7)?,
+        })
+    }
+}
+
+impl PulledRow for Link {
+    const SQL: &'static str = "SELECT ordinal, target FROM remote_document_link \
+                                WHERE repo = ?1 AND shared_id = ?2 \
+                                ORDER BY ordinal, target";
+
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            ordinal: row.get(0)?,
+            target: row.get(1)?,
+        })
+    }
+}
+
+/// Every child row of one pulled document, in its own order.
 ///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn links(conn: &Connection, repo: &str, shared_id: &str) -> Result<Vec<Link>> {
-    let mut statement = conn.prepare(
-        "SELECT ordinal, target FROM remote_document_link \
-          WHERE repo = ?1 AND shared_id = ?2 ORDER BY ordinal, target",
-    )?;
+pub fn all<T: PulledRow>(conn: &Connection, repo: &str, shared_id: &str) -> Result<Vec<T>> {
+    let mut statement = conn.prepare(T::SQL)?;
     let rows = statement
-        .query_map([repo, shared_id], |r| {
-            Ok(Link {
-                ordinal: r.get(0)?,
-                target: r.get(1)?,
-            })
-        })?
+        .query_map([repo, shared_id], T::read)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
