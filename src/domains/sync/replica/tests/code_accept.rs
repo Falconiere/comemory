@@ -829,3 +829,155 @@ fn a_pulled_generation_is_not_offered_as_this_machines_next_parent() {
         "and this machine's own generation is still recorded as its own"
     );
 }
+
+// ---------------------------------------------------------------------------
+// AC-8: a deletion is not a message of its own. The next generation simply
+// does not name the path, and activation replaces the whole projection — so
+// the path disappears once, and a replay removes nothing further.
+// ---------------------------------------------------------------------------
+
+/// A real checkout with two tracked source files.
+fn two_file_repo(root: &std::path::Path) -> std::path::PathBuf {
+    let repo = crate::test_common::git_sample::build_sample_repo(root);
+    crate::test_common::git_commit::commit_files(
+        &repo,
+        &[("extra.rs", "fn extra() {}\n")],
+        "add extra",
+    );
+    repo
+}
+
+/// Index `root` under `REPO` into `home`.
+fn index_into(
+    home: &mut Home,
+    root: &std::path::Path,
+    mode: crate::domains::code::index_code::IndexMode,
+) {
+    let mut ctx = home.ctx();
+    crate::domains::code::index_code::run(
+        &mut ctx,
+        crate::domains::code::index_code::Request {
+            repo: REPO.to_string(),
+            path: root.to_str().expect("utf8 path").to_string(),
+            mode,
+        },
+    )
+    .expect("index_code run");
+}
+
+/// Plan the next generation, record and activate it locally, and return the
+/// wire payload a push would send — minted from the same projection, so its
+/// id must be the one the planner already computed.
+fn plan_and_publish(home: &mut Home, at: &str) -> CodeGenerationV1 {
+    let planned = crate::domains::code::generation::plan(&home.conn, REPO)
+        .expect("plan")
+        .expect("an indexed repo has a generation");
+    let base = CodeGenerationV1::new(
+        "",
+        planned.generation.parent_id.as_deref(),
+        &planned.generation.head,
+        planned.generation.mined_commit.as_deref(),
+        &planned.projection,
+    );
+    let id = base.mint_id().expect("mint");
+    assert_eq!(
+        id, planned.generation.generation_id,
+        "the wire payload and the planner derive one identity"
+    );
+    code_generation::record(&home.conn, &planned.generation, at).expect("record");
+    code_generation::activate(&home.conn, REPO, &id, at).expect("activate");
+    base.with_id(&id)
+}
+
+#[test]
+fn a_tracked_deletion_leaves_the_path_out_of_the_next_generation() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let root = two_file_repo(workspace.path());
+    let mut author = Home::new();
+    index_into(
+        &mut author,
+        &root,
+        crate::domains::code::index_code::IndexMode::Incremental,
+    );
+    let first = plan_and_publish(&mut author, "2026-09-22T10:00:00Z");
+    assert!(
+        first
+            .projection()
+            .files
+            .iter()
+            .any(|f| f.path == "extra.rs"),
+        "the first generation names both files"
+    );
+
+    let mut peer = Home::new();
+    {
+        let mut ctx = peer.ctx();
+        accept::run(
+            &mut ctx,
+            envelope(vec![upsert("op-20260922-gendel01", &first)]),
+        )
+        .expect("first");
+    }
+
+    // The file is really deleted from the checkout and the repo re-indexed.
+    std::fs::remove_file(root.join("extra.rs")).expect("remove");
+    crate::test_common::git_commit::commit_files(&root, &[], "drop extra");
+    // A full re-walk is what forgets a deleted file's cursor locally: the
+    // incremental walk only ever visits files that still exist, so it has no
+    // occasion to notice one that does not.
+    index_into(
+        &mut author,
+        &root,
+        crate::domains::code::index_code::IndexMode::Full,
+    );
+    let second = plan_and_publish(&mut author, "2026-09-22T11:00:00Z");
+
+    assert_eq!(
+        second.parent_id.as_deref(),
+        Some(first.generation_id.as_str()),
+        "the next generation extends the one that was published"
+    );
+    assert!(
+        !second
+            .projection()
+            .files
+            .iter()
+            .any(|f| f.path == "extra.rs"),
+        "and simply does not name the deleted path: {:?}",
+        second.projection().files
+    );
+
+    let operation = upsert("op-20260922-gendel02", &second);
+    {
+        let mut ctx = peer.ctx();
+        accept::run(&mut ctx, envelope(vec![operation.clone()])).expect("second");
+    }
+
+    let after: Vec<String> = files(&peer.conn, REPO, &second.generation_id)
+        .expect("files")
+        .into_iter()
+        .map(|f| f.path)
+        .collect();
+    assert!(
+        !after.iter().any(|p| p == "extra.rs"),
+        "the peer no longer holds the deleted path: {after:?}"
+    );
+    assert!(
+        after.iter().any(|p| p == "src.rs"),
+        "and still holds the one that survived: {after:?}"
+    );
+
+    // A replay removes nothing further: the whole projection is replaced, so
+    // the second application writes exactly the same rows.
+    let mut ctx = peer.ctx();
+    let replay = accept::run(&mut ctx, envelope(vec![operation])).expect("replay");
+    assert_eq!(replay.results[0].disposition, Disposition::Duplicate);
+    assert_eq!(
+        files(&peer.conn, REPO, &second.generation_id)
+            .expect("files")
+            .into_iter()
+            .map(|f| f.path)
+            .collect::<Vec<_>>(),
+        after
+    );
+}

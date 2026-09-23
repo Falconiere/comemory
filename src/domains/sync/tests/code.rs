@@ -400,3 +400,52 @@ fn a_root_that_git_cannot_open_is_not_offered_either() {
         .collect();
     assert_eq!(pushed, [fixture::CANONICAL_REPO]);
 }
+
+#[test]
+fn an_unmounted_checkout_sends_no_deletion_and_keeps_its_reason_readable() {
+    let mut rig = rig(Config::defaults(), true);
+    let unmounted = worktree_repo(&mut rig, "wt-unmounted");
+    // What an unmounted volume looks like: the recorded root is simply not
+    // there. Nothing about the index changed, and nothing may be deleted on
+    // the strength of a path this machine cannot currently read.
+    std::fs::remove_dir_all(&unmounted).unwrap();
+
+    let stats = rig.push();
+
+    assert_eq!(stats.skipped_missing_root, 1);
+    for body in rig.server.snapshot().code_import_bodies {
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_ne!(
+            parsed["repo"].as_str(),
+            Some("wt-unmounted"),
+            "the withheld label is not pushed at all: {body}"
+        );
+        assert!(
+            !body.contains("tombstone"),
+            "and no request carries a deletion: {body}"
+        );
+    }
+    assert!(
+        !rig.code_paths().iter().any(|p| p.contains("delete")),
+        "no delete route was called: {:?}",
+        rig.code_paths()
+    );
+    // The reason stays observable, which is what lets an operator tell a
+    // disconnect from a repo that was really removed.
+    assert_eq!(
+        comemory::domains::sync::code::not_a_repository(&rig.conn, "wt-unmounted").unwrap(),
+        Some(comemory::domains::sync::code::NotARepository::VanishedRoot),
+    );
+    assert_eq!(
+        comemory::domains::sync::code::NotARepository::VanishedRoot.label(),
+        "missing_root",
+    );
+    // And the withheld repo's own index is untouched: reconnecting the
+    // volume resumes pushing, because nothing here deleted a row.
+    assert!(
+        !indexed_files::list_for_repo(&rig.conn, "wt-unmounted")
+            .unwrap()
+            .is_empty(),
+        "the index this row would push is still here"
+    );
+}
