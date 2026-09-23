@@ -92,6 +92,11 @@ Understanding-oriented background:
   which memory writers owe a replication operation and which deliberately owe
   none, the write intent that makes an interrupted write recoverable, and the
   embedding that rides outside the revision digest.
+- **[Code generation replication](designs/2026-09-22-code-generation-replication.md)** —
+  what one machine learned about a repository's shape, carried to another as
+  an immutable, content-addressed generation that becomes visible whole: why
+  source never leaves, why a pulled generation never writes a local row, and
+  which readers see both sides.
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.

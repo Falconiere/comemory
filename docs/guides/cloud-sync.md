@@ -131,6 +131,38 @@ the files whose blob differs, the paths the workspace still holds and you no
 longer index, and the co-change set when its cursor moved. A repeat push with
 nothing changed costs one manifest read per repo. The push runs:
 
+#### Engine to engine: whole generations
+
+Between two comemory engines the same projection travels as one immutable
+unit — a **generation** — rather than as a file diff. A generation is that
+machine's complete answer for a repository at one revision, identified by the
+digest of its own contents, and it becomes visible on the receiving machine at
+a single instant: never some files at the old head and some at the new.
+
+What that buys you:
+
+- **A machine with no checkout is still useful.** It lists the repository
+  (`comemory repos` shows `status: "shared"` and a `shared_head`) and answers
+  the code graph for it. `search-code` returns nothing, because a generation
+  carries no source — that is the same rule as above, not a new one.
+- **Connecting a real checkout later adds to it.** The repository stays ONE
+  row, now carrying both revisions, and local snippets start answering search.
+  An edge both sides know is shown once, at the local weight.
+- **Importing never touches what you indexed.** Your `code_symbols`, vectors
+  and cursors are yours; a peer's generation lives in its own tables.
+- **Only what this machine built is ever offered.** A projection you pulled is
+  never pushed back.
+- **A deleted file needs no announcement.** The next generation does not name
+  it, so it leaves the peer exactly once.
+- **An unmounted checkout deletes nothing.** The repository is withheld from
+  the push with its reason readable (`missing_root`), its index untouched, and
+  reconnecting the volume resumes pushing.
+
+If two machines build a generation from the same parent, the first accepted
+wins and the second is refused: it replans against the new one rather than
+merging two heads into a tree neither machine has. The full contract is
+[code generation replication](../designs/2026-09-22-code-generation-replication.md).
+
 - at the end of `comemory auth login`'s first sync;
 - on every `comemory sync` (`run` or `push`);
 - at the tail of every `comemory index-code` on the CLI (the lazy background
