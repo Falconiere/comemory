@@ -106,9 +106,13 @@ pub fn activate(ctx: &mut Ctx<'_>, request: ActivateRequest) -> Result<Operation
     // Answered is finished, whatever the answer was. A refusal records a
     // receipt, and a receipt is keyed on the bytes that arrived, so the same
     // operation id can never accept afterwards: resending it with the part
-    // corrected is a conflict, not a second chance. Keeping the parts would
-    // leave rows nothing can ever reclaim — there is no sweep — and a code
-    // generation is the first payload large enough to need staging routinely.
+    // corrected is a conflict, not a second chance.
+    //
+    // An Err above is NOT an answer — a SQLite failure, say — and takes the
+    // `?` instead, deliberately leaving the parts where they are so the
+    // sender can retry the activation without re-uploading every part. What
+    // reclaims those is [`crate::store::replica_sweep`], which `gc` runs over
+    // parts older than a day.
     let conn = ctx.conn()?;
     replica_staging::discard(conn, &request.staging_id)?;
     Ok(result)
