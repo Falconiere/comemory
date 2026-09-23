@@ -276,6 +276,7 @@ pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {
 /// Read by [`crate::domains::graph::materialize::project_pagerank`] (PageRank input)
 /// and [`crate::store::code_graph_edges::fetch_page`] (`comemory graph`'s
 /// paginated edge window).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GraphEdgeRow {
     /// Source node id (`file:<repo>:<path>`).
     pub src_id: String,

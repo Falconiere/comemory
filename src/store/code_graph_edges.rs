@@ -1,8 +1,9 @@
 //! The dynamic, paginated file→file edge query behind `comemory graph` /
-//! `GET /api/v1/graph`: `edges` filtered by relation set, weight floor, and
-//! an optional repo scope, windowed by `(limit, offset)`, plus the `total`
-//! count of edges matching the same filters (pre-window) so the caller can
-//! compute an exact `has_more`.
+//! `GET /api/v1/graph`: the local `edges` table unioned with the shared half
+//! of the graph ([`crate::store::remote_code_view::SHARED_EDGES`]), filtered
+//! by relation set, weight floor, and an optional repo scope, windowed by
+//! `(limit, offset)`, plus the `total` count of edges matching the same
+//! filters (pre-window) so the caller can compute an exact `has_more`.
 //!
 //! Kept out of [`crate::store::edges`] — the CRUD + graph-algorithm home —
 //! because the dynamic `WHERE`-builder plus this query's own row mapping
@@ -14,6 +15,20 @@ use rusqlite::Connection;
 
 use crate::prelude::*;
 use crate::store::edges::{GraphEdgeRow, file_node_prefix};
+use crate::store::remote_code_view::SHARED_EDGES;
+
+/// What the window and its count are taken over: the local `edges` table plus
+/// the shared half of the graph.
+///
+/// A pulled generation's edges are real edges of the same graph — a machine
+/// with no checkout has nothing else to answer with — so they belong in the
+/// same window, the same total and the same ordering rather than being
+/// stitched on afterwards, which would make `has_more` and every offset lie.
+/// [`SHARED_EDGES`] already drops a pair the local index states, so the union
+/// cannot double one.
+fn edge_source() -> String {
+    format!("(SELECT src_id, dst_id, rel, weight FROM edges UNION ALL {SHARED_EDGES})")
+}
 
 /// Bound filter + window parameters for [`fetch_page`].
 pub struct EdgeQuery<'a> {
@@ -39,7 +54,8 @@ pub struct EdgeQuery<'a> {
 pub fn fetch_page(conn: &Connection, q: &EdgeQuery<'_>) -> Result<(Vec<GraphEdgeRow>, usize)> {
     let (where_clause, mut binds) = where_clause_and_binds(q.rels, q.repo, q.min_weight);
     // The COUNT carries only the filter params — never the window.
-    let count_sql = format!("SELECT count(*) FROM edges{where_clause}");
+    let source = edge_source();
+    let count_sql = format!("SELECT count(*) FROM {source}{where_clause}");
     let mut count_stmt = conn.prepare(&count_sql)?;
     let count: i64 = count_stmt.query_row(
         rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
@@ -56,7 +72,7 @@ pub fn fetch_page(conn: &Connection, q: &EdgeQuery<'_>) -> Result<(Vec<GraphEdge
     binds.push(Box::new(limit_param));
     binds.push(Box::new(i64::try_from(q.offset).unwrap_or(i64::MAX)));
     let sql = format!(
-        "SELECT src_id, dst_id, rel, weight FROM edges{where_clause} \
+        "SELECT src_id, dst_id, rel, weight FROM {source}{where_clause} \
           ORDER BY weight DESC, rel ASC, src_id ASC, dst_id ASC LIMIT ? OFFSET ?"
     );
     let mut stmt = conn.prepare(&sql)?;

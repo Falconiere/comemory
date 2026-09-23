@@ -5,6 +5,13 @@
 //! activation would see a repo that never existed: some files at the old head,
 //! some at the new, with import edges pointing at both. Activation is the
 //! single instant the whole generation becomes visible.
+//!
+//! There is no derived-artifact pass after the commit, unlike `index-code`.
+//! Rank and the `edge_fts` triplet index are computed from `memories` and
+//! `edges`, and an activation writes neither; the graph's own local-plus-shared
+//! union is computed in SQL at read time, so the next read already sees this
+//! generation. A refresh here would run on every acceptance and change
+//! nothing.
 
 use crate::domains::code::replica_payload::{CODE_ENTITY_KIND, CodeGenerationV1};
 use crate::domains::sync::replica::contract::{Disposition, Operation, OperationResult};

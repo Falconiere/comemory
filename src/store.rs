@@ -36,6 +36,8 @@ pub mod candidate_observations;
 /// `code_feedback` row CRUD: per-symbol counter table + code-tagged
 /// `feedback_events` inserts.
 pub mod code_feedback;
+/// `code_generation` row lifecycle: record a generation, activate one and
+/// supersede the prior, and read what a repo is at.
 pub mod code_generation;
 /// Dynamic, paginated file→file `edges` window behind `comemory graph`.
 pub mod code_graph_edges;
@@ -144,8 +146,13 @@ pub mod rebuild_copy_learning;
 /// Rebuild preservation copy: `feedback_events`, `query_expansions`,
 /// `bandit_arms`.
 pub mod rebuild_copy_learning_events;
-/// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
+/// The three pulled-projection tables a peer's code generation writes:
+/// its manifest, its snippet-free symbols and its graph edges.
 pub mod remote_code;
+/// Repo-scoped reads over the ACTIVE pulled generation: which repos a peer
+/// shared, and what the shared side contributes to the code graph.
+pub mod remote_code_view;
+/// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
 pub mod replica_cursor;
 /// `replica-v1` journal writes: the payload row, the feed append and the
 /// revision update one accepted mutation owes, in the caller's transaction.
@@ -181,8 +188,10 @@ pub mod retrieval_log;
 pub mod schema;
 /// Declared code-index tables: `code_symbols`, `code_fts`, `code_vec`, `repo_marker`.
 pub mod schema_code;
-/// Declared tables no domain owns: `schema_meta`, `edge_fts`.
+/// Declared code-generation tables: `code_generation` and the three
+/// `remote_code_*` projection tables a pulled generation writes.
 pub mod schema_code_generation;
+/// Declared tables no domain owns: `schema_meta`, `edge_fts`.
 pub mod schema_core;
 /// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod schema_documents;

@@ -30,8 +30,9 @@
 
 /// Symbol extraction and AST pattern search via ast-grep.
 pub mod ast;
-/// Repo/author detection, blob lookup, and Git-hook installation helpers.
+/// Build a replicable code generation from what the local index recorded.
 pub mod generation;
+/// Repo/author detection, blob lookup, and Git-hook installation helpers.
 pub mod git_utils;
 /// `comemory hooks`: read and toggle the git reindex hooks.
 pub mod hooks;
@@ -47,6 +48,11 @@ pub mod install_hooks;
 pub mod pattern_search;
 /// When a lazy auto-reindex is due: staleness, debounce, and repo context.
 pub mod reindex_policy;
+/// The union local + shared behind the repository inventory and the code
+/// graph, for repos a peer shared.
+pub mod remote_view;
+/// The `code_generation` wire payload: its canonical bytes, its digest and
+/// the content-derived id those bytes earn.
 pub mod replica_payload;
 /// `POST /repos`, `PATCH /repos/{name}`, archive, `DELETE /repos/{name}`.
 pub mod repo_admin;

@@ -18,8 +18,10 @@ pub mod accept;
 pub mod bootstrap;
 /// `GET /sync/replica/changes` — the ordered page above a cursor.
 pub mod changes;
-/// The wire contract: envelopes, operations and dispositions.
+/// The write half for a code generation: record, project, activate, journal
+/// and receipt, all in one transaction.
 pub mod code_accept;
+/// The wire contract: envelopes, operations and dispositions.
 pub mod contract;
 /// The read and staging shapes: changes, manifest, stage and activate.
 pub mod contract_views;
