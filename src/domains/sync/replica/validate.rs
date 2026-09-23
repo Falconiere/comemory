@@ -118,8 +118,20 @@ fn shape(
 }
 
 /// A code generation's identity is its manifest: the id must be the one its
-/// contents earn, exactly as a memory's id must hash its body, and the entity
-/// is the repo, so the key has to name one.
+/// contents earn, exactly as a memory's id must hash its body.
+///
+/// The repo is NOT checked against the payload, because the payload has no
+/// repo in it — [`CodeGenerationV1`] carries the manifest and nothing that
+/// names a repository. That is deliberate: the entity IS the repo, so
+/// `entity_key` names it and is the only place it appears. `code_accept`
+/// derives its repo from that one value, so there is no second value here to
+/// disagree with it. Folding a repo into the payload would fold it into the
+/// digest and therefore into the generation id, which would make the same
+/// tree indexed under two labels two different generations.
+///
+/// So the only thing to require of the key is that there IS one: a memory's
+/// key must equal a content-derived id, a repo label is whatever the operator
+/// chose to call the checkout.
 fn code_identity(operation: &Operation, text: &str) -> Option<Disposition> {
     let Ok(decoded) = CodeGenerationV1::decode(text) else {
         return Some(Disposition::RejectedUnsupported);
