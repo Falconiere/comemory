@@ -32,11 +32,20 @@ pub struct Swept {
 /// Remove every staged part and staged generation older than
 /// [`ABANDONED_AFTER_HOURS`] before `now`.
 ///
+/// One transaction, which is what makes the statement order below a detail
+/// rather than a contract: the projection rows are found by joining the
+/// generations that are about to go, so deleting the generations first would
+/// leave the projection permanently orphaned — and deleting them last, outside
+/// a transaction, would leave a generation whose projection is half gone if
+/// the process died in between. Committing all four together means neither
+/// half-state is reachable.
+///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn run(conn: &Connection, now: OffsetDateTime) -> Result<Swept> {
+pub fn run(conn: &mut Connection, now: OffsetDateTime) -> Result<Swept> {
     let cutoff = memory_row::iso_format(now - time::Duration::hours(ABANDONED_AFTER_HOURS))?;
-    let parts = conn.execute(
+    let tx = conn.transaction()?;
+    let parts = tx.execute(
         "DELETE FROM replica_staged_part WHERE created_at < ?1",
         [&cutoff],
     )?;
@@ -44,7 +53,7 @@ pub fn run(conn: &Connection, now: OffsetDateTime) -> Result<Swept> {
     // generation this sweep is about to remove — a join, never a scan for
     // orphans, so a row whose generation survives cannot be caught by it.
     for table in ["remote_code_file", "remote_code_symbol", "remote_code_edge"] {
-        conn.execute(
+        tx.execute(
             &format!(
                 "DELETE FROM {table} WHERE (repo, generation_id) IN \
                  (SELECT repo, generation_id FROM code_generation \
@@ -53,10 +62,11 @@ pub fn run(conn: &Connection, now: OffsetDateTime) -> Result<Swept> {
             [&cutoff],
         )?;
     }
-    let generations = conn.execute(
+    let generations = tx.execute(
         "DELETE FROM code_generation WHERE state = 'staged' AND created_at < ?1",
         [&cutoff],
     )?;
+    tx.commit()?;
     Ok(Swept {
         parts: u64::try_from(parts).unwrap_or(0),
         generations: u64::try_from(generations).unwrap_or(0),

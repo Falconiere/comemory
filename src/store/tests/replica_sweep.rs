@@ -100,7 +100,7 @@ fn receipt(conn: &Connection, operation_id: &str, at: &str) {
 
 #[test]
 fn a_sweep_spares_the_active_generation_its_projection_and_every_receipt() {
-    let (_dir, conn) = migrated_db();
+    let (_dir, mut conn) = migrated_db();
     activate(&conn, &"a".repeat(32), LONG_AGO);
     receipt(&conn, "op-20260920-gen00001", LONG_AGO);
     // A second upload that never activated, from the same day.
@@ -108,7 +108,7 @@ fn a_sweep_spares_the_active_generation_its_projection_and_every_receipt() {
     replica_staging::put_part(&conn, "upload-abandoned", 0, 2, "{\"half\":1}", LONG_AGO)
         .expect("part");
 
-    let swept = replica_sweep::run(&conn, NOW).expect("sweep");
+    let swept = replica_sweep::run(&mut conn, NOW).expect("sweep");
 
     assert_eq!(swept.parts, 1);
     assert_eq!(swept.generations, 1);
@@ -150,11 +150,11 @@ fn a_sweep_spares_the_active_generation_its_projection_and_every_receipt() {
 
 #[test]
 fn an_upload_still_inside_its_window_is_left_alone() {
-    let (_dir, conn) = migrated_db();
+    let (_dir, mut conn) = migrated_db();
     stage(&conn, &"b".repeat(32), RECENTLY);
     replica_staging::put_part(&conn, "upload-live", 0, 2, "{\"half\":1}", RECENTLY).expect("part");
 
-    let swept = replica_sweep::run(&conn, NOW).expect("sweep");
+    let swept = replica_sweep::run(&mut conn, NOW).expect("sweep");
 
     assert_eq!(swept, replica_sweep::Swept::default());
     assert!(
@@ -170,16 +170,16 @@ fn an_upload_still_inside_its_window_is_left_alone() {
 
 #[test]
 fn a_sweep_over_a_database_with_nothing_staged_changes_nothing() {
-    let (_dir, conn) = migrated_db();
+    let (_dir, mut conn) = migrated_db();
     activate(&conn, &"a".repeat(32), LONG_AGO);
     receipt(&conn, "op-20260920-gen00001", LONG_AGO);
 
     assert_eq!(
-        replica_sweep::run(&conn, NOW).expect("sweep"),
+        replica_sweep::run(&mut conn, NOW).expect("sweep"),
         replica_sweep::Swept::default()
     );
     assert_eq!(
-        replica_sweep::run(&conn, NOW).expect("sweep again"),
+        replica_sweep::run(&mut conn, NOW).expect("sweep again"),
         replica_sweep::Swept::default(),
         "and it stays a no-op"
     );
@@ -197,7 +197,7 @@ fn a_sweep_over_a_database_with_nothing_staged_changes_nothing() {
 
 #[test]
 fn a_superseded_generation_is_not_debris() {
-    let (_dir, conn) = migrated_db();
+    let (_dir, mut conn) = migrated_db();
     activate(&conn, &"a".repeat(32), LONG_AGO);
     code_generation::record(
         &conn,
@@ -217,7 +217,7 @@ fn a_superseded_generation_is_not_debris() {
     .expect("record");
     code_generation::activate(&conn, REPO, &"c".repeat(32), LONG_AGO).expect("activate");
 
-    let swept = replica_sweep::run(&conn, NOW).expect("sweep");
+    let swept = replica_sweep::run(&mut conn, NOW).expect("sweep");
 
     assert_eq!(swept, replica_sweep::Swept::default());
     assert_eq!(

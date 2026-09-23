@@ -1168,7 +1168,7 @@ fn a_sweep_leaves_an_accepted_generations_replay_replaying() {
     .expect("part");
 
     let swept = crate::store::replica_sweep::run(
-        &home.conn,
+        &mut home.conn,
         time::macros::datetime!(2026-09-22 12:00:00 UTC),
     )
     .expect("sweep");
