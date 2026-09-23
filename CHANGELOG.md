@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-09-23
+
+### Added
+
+- replicate a code index as whole generations, never as source ([#287](https://github.com/Falconiere/comemory/pull/287))
+
 ## [0.45.0] - 2026-09-22
 
 ### Added
