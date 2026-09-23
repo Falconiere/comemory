@@ -4,6 +4,9 @@
 //! rules: what the engine understands, what the digest must cover, what an
 //! erased payload means, and how a tombstone orders against an edit.
 
+use crate::domains::code::replica_payload::{
+    CODE_ENTITY_KIND, CODE_PAYLOAD_VERSION, CodeGenerationV1,
+};
 use crate::domains::memories::id::{is_valid_memory_id, memory_id};
 use crate::domains::memories::replica_payload::{
     MEMORY_ENTITY_KIND, MEMORY_PAYLOAD_VERSION, MemoryPayloadV1,
@@ -57,13 +60,7 @@ pub fn check_position(since: i64, head: i64) -> Result<()> {
 /// Propagates SQLite failures. Every refusal is a [`Disposition`], not an
 /// error: one bad operation must not discard the rest of the envelope.
 pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
-    if operation.entity_kind != MEMORY_ENTITY_KIND {
-        return Ok(Disposition::RejectedUnsupported);
-    }
-    if operation.schema_version != MEMORY_PAYLOAD_VERSION {
-        return Ok(Disposition::RejectedUnsupported);
-    }
-    if let Some(problem) = payload_shape(operation) {
+    if let Some(problem) = kind_and_shape(operation) {
         return Ok(problem);
     }
     let conn = ctx.conn()?;
@@ -84,25 +81,69 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
     Ok(order(operation, revision.as_ref()))
 }
 
-/// Validate what the operation carries, independent of stored state.
-fn payload_shape(operation: &Operation) -> Option<Disposition> {
+/// Refuse an entity kind or schema version this build cannot read, then
+/// validate what the operation carries.
+///
+/// The two replicated kinds share every ordering rule below — `order`,
+/// `check_cursor` and `check_position` never look at the kind — so only the
+/// payload's own shape and identity differ.
+fn kind_and_shape(operation: &Operation) -> Option<Disposition> {
+    match operation.entity_kind.as_str() {
+        MEMORY_ENTITY_KIND if operation.schema_version == MEMORY_PAYLOAD_VERSION => {
+            payload_shape(operation)
+        }
+        CODE_ENTITY_KIND if operation.schema_version == CODE_PAYLOAD_VERSION => {
+            code_payload_shape(operation)
+        }
+        _ => Some(Disposition::RejectedUnsupported),
+    }
+}
+
+/// A code generation's shape and its content-derived identity.
+fn code_payload_shape(operation: &Operation) -> Option<Disposition> {
     if !needs_payload(operation.op) {
         return (operation.payload.is_some()).then_some(Disposition::RejectedInvalid);
     }
+    let text = match canonical_text(operation) {
+        Ok(text) => text,
+        Err(problem) => return Some(problem),
+    };
+    let Ok(decoded) = CodeGenerationV1::decode(&text) else {
+        return Some(Disposition::RejectedUnsupported);
+    };
+    // The entity is the repo, so the key names it; the payload's own id must
+    // be the one its contents earn, exactly as a memory's id must hash its
+    // body.
+    let owns = decoded.owns_its_id().unwrap_or(false);
+    (!owns || operation.entity_key.is_empty()).then_some(Disposition::RejectedInvalid)
+}
+
+/// The operation's payload as canonical text, with the declared digest
+/// verified against the bytes that actually arrived.
+fn canonical_text(operation: &Operation) -> std::result::Result<String, Disposition> {
     let (Some(payload), Some(digest)) = (
         operation.payload.as_ref(),
         operation.payload_digest.as_deref(),
     ) else {
-        return Some(Disposition::RejectedInvalid);
+        return Err(Disposition::RejectedInvalid);
     };
     let Ok((bytes, computed)) = canonical_json::bytes_and_digest(payload) else {
-        return Some(Disposition::RejectedInvalid);
+        return Err(Disposition::RejectedInvalid);
     };
     if computed != digest {
-        return Some(Disposition::RejectedInvalid);
+        return Err(Disposition::RejectedInvalid);
     }
-    let Ok(text) = String::from_utf8(bytes) else {
-        return Some(Disposition::RejectedInvalid);
+    String::from_utf8(bytes).map_err(|_| Disposition::RejectedInvalid)
+}
+
+/// Validate what a memory operation carries, independent of stored state.
+fn payload_shape(operation: &Operation) -> Option<Disposition> {
+    if !needs_payload(operation.op) {
+        return (operation.payload.is_some()).then_some(Disposition::RejectedInvalid);
+    }
+    let text = match canonical_text(operation) {
+        Ok(text) => text,
+        Err(problem) => return Some(problem),
     };
     let Ok(decoded) = MemoryPayloadV1::decode(&text) else {
         return Some(Disposition::RejectedUnsupported);

@@ -8,7 +8,10 @@
 //! The acceptance decision itself — what is refused, and with which typed
 //! disposition, before any state moves.
 
-use crate::domains::sync::replica::contract::{CursorRef, Disposition};
+use crate::domains::code::replica_payload::{
+    CODE_ENTITY_KIND, CODE_PAYLOAD_VERSION, CodeGenerationV1,
+};
+use crate::domains::sync::replica::contract::{CursorRef, Disposition, Operation};
 use crate::domains::sync::replica::{accept, validate};
 use crate::store::replica_journal::ReplicaOp;
 use crate::store::{replica_journal, replica_read};
@@ -287,5 +290,130 @@ fn a_pending_change_to_one_memory_does_not_refuse_an_import_of_another() {
         validate::decide(&mut ctx, &operation).expect("decide"),
         Disposition::RejectedStale,
         "the guard is per entity, not a global import freeze"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #252: the code_generation kind reaches the same ordering rules memories use.
+// ---------------------------------------------------------------------------
+
+/// An upsert carrying a real code generation for `repo`.
+fn code_operation(operation_id: &str, repo: &str, payload: &CodeGenerationV1) -> Operation {
+    let (bytes, digest) = payload.canonical().expect("canonical");
+    Operation {
+        operation_id: operation_id.to_string(),
+        entity_kind: CODE_ENTITY_KIND.to_string(),
+        entity_key: repo.to_string(),
+        op: ReplicaOp::Upsert,
+        schema_version: CODE_PAYLOAD_VERSION,
+        payload_digest: Some(digest),
+        payload: Some(serde_json::from_str(&bytes).expect("payload json")),
+        observed_sequence: None,
+        repository: Some(repo.to_string()),
+        vector: None,
+    }
+}
+
+/// A generation payload with one file, minted so it owns its id.
+fn code_payload(head: &str) -> CodeGenerationV1 {
+    let projection = crate::store::remote_code::Projection {
+        files: vec![crate::store::remote_code::File {
+            path: "src/lib.rs".to_string(),
+            blob_oid: "aaaa1111".to_string(),
+        }],
+        symbols: Vec::new(),
+        edges: Vec::new(),
+    };
+    let base = CodeGenerationV1::new("", None, head, None, &projection);
+    let id = base.mint_id().expect("mint");
+    base.with_id(&id)
+}
+
+#[test]
+fn a_well_formed_code_generation_is_accepted() {
+    let mut home = Home::new();
+    let operation = code_operation(
+        "op-20260922-code0001",
+        "Falconiere/comemory",
+        &code_payload("head-1"),
+    );
+
+    let mut ctx = home.ctx();
+    let decided = validate::decide(&mut ctx, &operation).expect("decide");
+
+    assert_eq!(
+        decided,
+        Disposition::Accepted,
+        "the new kind reaches ordering instead of being refused as unsupported"
+    );
+}
+
+#[test]
+fn a_code_generation_whose_contents_were_edited_is_invalid() {
+    let mut home = Home::new();
+    let mut tampered = code_payload("head-1");
+    // The id still claims the original contents.
+    tampered.head = "a-different-head".to_string();
+    let operation = code_operation("op-20260922-code0002", "Falconiere/comemory", &tampered);
+
+    let mut ctx = home.ctx();
+    let decided = validate::decide(&mut ctx, &operation).expect("decide");
+
+    assert_eq!(
+        decided,
+        Disposition::RejectedInvalid,
+        "a generation id is content-derived, so edited contents cannot keep it"
+    );
+}
+
+#[test]
+fn a_code_generation_on_an_unknown_schema_version_is_unsupported() {
+    let mut home = Home::new();
+    let mut operation = code_operation(
+        "op-20260922-code0003",
+        "Falconiere/comemory",
+        &code_payload("head-1"),
+    );
+    operation.schema_version = CODE_PAYLOAD_VERSION + 1;
+
+    let mut ctx = home.ctx();
+
+    assert_eq!(
+        validate::decide(&mut ctx, &operation).expect("decide"),
+        Disposition::RejectedUnsupported,
+        "an engine refuses a payload shape it cannot read rather than half-applying it"
+    );
+}
+
+#[test]
+fn a_pending_local_generation_refuses_an_incoming_one_for_the_same_repo() {
+    let mut home = Home::new();
+    let repo = "Falconiere/comemory";
+    // The same guard memories get: an unpushed local change is the only copy
+    // of itself, so a peer's version waits for the push.
+    crate::store::replica_outbox::enqueue(
+        &home.conn,
+        &crate::store::replica_journal::NewOperation {
+            operation_id: "op-20260922-localgen",
+            entity_kind: CODE_ENTITY_KIND,
+            entity_key: repo,
+            op: ReplicaOp::Upsert,
+            payload: None,
+            schema_version: CODE_PAYLOAD_VERSION,
+            repository: Some(repo),
+            origin: crate::store::replica_journal::ReplicaOrigin::Local,
+            at: "2026-09-22T10:00:00Z",
+        },
+        None,
+    )
+    .expect("enqueue");
+    let operation = code_operation("op-20260922-code0004", repo, &code_payload("head-1"));
+
+    let mut ctx = home.ctx();
+
+    assert_eq!(
+        validate::decide(&mut ctx, &operation).expect("decide"),
+        Disposition::RejectedStale,
+        "the guard is per entity and the repo IS the entity for this kind"
     );
 }

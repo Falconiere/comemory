@@ -5,12 +5,12 @@
 //! mining cursor. The id is the digest of the canonical payload, so a second
 //! index run over an unchanged tree produces the same id and offers nothing.
 
+use crate::domains::code::replica_payload::CodeGenerationV1;
 use crate::prelude::*;
 use crate::store::code_generation::{Generation, State};
 use crate::store::remote_code::{Edge, File, Projection, Symbol};
 use crate::store::replica_journal::ReplicaOrigin;
 use crate::store::{Connection, code_generation, code_sync, indexed_files, repo_marker};
-use crate::utilities::canonical_json;
 
 /// A generation and the projection it names — what a push sends and what an
 /// acceptance writes.
@@ -38,11 +38,19 @@ pub fn plan(conn: &Connection, repo: &str) -> Result<Option<Planned>> {
     let mined_commit = repo_marker::last_mined_commit(conn, repo)?;
     let projection = project(conn, repo)?;
     let parent_id = code_generation::active_local(conn, repo)?.map(|g| g.generation_id);
-    let manifest_digest = digest_of(&projection, &head, mined_commit.as_deref())?;
-    let generation_id = manifest_digest
-        .get(..32)
-        .unwrap_or(manifest_digest.as_str())
-        .to_string();
+    // One derivation, in the payload that also verifies it on the receiving
+    // side: the id is the 32-hex prefix of the payload's digest taken with
+    // the id field blank, and `manifest_digest` is the digest of the payload
+    // as it will be sent. Deriving either here would let the two drift.
+    let payload = CodeGenerationV1::new(
+        "",
+        parent_id.as_deref(),
+        &head,
+        mined_commit.as_deref(),
+        &projection,
+    );
+    let generation_id = payload.mint_id()?;
+    let manifest_digest = payload.with_id(&generation_id).canonical()?.1;
     let file_count = i64::try_from(projection.files.len()).unwrap_or(i64::MAX);
     Ok(Some(Planned {
         generation: Generation {
@@ -134,42 +142,6 @@ fn co_changes_of(conn: &Connection, repo: &str) -> Result<Vec<Edge>> {
             anchor: mined.clone(),
         })
         .collect())
-}
-
-/// The digest that identifies a generation: canonical JSON over the head, the
-/// mining cursor and the whole projection.
-///
-/// The head is part of it so two different commits with an identical file set
-/// are still different generations — which is what lets a peer tell "nothing
-/// changed" from "the same files at a new head".
-///
-/// # Errors
-/// Propagates canonical-JSON serialization.
-pub fn digest_of(
-    projection: &Projection,
-    head: &str,
-    mined_commit: Option<&str>,
-) -> Result<String> {
-    let value = serde_json::json!({
-        "head": head,
-        "mined_commit": mined_commit,
-        "files": projection.files.iter().map(|f| {
-            serde_json::json!({"path": f.path, "blob_oid": f.blob_oid})
-        }).collect::<Vec<_>>(),
-        "symbols": projection.symbols.iter().map(|s| {
-            serde_json::json!({
-                "path": s.path, "symbol": s.symbol, "kind": s.kind,
-                "lang": s.lang, "line_start": s.line_start, "line_end": s.line_end,
-            })
-        }).collect::<Vec<_>>(),
-        "edges": projection.edges.iter().map(|e| {
-            serde_json::json!({
-                "rel": e.rel, "src_path": e.src_path, "dst_path": e.dst_path,
-                "weight": e.weight, "anchor": e.anchor,
-            })
-        }).collect::<Vec<_>>(),
-    });
-    Ok(canonical_json::bytes_and_digest(&value)?.1)
 }
 
 #[cfg(test)]

@@ -47,6 +47,7 @@ pub mod install_hooks;
 pub mod pattern_search;
 /// When a lazy auto-reindex is due: staleness, debounce, and repo context.
 pub mod reindex_policy;
+pub mod replica_payload;
 /// `POST /repos`, `PATCH /repos/{name}`, archive, `DELETE /repos/{name}`.
 pub mod repo_admin;
 /// `comemory repos`: the indexed code-repository inventory.
