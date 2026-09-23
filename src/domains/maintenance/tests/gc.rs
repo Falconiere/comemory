@@ -459,3 +459,105 @@ fn gc_evicts_activity_rows_past_the_window_and_reports_the_count() {
         .expect("the sweep recorded its own count");
     assert_eq!(recorded, 1);
 }
+
+/// Seed one active generation with a receipt, and one upload abandoned two
+/// days ago — the shape AC-10 sweeps over.
+fn seed_replica_debris(home: &tempfile::TempDir) {
+    std::fs::create_dir_all(home.path()).expect("create data dir");
+    let conn = comemory::store::connection::open(db_path(home)).expect("open + migrate db");
+    let long_ago =
+        comemory::store::memory_row::iso_format(OffsetDateTime::now_utc() - Duration::days(2))
+            .expect("stamp");
+    let projection = comemory::store::remote_code::Projection {
+        files: vec![comemory::store::remote_code::File {
+            path: "src/lib.rs".to_string(),
+            blob_oid: "aaaa1111".to_string(),
+        }],
+        symbols: Vec::new(),
+        edges: Vec::new(),
+    };
+    for (id, activate) in [(&"a".repeat(32), true), (&"b".repeat(32), false)] {
+        comemory::store::code_generation::record(
+            &conn,
+            &comemory::store::code_generation::Generation {
+                repo: "demo".to_string(),
+                generation_id: id.clone(),
+                parent_id: None,
+                head: "head-1".to_string(),
+                mined_commit: None,
+                origin: comemory::store::replica_journal::ReplicaOrigin::Sync,
+                state: comemory::store::code_generation::State::Staged,
+                file_count: 1,
+                manifest_digest: "d".repeat(64),
+            },
+            &long_ago,
+        )
+        .expect("record");
+        comemory::store::remote_code::replace_generation(&conn, "demo", id, &projection)
+            .expect("projection");
+        if activate {
+            comemory::store::code_generation::activate(&conn, "demo", id, &long_ago)
+                .expect("activate");
+        }
+    }
+    comemory::store::replica_receipt::record(
+        &conn,
+        &comemory::store::replica_receipt::Receipt {
+            operation_id: "op-20260920-gen00001".to_string(),
+            epoch: "epoch-1".to_string(),
+            sequence: Some(1),
+            disposition: "accepted".to_string(),
+            payload_digest: Some("c".repeat(64)),
+            reason: None,
+        },
+        &long_ago,
+    )
+    .expect("receipt");
+    comemory::store::replica_staging::put_part(&conn, "upload-gone", 0, 2, "{}", &long_ago)
+        .expect("part");
+}
+
+#[test]
+fn gc_sweeps_abandoned_uploads_and_spares_the_active_generation() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    seed_replica_debris(&home);
+    let cfg = Config::defaults();
+
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let resp = maintenance::gc::run(&mut ctx, maintenance::gc::Request {}).expect("gc run");
+
+    assert_eq!(
+        resp.staged_rows, 2,
+        "one staged part and one staged generation"
+    );
+    let conn = comemory::store::connection::open(db_path(&home)).expect("open db");
+    assert_eq!(
+        comemory::store::code_generation::active(&conn, "demo")
+            .expect("active")
+            .expect("row")
+            .generation_id,
+        "a".repeat(32),
+        "the active generation survived the sweep"
+    );
+    assert_eq!(
+        comemory::store::remote_code::projection(&conn, "demo", &"a".repeat(32))
+            .expect("projection")
+            .files
+            .len(),
+        1,
+        "so did its projection"
+    );
+    assert!(
+        comemory::store::replica_receipt::lookup(&conn, "op-20260920-gen00001")
+            .expect("lookup")
+            .is_some(),
+        "and every receipt"
+    );
+    assert_eq!(
+        comemory::store::code_generation::by_id(&conn, "demo", &"b".repeat(32)).expect("by_id"),
+        None,
+        "only the upload that never finished is gone"
+    );
+}

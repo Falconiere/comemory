@@ -981,3 +981,46 @@ fn a_tracked_deletion_leaves_the_path_out_of_the_next_generation() {
         after
     );
 }
+
+#[test]
+fn a_sweep_leaves_an_accepted_generations_replay_replaying() {
+    let mut home = Home::new();
+    let payload = payload(None, "head-1", 3);
+    let operation = upsert("op-20260922-gensweep1", &payload);
+    let first = {
+        let mut ctx = home.ctx();
+        accept::run(&mut ctx, envelope(vec![operation.clone()])).expect("accept")
+    };
+    // Debris from an upload that never finished, on the same database.
+    crate::store::replica_staging::put_part(
+        &home.conn,
+        "upload-abandoned",
+        0,
+        2,
+        "{}",
+        "2026-09-20T12:00:00Z",
+    )
+    .expect("part");
+
+    let swept = crate::store::replica_sweep::run(
+        &home.conn,
+        time::macros::datetime!(2026-09-22 12:00:00 UTC),
+    )
+    .expect("sweep");
+
+    assert_eq!(swept.parts, 1);
+    assert_eq!(swept.generations, 0, "the accepted generation is active");
+    let mut ctx = home.ctx();
+    let replay = accept::run(&mut ctx, envelope(vec![operation])).expect("replay");
+    assert_eq!(
+        replay.results[0].disposition,
+        Disposition::Duplicate,
+        "the receipt survived, so the retry is still answered from it"
+    );
+    assert_eq!(replay.results[0].sequence, first.results[0].sequence);
+    assert_eq!(
+        replica_read::head(&home.conn).expect("head"),
+        1,
+        "and no second position was earned"
+    );
+}

@@ -169,6 +169,9 @@ pub mod replica_receipt;
 /// `replica_staged_part` row CRUD — parts of an oversized revision and their
 /// assembly, invisible until activation.
 pub mod replica_staging;
+/// The abandoned-stage sweep: staged parts and staged generations past their
+/// window, and nothing an active generation or a receipt depends on.
+pub mod replica_sweep;
 /// Drop every code-index row and edge for one repo label.
 pub mod repo_drop;
 /// `repo_marker.last_mined_commit` — the co-change mining cursor, plus the

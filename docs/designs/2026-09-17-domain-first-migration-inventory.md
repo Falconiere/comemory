@@ -868,6 +868,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/rebuild_copy_history.rs | comemory::store::rebuild_copy_history; preserve | none | none | infrastructure::store | src/store/rebuild_copy_history.rs | retain |
 | src/store/rebuild_copy_learning.rs | comemory::store::rebuild_copy_learning; preserve | none | none | infrastructure::store | src/store/rebuild_copy_learning.rs | retain |
 | src/store/rebuild_copy_learning_events.rs | comemory::store::rebuild_copy_learning_events; preserve | none | none | infrastructure::store | src/store/rebuild_copy_learning_events.rs | retain |
+| src/store/replica_sweep.rs | comemory::store::replica_sweep; preserve | src/store/tests/replica_sweep.rs | none | infrastructure::store | src/store/replica_sweep.rs | retain |
 | src/store/repo_drop.rs | comemory::store::repo_drop; preserve | src/store/tests/repo_drop.rs | none | infrastructure::store | src/store/repo_drop.rs | retain |
 | src/store/repo_marker.rs | comemory::store::repo_marker; preserve | src/store/tests/repo_marker.rs | none | infrastructure::store | src/store/repo_marker.rs | retain |
 | src/store/repo_marker_roots.rs | comemory::store::repo_marker_roots; preserve | src/store/tests/repo_marker_roots.rs | none | infrastructure::store | src/store/repo_marker_roots.rs | retain |
