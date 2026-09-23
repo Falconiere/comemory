@@ -537,6 +537,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/documents/document/html.rs | comemory::domains::documents::document::html; crate-root-alias | src/domains/documents/document/tests/html.rs | none | domains::documents | src/domains/documents/document/html.rs | retain |
 | src/domains/documents/document/writer.rs | comemory::domains::documents::document::writer; crate-root-alias | src/domains/documents/document/tests/writer.rs | none | domains::documents | src/domains/documents/document/writer.rs | retain |
 | src/domains/documents/index.rs | comemory::domains::documents::index; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/documents/tests/index.rs | none | domains::documents | src/domains/documents/index.rs | retain |
+| src/domains/documents/share.rs | comemory::domains::documents::share; preserve | src/domains/documents/tests/share.rs | none | domains::documents | src/domains/documents/share.rs | retain |
 | src/domains/documents/source.rs | comemory::domains::documents::source; crate-root-alias | none | none | domains::documents | src/domains/documents/source.rs | retain |
 | src/domains/documents/source/classify.rs | comemory::domains::documents::source::classify; crate-root-alias | src/domains/documents/source/tests/classify.rs | none | domains::documents | src/domains/documents/source/classify.rs | retain |
 | src/domains/documents/source/discover.rs | comemory::domains::documents::source::discover; crate-root-alias | src/domains/documents/source/tests/discover.rs | none | domains::documents | src/domains/documents/source/discover.rs | retain |
@@ -832,6 +833,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/connection.rs | comemory::store::connection; preserve | src/store/tests/connection.rs | none | infrastructure::store | src/store/connection.rs | retain |
 | src/store/doctor_probes.rs | comemory::store::doctor_probes; preserve | src/store/tests/doctor_probes.rs | none | infrastructure::store | src/store/doctor_probes.rs | retain |
 | src/store/document_fts.rs | comemory::store::document_fts; preserve | src/store/tests/document_fts.rs | none | infrastructure::store | src/store/document_fts.rs | retain |
+| src/store/document_share.rs | comemory::store::document_share; preserve | src/store/tests/document_share.rs | none | infrastructure::store | src/store/document_share.rs | retain |
 | src/store/documents.rs | comemory::store::documents; preserve | src/store/tests/documents.rs | none | infrastructure::store | src/store/documents.rs | retain |
 | src/store/edge_fts.rs | comemory::store::edge_fts; preserve | src/store/tests/edge_fts.rs | none | infrastructure::store | src/store/edge_fts.rs | retain |
 | src/store/edges.rs | comemory::store::edges; preserve | src/store/tests/edges.rs | none | infrastructure::store | src/store/edges.rs | retain |

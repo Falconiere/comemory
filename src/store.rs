@@ -63,6 +63,9 @@ pub mod connection;
 pub mod doctor_probes;
 /// `document_fts` insert/delete helpers + the BM25 MATCH query leg.
 pub mod document_fts;
+/// `document_share` row CRUD — what a local document is called upstream,
+/// and why it is withheld when it is.
+pub mod document_share;
 /// `documents` + `document_chunks` row CRUD.
 pub mod documents;
 /// FTS5 triplet index over `edges` (rendering + refresh + lexical ladder).

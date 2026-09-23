@@ -15,6 +15,9 @@
 pub mod document;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
+/// A document's portable name: the digest of its canonical repository and
+/// its normalized repository-relative path.
+pub mod share;
 /// Durable source registry, classification, discovery, and the SQLite mirror.
 pub mod source;
 /// `comemory sources`: list registered sources, optionally reconciling first.

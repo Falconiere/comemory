@@ -59,7 +59,7 @@ pub fn classify(path: &Path, content_head: &[u8]) -> Classification {
 
 /// Resolve a [`DocumentFormat`] from `path`'s extension
 /// (case-insensitive). `None` for anything outside the v1 allowlist.
-fn format_of_extension(path: &Path) -> Option<DocumentFormat> {
+pub(crate) fn format_of_extension(path: &Path) -> Option<DocumentFormat> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
         "txt" => Some(DocumentFormat::Txt),
