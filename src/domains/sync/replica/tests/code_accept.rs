@@ -598,3 +598,234 @@ fn a_part_over_the_envelope_cap_is_refused_and_the_staged_set_survives_for_retry
         payload.generation_id
     );
 }
+
+// ---------------------------------------------------------------------------
+// AC-4 / AC-5: a pulled generation is a second, parallel body of knowledge.
+// The local index owns every row `index-code` wrote, and upload selection
+// offers only what this machine built.
+// ---------------------------------------------------------------------------
+
+/// Everything the local index owns for a repo: the rows an import must leave
+/// byte-identical, plus the hits `search-code` answers from them.
+#[derive(Debug, PartialEq)]
+struct LocalRows {
+    /// `code_symbols`, including the snippet a pulled generation never
+    /// carries.
+    symbols: Vec<(i64, String, String, String, i64)>,
+    /// `code_vec`, as stored bytes.
+    vectors: Vec<(i64, Vec<u8>)>,
+    /// `repo_marker`: where the repo is, what head it was indexed at, and how
+    /// far its history was mined.
+    marker: (Option<String>, Option<String>, Option<String>),
+    /// `indexed_files`, the cursor the next incremental walk reads.
+    files: Vec<(String, String)>,
+    /// What `comemory search-code` answers over those rows.
+    hits: Vec<(i64, String, String, i64, i64)>,
+}
+
+/// Read every local row for `repo`, through the driver rather than a store
+/// helper: this asserts over the stored bytes, including the columns no
+/// accessor exposes.
+fn local_rows(home: &Home, repo: &str) -> LocalRows {
+    let mut statement = home
+        .conn
+        .prepare(
+            "SELECT id, path, symbol, snippet, simhash FROM code_symbols \
+             WHERE repo = ?1 ORDER BY id",
+        )
+        .expect("prepare symbols");
+    let symbols = statement
+        .query_map([repo], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .expect("query symbols")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("symbols");
+    drop(statement);
+
+    let mut statement = home
+        .conn
+        .prepare(
+            "SELECT symbol_id, embedding FROM code_vec WHERE symbol_id IN \
+             (SELECT id FROM code_symbols WHERE repo = ?1) ORDER BY symbol_id",
+        )
+        .expect("prepare vectors");
+    let vectors = statement
+        .query_map([repo], |r| Ok((r.get(0)?, r.get(1)?)))
+        .expect("query vectors")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("vectors");
+    drop(statement);
+
+    let mut files: Vec<(String, String)> =
+        crate::store::indexed_files::list_for_repo(&home.conn, repo)
+            .expect("indexed_files")
+            .into_iter()
+            .collect();
+    files.sort();
+
+    LocalRows {
+        symbols,
+        vectors,
+        marker: (
+            crate::store::repo_marker::last_head(&home.conn, repo).expect("head"),
+            crate::store::repo_marker::root_path(&home.conn, repo).expect("root"),
+            crate::store::repo_marker::last_mined_commit(&home.conn, repo).expect("mined"),
+        ),
+        files,
+        hits: crate::domains::retrieval::code_search::search_code_hits(
+            &home.cfg,
+            &home.conn,
+            // A symbol the fixture checkout really defines.
+            "helper",
+            None,
+            Some(repo),
+            None,
+            20,
+        )
+        .expect("search-code")
+        .into_iter()
+        .map(|h| (h.symbol_id, h.path, h.symbol, h.line_start, h.line_end))
+        .collect(),
+    }
+}
+
+/// Index a real git checkout under `REPO` and give every symbol a stored
+/// vector, so the import has local rows of every kind to leave alone.
+fn indexed_locally(home: &mut Home, repo_path: &std::path::Path) {
+    {
+        let mut ctx = home.ctx();
+        crate::domains::code::index_code::run(
+            &mut ctx,
+            crate::domains::code::index_code::Request {
+                repo: REPO.to_string(),
+                path: repo_path.to_str().expect("utf8 path").to_string(),
+                mode: crate::domains::code::index_code::IndexMode::Incremental,
+            },
+        )
+        .expect("index_code run");
+    }
+    let ids: Vec<i64> = {
+        let mut statement = home
+            .conn
+            .prepare("SELECT id FROM code_symbols WHERE repo = ?1 ORDER BY id")
+            .expect("prepare ids");
+        statement
+            .query_map([REPO], |r| r.get(0))
+            .expect("query ids")
+            .collect::<rusqlite::Result<Vec<i64>>>()
+            .expect("ids")
+    };
+    let dims = crate::store::vector::dim_code(&home.conn).expect("dim_code");
+    for id in ids {
+        // A deterministic vector per symbol, at the table's own width — real
+        // rows through the real writer, so the import has `code_vec` content
+        // to preserve.
+        #[allow(clippy::cast_precision_loss)]
+        let vector: Vec<f32> = (0..dims)
+            .map(|n| (id as f32) + (n as f32) / (dims as f32))
+            .collect();
+        crate::store::vector::insert_code(&home.conn, id, &vector).expect("insert_code");
+    }
+}
+
+#[test]
+fn importing_a_peers_generation_leaves_every_local_row_untouched() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let repo_path = crate::test_common::git_sample::build_sample_repo(workspace.path());
+    let mut home = Home::new();
+    indexed_locally(&mut home, &repo_path);
+    let before = local_rows(&home, REPO);
+    assert!(
+        !before.symbols.is_empty() && !before.vectors.is_empty() && !before.files.is_empty(),
+        "the fixture must have local rows to protect"
+    );
+    assert!(
+        !before.hits.is_empty(),
+        "and search-code must actually answer from them, or the comparison \
+         below proves nothing: {before:?}"
+    );
+    // A peer indexed the same repo label at a head this machine has never
+    // seen, and its manifest names paths the local checkout does not have.
+    let peer = payload(None, "a-head-this-machine-never-saw", 3);
+
+    let mut ctx = home.ctx();
+    let response = accept::run(
+        &mut ctx,
+        envelope(vec![upsert("op-20260922-genlocal1", &peer)]),
+    )
+    .expect("accept");
+
+    assert_eq!(response.results[0].disposition, Disposition::Accepted);
+    assert_eq!(
+        local_rows(&home, REPO),
+        before,
+        "an import writes only the pulled projection: no local row moved"
+    );
+    assert_eq!(
+        files(&home.conn, REPO, &peer.generation_id)
+            .expect("files")
+            .len(),
+        2,
+        "and the peer's manifest did land, in its own tables"
+    );
+}
+
+#[test]
+fn a_pulled_generation_is_not_offered_as_this_machines_next_parent() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let repo_path = crate::test_common::git_sample::build_sample_repo(workspace.path());
+    let mut home = Home::new();
+    indexed_locally(&mut home, &repo_path);
+    // This machine's own generation is what the repo is at.
+    let local = crate::domains::code::generation::plan(&home.conn, REPO)
+        .expect("plan")
+        .expect("an indexed repo has a generation");
+    code_generation::record(&home.conn, &local.generation, "2026-09-22T10:00:00Z").expect("record");
+    code_generation::activate(
+        &home.conn,
+        REPO,
+        &local.generation.generation_id,
+        "2026-09-22T10:01:00Z",
+    )
+    .expect("activate");
+
+    // The peer pulled this machine's generation before building its own, so
+    // its plan names it as the parent — the repo has one chain, whoever
+    // extends it.
+    let peer = payload(
+        Some(&local.generation.generation_id),
+        "a-head-this-machine-never-saw",
+        3,
+    );
+    {
+        let mut ctx = home.ctx();
+        accept::run(
+            &mut ctx,
+            envelope(vec![upsert("op-20260922-genlocal2", &peer)]),
+        )
+        .expect("accept");
+    }
+
+    let next = crate::domains::code::generation::plan(&home.conn, REPO)
+        .expect("plan")
+        .expect("row");
+    assert_eq!(
+        next.generation.parent_id.as_deref(),
+        None,
+        "the peer's generation is active, and it is not this machine's base"
+    );
+    assert_eq!(
+        code_generation::active_local(&home.conn, REPO).expect("active_local"),
+        None,
+        "upload selection offers nothing while a pulled generation is active"
+    );
+    assert_eq!(
+        code_generation::by_id(&home.conn, REPO, &local.generation.generation_id)
+            .expect("by_id")
+            .expect("row")
+            .origin,
+        crate::store::replica_journal::ReplicaOrigin::Local,
+        "and this machine's own generation is still recorded as its own"
+    );
+}
