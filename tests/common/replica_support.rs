@@ -439,3 +439,143 @@ pub fn latest_revision(engine: &Engine, id: &str) -> (Value, String) {
             .to_string(),
     )
 }
+
+// ---------------------------------------------------------------------------
+// Code generations over the real surface (issue 252).
+// ---------------------------------------------------------------------------
+
+/// The repo label every code case files its checkout under.
+pub const CODE_REPO: &str = "Falconiere/comemory";
+
+/// Build a git checkout from a pinned prefix of THIS repository's own Rust
+/// sources — real files, real symbols, real import lines — and commit it.
+///
+/// `count` files are taken in sorted path order from `src/`, so two calls
+/// with the same count produce the same tree. Returns the working root.
+pub fn pinned_repo(root: &std::path::Path, count: usize) -> std::path::PathBuf {
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    collect_rs(&source, &mut files);
+    files.sort();
+    assert!(
+        files.len() >= count,
+        "this repository has {} source files, fewer than the {count} asked for",
+        files.len()
+    );
+    let repo = root.join("pinned-repo");
+    std::fs::create_dir_all(&repo).expect("create repo dir");
+    for (index, file) in files.into_iter().take(count).enumerate() {
+        let body = std::fs::read_to_string(&file).expect("read source");
+        // Flattened under a stable name so the tree does not depend on this
+        // repository's directory layout, only on its contents.
+        std::fs::write(repo.join(format!("file_{index:04}.rs")), body).expect("write");
+    }
+    git(&repo, &["init", "-q", "-b", "main"]);
+    git(&repo, &["config", "user.email", "fixture@example.com"]);
+    git(&repo, &["config", "user.name", "Fixture"]);
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "pinned snapshot"]);
+    repo
+}
+
+/// Every `.rs` file under `dir`, recursively.
+fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rs(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+/// Run one git command in `repo`, asserting it succeeded.
+pub fn git(repo: &std::path::Path, args: &[&str]) {
+    let out = Command::new("git")
+        .current_dir(repo)
+        .args(args)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// The generation this data directory would offer for `CODE_REPO`, as the
+/// wire payload a push sends — or `None` when it has nothing to offer.
+pub fn planned_generation(data_dir: &std::path::Path, repo: &str) -> Option<Value> {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    let planned = comemory::domains::code::generation::plan(&conn, repo).expect("plan")?;
+    let base = comemory::domains::code::replica_payload::CodeGenerationV1::new(
+        "",
+        planned.generation.parent_id.as_deref(),
+        &planned.generation.head,
+        planned.generation.mined_commit.as_deref(),
+        &planned.projection,
+    );
+    let id = base.mint_id().expect("mint");
+    let payload = base.with_id(&id);
+    let (bytes, _) = payload.canonical().expect("canonical");
+    Some(serde_json::from_str(&bytes).expect("json"))
+}
+
+/// Record and activate `payload`'s generation locally, as a completed upload
+/// does — so the next plan names it as the parent.
+pub fn publish_locally(data_dir: &std::path::Path, repo: &str) -> String {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    let planned = comemory::domains::code::generation::plan(&conn, repo)
+        .expect("plan")
+        .expect("something to publish");
+    let id = planned.generation.generation_id.clone();
+    let at = "2026-09-22T10:00:00Z";
+    comemory::store::code_generation::record(&conn, &planned.generation, at).expect("record");
+    comemory::store::code_generation::activate(&conn, repo, &id, at).expect("activate");
+    id
+}
+
+/// An import envelope carrying one code generation.
+pub fn code_envelope(operation_id: &str, repo: &str, payload: &Value) -> Value {
+    let (_, digest) =
+        comemory::utilities::canonical_json::bytes_and_digest(payload).expect("digest");
+    serde_json::json!({
+        "protocol": "replica-v1",
+        "operations": [{
+            "operation_id": operation_id,
+            "entity_kind": "code_generation",
+            "entity_key": repo,
+            "op": "upsert",
+            "schema_version": 1,
+            "payload_digest": digest,
+            "payload": payload,
+        }],
+    })
+}
+
+/// The active generation's id for `repo`, if this data directory has one.
+pub fn active_generation(data_dir: &std::path::Path, repo: &str) -> Option<String> {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    comemory::store::code_generation::active(&conn, repo)
+        .expect("active")
+        .map(|g| g.generation_id)
+}
+
+/// The paths of the projection `repo`'s active generation published here.
+pub fn shared_paths(data_dir: &std::path::Path, repo: &str) -> Vec<String> {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    let Some(active) = comemory::store::code_generation::active(&conn, repo).expect("active")
+    else {
+        return Vec::new();
+    };
+    comemory::store::remote_code::projection(&conn, repo, &active.generation_id)
+        .expect("projection")
+        .files
+        .into_iter()
+        .map(|f| f.path)
+        .collect()
+}
