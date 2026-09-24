@@ -73,7 +73,9 @@ runs:
         # Falconiere` threads), so "has a second comment" would count the bot
         # answering itself. A code-scanning alert thread
         # (`github-advanced-security`) is exempt once resolved: its
-        # resolution is the finding being fixed or dismissed.
+        # resolution is the finding being fixed or dismissed. Only a thread's
+        # first 100 comments are read; past that cap a reply can only be
+        # missed, never invented, so the gate errs toward blocking.
         unanswered="$(printf '%s\n' "$threads" | jq -rs '
           .[]
           | (.comments.nodes[0].author.login // "ghost") as $opener
