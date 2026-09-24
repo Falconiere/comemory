@@ -152,8 +152,12 @@ fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
     if !old_table_exists(conn, table)? {
         return Ok(());
     }
+    // Only replaced when the source has a row to replace it with: an empty
+    // source table must not leave the rebuilt database with no identity.
     if REPLACED.contains(&table) {
-        conn.execute_batch(&format!("DELETE FROM main.{table};"))?;
+        conn.execute_batch(&format!(
+            "DELETE FROM main.{table} WHERE EXISTS (SELECT 1 FROM old.{table});"
+        ))?;
     }
     let mut selected = Vec::new();
     for column in columns.split(',').map(str::trim) {

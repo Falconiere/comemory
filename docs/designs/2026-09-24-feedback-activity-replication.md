@@ -165,13 +165,14 @@ tables), and the summary's own `repo` (the event carries the canonical repo).
 † **Free text** — `query`, and the event's `actor` label on both kinds — goes
 through one policy, `utilities::shared_text`:
 
-1. Every whitespace-separated token that is an absolute machine path — `/`
-   followed by at least two segments, `~/…`, or a drive-letter path — becomes
-   `<path>`.
-2. The result is scanned with the curated `utilities::secret_scan` rule set. A
-   match withholds the whole field: `query` is omitted and
-   `"query_withheld": true` is set; `actor` becomes `null`. The event is still
-   shared. A withheld value is never logged, including at debug level.
+1. The raw text is scanned with the curated `utilities::secret_scan` rule set.
+   A match anywhere — inside a path token included — withholds the whole
+   field: `query` is omitted and `"query_withheld": true` is set; `actor`
+   becomes `null`. The event is still shared. A withheld value is never
+   logged, including at debug level.
+2. In text that may leave, every whitespace-separated token that is an
+   absolute machine path — `/` followed by at least two segments, `~/…`, or a
+   drive-letter path — becomes `<path>`.
 
 `activity.enabled = false` records no row, so there is nothing to share.
 `activity.summaries = false` records `summary = NULL`, so the shared event

@@ -45,7 +45,7 @@ pub(crate) fn apply(
     let value = operation
         .payload
         .as_ref()
-        .ok_or_else(|| Error::BadRequest("an event carries a payload".to_string()))?;
+        .ok_or_else(|| Error::BadRequest("an event upsert must carry a payload".to_string()))?;
     let (bytes, digest) = canonical_json::bytes_and_digest(value)?;
     let bytes =
         String::from_utf8(bytes).map_err(|e| Error::BadRequest(format!("event payload: {e}")))?;

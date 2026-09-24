@@ -54,9 +54,11 @@ fn a_secret_withholds_the_whole_field() {
 }
 
 #[test]
-fn a_secret_inside_a_stripped_path_never_leaves_so_the_rest_is_kept() {
+fn a_secret_inside_a_path_still_withholds_the_whole_field() {
+    // Stripping alone would already remove the key, but text that carried one
+    // anywhere is withheld outright rather than shared around the hole.
     assert_eq!(
         for_share(&format!("read /home/ci/{}/config", example_key())),
-        Shared::Kept(format!("read {PATH}"))
+        Shared::Withheld
     );
 }

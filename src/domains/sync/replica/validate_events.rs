@@ -62,13 +62,17 @@ pub(super) fn known_event(conn: &Connection, operation: &Operation) -> Result<Op
     else {
         return Ok(None);
     };
-    Ok(Some(
-        if revision.payload_digest == operation.payload_digest {
-            Disposition::Duplicate
-        } else {
-            Disposition::RejectedConflict
-        },
-    ))
+    // Both digests must be present to match: two absent digests are not the
+    // same event, and `shape` already refuses an event upsert without one.
+    let same = matches!(
+        (revision.payload_digest.as_deref(), operation.payload_digest.as_deref()),
+        (Some(held), Some(offered)) if held == offered
+    );
+    Ok(Some(if same {
+        Disposition::Duplicate
+    } else {
+        Disposition::RejectedConflict
+    }))
 }
 
 impl Identity for FeedbackEventV1 {

@@ -1,12 +1,13 @@
 //! Free text bound for another machine (#254): a shared activity event's
 //! `query` and either event kind's `actor` label.
 //!
-//! One policy, applied in one order. Machine paths are stripped first, because
-//! they say where something lives on the machine that recorded it and nothing
-//! a peer can use. The curated secret scan then runs over what would actually
-//! leave; one match withholds the whole field — a query is shared entirely or
-//! not at all, as a document revision is. The value is never logged either
-//! way: a withheld field would otherwise leave through the log instead.
+//! One policy, applied in one order. The curated secret scan runs over the raw
+//! text first; one match anywhere — inside a path token included — withholds
+//! the whole field, as a document revision is shared entirely or not at all.
+//! Machine paths are then stripped from text that may leave, because they say
+//! where something lives on the machine that recorded it and nothing a peer
+//! can use. The value is never logged either way: a withheld field would
+//! otherwise leave through the log instead.
 
 use crate::utilities::secret_scan;
 
@@ -25,11 +26,10 @@ pub const PATH: &str = "<path>";
 /// Apply the free-text policy to `raw`.
 #[must_use]
 pub fn for_share(raw: &str) -> Shared {
-    let stripped = strip_machine_paths(raw);
-    if secret_scan::scan(&stripped).is_some() {
+    if secret_scan::scan(raw).is_some() {
         return Shared::Withheld;
     }
-    Shared::Kept(stripped)
+    Shared::Kept(strip_machine_paths(raw))
 }
 
 /// [`for_share`] for a caller label: the kept text, or `None` when the label

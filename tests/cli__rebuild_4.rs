@@ -168,3 +168,30 @@ fn rebuild_keeps_verdict_origin_and_payload_redaction() {
         .expect("payload survived");
     assert_eq!(redaction.as_deref(), Some("expired"));
 }
+
+#[test]
+fn rebuild_keeps_a_fresh_identity_when_the_source_has_none_to_give() {
+    let home = tempdir().expect("home");
+    let dir = home.path();
+    run(
+        dir,
+        &[
+            "save",
+            "An identity row the source lost is re-minted, never left empty.",
+            "--kind",
+            "note",
+        ],
+    );
+    // The source table exists but holds no row — replacing the fresh row with
+    // nothing would leave the rebuilt database with no device identity.
+    db(dir)
+        .execute("DELETE FROM replica_device", [])
+        .expect("empty the source identity");
+
+    run(dir, &["rebuild"]);
+
+    let device: String = db(dir)
+        .query_row("SELECT device_id FROM replica_device", [], |r| r.get(0))
+        .expect("the rebuilt database has a device id");
+    assert_eq!(device.len(), 32);
+}
