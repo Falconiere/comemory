@@ -236,31 +236,32 @@ fn reindex_hook_is_valid_bash_that_hands_its_checkout_to_the_sync_pass() {
 }
 
 /// With `HOME` unset the fallback candidates degrade to `/.cargo/bin/…` and
-/// `/.local/bin/…`; the hook must still exit 0, so the commit that fired it
-/// succeeds. `COMEMORY_DATA_DIR` points into the temp dir in case a
-/// `comemory` does turn up under `/opt/homebrew/bin` or `/usr/local/bin`.
+/// `/.local/bin/…`. Git ignores a `post-commit` exit status, so the hook is
+/// run directly, the way git runs it (cwd = the checkout), and its own exit
+/// status is asserted: 0, having backgrounded or skipped the pass.
+/// `COMEMORY_DATA_DIR` points into the temp dir in case a `comemory` does
+/// turn up under `/opt/homebrew/bin` or `/usr/local/bin`.
 #[test]
-fn reindex_hook_never_fails_a_commit_when_home_is_unset() {
+fn reindex_hook_exits_zero_when_home_is_unset() {
     let tmp = TempDir::new().expect("tempdir");
     make_repo_with_one_commit(&tmp);
     install_hook(tmp.path(), "post-commit", REINDEX_HOOK_SCRIPT).expect("install hook");
-    std::fs::write(tmp.path().join("b.txt"), "b").expect("write b.txt");
-    run_git(tmp.path(), &["add", "b.txt"]);
 
-    let out = Command::new("git")
-        .args(["commit", "-q", "-m", "no home"])
+    let out = Command::new(tmp.path().join(".git/hooks/post-commit"))
         .current_dir(tmp.path())
         .env_remove("HOME")
         .env("PATH", "/usr/bin:/bin")
         .env("COMEMORY_DATA_DIR", tmp.path().join("data"))
         .output()
-        .expect("spawn git commit");
+        .expect("run the hook");
 
-    assert!(
-        out.status.success(),
-        "a hook must never fail the commit: {}",
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    assert!(out.stdout.is_empty(), "the hook prints nothing");
 }
 
 /// Path to the real comemory checkout this test crate lives in — a genuine git
