@@ -140,3 +140,41 @@ fn chunk_with_vanished_parent_falls_back_to_own_identity() {
         "dangling parent_id degrades to the chunk's own identity"
     );
 }
+
+#[test]
+fn both_identity_reads_carry_the_rows_blob_oid_as_the_code_version() {
+    use comemory::store::code_feedback::{own_identity, parent_identity};
+    let (db, _tmp) = open_db();
+    let parent = code_row::insert(
+        db.conn(),
+        &CodeSymbolRow {
+            repo: "demo",
+            path: "a.rs",
+            blob_oid: "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            symbol: "alpha",
+            kind: "function",
+            lang: "rust",
+            line_start: 1,
+            line_end: 40,
+            snippet: "fn alpha() {}",
+            simhash: 0,
+            parent_id: None,
+        },
+    )
+    .expect("parent");
+    let chunk = seed_row(db.conn(), "demo", "a.rs", "alpha#1", Some(parent));
+
+    let (own, parent_id) = own_identity(db.conn(), chunk).expect("own").expect("row");
+    assert_eq!(
+        (own.symbol.as_str(), own.version.as_deref(), parent_id),
+        ("alpha#1", Some("oid"), Some(parent))
+    );
+    let resolved = parent_identity(db.conn(), parent)
+        .expect("parent")
+        .expect("row");
+    assert_eq!(
+        (resolved.symbol.as_str(), resolved.version.as_deref()),
+        ("alpha", Some("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")),
+        "the version is the resolved row's own, not the chunk's"
+    );
+}

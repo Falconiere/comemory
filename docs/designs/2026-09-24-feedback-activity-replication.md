@@ -370,6 +370,7 @@ the one `INSERT` that mints the device id.
 | `feedback_events` | `+ event_id TEXT`, `+ device TEXT`, `+ surface TEXT CHECK (surface IN ('cli','http','mcp'))`, `+ actor TEXT`; `UNIQUE INDEX uq_feedback_events_event_id (event_id)` |
 | `activity_log` | `+ event_id TEXT`, `+ device TEXT`; `UNIQUE INDEX uq_activity_log_event_id (event_id)` |
 | `replica_payload` | `+ redaction TEXT CHECK (redaction IN ('erased','expired'))` |
+| `replica_feed` | `INDEX idx_replica_feed_kind_at (entity_kind, at)` — the feed-`at` arm of retention expiry reads only positions past the cutoff instead of every event position ever accepted |
 
 **Rebuild.** The copy passes name their columns, so each new column is added
 by hand:
@@ -603,7 +604,7 @@ direction `sync -> documents` already takes for documents.
   Y, X, they come back Y, X.
 - **AC-14:** `scripts/replication/coverage.json` maps `V-1`…`V-7` to case
   `events`. `bash scripts/test-replication-e2e.sh --case events` runs
-  `replica_events` and `replica_events_2` and exits 0.
+  `replica_events`, `replica_events_2` and `replica_events_3` and exits 0.
   `bash scripts/check-replication-coverage.sh` exits 0.
 - **AC-15:** `comemory rebuild` keeps the device id, every event id, the new
   columns, every payload redaction and every `activity_log` row. A verdict
@@ -624,17 +625,17 @@ direction `sync -> documents` already takes for documents.
 | AC-3 | Chunked symbol from the indexed checkout | Target shape, `blob_oid`, namespaced query id, no `retrieval_log` row | Receiver with no approval: canonical key | `tests/replica_events.rs` |
 | AC-4 | Two real feedback calls; envelope from real `changes` | Counters 2; replays and echo answer `duplicate` | Echo under the sender's own operation id | `tests/replica_events.rs` |
 | AC-5 | Real trigger in the real DB; 500-verdict real envelope; SIGKILL | Rollback; invariant per target | Kill lands anywhere; invariant must hold | `tests/replica_events.rs` |
-| AC-6 | Real verdicts, then the upgrade state (event ids and journal rows cleared, as bootstrap tests do); one real row evicted by real `gc` after its `at` is aged past retention | Retained verdicts journalled once; counters unchanged | Second pass journals 0; code legacy stays local | `tests/replica_events.rs` + `src/domains/sync/replica/tests/event_capture.rs` |
-| AC-7 | Real `POST /api/v1/feedback` with `source: "implicit"` beside a CLI `manual` verdict; real `auto_search_edit` / `auto_coactivation` rewards minted by `graph::coactivate::harvest` over a real git commit (the existing `coactivate` test fixture) | Provenance preserved; harvest/mine/recall-status unchanged; only the search→edit reward journalled | Receiver's own manual verdict still harvested | `tests/replica_events.rs` + `src/domains/graph/tests/coactivate.rs` + `src/store/tests/feedback.rs` |
+| AC-6 | Real verdicts, then the upgrade state (event ids and journal rows cleared, as bootstrap tests do); one real row evicted by real `gc` after its `at` is aged past retention | Retained verdicts journalled once; counters unchanged | Second pass journals 0; code legacy stays local | `tests/replica_events_3.rs` + `src/domains/sync/replica/tests/event_capture.rs` |
+| AC-7 | Real `POST /api/v1/feedback` with `source: "implicit"` beside a CLI `manual` verdict; real `auto_search_edit` / `auto_coactivation` rewards through `record_implicit_used`, the writer `graph::coactivate` calls, over a real saved memory | Provenance preserved; harvest/mine/recall-status unchanged; only the search→edit reward journalled | Receiver's own manual verdict still harvested | `tests/replica_events_3.rs` + `src/domains/learning/tests/feedback_share.rs` + `src/store/tests/feedback.rs` |
 | AC-8 | Two engines with real events on both; full-feed exchange both ways ×5; real `comemory sync --action auto` between rounds; a real `POST /api/v1/sync/import` | Fixed point after round 1 | `sync.import` row never journalled | `tests/replica_events_2.rs` |
 | AC-9 | Real `config.toml` with the two `activity.*` keys on either side | As stated | — | `tests/replica_events_2.rs` |
 | AC-10 | Scoped/unscoped real `find`; a query holding a string matching a `rules.toml` rule; a query naming an absolute path; serve stderr captured to a file | No secret anywhere; `<path>`; `query_withheld` | Crafted extra key refused | `tests/replica_events_2.rs` + `src/domains/sync/replica/tests/activity_payload.rs` + `src/utilities/tests/shared_text.rs` |
 | AC-11 | Transferred events; the materialized rows' `at` aged past retention (retention must be ≥ 1 day), then real `gc` | `expired` state; `payload_expired` answers | Digest-no-payload upsert; the feed-`at` arm for a never-materialized import | `tests/replica_events_2.rs` + `src/store/tests/gc_learning.rs` |
-| AC-12 | Real `delete`, the trash file's mtime and `deleted_at` aged past the (≥ 1 day) trash retention as `tests/cli__gc.rs` does, then real `gc` | `erased` state; `payload_erased`; no rows | An expired event on the same memory stays `expired`, not `erased` | `tests/replica_events.rs` + `src/store/tests/memory_purge.rs` |
+| AC-12 | Real `delete`, the trash file's mtime and `deleted_at` aged past the (≥ 1 day) trash retention as `tests/cli__gc.rs` does, then real `gc` | `erased` state; `payload_erased`; no rows | An expired event on the same memory stays `expired`, not `erased` | `tests/replica_events_3.rs` + `src/store/tests/memory_purge.rs` |
 | AC-13 | Two real captured activity payloads re-digested with one shared `at` (two devices' runs in one instant) | Acceptance order in both cursors | Reverse order on a second engine | `tests/replica_events_2.rs` |
 | AC-14 | The manifest and runner | Exit 0 | Checker rejects a missing `V-*` key | `bash scripts/test-replication-e2e.sh --case events`; `bash scripts/check-replication-coverage.sh` |
-| AC-15 | Stopped engine; real `comemory rebuild` | Values preserved (incl. activity rows); echo `duplicate` | Pre-0026 source columns copy as `NULL` | `tests/replica_events.rs` + `src/store/tests/rebuild_copy_learning_events.rs` |
-| AC-16 | Real `find` + `feedback`; the query's row aged then evicted by real `gc` on the sender | Verdict on receiver, once, namespaced; no query row | Sender reports `known_query: true` at record time; the eviction happens after | `tests/replica_events.rs` |
+| AC-15 | Stopped engine; real `comemory rebuild` | Values preserved (incl. activity rows); echo `duplicate` | Pre-0026 source columns copy as `NULL` | `tests/replica_events_3.rs` + `src/store/tests/rebuild_copy_learning_events.rs` |
+| AC-16 | Real `find` + `feedback`; the query's row aged then evicted by real `gc` on the sender | Verdict on receiver, once, namespaced; no query row | Sender reports `known_query: true` at record time; the eviction happens after | `tests/replica_events_3.rs` |
 
 No mocks: every check drives the real binary, real spawned `serve` engines,
 real HTTP and real SQLite files. Backdating an `at` stands in only for the

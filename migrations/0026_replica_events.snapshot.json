@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dialect": "sqlite",
-  "id": "8b3187d9-e478-4dcd-b2cf-008551f5d405",
+  "id": "9e533ca8-3c80-4da2-83a9-1f756d77e28d",
   "prev_id": "d1a9e6d4-28d9-4f2a-ae85-6291c22de56e",
   "tables": {
     "activity_log": {
@@ -3648,6 +3648,18 @@
             },
             {
               "name": "entity_key"
+            }
+          ],
+          "unique": false
+        },
+        "idx_replica_feed_kind_at": {
+          "name": "idx_replica_feed_kind_at",
+          "columns": [
+            {
+              "name": "entity_kind"
+            },
+            {
+              "name": "at"
             }
           ],
           "unique": false

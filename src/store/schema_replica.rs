@@ -70,6 +70,7 @@ pub struct ReplicaPayload {
 /// acceptance, not a device clock, is what orders replicated edits.
 #[table(name = "replica_feed")]
 #[index("idx_replica_feed_entity", entity_kind, entity_key)]
+#[index("idx_replica_feed_kind_at", entity_kind, at)]
 #[unique_index("uq_replica_feed_operation", operation_id)]
 pub struct ReplicaFeed {
     /// Server-assigned monotonic acceptance position.

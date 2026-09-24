@@ -42,6 +42,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uq_feedback_events_event_id" ON "feedback_eve
 
 --> statement-breakpoint
 
+CREATE INDEX IF NOT EXISTS "idx_replica_feed_kind_at" ON "replica_feed" ("entity_kind", "at");
+
+--> statement-breakpoint
+
 -- This database's device id (#254): 16 random bytes from SQLite's randomness
 -- source (the OS's, through the unix VFS), minted once — the migration runs
 -- once per database, keyed by its schema_meta marker.
