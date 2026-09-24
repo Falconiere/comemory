@@ -19,7 +19,7 @@ Most users never run this: `comemory auth login` performs the first full sync,
 covers the pull direction. The user-level daemon is opt-in
 (`comemory auth login --daemon`) for headless hosts.
 
-**Runnable tests:** `tests/cli__sync.rs`
+**Runnable tests:** `tests/cli__sync.rs`, `tests/cli__sync_auto.rs`
 
 **HTTP:** none — platform `/v1/sync/*` forwarder (`transport: "cli-only"`).
 Local engine also exposes `GET|POST /api/v1/sync/{changes,import,manifest}`
@@ -38,8 +38,22 @@ _None._
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--action` | `run` | `run` (push+pull), `push`/`push-only`, `pull`/`pull-only`, `verify`, `status` |
+| `--action` | `run` | `run` (push+pull), `push`/`push-only`, `pull`/`pull-only`, `verify`, `status`, `auto` |
 | `--allow-secret` | unset | Record a secret-scan override for one memory id before push |
+| `--path` | unset | With `--action auto` only: the checkout a git hook fired in, indexed first under its main worktree's label. Any other action refuses it (exit 64) |
+
+`run` and `push` also re-index every **hooked** repo (one whose `.git/hooks`
+carry comemory's hook) whose HEAD moved since its last index, before the code
+push, and report it as `refresh` (`refreshed: N of M hooked repo(s)` on a
+TTY).
+
+`--action auto` is the unattended pass comemory's git hooks and the agent
+`SessionStart` hook fire, from any cwd: index `--path` (when given), refresh
+every stale hooked repo, then — only when logged in — pull, push, and push the
+code of repos whose index moved. It needs no login, prints nothing without
+`--json`, and exits 0 even when a network leg failed (the failure is in
+`error`). Passes serialize on `sync.lock`; a trigger that finds a pass already
+queued exits with `{"action":"auto","coalesced":true}`.
 
 `--action status` reports `pending` — how many local writes are still owed to
 the platform — beside the two cursors, and one `code` row per indexed repo
@@ -116,3 +130,35 @@ reach. Switching organization means running `comemory auth login` again.
   repo under `skipped_config`.
 - **Covered by:** `src/domains/sync/tests/code.rs::ac11_code_index_off_sends_nothing_even_with_an_index`,
   `src/domains/sync/tests/code.rs::skip_repos_withholds_the_index_too`
+
+### sync-04 An auto pass from anywhere refreshes a stale hooked repo
+
+- **Flags:** `--action`
+- **Setup:** a repo with comemory's hooks, registered by `install-hooks`; a
+  commit made with hooks off (`git -c core.hooksPath=/dev/null commit`)
+- **Command:** `comemory sync --action auto --json`, run from outside the repo, logged out
+- **Expect:** `refresh.refreshed = 1`, `logged_in: false`, no `pull`; `comemory repos --json` shows the new HEAD, `status: "fresh"`.
+- **Covered by:** `tests/cli__sync_auto.rs::an_auto_pass_from_an_unrelated_cwd_refreshes_a_stale_hooked_repo`
+
+### sync-05 Extra triggers coalesce behind a running pass
+
+- **Flags:** `--action`
+- **Setup:** a pass holds `sync.lock`
+- **Command:** three concurrent `comemory sync --action auto --json`
+- **Expect:** two exit 0 at once with `{"action":"auto","coalesced":true}`; the third waits and runs a pass once the lock is released.
+- **Covered by:** `tests/cli__sync_auto.rs::triggers_behind_a_running_pass_coalesce_into_one_queued_pass`
+
+### sync-06 `--path` belongs to `--action auto`
+
+- **Flags:** `--path`
+- **Command:** `comemory sync --action push --path .`
+- **Expect:** exit 64, `--path is only accepted with --action auto`.
+- **Covered by:** `tests/cli__sync_auto.rs::path_is_refused_with_any_action_but_auto`
+
+### sync-07 A hook in a linked worktree passes its checkout as `--path`
+
+- **Flags:** `--path`
+- **Setup:** a hooked repo and a `git worktree add` of it
+- **Command:** a real commit in the worktree (the hook runs `comemory sync --action auto --path <worktree>`)
+- **Expect:** the main repo's label moves to the worktree's HEAD; no repository is minted for the worktree directory.
+- **Covered by:** `tests/cli__sync_auto.rs::a_commit_in_a_linked_worktree_indexes_under_the_main_label`

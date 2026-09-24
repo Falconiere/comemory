@@ -323,37 +323,41 @@ pub fn install_hook(repo_root: &Path, hook: &str, body: &str) -> Result<()> {
     Ok(())
 }
 
-/// Substring every hook script [`install_hook`] writes contains — the
-/// backgrounded `index-code` invocation line shared (by hand — the two
-/// literals are kept in sync manually, there is no single source) with
-/// `crate::domains::code::install_hooks::SCRIPT`. [`hook_installed`] looks for this
-/// substring rather than requiring a byte-identical body, so a hook written
-/// by an older or newer revision of the reindex script is still recognized
-/// as comemory-managed, while a hand-written third-party hook (which won't
-/// contain it) is not.
+/// Substring every hook script [`install_hook`] writes contains. The current
+/// [`REINDEX_HOOK_SCRIPT`] carries it in its header comment; hooks written by
+/// older releases carry it in their backgrounded `comemory index-code` line.
+/// [`hook_installed`] looks for this substring rather than requiring a
+/// byte-identical body, so a hook written by an older or newer revision of
+/// the script is still recognized as comemory-managed, while a hand-written
+/// third-party hook (which won't contain it) is not.
 pub(crate) const HOOK_MARKER: &str = "comemory index-code";
 
-/// The reindex hook body written into `.git/hooks/<hook>`. The single
-/// definition shared by `domains::code::install_hooks` (which writes all three hooks
-/// at once) and `domains::code::hooks`'s per-hook `--enable`, so the two cannot drift
-/// (Binding Rule 1). Must always contain [`HOOK_MARKER`], which is how
-/// [`hook_installed`] recognizes a comemory-written hook. The trailing `&`
-/// detaches the indexer so git's hook runner returns immediately.
+/// The hook body written into `.git/hooks/<hook>` for every name in
+/// [`crate::domains::code::hooks::GIT_HOOKS`]. The single definition shared by
+/// `domains::code::install_hooks` and `domains::code::hooks`'s per-hook
+/// `--enable`, so the two cannot drift (Binding Rule 1). Must always contain
+/// [`HOOK_MARKER`], which is how [`hook_installed`] recognizes it.
 ///
-/// The label is derived the way [`repo_label`] derives it — the basename of
-/// the common dir's parent, so a commit in a linked worktree refreshes the
-/// main repo's index rather than minting a `<worktree-name>` repo. The
-/// `--show-toplevel` basename is only the fallback for a common dir not
-/// named `.git` (bare layouts) or a git too old for `--path-format`.
+/// The hook hands its checkout to `comemory sync --action auto --path`, which
+/// indexes it under the main worktree's label ([`repo_label`]) and then
+/// refreshes every other hooked repo, all under the sync pass lock — so a
+/// hook never runs an index of its own beside another pass's. The binary is
+/// found on `PATH`, then in the directories `install.sh`, Homebrew and cargo
+/// install into, because a GUI git client or IDE often runs hooks with a
+/// `PATH` that has none of them; no absolute path is baked in, since a
+/// versioned Homebrew `Cellar` path goes stale on the next upgrade. `( … & )`
+/// detaches the pass so git's hook runner returns immediately.
 pub const REINDEX_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
+                      # Written by `comemory install-hooks`; re-run it to refresh this file.\n\
+                      # comemory index-code for this checkout runs inside `comemory sync --action auto`,\n\
+                      # which then refreshes every other hooked repo and syncs when logged in.\n\
                       ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
                       [ -z \"$ROOT\" ] && exit 0\n\
-                      COMMON=\"$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)\"\n\
-                      case \"$COMMON\" in\n\
-                        */.git) REPO=\"$(basename \"$(dirname \"$COMMON\")\")\" ;;\n\
-                        *) REPO=\"$(basename \"$ROOT\")\" ;;\n\
-                      esac\n\
-                      ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
+                      CM=\"$(command -v comemory 2>/dev/null)\"\n\
+                      for d in \"$HOME/.cargo/bin\" /opt/homebrew/bin /usr/local/bin \"$HOME/.local/bin\"; do \
+                      [ -x \"$CM\" ] && break; CM=\"$d/comemory\"; done\n\
+                      [ -x \"$CM\" ] || exit 0\n\
+                      ( \"$CM\" sync --action auto --path \"$ROOT\" </dev/null >/dev/null 2>&1 & )\n\
                       exit 0\n";
 
 /// The body of `<hooks_dir>/<hook>` for `repo_root`, or `None` when it is

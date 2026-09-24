@@ -103,7 +103,7 @@ fn setup_yes_indexes_a_fresh_repo_then_search_code_finds_a_symbol() {
         data.path().join("comemory.db").exists(),
         "applying creates the store"
     );
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(repo.path().join(".git/hooks").join(hook).exists());
     }
 
@@ -220,7 +220,7 @@ fn a_failing_step_still_reports_every_step_and_exits_69() {
         "applied",
         "a neighbouring step still runs after a failure"
     );
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(
             repo.path().join(".git/hooks").join(hook).exists(),
             "{hook} was written despite the other step failing"

@@ -173,8 +173,8 @@ fn v1_hooks_install_confirmed_inside_an_allow_path_root_installs_hooks() {
     let body: serde_json::Value = res.json().expect("json");
     assert_eq!(body["ok"], serde_json::json!(true));
     assert_eq!(body["meta"]["command"], "hooks.install");
-    assert_eq!(body["data"]["installed"].as_array().map(Vec::len), Some(3));
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    assert_eq!(body["data"]["installed"].as_array().map(Vec::len), Some(4));
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(repo.join(".git").join("hooks").join(hook).exists());
     }
 }
@@ -218,7 +218,7 @@ fn v1_hooks_install_through_a_symlink_operates_on_the_resolved_target() {
         "the resolved (canonicalized) target must reach comemory::domains::code::install_hooks::run, \
          not the raw symlink path: {body}"
     );
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(
             real_repo.join(".git").join("hooks").join(hook).exists(),
             "hooks must land in the symlink's resolved target"

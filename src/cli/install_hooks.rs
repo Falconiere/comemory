@@ -1,15 +1,17 @@
-//! `comemory install-hooks` — drop git hooks into a repo so
-//! commits/merges/checkouts kick off `comemory index-code` in the
-//! background. The hook-writing middle lives in `domains::code::install_hooks`
+//! `comemory install-hooks` — drop git hooks into a repo so every HEAD move
+//! (commit, merge, checkout, rewrite) runs `comemory sync --action auto` for
+//! it in the background. The hook-writing middle lives in `domains::code::install_hooks`
 //! (Binding Rule 1).
 
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use clap::Args as ClapArgs;
 
 use crate::cli::output::json;
 use crate::config::Config;
+use crate::domains::code::git_utils;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
@@ -36,18 +38,17 @@ pub struct Args {
     /// always refreshed to this binary's body, with or without this flag, so
     /// one installed by an older release stops labelling every `git worktree`
     /// as its own repo. Without this flag the command refuses to clobber a
-    /// hand-written `post-commit`/`post-merge`/`post-checkout`.
+    /// hand-written `post-commit`/`post-merge`/`post-checkout`/`post-rewrite`.
     #[arg(long, default_value_t = false)]
     pub force: bool,
 }
 
-/// Install the three reindex hooks via `crate::domains::code::install_hooks::run`, refreshing
-/// any comemory already wrote and clobbering a foreign one only with
-/// `--force`. On success the human-readable line lists the
-/// hooks that were written; under `--json` we emit a small object so callers
-/// can detect success programmatically. `install-hooks` has no `Paths`/db
-/// dependency, so `data_dir` resolves a throwaway `Ctx::lazy` that is never
-/// opened.
+/// Install the reindex hooks via `crate::domains::code::install_hooks::run`,
+/// refreshing any comemory already wrote and clobbering a foreign one only
+/// with `--force`, then [`kick`] the first pass so the repo is indexed and
+/// synced now rather than at its next commit. `--json` adds `kicked`.
+/// `install-hooks` itself never opens the store: `data_dir` resolves a
+/// `Ctx::lazy` that is never opened, and is handed to the kicked pass.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = crate::config::Paths::new(crate::config::paths::resolve_data_dir(data_dir));
     let cfg = Config::defaults();
@@ -57,8 +58,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     };
     let mut ctx = Ctx::lazy(&paths, &cfg);
     let resp = crate::domains::code::install_hooks::run(&mut ctx, req)?;
+    let kicked = kick(&a.repo, paths.data_dir());
     if json_flag {
-        json::write(&resp)?;
+        let mut report = serde_json::to_value(&resp)?;
+        report["kicked"] = serde_json::Value::Bool(kicked);
+        json::write(&report)?;
     } else {
         let mut out = std::io::stdout().lock();
         writeln!(
@@ -67,6 +71,35 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             resp.installed.join(", "),
             resp.repo
         )?;
+        if kicked {
+            writeln!(out, "first index + sync started in the background")?;
+        }
     }
     Ok(())
+}
+
+/// Run the hook body this binary ships once in `repo`, exactly as git runs a
+/// hook (cwd = the checkout), so the repo is registered, indexed and synced
+/// without waiting for a commit. The script comes from the binary, never from
+/// the repo's hooks directory, so the kick cannot execute a file someone else
+/// placed there. It backgrounds its pass and returns at once; `data_dir` is
+/// passed down so the pass writes to the store this command was pointed at.
+/// `false` when `bash` could not be run — the install stands either way.
+fn kick(repo: &Path, data_dir: &Path) -> bool {
+    let status = Command::new("bash")
+        .arg("-c")
+        .arg(git_utils::REINDEX_HOOK_SCRIPT)
+        .current_dir(repo)
+        .env("COMEMORY_DATA_DIR", data_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    match status {
+        Ok(st) => st.success(),
+        Err(e) => {
+            tracing::debug!(repo = %repo.display(), error = %e, "install-hooks: kick failed");
+            false
+        }
+    }
 }

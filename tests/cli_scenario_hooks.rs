@@ -43,7 +43,7 @@ fn install_hooks_toggle_then_search_code() {
     home.run_ok(&["install-hooks", "--repo", repo_s]);
     let after_install = home.run_json(&["hooks", "--repo", repo_s]);
     let map = installed_by_name(&after_install);
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(map[hook], "{hook} must be installed: {after_install}");
     }
 

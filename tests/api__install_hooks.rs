@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! Mirror test for `src/domains/code/install_hooks.rs`. Calls `comemory::domains::code::install_hooks::run`
-//! directly against a `Ctx::lazy` (conn-free) — proving the three hooks are
+//! directly against a `Ctx::lazy` (conn-free) — proving the four hooks are
 //! written, the pre-flight refuses to clobber a FOREIGN hook without `force`,
 //! that an outdated comemory-written hook is repaired without it, and that
 //! `force` overwrites (`cli::install_hooks::run` is byte-compat
@@ -29,7 +29,7 @@ fn request(repo: &std::path::Path, force: bool) -> comemory::domains::code::inst
 }
 
 #[test]
-fn run_installs_all_three_hooks() {
+fn run_installs_all_four_hooks() {
     let home = tempfile::tempdir().expect("tempdir");
     let repo = home.path().join("repo");
     std::fs::create_dir_all(repo.join(".git")).expect("fake .git dir");
@@ -40,9 +40,9 @@ fn run_installs_all_three_hooks() {
     let resp = comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, false))
         .expect("install run");
 
-    assert_eq!(resp.installed.len(), 3);
+    assert_eq!(resp.installed.len(), 4);
     assert_eq!(resp.repo, repo.display().to_string());
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(
             repo.join(".git").join("hooks").join(hook).exists(),
             "{hook} must be written"
@@ -97,7 +97,7 @@ fn run_force_overwrites_an_existing_hook() {
     let mut ctx = Ctx::lazy(&paths, &cfg);
     let resp = comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, true))
         .expect("force install");
-    assert_eq!(resp.installed.len(), 3);
+    assert_eq!(resp.installed.len(), 4);
 
     let body = std::fs::read_to_string(hooks_dir.join("post-commit")).expect("read hook");
     assert!(
@@ -144,7 +144,7 @@ fn run_repairs_an_outdated_comemory_hook_without_force() {
     let repo = home.path().join("repo");
     let hooks_dir = repo.join(".git").join("hooks");
     std::fs::create_dir_all(&hooks_dir).expect("fake hooks dir");
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         std::fs::write(hooks_dir.join(hook), LEGACY_HOOK_SCRIPT).expect("write legacy hook");
     }
 
@@ -153,9 +153,9 @@ fn run_repairs_an_outdated_comemory_hook_without_force() {
     let mut ctx = Ctx::lazy(&paths, &cfg);
     let resp = comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, false))
         .expect("repair without force");
-    assert_eq!(resp.installed.len(), 3);
+    assert_eq!(resp.installed.len(), 4);
 
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         let body = std::fs::read_to_string(hooks_dir.join(hook)).expect("read hook");
         assert_eq!(
             body,

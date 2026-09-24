@@ -1,6 +1,6 @@
 //! `GET /api/v1/hooks` (read hook state, `domains::code::hooks`) and `POST
 //! /api/v1/hooks` (per-hook enable/disable, `domains::code::hooks`) — the console's
-//! readable, per-hook-controllable surface over `install-hooks`'s three git
+//! readable, per-hook-controllable surface over `install-hooks`'s four git
 //! hooks plus the config-backed search→edit auto-reinforcement row.
 //!
 //! `PUT /api/v1/hooks/{name}?repo=<path>` (console-api spec §6) is the
@@ -79,7 +79,7 @@ struct ListQuery {
     repo: Option<String>,
 }
 
-/// `GET /api/v1/hooks` — report all four rows (`domains::code::hooks`), read-only.
+/// `GET /api/v1/hooks` — report all five rows (`domains::code::hooks`), read-only.
 async fn list_hooks(State(state): State<AppState>, Query(q): Query<ListQuery>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
@@ -99,7 +99,7 @@ async fn list_hooks(State(state): State<AppState>, Query(q): Query<ListQuery>) -
 }
 
 /// `POST /api/v1/hooks` — enable/disable one hook (`domains::code::hooks`), then
-/// report all four rows. Read-only-gated via [`guard_mutating`]; not
+/// report all five rows. Read-only-gated via [`guard_mutating`]; not
 /// confirm-gated (module doc, AC-33b).
 async fn toggle_hooks(
     State(state): State<AppState>,
@@ -123,7 +123,7 @@ async fn toggle_hooks(
 /// /hooks/install` runs; `400` when it does not exist, `403` outside every
 /// allowed root), apply the toggle through `crate::domains::code::hooks::run`, reload the
 /// server's config when the config-backed row was written, and only then
-/// report all four rows — read back through the reloaded config, so the
+/// report all five rows — read back through the reloaded config, so the
 /// answer is exactly what the next `GET /hooks` will say rather than an
 /// echo of the write. An implicit `repo` (the server's own cwd) is not
 /// contained: that is the process's own directory, the same cwd
@@ -170,7 +170,7 @@ struct SetBody {
 }
 
 /// `PUT /api/v1/hooks/{name}?repo=<path>` — set one hook's state
-/// (`domains::code::hooks`), then report all four rows. `name` is accepted in either
+/// (`domains::code::hooks`), then report all five rows. `name` is accepted in either
 /// spelling the console might send: `post_commit` and `post-commit` both
 /// resolve to the git hook `post-commit` (an unknown name after that
 /// normalization is `domains::code::hooks`' own `400 usage`). Read-only-gated via

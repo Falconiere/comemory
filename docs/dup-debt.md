@@ -3,10 +3,18 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**286 near-duplicate function/method pairs at threshold 0.85**, measured with
+**285 near-duplicate function/method pairs at threshold 0.85**, measured with
 **`similarity-rs 0.5.0`** over the 530 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number fell from 286 (hook-driven auto-sync).** The sync pass
+lock added ten raw pairs and all ten were burned before recording: the two
+lock-file names left `config::Paths`, where each one-line join paired with
+every sibling getter, for `domains::sync::auto::{PASS_LOCK, QUEUE_LOCK}` and one
+`hold_pass_lock` helper; `FileLock::acquire` and `try_acquire` share one
+`open`. Taking that helper at the top of `run_all` and `push_only` also moved
+`run_all` far enough from `push_only` to drop their recorded pair below.
 
 **Why this number rose from 285 (#253).** Document replication added the pulled
 cache, its search half and the acceptance path. The raw increase was **eleven**
@@ -435,7 +443,6 @@ fresh and does not depend on these line numbers.
 | `src/domains/sync/auth_file.rs:106-125` method `load` | `src/domains/sync/auth_file.rs:139-148` method `load_usable` | 86.92% | parallel push/pull halves of the same exchange, symmetric by design |
 | `src/domains/sync/auth_file.rs:179-182` method `clear` | `src/domains/sync/auth_file.rs:189-191` function `clear_stale_allowlist` | 86.75% | parallel push/pull halves of the same exchange, symmetric by design |
 | `src/domains/sync/client.rs:136-152` function `pull_changes` | `src/domains/sync/client.rs:246-256` function `fetch_manifest` | 86.36% | parallel push/pull halves of the same exchange, symmetric by design |
-| `src/domains/sync/manual.rs:62-73` function `run_all` | `src/domains/sync/manual.rs:79-87` function `push_only` | 86.35% | parallel push/pull halves of the same exchange, symmetric by design |
 | `src/domains/sync/client.rs:119-133` function `poll_token` | `src/domains/sync/client.rs:246-256` function `fetch_manifest` | 85.87% | parallel push/pull halves of the same exchange, symmetric by design |
 | `src/domains/sync/client.rs:195-207` function `ws_ticket` | `src/domains/sync/client.rs:246-256` function `fetch_manifest` | 85.24% | parallel push/pull halves of the same exchange, symmetric by design |
 

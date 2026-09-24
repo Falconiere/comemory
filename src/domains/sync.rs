@@ -3,7 +3,7 @@
 //!
 //! [`auth_file`][a] owns the one org-scoped credential; [`client`][c] speaks
 //! the wire; `push`, `pull`, `code` and `verify` are the directions of travel,
-//! run once together by `initial`; repository policy, `redact`, and
+//! run once together by `initial` and on every hook-fired pass by `auto`; repository policy, `redact`, and
 //! `skip_repos` decide what may leave this machine.
 //!
 //! [a]: crate::domains::sync::auth_file
@@ -14,6 +14,8 @@
 
 /// Load/save the org-scoped `auth.json` credential (v2; a v1 file is refused).
 pub mod auth_file;
+/// `comemory sync --action auto`: the coalesced, cwd-free pass hooks fire.
+pub mod auto;
 /// Enveloped platform HTTP over reqwest + rustls, plus the workspace
 /// channel's ticket and URL.
 pub mod client;

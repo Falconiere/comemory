@@ -1,6 +1,6 @@
 //! `install_hooks::{Request, run}` — the shared middle of `comemory
 //! install-hooks` / `POST /api/v1/hooks/install`: drop git hooks into a repo
-//! so commits/merges/checkouts kick off a background `comemory index-code`.
+//! so every HEAD move kicks off a background `comemory sync --action auto`.
 //! Moved out of `cli::install_hooks::run` (Binding Rule 1).
 //!
 //! Conn-free — `run` never calls [`Ctx::conn`]; `&mut Ctx` is threaded only
@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::domains::code::git_utils::{self, install_hook};
+use crate::domains::code::hooks::GIT_HOOKS;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
@@ -36,20 +37,16 @@ fn default_repo() -> String {
     ".".to_string()
 }
 
-/// Hooks installed on every call: `post-commit`, `post-merge`,
-/// `post-checkout`.
-const HOOKS: &[&str] = &["post-commit", "post-merge", "post-checkout"];
-
 /// Report of one `install-hooks` run.
 #[derive(Serialize, Debug)]
 pub struct Response {
-    /// Hooks written (always all of [`HOOKS`] on success).
+    /// Hooks written (always all of [`GIT_HOOKS`] on success).
     pub installed: Vec<String>,
     /// The repo root hooks were installed into.
     pub repo: String,
 }
 
-/// Install the three reindex hooks, refreshing any comemory already wrote
+/// Install every [`GIT_HOOKS`] hook, refreshing any comemory already wrote
 /// and clobbering a foreign one only with `req.force`.
 ///
 /// Pre-flight: verify every target hook is writable BEFORE writing any of
@@ -72,7 +69,7 @@ pub struct Response {
 pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let repo = PathBuf::from(&req.repo);
     if !req.force {
-        for hook in HOOKS {
+        for hook in GIT_HOOKS {
             let target = git_utils::hooks_dir(&repo).join(hook);
             if target.exists() && !git_utils::hook_installed(&repo, hook) {
                 return Err(Error::Other(format!(
@@ -83,11 +80,11 @@ pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
             }
         }
     }
-    for hook in HOOKS {
+    for hook in GIT_HOOKS {
         install_hook(&repo, hook, git_utils::REINDEX_HOOK_SCRIPT)?;
     }
     Ok(Response {
-        installed: HOOKS.iter().map(ToString::to_string).collect(),
+        installed: GIT_HOOKS.iter().map(ToString::to_string).collect(),
         repo: req.repo,
     })
 }

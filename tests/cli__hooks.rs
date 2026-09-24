@@ -71,7 +71,7 @@ fn ac35_fresh_repo_then_install_hooks_then_disable_one() {
 
     let before = hooks_json(home.path(), &repo, &[]);
     let before_map = installed_by_name(&before);
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(!before_map[hook], "{hook} must start uninstalled");
     }
 
@@ -81,7 +81,7 @@ fn ac35_fresh_repo_then_install_hooks_then_disable_one() {
     );
     let after_install = hooks_json(home.path(), &repo, &[]);
     let after_install_map = installed_by_name(&after_install);
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(after_install_map[hook], "{hook} must be installed");
     }
 

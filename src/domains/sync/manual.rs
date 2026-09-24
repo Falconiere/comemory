@@ -8,6 +8,8 @@
 
 use crate::config::sync::apply_embed_model;
 use crate::config::{Config, Paths};
+use crate::domains::code::hooked_refresh::{self, RefreshStats};
+use crate::domains::sync::auto::hold_pass_lock;
 use crate::domains::sync::code::{self, CodePushStats};
 use crate::domains::sync::pull::{self, PullStats};
 use crate::domains::sync::push::{self, PushStats};
@@ -30,7 +32,7 @@ pub struct Session {
 /// What one run did. A field is `None` when that leg was not part of the
 /// requested action, which is how the report distinguishes "did not run" from
 /// "ran and moved nothing".
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct RunStats {
     /// The pull leg, present for `run` and `pull`.
     pub pull: Option<PullStats>,
@@ -38,6 +40,9 @@ pub struct RunStats {
     pub push: Option<PushStats>,
     /// The code-index push, present for `run` and `push`.
     pub code: Option<CodePushStats>,
+    /// The hooked-repo refresh that precedes the code push, present for
+    /// `run` and `push` (and for every `--action auto` pass).
+    pub refresh: Option<RefreshStats>,
 }
 
 /// Load the credential, open the store, and apply the configured embed model,
@@ -56,7 +61,8 @@ pub fn open_session(paths: &Paths, cfg: &Config) -> Result<Session> {
     Ok(Session { auth, conn })
 }
 
-/// Pull, then push, then push the code index — the default action.
+/// Pull, then push, then push the code index — the default action — under
+/// the sync pass lock.
 ///
 /// # Errors
 /// Propagates the first leg that fails; a later leg is then not attempted.
@@ -67,13 +73,14 @@ pub fn run_all(
     allow_secret: Option<&str>,
     limit: usize,
 ) -> Result<RunStats> {
+    let _pass = hold_pass_lock(paths)?;
     let pulled = pull::run_pull(paths, cfg, &mut session.conn, &session.auth, limit)?;
     let mut stats = push_then_code(paths, cfg, session, allow_secret, limit)?;
     stats.pull = Some(pulled);
     Ok(stats)
 }
 
-/// Push local changes, then push the code index.
+/// Push local changes, then push the code index, under the sync pass lock.
 ///
 /// # Errors
 /// Propagates the memory push; the code push then runs only if it succeeded.
@@ -84,6 +91,7 @@ pub fn push_only(
     allow_secret: Option<&str>,
     limit: usize,
 ) -> Result<RunStats> {
+    let _pass = hold_pass_lock(paths)?;
     push_then_code(paths, cfg, session, allow_secret, limit)
 }
 
@@ -109,8 +117,10 @@ pub fn pull_only(
     })
 }
 
-/// The push half both `run` and `push` share: memories first, then the code
-/// index, so the platform never sees code rows for memories it has not got.
+/// The push half both `run` and `push` share: memories first, then every
+/// stale hooked repo refreshed, then the code index — so the platform never
+/// sees code rows for memories it has not got, and a repo nobody `cd`-ed into
+/// still pushes its latest HEAD.
 fn push_then_code(
     paths: &Paths,
     cfg: &Config,
@@ -126,11 +136,14 @@ fn push_then_code(
         allow_secret,
         limit,
     )?;
+    let mut refresh = RefreshStats::default();
+    hooked_refresh::refresh_stale(paths, cfg, &mut session.conn, None, &mut refresh)?;
     let code = code::run_code_push(cfg, &mut session.conn, &session.auth)?;
     Ok(RunStats {
         pull: None,
         push: Some(pushed),
         code: Some(code),
+        refresh: Some(refresh),
     })
 }
 

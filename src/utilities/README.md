@@ -45,7 +45,7 @@ One line per file, named after its primary item:
 | `embedding_input.rs` | `parse_payload` | Pure decoding of a `--vector` CSV list and a `{"embedding":[..]}` JSON payload — no process I/O |
 | `error_code.rs` | `classify` | The transport-neutral `Error → (code, Class)` mapping: the code words and classes `serve::envelope::status_and_code` emits today, extracted so `serve` (`Class → StatusCode`) and `mcp` (`Class → tool-level error`, `Internal` excepted) share one exhaustive match |
 | `fetch.rs` | `exchange` | `curl` (falling back to `wget`) HTTP: `exchange`, `download`, `final_url`; no in-process TLS stack |
-| `file_lock.rs` | `FileLock` | Exclusive advisory lock over a sibling lock file, held by the source registry's read-modify-write cycle and by `store::migrate`'s preflight snapshot |
+| `file_lock.rs` | `FileLock` | Exclusive advisory lock over a sibling lock file, held by the source registry's read-modify-write cycle, by `store::migrate`'s preflight snapshot, and by the sync pass (`sync.lock`); `try_acquire` answers "already held" without waiting, for the `--action auto` queue slot |
 | `http_error.rs` | `map_reqwest` | Outbound `reqwest` transport errors mapped into `crate::Error` with the source chain preserved |
 | `id_list.rs` | `csv_unique` | Comma-separated flag values split, trimmed, de-duplicated in first-mention order, plus the memory-id and symbol-id list parsers built on it |
 | `pagination.rs` | `Page` | The requested `PageWindow`, the generic `{items, limit, offset, total, has_more}` envelope, the retrieval `PageMeta` cursor, and the `page_window` / `page_meta` builders — the single home of the `limit == 0` means "all" rule |

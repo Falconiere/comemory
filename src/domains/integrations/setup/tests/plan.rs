@@ -71,6 +71,28 @@ fn a_fresh_repo_plans_hooks_and_indexing_as_pending() {
     );
 }
 
+/// A repo hooked by a release that wrote only three hooks is not done: setup
+/// plans the missing `post-rewrite`, so a rebase starts reaching the index.
+#[test]
+fn a_repo_hooked_before_post_rewrite_plans_the_missing_hook() {
+    let data = tempfile::tempdir().unwrap();
+    let repo = repo_with_sources();
+    for hook in ["post-commit", "post-merge", "post-checkout"] {
+        crate::domains::code::git_utils::install_hook(
+            repo.path(),
+            hook,
+            crate::domains::code::git_utils::REINDEX_HOOK_SCRIPT,
+        )
+        .unwrap();
+    }
+    let detected = detect_at(data.path(), repo.path());
+
+    let steps = run(&detected, &Request::default());
+
+    assert_eq!(step(&steps, GIT_HOOKS).state, StepState::Pending);
+    assert_eq!(step(&steps, GIT_HOOKS).detail, "post-rewrite");
+}
+
 #[test]
 fn reinforce_is_pending_only_once_it_has_been_turned_off() {
     let data = tempfile::tempdir().unwrap();

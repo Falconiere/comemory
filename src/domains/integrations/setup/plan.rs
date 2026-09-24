@@ -108,7 +108,7 @@ fn agent_host(detected: &Detected, req: &Request) -> Step {
     step(AGENT_HOST, title, pending.join(", "), StepState::Pending)
 }
 
-/// The three git reindex hooks.
+/// The git reindex hooks (`domains::code::hooks::GIT_HOOKS`).
 fn git_hooks(detected: &Detected) -> Step {
     let title = "Git reindex hooks";
     let Some(repo) = &detected.repo else {
@@ -140,7 +140,7 @@ fn git_hooks(detected: &Detected) -> Step {
         return step(
             GIT_HOOKS,
             title,
-            format!("all three installed in {}", repo.label),
+            format!("all installed in {}", repo.label),
             StepState::Satisfied,
         );
     }

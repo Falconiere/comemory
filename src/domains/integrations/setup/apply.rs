@@ -80,7 +80,7 @@ fn agent_host(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
     Ok(format!("installed for {}", installed.join(", ")))
 }
 
-/// Write the three reindex hooks. Never `force`: a foreign hook was already
+/// Write every reindex hook. Never `force`: a foreign hook was already
 /// reported unavailable at plan time, so reaching here means the slots are
 /// free.
 fn git_hooks(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {

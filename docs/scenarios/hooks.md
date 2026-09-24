@@ -1,6 +1,6 @@
 # `comemory hooks`
 
-Report (and toggle) the three git reindex hooks plus the config-backed
+Report (and toggle) the four git reindex hooks plus the config-backed
 search→edit auto-reinforcement row.
 
 **Runnable tests:** `tests/cli__hooks.rs`, `tests/cli_scenario_hooks.rs`
@@ -17,9 +17,9 @@ _None._
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--repo` | `.` | Git repo root the three hook files live in |
-| `--enable` | unset | Install/enable one of `post-commit`, `post-merge`, `post-checkout`, `search-edit-reinforcement`. Conflicts with `--disable` |
-| `--disable` | unset | Remove/disable one of the same four names |
+| `--repo` | `.` | Git repo root the four hook files live in |
+| `--enable` | unset | Install/enable one of `post-commit`, `post-merge`, `post-checkout`, `post-rewrite`, `search-edit-reinforcement`. Conflicts with `--disable` |
+| `--disable` | unset | Remove/disable one of the same five names |
 
 ## Scenarios
 
@@ -34,7 +34,7 @@ comemory hooks --repo /path/to/repo --json
 comemory hooks --repo /path/to/repo --disable post-commit --json
 ```
 
-- **Expect:** after install, the three git hooks are `installed=true`. After
+- **Expect:** after install, the four git hooks are `installed=true`. After
   disable, only that row flips; the other hook files are byte-identical.
 - **Covered by:** `tests/cli__hooks.rs::ac35_fresh_repo_then_install_hooks_then_disable_one`,
   `tests/cli_scenario_hooks.rs`

@@ -199,77 +199,69 @@ fn hooks_dir_falls_back_to_dot_git_hooks_outside_a_repository() {
     assert_eq!(hooks_dir(tmp.path()), tmp.path().join(".git").join("hooks"));
 }
 
-/// The shipped hook, run by git itself on a commit inside a linked worktree,
-/// must invoke `index-code` with the MAIN worktree's basename — the bug this
-/// pins was every worktree showing up as its own repo in the console. A stub
-/// `comemory` on `PATH` records its argv; the hook backgrounds the call, so
-/// the assertion polls for the file.
+/// The shipped hook is valid bash, still carries the marker `hook_installed`
+/// recognizes, and hands its checkout to the sync pass rather than indexing on
+/// its own — the pass indexes under the main worktree's label and holds the
+/// pass lock while it does. That it really does so, from a real commit in a
+/// real linked worktree with the real binary, is `tests/cli__sync_auto.rs`.
 #[test]
-fn reindex_hook_labels_a_linked_worktree_commit_with_the_main_repo_name() {
+fn reindex_hook_is_valid_bash_that_hands_its_checkout_to_the_sync_pass() {
     let tmp = TempDir::new().expect("tempdir");
-    let (_main, wt) = main_and_linked_worktree(&tmp);
-    install_hook(&wt, "post-commit", REINDEX_HOOK_SCRIPT).expect("install hook");
-
-    let bin = tmp.path().join("bin");
-    std::fs::create_dir_all(&bin).expect("bin dir");
-    let stub = bin.join("comemory");
-    std::fs::write(
-        &stub,
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$COMEMORY_TEST_ARGV\"\n",
-    )
-    .expect("write stub");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-    }
-    let argv_out = tmp.path().join("argv.txt");
-    let path = format!(
-        "{}:{}",
-        bin.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-
-    std::fs::write(wt.join("b.txt"), "worktree change").expect("write b.txt");
-    run_git(&wt, &["add", "b.txt"]);
-    let out = Command::new("git")
-        .args(["commit", "-q", "-m", "from the worktree"])
-        .current_dir(&wt)
-        .env("PATH", path)
-        .env("COMEMORY_TEST_ARGV", &argv_out)
+    let script = tmp.path().join("post-commit");
+    std::fs::write(&script, REINDEX_HOOK_SCRIPT).expect("write hook");
+    let out = Command::new("bash")
+        .arg("-n")
+        .arg(&script)
         .output()
-        .expect("spawn git commit");
+        .expect("spawn bash -n");
     assert!(
         out.status.success(),
-        "{}",
+        "hook body must parse: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    assert!(REINDEX_HOOK_SCRIPT.contains(super::HOOK_MARKER));
+    assert!(REINDEX_HOOK_SCRIPT.contains(r#"sync --action auto --path "$ROOT""#));
+    assert!(
+        !REINDEX_HOOK_SCRIPT.contains("\"$CM\" index-code"),
+        "the hook must not run an index of its own beside the pass"
+    );
+    for dir in [
+        "$HOME/.cargo/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "$HOME/.local/bin",
+    ] {
+        assert!(REINDEX_HOOK_SCRIPT.contains(dir), "fallback {dir} missing");
+    }
+}
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let argv = loop {
-        if let Ok(s) = std::fs::read_to_string(&argv_out)
-            && !s.is_empty()
-        {
-            break s;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the backgrounded hook never ran the comemory stub"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    };
-    let argv: Vec<&str> = argv.lines().collect();
+/// With `HOME` unset the fallback candidates degrade to `/.cargo/bin/…` and
+/// `/.local/bin/…`. Git ignores a `post-commit` exit status, so the hook is
+/// run directly, the way git runs it (cwd = the checkout), and its own exit
+/// status is asserted: 0, having backgrounded or skipped the pass.
+/// `COMEMORY_DATA_DIR` points into the temp dir in case a `comemory` does
+/// turn up under `/opt/homebrew/bin` or `/usr/local/bin`.
+#[test]
+fn reindex_hook_exits_zero_when_home_is_unset() {
+    let tmp = TempDir::new().expect("tempdir");
+    make_repo_with_one_commit(&tmp);
+    install_hook(tmp.path(), "post-commit", REINDEX_HOOK_SCRIPT).expect("install hook");
+
+    let out = Command::new(tmp.path().join(".git/hooks/post-commit"))
+        .current_dir(tmp.path())
+        .env_remove("HOME")
+        .env("PATH", "/usr/bin:/bin")
+        .env("COMEMORY_DATA_DIR", tmp.path().join("data"))
+        .output()
+        .expect("run the hook");
+
     assert_eq!(
-        &argv[..3],
-        ["index-code", "--repo", "parent-repo"],
-        "{argv:?}"
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(argv[3], "--path", "{argv:?}");
-    assert_eq!(
-        std::path::PathBuf::from(argv[4]),
-        wt.canonicalize().expect("canonical worktree"),
-        "the walked path is still the worktree the commit happened in"
-    );
+    assert!(out.stdout.is_empty(), "the hook prints nothing");
 }
 
 /// Path to the real comemory checkout this test crate lives in — a genuine git

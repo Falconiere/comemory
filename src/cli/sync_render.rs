@@ -9,7 +9,8 @@ use crate::cli::output::json;
 use crate::domains::sync::code::{self, CodePushStats, NotARepository};
 use crate::domains::sync::daemon::{self, DaemonStatus};
 use crate::domains::sync::initial::InitialSyncStats;
-use crate::domains::sync::{pull, push, verify};
+use crate::domains::sync::manual::RunStats;
+use crate::domains::sync::verify;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::{code_sync, indexed_files, repo_marker, sync_log, sync_state};
@@ -192,41 +193,47 @@ pub(crate) fn emit_verify(json_flag: bool, report: &verify::VerifyReport) -> Res
     Ok(())
 }
 
-pub(crate) fn emit_run(
-    json_flag: bool,
-    workspace: &str,
-    pull_stats: Option<&pull::PullStats>,
-    push_stats: Option<&push::PushStats>,
-    code_stats: Option<&CodePushStats>,
-) -> Result<()> {
+/// A `run` / `push` / `pull` report: one line per leg that ran, or the
+/// `--json` object with every leg (`null` for one that did not).
+pub(crate) fn emit_run(json_flag: bool, workspace: &str, stats: &RunStats) -> Result<()> {
     if json_flag {
-        json::write(&serde_json::json!({
+        return json::write(&serde_json::json!({
             "workspace": workspace,
-            "push": push_stats,
-            "pull": pull_stats,
-            "code": code_stats,
-        }))?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        if let Some(p) = pull_stats {
-            writeln!(
-                out,
-                "Pulled {} entries (seq {})",
-                p.pulled, p.last_pulled_seq
-            )?;
+            "push": stats.push,
+            "pull": stats.pull,
+            "code": stats.code,
+            "refresh": stats.refresh,
+        }));
+    }
+    let mut out = std::io::stdout().lock();
+    if let Some(p) = &stats.pull {
+        writeln!(
+            out,
+            "Pulled {} entries (seq {})",
+            p.pulled, p.last_pulled_seq
+        )?;
+    }
+    if let Some(p) = &stats.push {
+        writeln!(
+            out,
+            "Pushed {} entries (skip_repos={}, blocked_repo={}, blocked_secrets={}, rejected_repo={})",
+            p.pushed, p.skipped_config, p.blocked_repo, p.blocked_secrets, p.rejected_repo
+        )?;
+    }
+    if let Some(r) = stats.refresh.as_ref().filter(|r| r.checked > 0) {
+        writeln!(
+            out,
+            "refreshed: {} of {} hooked repo(s)",
+            r.refreshed, r.checked
+        )?;
+        for err in &r.errors {
+            writeln!(out, "  refresh failed: {err}")?;
         }
-        if let Some(p) = push_stats {
-            writeln!(
-                out,
-                "Pushed {} entries (skip_repos={}, blocked_repo={}, blocked_secrets={}, rejected_repo={})",
-                p.pushed, p.skipped_config, p.blocked_repo, p.blocked_secrets, p.rejected_repo
-            )?;
-        }
-        if let Some(c) = code_stats {
-            writeln!(out, "{}", code_line(c))?;
-            for err in &c.errors {
-                writeln!(out, "  code push failed: {err}")?;
-            }
+    }
+    if let Some(c) = &stats.code {
+        writeln!(out, "{}", code_line(c))?;
+        for err in &c.errors {
+            writeln!(out, "  code push failed: {err}")?;
         }
     }
     Ok(())

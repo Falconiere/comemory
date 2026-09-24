@@ -41,5 +41,21 @@ else
     -mtime +7 -delete 2>/dev/null || true
 fi
 
+# Every agent session is a sync trigger for every hooked repo, whatever this
+# session's cwd: `sync --action auto` re-indexes each repo whose comemory git
+# hooks are installed and whose HEAD moved, then pulls and pushes when logged
+# in. Detached like session-end.sh's capture, so the SessionStart budget never
+# waits on it, and bounded where timeout/gtimeout exist. A pass that is already
+# queued makes this one exit at once.
+if command -v comemory >/dev/null 2>&1; then
+  bound=""
+  if command -v timeout >/dev/null 2>&1; then bound="timeout 120"
+  elif command -v gtimeout >/dev/null 2>&1; then bound="gtimeout 120"; fi
+  (
+    $bound comemory sync --action auto
+  ) </dev/null >/dev/null 2>&1 &
+  disown || true
+fi
+
 ctx="Comemory: before exploration use MCP find (k=3), selectively show useful IDs, then feedback. If MCP is unavailable, use $root/comemory/comemory.sh. Save verified reusable lessons; keep recurring procedures in project skills."
 jq -n --arg ctx "$ctx" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$ctx}}'

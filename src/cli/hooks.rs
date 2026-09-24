@@ -36,7 +36,7 @@ Examples:
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
-    /// Repo root the three git hooks are read from / written to. Defaults
+    /// Repo root the four git hooks are read from / written to. Defaults
     /// to the current working directory. Irrelevant to the
     /// `search-edit-reinforcement` row.
     #[arg(long, default_value = ".")]

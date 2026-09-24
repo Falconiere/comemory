@@ -1,21 +1,20 @@
-//! Optional user-level OS daemon that periodically pull+push syncs.
+//! Optional user-level OS daemon that periodically runs the
+//! `sync --action auto` pass: re-index stale hooked repos, then pull and push
+//! (logged out, only the re-index).
 //!
-//! Opt-in since the 2026-09-14 sync design: `comemory auth login --daemon`
-//! installs and starts it, logout stops it (the unit stays installed). A plain
-//! login installs nothing, because a save pushes inline (`domains::sync::push_on_save`)
-//! and `comemory watch` covers the pull direction from the foreground. What is
-//! left for a daemon is a headless host that wants pulls without either.
-//! Manual `comemory sync` works with the daemon stopped, as it always did.
+//! Opt-in (`comemory auth login --daemon`); logout stops it, the unit stays.
+//! Saves push inline, git and agent hooks fire the same pass, and `comemory
+//! watch` covers live pulls, so what is left for a daemon is a headless host.
 //!
 //! Unit install/start/stop/status live in [`crate::domains::sync::daemon_unit`].
 
 use std::time::{Duration, Instant};
 
-use crate::config::sync::apply_embed_model;
 use crate::config::{Config, Paths};
+use crate::domains::code::hooked_refresh::RefreshStats;
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::daemon_unit;
-use crate::domains::sync::{code, pull, push, verify};
+use crate::domains::sync::{auto, verify};
 use crate::prelude::*;
 use crate::store::connection::open;
 
@@ -24,9 +23,6 @@ pub use daemon_unit::{
     render_launch_agent_plist, render_systemd_unit, start, status, stop, systemd_user_unit,
     uninstall,
 };
-
-/// Page size for each daemon cycle (same as manual `comemory sync`).
-const CYCLE_LIMIT: usize = 2000;
 
 /// Load config the same way the CLI does (file overlay + env).
 fn load_daemon_config(paths: &Paths) -> Result<Config> {
@@ -67,30 +63,22 @@ pub fn run_foreground(paths: &Paths) -> Result<()> {
     }
 }
 
+/// One daemon cycle: the same pass `comemory sync --action auto` runs —
+/// refresh every stale hooked repo, then pull, push, and push moved code —
+/// under the sync pass lock, then an integrity verify when one is due.
 fn run_one_cycle(
     paths: &Paths,
     cfg: &Config,
     last_verify: &mut Instant,
     verify_every: Duration,
 ) -> Result<()> {
+    let _pass = auto::hold_pass_lock(paths)?;
+    let mut conn = open(paths.db_path())?;
+    auto::run_pass(paths, cfg, &mut conn, None, RefreshStats::default())?;
     let Some(auth) = AuthFile::load_usable(paths)? else {
-        tracing::debug!("sync daemon: not logged in — skipping cycle");
+        tracing::debug!("sync daemon: not logged in — network legs skipped");
         return Ok(());
     };
-    let mut conn = open(paths.db_path())?;
-    apply_embed_model(&conn, &cfg.embed)?;
-    if let Err(e) = pull::run_pull(paths, cfg, &mut conn, &auth, CYCLE_LIMIT) {
-        tracing::warn!(error = %e, "sync daemon pull failed");
-    }
-    if let Err(e) = push::run_push(paths, cfg, &mut conn, &auth, None, CYCLE_LIMIT) {
-        tracing::warn!(error = %e, "sync daemon push failed");
-    }
-    // Only repos whose index moved since their last push touch the network:
-    // a manifest read per repo per five-second cycle would eat the pull
-    // budget for nothing.
-    if let Err(e) = code::run_code_push_if_moved(cfg, &mut conn, &auth) {
-        tracing::warn!(error = %e, "sync daemon code push failed");
-    }
     if last_verify.elapsed() >= verify_every {
         match verify::verify_manifests(paths, cfg, &mut conn, &auth) {
             Ok(report) => {

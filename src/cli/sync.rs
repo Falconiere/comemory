@@ -3,7 +3,8 @@
 //! Nested `daemon {install,uninstall,start,stop,status,run}` owns continuous
 //! auto-sync. Flat `--action` still drives a one-shot manual sync. `run` and
 //! `push` push the code index after the memories (`domains::sync::code`); rendering
-//! lives in `cli::sync_render`.
+//! lives in `cli::sync_render`. `--action auto` (what git and agent hooks fire)
+//! is dispatched to `cli::sync_auto` before any login is required.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
 use crate::cli::output::json;
+use crate::cli::sync_auto;
 use crate::cli::sync_render::{emit_daemon_status, emit_run, emit_status, emit_verify};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::sync::daemon;
@@ -27,6 +29,7 @@ Examples:
   comemory sync --action status --json
   comemory sync --action verify
   comemory sync --allow-secret deadbeef
+  comemory sync --action auto --path /path/to/repo
   comemory sync daemon status
   comemory sync daemon install
   comemory sync daemon start
@@ -50,6 +53,11 @@ pub enum SyncAction {
     Verify,
     /// Print sync cursors.
     Status,
+    /// The unattended pass git hooks and agent hooks fire: index `--path`,
+    /// refresh every stale hooked repo, then pull and push when logged in.
+    /// Needs no login; prints nothing without `--json`; coalesces with a
+    /// pass that is already queued.
+    Auto,
 }
 
 /// Nested `comemory sync <subcommand>` (today: `daemon`).
@@ -91,21 +99,31 @@ pub struct Args {
     /// Nested subcommand (`daemon …`). When absent, `--action` runs.
     #[command(subcommand)]
     pub cmd: Option<SyncCmd>,
-    /// Operation: `run` (default), `push`, `pull`, `verify`, or `status`.
+    /// Operation: `run` (default), `push`, `pull`, `verify`, `status`, or
+    /// `auto`.
     #[arg(long, value_enum, default_value_t = SyncAction::Run)]
     pub action: SyncAction,
+    /// With `--action auto` only: the checkout a git hook fired in, indexed
+    /// first under its main worktree's label.
+    #[arg(long, value_name = "CHECKOUT")]
+    pub path: Option<PathBuf>,
     /// Record a secret-scan override for one memory id before push.
     #[arg(long, value_name = "ID")]
     pub allow_secret: Option<String>,
 }
 
-/// Run push/pull/status/verify or a daemon subcommand.
+/// Run push/pull/status/verify/auto or a daemon subcommand.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     if let Some(SyncCmd::Daemon(d)) = a.cmd {
         return run_daemon(&paths, d.cmd, json_flag);
     }
-    run_sync(&paths, a.action, a.allow_secret.as_deref(), json_flag)
+    if a.path.is_some() && !matches!(a.action, SyncAction::Auto) {
+        return Err(Error::Usage(
+            "--path is only accepted with --action auto".into(),
+        ));
+    }
+    run_sync(&paths, &a, json_flag)
 }
 
 fn run_daemon(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
@@ -160,39 +178,35 @@ fn run_daemon(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
     }
 }
 
-fn run_sync(
-    paths: &Paths,
-    action: SyncAction,
-    allow_secret: Option<&str>,
-    json_flag: bool,
-) -> Result<()> {
+/// Run one `--action`. `auto` needs no credential, so it runs before any
+/// session exists; every other action opens the session it needs first.
+fn run_sync(paths: &Paths, a: &Args, json_flag: bool) -> Result<()> {
     let cfg = load_config(paths)?;
-    let mut session = manual::open_session(paths, &cfg)?;
-    let workspace = session.auth.workspace_id.clone();
-
-    let stats = match action {
-        SyncAction::Status => return emit_status(json_flag, &mut session.conn, &workspace),
-        SyncAction::Verify => {
-            let report = off_runtime(|| {
-                verify::verify_manifests(paths, &cfg, &mut session.conn, &session.auth)
-            })?;
-            return emit_verify(json_flag, &report);
-        }
-        SyncAction::Push => {
-            off_runtime(|| manual::push_only(paths, &cfg, &mut session, allow_secret, RUN_LIMIT))?
-        }
-        SyncAction::Pull => {
-            off_runtime(|| manual::pull_only(paths, &cfg, &mut session, RUN_LIMIT))?
-        }
-        SyncAction::Run => {
-            off_runtime(|| manual::run_all(paths, &cfg, &mut session, allow_secret, RUN_LIMIT))?
-        }
+    let allow_secret = a.allow_secret.as_deref();
+    let with_session = |act: &dyn Fn(&mut manual::Session) -> Result<()>| {
+        act(&mut manual::open_session(paths, &cfg)?)
     };
-    emit_run(
-        json_flag,
-        &workspace,
-        stats.pull.as_ref(),
-        stats.push.as_ref(),
-        stats.code.as_ref(),
-    )
+    match a.action {
+        SyncAction::Auto => sync_auto::run(paths, &cfg, a.path.as_deref(), json_flag),
+        SyncAction::Status => {
+            with_session(&|s| emit_status(json_flag, &mut s.conn, &s.auth.workspace_id))
+        }
+        SyncAction::Verify => with_session(&|s| {
+            let report =
+                off_runtime(|| verify::verify_manifests(paths, &cfg, &mut s.conn, &s.auth))?;
+            emit_verify(json_flag, &report)
+        }),
+        SyncAction::Push => with_session(&|s| {
+            let stats = off_runtime(|| manual::push_only(paths, &cfg, s, allow_secret, RUN_LIMIT))?;
+            emit_run(json_flag, &s.auth.workspace_id, &stats)
+        }),
+        SyncAction::Pull => with_session(&|s| {
+            let stats = off_runtime(|| manual::pull_only(paths, &cfg, s, RUN_LIMIT))?;
+            emit_run(json_flag, &s.auth.workspace_id, &stats)
+        }),
+        SyncAction::Run => with_session(&|s| {
+            let stats = off_runtime(|| manual::run_all(paths, &cfg, s, allow_secret, RUN_LIMIT))?;
+            emit_run(json_flag, &s.auth.workspace_id, &stats)
+        }),
+    }
 }

@@ -52,7 +52,7 @@ fn step<'a>(steps: &'a [Step], id: &str) -> &'a Step {
 }
 
 #[test]
-fn git_hooks_writes_all_three_and_a_second_run_reports_satisfied() {
+fn git_hooks_writes_every_hook_and_a_second_run_reports_satisfied() {
     let data = tempfile::tempdir().unwrap();
     let repo = repo_with_sources();
     let req = Request {

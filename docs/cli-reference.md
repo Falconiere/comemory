@@ -68,7 +68,7 @@ Commands:
   rebuild         Drop `comemory.db` and repopulate it from the markdown source of truth
   recall-status   Report tracked recalls awaiting a verdict, verdicts and saves since a bound
   gc              Purge old `memories/.trash/` entries and learning telemetry past retention
-  install-hooks   Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
+  install-hooks   Install git hooks that index and sync the repo on `post-commit`, `post-merge`, `post-checkout` and `post-rewrite`
   install         Install bundled skills and hooks for Claude Code or Codex
   upgrade         Move this binary to the newest release (or a pinned one)
   auth            Cloud workspace-key login / status / logout (device authorization)
@@ -1148,7 +1148,7 @@ Usage: comemory hooks [OPTIONS]
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>          Repo root the three git hooks are read from / written to. Defaults to the current working directory. Irrelevant to the `search-edit-reinforcement` row [default: .]
+      --repo <REPO>          Repo root the four git hooks are read from / written to. Defaults to the current working directory. Irrelevant to the `search-edit-reinforcement` row [default: .]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --enable <ENABLE>      Install/enable one hook: `post-commit`, `post-merge`, `post-checkout`, or `search-edit-reinforcement`
       --disable <DISABLE>    Remove/disable one hook: `post-commit`, `post-merge`, `post-checkout`, or `search-edit-reinforcement`
@@ -1676,7 +1676,7 @@ Examples:
 ## comemory install-hooks
 
 ```
-Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
+Install git hooks that index and sync the repo on `post-commit`, `post-merge`, `post-checkout` and `post-rewrite`
 
 Usage: comemory install-hooks [OPTIONS]
 
@@ -1684,7 +1684,7 @@ Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
       --repo <REPO>          Repo root to install hooks into. Defaults to the current working directory [default: .]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --force                Overwrite a hook comemory did not write. A hook comemory DID write is always refreshed to this binary's body, with or without this flag, so one installed by an older release stops labelling every `git worktree` as its own repo. Without this flag the command refuses to clobber a hand-written `post-commit`/`post-merge`/`post-checkout`
+      --force                Overwrite a hook comemory did not write. A hook comemory DID write is always refreshed to this binary's body, with or without this flag, so one installed by an older release stops labelling every `git worktree` as its own repo. Without this flag the command refuses to clobber a hand-written `post-commit`/`post-merge`/`post-checkout`/`post-rewrite`
   -h, --help                 Print help
 
 Examples:
@@ -1817,7 +1817,7 @@ Options:
           Emit machine-readable JSON instead of a human TTY view
 
       --action <ACTION>
-          Operation: `run` (default), `push`, `pull`, `verify`, or `status`
+          Operation: `run` (default), `push`, `pull`, `verify`, `status`, or `auto`
 
           Possible values:
           - run:    Push then pull (default)
@@ -1825,6 +1825,7 @@ Options:
           - pull:   Pull remote changes only (`--pull-only` alias)
           - verify: Compare local/remote manifests and repair differing buckets (AC-9)
           - status: Print sync cursors
+          - auto:   The unattended pass git hooks and agent hooks fire: index `--path`, refresh every stale hooked repo, then pull and push when logged in. Needs no login; prints nothing without `--json`; coalesces with a pass that is already queued
 
           [default: run]
 
@@ -1832,6 +1833,9 @@ Options:
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
 
           [env: COMEMORY_DATA_DIR=]
+
+      --path <CHECKOUT>
+          With `--action auto` only: the checkout a git hook fired in, indexed first under its main worktree's label
 
       --allow-secret <ID>
           Record a secret-scan override for one memory id before push
@@ -1845,6 +1849,7 @@ Examples:
   comemory sync --action status --json
   comemory sync --action verify
   comemory sync --allow-secret deadbeef
+  comemory sync --action auto --path /path/to/repo
   comemory sync daemon status
   comemory sync daemon install
   comemory sync daemon start

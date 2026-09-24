@@ -68,3 +68,26 @@ fn acquire_creates_missing_lock_file_and_releases_on_drop() {
     // A second acquire after the guard dropped must not block forever.
     let _guard2 = FileLock::acquire(&lock_path, "registry").expect("re-acquire after drop");
 }
+
+#[test]
+fn try_acquire_reports_a_held_lock_instead_of_waiting() {
+    let tmp = TempDir::new().expect("tempdir");
+    let lock_path: PathBuf = tmp.path().join("sync-auto.queue");
+
+    let held = FileLock::try_acquire(&lock_path, "sync-queue")
+        .expect("try_acquire on a free lock")
+        .expect("a free lock is acquired");
+    assert!(lock_path.exists(), "try_acquire must create the lock file");
+
+    // flock belongs to the open file description, so a second open in this
+    // same process contends exactly as another process would.
+    let contended = FileLock::try_acquire(&lock_path, "sync-queue").expect("try_acquire");
+    assert!(
+        contended.is_none(),
+        "a held lock must be reported, not waited on"
+    );
+
+    drop(held);
+    let reacquired = FileLock::try_acquire(&lock_path, "sync-queue").expect("try_acquire");
+    assert!(reacquired.is_some(), "a released lock is free again");
+}

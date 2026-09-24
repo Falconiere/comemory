@@ -1,18 +1,18 @@
 //! `hooks::{Request, Response, run}` — the shared middle of `comemory
 //! hooks` / `GET|POST /api/v1/hooks`: read and per-hook toggle the reindex
-//! git hooks `install-hooks` writes, plus a fourth, config-backed row for
+//! git hooks `install-hooks` writes, plus a config-backed row for
 //! search→edit auto-reinforcement. Moved out of `cli::hooks::run` (Binding
 //! Rule 1).
 //!
 //! Two independent state stores, one read/write surface:
-//! * `post-commit` / `post-merge` / `post-checkout` — state lives on disk in
+//! * `post-commit` / `post-merge` / `post-checkout` / `post-rewrite` — state lives on disk in
 //!   `.git/hooks/` (no DB table): [`git_utils::hook_installed`] reads it,
 //!   [`git_utils::remove_hook`] / [`git_utils::install_hook`] write it.
 //! * `search-edit-reinforcement` — state lives in `config.toml`'s
 //!   `[reinforce]` section ([`crate::config::ReinforceConfig::enabled`]).
 //!
 //! `install-hooks` (`domains::code::install_hooks`) is unchanged by this module — it
-//! remains the install-all-three shorthand.
+//! remains the install-all shorthand.
 //!
 //! Conn-free, like `domains::code::install_hooks` — `run` never calls [`Ctx::conn`].
 
@@ -25,11 +25,14 @@ use crate::domains::code::git_utils;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
-/// The three git hooks `install-hooks` writes, each independently
-/// controllable here via `--enable`/`--disable`.
-pub const GIT_HOOKS: &[&str] = &["post-commit", "post-merge", "post-checkout"];
+/// The git hooks `install-hooks` writes, each independently controllable
+/// here via `--enable`/`--disable` — every git operation that moves HEAD:
+/// commit and amend (`post-commit`), merge and pull (`post-merge`), branch
+/// switches (`post-checkout`), and rebase / `pull --rebase` (`post-rewrite`).
+/// The one list `install_hooks` and `integrations::setup` read too.
+pub const GIT_HOOKS: &[&str] = &["post-commit", "post-merge", "post-checkout", "post-rewrite"];
 
-/// The fourth, config-backed row: search→edit auto-reinforcement
+/// The config-backed row: search→edit auto-reinforcement
 /// (`[reinforce]` in `config.toml`), reported and toggled through this same
 /// surface even though its state isn't a `.git/hooks/` file.
 pub const REINFORCE_HOOK: &str = "search-edit-reinforcement";
@@ -38,7 +41,7 @@ pub const REINFORCE_HOOK: &str = "search-edit-reinforcement";
 #[derive(Deserialize, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
-    /// Repo root the three git hooks are read from / written to. Defaults
+    /// Repo root the [`GIT_HOOKS`] are read from / written to. Defaults
     /// to the current working directory. Irrelevant to the
     /// `search-edit-reinforcement` row.
     #[serde(default)]
@@ -70,13 +73,13 @@ pub struct HookRow {
 /// always in [`GIT_HOOKS`] order followed by [`REINFORCE_HOOK`].
 #[derive(Serialize, Debug)]
 pub struct Response {
-    /// The four rows.
+    /// One row per [`GIT_HOOKS`] entry, then [`REINFORCE_HOOK`].
     pub hooks: Vec<HookRow>,
 }
 
 /// Apply at most one `enable` and one `disable` (validated against the
 /// known hook names before either runs, so a typo in `--disable` cannot
-/// leave a half-applied `--enable` behind), then report all four rows.
+/// leave a half-applied `--enable` behind), then report every row.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let repo = PathBuf::from(req.repo.as_deref().unwrap_or("."));
     if let Some(name) = req.enable.as_deref() {
@@ -128,7 +131,7 @@ fn known_hook(name: &str) -> Result<()> {
     } else {
         Err(Error::Usage(format!(
             "unknown hook `{name}` (expected one of post-commit, post-merge, \
-             post-checkout, {REINFORCE_HOOK})"
+             post-checkout, post-rewrite, {REINFORCE_HOOK})"
         )))
     }
 }

@@ -161,3 +161,44 @@ fn a_pull_only_run_reports_no_push_and_no_code_leg() {
         "a pull-only run must not push"
     );
 }
+
+/// A full run re-indexes a hooked repo whose HEAD moved with no hook firing,
+/// before its code push, so the push carries the new head.
+#[test]
+fn a_full_run_refreshes_a_stale_hooked_repo_before_its_code_push() {
+    use crate::test_common::code_sync_fixture as fixture;
+
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+    let (home, paths, cfg) = seeded(&server, &secret, "a note riding along");
+    let tree = fixture::write_ts_repo(home.path());
+    fixture::install_inert_hooks(&paths, &cfg, &tree);
+    let mut conn = connection::open(paths.db_path()).expect("db");
+    fixture::index(&paths, &cfg, &mut conn, &tree);
+    drop(conn);
+    let head = fixture::commit_hookless(
+        &tree,
+        &[(
+            "src/a.ts",
+            "export function alpha(): number {\n  return 7;\n}\n",
+        )],
+        "touch a",
+    );
+    let mut session = manual::open_session(&paths, &cfg).expect("session");
+
+    let stats = manual::run_all(&paths, &cfg, &mut session, None, manual::RUN_LIMIT).expect("run");
+
+    let refresh = stats.refresh.as_ref().expect("run refreshes");
+    assert_eq!(
+        (refresh.checked, refresh.refreshed, refresh.failed),
+        (1, 1, 0)
+    );
+    assert_eq!(stats.code.as_ref().expect("code leg").repos, 1);
+    let bodies = server.snapshot().code_import_bodies;
+    let body: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
+    assert_eq!(
+        body["head"],
+        serde_json::json!(head),
+        "the push carries the refreshed head"
+    );
+}

@@ -34,10 +34,14 @@ There is no second step, and nothing resident is installed. After login:
 
 - **Push is inline.** `comemory save` and `comemory delete` send the outbox
   before they return, bounded by `[sync] push_on_save_timeout` (2s).
-- **Pull is on demand:** `comemory sync`, or [`comemory watch`](#watch) to
-  follow changes live.
+- **Hooked repos sync themselves.** Every git operation that moves HEAD in a
+  repo with comemory's hooks, and every agent session start, runs one
+  [`sync --action auto`](#hooks) pass from wherever it happens: stale hooked
+  repos are re-indexed, then pulled and pushed.
+- **Pull is otherwise on demand:** `comemory sync`, or
+  [`comemory watch`](#watch) to follow changes live.
 - **The daemon is opt-in** (`comemory auth login --daemon`) for headless hosts
-  that want pulls without either.
+  that want pulls without any of those.
 
 If the platform is unreachable at that moment the login still succeeds — the
 key is already minted and useful — and says so on stderr:
@@ -50,6 +54,59 @@ warning: first sync failed (…) — run `comemory sync` when the platform is re
 is running (it usually is not, and that is fine). `comemory auth logout` deletes the local credential and **stops**
 the daemon (the unit stays installed for the next login). `COMEMORY_API_KEY`
 overrides the stored secret without writing the file.
+
+## Automatic sync from git hooks {#hooks}
+
+Install comemory's hooks once per repository — that is the only per-repo step,
+and you never have to `cd` into the repo again to keep it synced:
+
+```bash
+comemory install-hooks --repo ~/src/api     # or `comemory setup` inside it
+```
+
+That writes `post-commit`, `post-merge`, `post-checkout` and `post-rewrite`
+into the repo's hooks directory and immediately runs the first pass, so the
+repo is indexed (and, logged in, pushed) right away rather than at its next
+commit. From then on, one pass runs whenever any of these fires:
+
+| Trigger | Runs from | Pass |
+|---|---|---|
+| A commit, merge, pull, checkout, rebase or amend in any hooked repo | that repo's hook | `comemory sync --action auto --path <checkout>` |
+| An agent session start (comemory plugin for Claude Code / Codex) | the session, any cwd | `comemory sync --action auto` |
+| `comemory sync` (`run` / `push`), the opt-in daemon cycle | anywhere | the same refresh, before the code push |
+
+A pass:
+
+1. indexes the checkout that fired it (a linked worktree files under its main
+   repository's label, as always);
+2. re-indexes every other repo whose hooks are comemory's and whose HEAD
+   moved since its last index — a rebase with hooks off, a commit from a GUI
+   client, a repo you have not touched in a week;
+3. when logged in: pulls, pushes memories, and pushes the code index of every
+   repo whose index moved.
+
+Logged out, steps 1–2 still run and nothing leaves the machine. A network
+failure in step 3 is reported, not fatal: the outbox waits, as it does after
+an offline `save`. Archived repos, repos without comemory's hooks, and
+registered roots that are gone, unopenable or linked worktrees are never
+re-indexed by the sweep (the same rows a code push withholds).
+`COMEMORY_INDEXING_AUTO_REINDEX` does not gate it — installing the hooks is
+the opt-in.
+
+**Coalescing.** Passes run one at a time (`$COMEMORY_DATA_DIR/sync.lock`). A
+rebase can fire a dozen hooks in a second; each trigger that finds a pass
+already queued behind the running one exits at once
+(`{"action":"auto","coalesced":true}` under `--json`), because that queued pass
+has not started and will see its change. A trigger for a checkout no later
+sweep would cover — a never-registered repo, or a linked worktree — waits its
+own turn instead, so nothing is lost.
+
+**Finding the binary.** The hook looks for `comemory` on `PATH`, then in
+`~/.cargo/bin`, `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin` —
+GUI git clients and IDEs often run hooks with none of those on `PATH`. It
+exits 0 silently when none is found; a hook never fails a git operation.
+Hooks written by an older release keep working (they run `index-code`
+directly) until `comemory install-hooks` or `comemory setup` rewrites them.
 
 ## `comemory watch` — live pulls, no daemon {#watch}
 
@@ -81,8 +138,10 @@ backoff (1s → 30s) until you stop it.
 | `comemory sync daemon uninstall` | Remove the unit |
 | `comemory sync daemon run` | Foreground loop (what the supervisor runs) |
 
-Default interval: `[sync] daemon_interval = "5s"` — each cycle `pull` then
-`push`, with an occasional `verify` per `[sync] verify_every`. Windows is not
+Default interval: `[sync] daemon_interval = "5s"` — each cycle is the
+[`--action auto`](#hooks) pass (refresh stale hooked repos, `pull`, `push`,
+push moved code) under the same lock, with an occasional `verify` per
+`[sync] verify_every`. Windows is not
 supported.
 
 You probably do not need it. A save pushes itself and `comemory watch` covers
@@ -169,7 +228,8 @@ answer back. The full contract is
 - on every `comemory sync` (`run` or `push`);
 - at the tail of every `comemory index-code` on the CLI (the lazy background
   reindex included) — for that repo, only when its index moved;
-- in the opt-in daemon's cycle, only for repos whose index moved.
+- on every [`--action auto`](#hooks) pass a hook fires, and in the opt-in
+  daemon's cycle — only for repos whose index moved.
 
 `comemory sync --action status` lists one `code:` row per indexed repo with
 its local head, the head last pushed, `moved_since_push`, and — on a row the
@@ -217,6 +277,7 @@ glob fails at config load rather than silently withholding nothing.
 ```bash
 comemory sync                     # push then pull (default)
 comemory sync --action push       # or pull / verify / status
+comemory sync --action auto       # the hook pass: refresh hooked repos, then sync
 comemory sync --allow-secret <id> # explicit secret-scan override
 ```
 

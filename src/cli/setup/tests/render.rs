@@ -80,7 +80,7 @@ fn every_state_gets_its_own_marker_and_trailing_clause() {
             step(
                 "e",
                 StepState::Applied {
-                    detail: "wrote three hooks".to_string(),
+                    detail: "wrote four hooks".to_string(),
                 },
             ),
             step(
@@ -104,7 +104,7 @@ fn every_state_gets_its_own_marker_and_trailing_clause() {
         "  ◻ Title for b — detail",
         "  – Title for c — detail",
         "  ! Title for d — no git here",
-        "  ✔ Title for e — wrote three hooks",
+        "  ✔ Title for e — wrote four hooks",
         "  ✘ Title for f — permission denied",
     ] {
         assert!(
