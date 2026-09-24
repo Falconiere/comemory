@@ -133,8 +133,7 @@ pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
     // would otherwise restore (#254): erase those copies before the rows that
     // name their event ids are gone.
     let at = super::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
-    let event_ids = super::feedback_share::event_ids_for_memory(&tx, id)?;
-    super::replica_redaction::erase_verdicts(&tx, &event_ids, &at)?;
+    super::replica_redaction::redact(&tx, super::replica_redaction::Reach::VerdictsOn(id), &at)?;
     // `feedback_events.memory_id` also carries text-encoded code-symbol
     // rowids under `target_kind = 'code'`; an 8-digit rowid is a valid
     // memory-id shape, so the kind filter is what keeps code telemetry out.

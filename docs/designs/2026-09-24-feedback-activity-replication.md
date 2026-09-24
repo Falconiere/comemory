@@ -322,8 +322,8 @@ therefore advances past it instead of stalling on `rejected_invalid`.
 
 `store::memory_purge::purge_memory` already deletes a purged memory's counter
 row and its memory-target `feedback_events`. In the same transaction, and
-before that delete, it now reads those rows' `event_id`s and **erases**
-(`redaction = erased`) their journal copies.
+before that delete, it now **erases** (`redaction = erased`) the journal
+copies of those rows' events, in one statement keyed by the memory.
 Replaying one of them answers `payload_erased` and restores neither row nor
 counter. Shared activity carries no memory title, so purge policy has no
 activity text to reach.
@@ -443,11 +443,11 @@ command's allowlist plus `query_withheld`.
 | --- | --- |
 | `store/schema_replica_device.rs` | `ReplicaDevice` |
 | `store/replica_device.rs` | `id(conn) -> Result<String>` |
-| `store/replica_redaction.rs` | `expire_events_before(conn, cutoff, at) -> Result<u64>`, `erase_verdicts(conn, event_ids, at) -> Result<u64>` |
+| `store/replica_redaction.rs` | `redact(conn, Reach, at) -> Result<u64>` — `Reach::PastRetention(cutoff)` expires, `Reach::VerdictsOn(memory_id)` erases, one statement however many events — and `redaction_of(conn, digest) -> Result<Option<Redaction>>` |
 | `store/replica_read.rs` | `Redaction`; `FeedRow.redaction`; `redaction_of` (replaces `is_erased`) |
 | `store/replica_journal.rs` | `redact_payload` also sets `redaction = erased`; `append_local_event` — the one local-upsert journal append both captures use |
 | `store/feedback.rs`, `store/code_feedback.rs` | `NewFeedbackEvent` (one struct for every insert); `last_used = MAX(...)`; `device IS NULL` on the harvest/mine/recall readers; `own_identity`/`parent_identity` return `blob_oid` |
-| `store/feedback_share.rs` (new, keeps `feedback.rs` under 300) | `stamp_event_id`, `unshared_legacy_after`, `event_ids_for_memory` |
+| `store/feedback_share.rs` (new, keeps `feedback.rs` under 300) | `stamp_event_id`, `unshared_legacy_after` |
 | `store/activity.rs`, `domains/maintenance/activity.rs` | `device` on `ActivityRow` and on the API `Item`; `event_id`/`device` on insert |
 | `store/activity_share.rs` (new, keeps `activity.rs` under 300) | `capture_batch_after`, `stamp_event_id` |
 | `store/gc_learning.rs` | `evict_before` expires both event kinds' journal copies (read ids from `feedback_events` and `activity_log`, plus the feed-`at` arm) before its deletes, in one transaction |

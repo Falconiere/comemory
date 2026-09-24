@@ -82,19 +82,3 @@ fn a_reused_event_id_is_refused_by_the_unique_index() {
         "one event id names one verdict"
     );
 }
-
-#[test]
-fn the_event_ids_of_a_memory_are_its_journalled_memory_verdicts_only() {
-    let (_dir, conn) = db();
-    let shared = insert_event(&conn, &verdict("a1b2c3d4", "memory", None)).expect("shared");
-    insert_event(&conn, &verdict("a1b2c3d4", "memory", None)).expect("local only");
-    let code = insert_event(&conn, &verdict("a1b2c3d4", "code", None)).expect("code");
-    feedback_share::stamp_event_id(&conn, shared, "ev-00000000000000000000000000000001")
-        .expect("stamp");
-    feedback_share::stamp_event_id(&conn, code, "ev-00000000000000000000000000000002")
-        .expect("stamp code");
-    assert_eq!(
-        feedback_share::event_ids_for_memory(&conn, "a1b2c3d4").expect("ids"),
-        vec!["ev-00000000000000000000000000000001".to_string()]
-    );
-}

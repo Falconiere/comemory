@@ -54,11 +54,15 @@ fn journal_event(conn: &Connection, kind: &str, event_id: &str, at: &str) -> Str
 }
 
 fn verdict_row(conn: &Connection, event_id: &str, at: &str) {
+    verdict_on(conn, "a1b2c3d4", event_id, at);
+}
+
+fn verdict_on(conn: &Connection, memory_id: &str, event_id: &str, at: &str) {
     conn.execute(
         "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance, \
                                      event_id) \
-         VALUES ('q-20260924-0badc0de', 'a1b2c3d4', 'used', ?2, 'memory', 'manual', ?1)",
-        [event_id, at],
+         VALUES ('q-20260924-0badc0de', ?3, 'used', ?2, 'memory', 'manual', ?1)",
+        [event_id, at, memory_id],
     )
     .expect("verdict row");
 }
@@ -73,7 +77,9 @@ fn an_event_whose_row_is_about_to_be_evicted_expires_and_a_newer_one_does_not() 
     verdict_row(&conn, "ev-old", "2026-01-01T00:00:00Z");
     verdict_row(&conn, "ev-fresh", NOW);
 
-    let expired = replica_redaction::expire_events_before(&conn, CUTOFF, NOW).expect("expire");
+    let expired =
+        replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
+            .expect("expire");
 
     assert_eq!(expired, 1);
     assert_eq!(
@@ -106,7 +112,8 @@ fn an_imported_event_never_materialized_expires_by_its_feed_position() {
     );
     let memory = journal_event(&conn, "memory", "a1b2c3d4", "2026-01-01T00:00:00Z");
 
-    replica_redaction::expire_events_before(&conn, CUTOFF, NOW).expect("expire");
+    replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
+        .expect("expire");
 
     assert_eq!(
         comemory::store::replica_redaction::redaction_of(&conn, &digest).expect("event"),
@@ -129,8 +136,14 @@ fn erasure_outranks_expiry_and_expiry_never_relabels_an_erasure() {
         "2026-01-01T00:00:00Z",
     );
     let erased = journal_event(&conn, "feedback_event", "ev-erased", "2026-01-01T00:00:00Z");
-    replica_redaction::erase_verdicts(&conn, &["ev-erased".to_string()], NOW).expect("erase");
-    replica_redaction::expire_events_before(&conn, CUTOFF, NOW).expect("expire");
+    verdict_on(&conn, "a1b2c3d4", "ev-erased", NOW);
+    verdict_on(&conn, "e5f6a7b8", "ev-expired", NOW);
+    let first =
+        replica_redaction::redact(&conn, replica_redaction::Reach::VerdictsOn("a1b2c3d4"), NOW)
+            .expect("erase");
+    assert_eq!(first, 1, "only the purged memory's verdict");
+    replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
+        .expect("expire");
     assert_eq!(
         comemory::store::replica_redaction::redaction_of(&conn, &erased).expect("erased"),
         Some(Redaction::Erased),
@@ -138,7 +151,8 @@ fn erasure_outranks_expiry_and_expiry_never_relabels_an_erasure() {
     );
 
     let upgraded =
-        replica_redaction::erase_verdicts(&conn, &["ev-expired".to_string()], NOW).expect("erase");
+        replica_redaction::redact(&conn, replica_redaction::Reach::VerdictsOn("e5f6a7b8"), NOW)
+            .expect("erase");
     assert_eq!(upgraded, 1);
     assert_eq!(
         comemory::store::replica_redaction::redaction_of(&conn, &expired).expect("expired"),

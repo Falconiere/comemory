@@ -1,6 +1,6 @@
 //! `feedback_events` reads and writes that sharing a verdict needs (#254):
-//! stamping the event id a journalled verdict earned, the legacy rows the
-//! one-time backfill walks, and the ids a purge must erase.
+//! stamping the event id a journalled verdict earned, and the legacy rows the
+//! one-time backfill walks.
 //!
 //! Split from [`super::feedback`] to keep that module under the size ceiling.
 //! Which verdict may be shared is `domains::learning::feedback_share`'s rule;
@@ -86,24 +86,6 @@ pub fn unshared_legacy_after(
                 provenance: r.get(5)?,
             })
         },
-    )
-}
-
-/// The event ids of every journalled verdict on memory `memory_id`, local or
-/// imported — what a purge of that memory must erase from the journal.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub(crate) fn event_ids_for_memory(conn: &Connection, memory_id: &str) -> Result<Vec<String>> {
-    orm::query_all(
-        conn,
-        FeedbackEvents::select()
-            .columns_typed(&[&col::event_id])
-            .filter(col::memory_id.eq(memory_id))
-            .filter(col::target_kind.eq(target::MEMORY))
-            .filter(col::event_id.is_not_null())
-            .to_sql(),
-        |r| r.get(0),
     )
 }
 

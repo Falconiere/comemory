@@ -16,74 +16,79 @@ use rusqlite::{Connection, params};
 use super::replica_read::Redaction;
 use crate::prelude::*;
 use crate::utilities::telemetry::entity::{ACTIVITY_EVENT, FEEDBACK_EVENT};
+use crate::utilities::telemetry::target;
 
-/// Expire the journal copy of every shared event older than `cutoff`.
-///
-/// An event qualifies when its materialized row is about to be evicted (its
-/// `event_id` is on a `feedback_events` / `activity_log` row with `at` before
-/// `cutoff`), or when its own feed position is older than `cutoff` — the arm
-/// that reaches an imported event this machine never materialized. Must run
-/// BEFORE the eviction deletes those rows, or their ids are gone. A payload
-/// already redacted either way is left as it is. Returns the payloads
-/// expired.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn expire_events_before(conn: &Connection, cutoff: &str, at: &str) -> Result<u64> {
-    let expired = conn.execute(
-        "UPDATE replica_payload
-            SET bytes = NULL, redacted_at = ?2, redaction = ?5
-          WHERE redacted_at IS NULL AND digest IN (
-                SELECT payload_digest FROM replica_feed
-                 WHERE entity_kind IN (?3, ?4) AND at < ?1 AND payload_digest IS NOT NULL
-                UNION
-                SELECT payload_digest FROM replica_revision
-                 WHERE entity_kind = ?3 AND entity_key IN (
-                       SELECT event_id FROM feedback_events
-                        WHERE at < ?1 AND event_id IS NOT NULL)
-                UNION
-                SELECT payload_digest FROM replica_revision
-                 WHERE entity_kind = ?4 AND entity_key IN (
-                       SELECT event_id FROM activity_log
-                        WHERE at < ?1 AND event_id IS NOT NULL))",
-        params![
-            cutoff,
-            at,
-            FEEDBACK_EVENT,
-            ACTIVITY_EVENT,
-            Redaction::Expired.as_str()
-        ],
-    )?;
-    Ok(u64::try_from(expired).unwrap_or(0))
+/// Which shared events' journal copies one [`redact`] call reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach<'a> {
+    /// Retention: every shared event older than the cutoff — its materialized
+    /// row is about to be evicted (its `event_id` is on a `feedback_events` or
+    /// `activity_log` row with `at` before it), or its own feed position is
+    /// older, the arm that reaches an import this machine never materialized.
+    /// Must run BEFORE the eviction deletes those rows, or their ids are gone.
+    /// Copies are **expired**; one already redacted either way is left as is.
+    PastRetention(&'a str),
+    /// Purge: every shared verdict on this memory id, before its
+    /// `feedback_events` rows are deleted. Copies are **erased**, and an
+    /// expired one is upgraded — the purge is the stronger claim a replay must
+    /// read.
+    VerdictsOn(&'a str),
 }
 
-/// Erase the journal copies of the verdicts named by `event_ids` — the ones a
-/// memory purge is deleting. An expired copy is upgraded to erased: the purge
-/// is the stronger claim, and a replay must read it. Returns the payloads
-/// erased.
+/// The digests [`Reach::PastRetention`] selects: `?3` the cutoff, `?4` and `?5`
+/// the two event kinds.
+const PAST_RETENTION: &str = "
+        SELECT payload_digest FROM replica_feed
+         WHERE entity_kind IN (?4, ?5) AND at < ?3 AND payload_digest IS NOT NULL
+        UNION
+        SELECT payload_digest FROM replica_revision
+         WHERE entity_kind = ?4 AND entity_key IN (
+               SELECT event_id FROM feedback_events WHERE at < ?3 AND event_id IS NOT NULL)
+        UNION
+        SELECT payload_digest FROM replica_revision
+         WHERE entity_kind = ?5 AND entity_key IN (
+               SELECT event_id FROM activity_log WHERE at < ?3 AND event_id IS NOT NULL)";
+
+/// The digests [`Reach::VerdictsOn`] selects: `?3` the memory id, `?4` the
+/// verdict kind, `?5` the memory target kind.
+const VERDICTS_ON: &str = "
+        SELECT payload_digest FROM replica_revision
+         WHERE entity_kind = ?4 AND entity_key IN (
+               SELECT event_id FROM feedback_events
+                WHERE memory_id = ?3 AND target_kind = ?5 AND event_id IS NOT NULL)";
+
+/// Blank the bytes of every journal copy `reach` selects, in one statement
+/// however many events it names, and stamp why. Returns the payloads redacted.
 ///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn erase_verdicts(conn: &Connection, event_ids: &[String], at: &str) -> Result<u64> {
-    let mut erased = 0_u64;
-    for event_id in event_ids {
-        let changed = conn.execute(
-            "UPDATE replica_payload
-                SET bytes = NULL, redacted_at = COALESCE(redacted_at, ?3), redaction = ?4
-              WHERE (redacted_at IS NULL OR redaction = ?5) AND digest IN (
-                    SELECT payload_digest FROM replica_revision
-                     WHERE entity_kind = ?1 AND entity_key = ?2)",
-            params![
-                FEEDBACK_EVENT,
-                event_id,
-                at,
-                Redaction::Erased.as_str(),
+pub fn redact(conn: &Connection, reach: Reach<'_>, at: &str) -> Result<u64> {
+    let (redaction, guard, selected, keys) = match reach {
+        Reach::PastRetention(cutoff) => (
+            Redaction::Expired,
+            "redacted_at IS NULL".to_string(),
+            PAST_RETENTION,
+            [cutoff, FEEDBACK_EVENT, ACTIVITY_EVENT],
+        ),
+        Reach::VerdictsOn(memory_id) => (
+            Redaction::Erased,
+            format!(
+                "redacted_at IS NULL OR redaction = '{}'",
                 Redaction::Expired.as_str()
-            ],
-        )?;
-        erased += u64::try_from(changed).unwrap_or(0);
-    }
-    Ok(erased)
+            ),
+            VERDICTS_ON,
+            [memory_id, FEEDBACK_EVENT, target::MEMORY],
+        ),
+    };
+    let redacted = conn.execute(
+        &format!(
+            "UPDATE replica_payload
+                SET bytes = NULL, redacted_at = COALESCE(redacted_at, ?1), redaction = ?2
+              WHERE ({guard}) AND digest IN ({selected})"
+        ),
+        params![at, redaction.as_str(), keys[0], keys[1], keys[2]],
+    )?;
+    Ok(u64::try_from(redacted).unwrap_or(0))
 }
 
 /// Whether — and why — the bytes behind `digest` are gone: `None` for a

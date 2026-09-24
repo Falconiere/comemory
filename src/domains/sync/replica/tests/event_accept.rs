@@ -188,26 +188,35 @@ fn history_without_its_bytes_is_answered_expired_and_counts_nothing() {
 
 #[test]
 fn an_expired_or_erased_copy_answers_its_own_disposition() {
-    let (author, _) = author(2);
+    let (author, memory) = author(2);
     let ops = journalled_ops(&author.conn, "feedback_event");
     let mut peer = Home::new();
     dispositions(&mut peer, ops.clone());
-    replica_redaction::expire_events_before(
+    replica_redaction::redact(
         &peer.conn,
-        "2999-01-01T00:00:00Z",
+        replica_redaction::Reach::PastRetention("2999-01-01T00:00:00Z"),
         "2026-09-24T10:00:00Z",
     )
     .expect("expire");
-    let event = ops[1].entity_key.clone();
-    replica_redaction::erase_verdicts(&peer.conn, &[event], "2026-09-24T10:00:00Z").expect("erase");
-
     let mut renamed: Vec<_> = ops.clone();
     for (n, op) in renamed.iter_mut().enumerate() {
         op.operation_id = format!("op-20260924-echo000{n}");
     }
     assert_eq!(
-        dispositions(&mut peer, renamed),
-        vec![Disposition::PayloadExpired, Disposition::PayloadErased]
+        dispositions(&mut peer, vec![renamed[0].clone()]),
+        vec![Disposition::PayloadExpired]
+    );
+
+    // A purge of the memory both verdicts judged erases their copies.
+    replica_redaction::redact(
+        &peer.conn,
+        replica_redaction::Reach::VerdictsOn(&memory),
+        "2026-09-24T10:00:00Z",
+    )
+    .expect("erase");
+    assert_eq!(
+        dispositions(&mut peer, vec![renamed[1].clone()]),
+        vec![Disposition::PayloadErased]
     );
 }
 

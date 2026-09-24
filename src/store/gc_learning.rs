@@ -34,7 +34,11 @@ use crate::prelude::*;
 pub fn evict_before(conn: &Connection, cutoff: &str) -> Result<(u64, u64)> {
     let at = super::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
     let tx = conn.unchecked_transaction()?;
-    super::replica_redaction::expire_events_before(&tx, cutoff, &at)?;
+    super::replica_redaction::redact(
+        &tx,
+        super::replica_redaction::Reach::PastRetention(cutoff),
+        &at,
+    )?;
     let logs = tx.execute("DELETE FROM retrieval_log WHERE at < ?1", [cutoff])?;
     let events = tx.execute("DELETE FROM feedback_events WHERE at < ?1", [cutoff])?;
     tx.commit()?;

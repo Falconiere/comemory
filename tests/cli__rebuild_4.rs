@@ -195,3 +195,66 @@ fn rebuild_keeps_a_fresh_identity_when_the_source_has_none_to_give() {
         .expect("the rebuilt database has a device id");
     assert_eq!(device.len(), 32);
 }
+
+#[test]
+fn rebuild_from_a_source_that_predates_v26_carries_the_new_columns_as_null() {
+    let home = tempdir().expect("home");
+    let dir = home.path();
+    run(
+        dir,
+        &[
+            "save",
+            "A pre-v26 source copies by position, the new columns as NULL.",
+            "--kind",
+            "note",
+        ],
+    );
+    run(dir, &["find", "pre-v26 source copies"]);
+    let conn = db(dir);
+    let id: String = conn
+        .query_row("SELECT id FROM memories", [], |r| r.get(0))
+        .expect("memory");
+    conn.execute(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance) \
+         VALUES ('q-20260924-0badc0de', ?1, 'used', '2026-09-24T10:00:00Z', 'memory', 'manual')",
+        [&id],
+    )
+    .expect("verdict");
+    // The source as a v25 database had it: none of the v26 columns.
+    conn.execute_batch(
+        "DROP INDEX uq_feedback_events_event_id; DROP INDEX uq_activity_log_event_id; \
+         DROP INDEX idx_replica_feed_kind_at; \
+         ALTER TABLE feedback_events DROP COLUMN event_id; \
+         ALTER TABLE feedback_events DROP COLUMN device; \
+         ALTER TABLE feedback_events DROP COLUMN surface; \
+         ALTER TABLE feedback_events DROP COLUMN actor; \
+         ALTER TABLE activity_log DROP COLUMN event_id; \
+         ALTER TABLE activity_log DROP COLUMN device; \
+         ALTER TABLE replica_payload DROP COLUMN redaction;",
+    )
+    .expect("the v25 shape");
+    let runs: i64 = conn
+        .query_row("SELECT count(*) FROM activity_log", [], |r| r.get(0))
+        .expect("runs");
+    drop(conn);
+
+    run(dir, &["rebuild"]);
+
+    let conn = db(dir);
+    let verdict: (String, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT provenance, event_id, surface FROM feedback_events",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("the verdict survived");
+    assert_eq!(verdict, ("manual".to_string(), None, None));
+    let copied: (i64, i64) = conn
+        .query_row(
+            "SELECT count(*), count(event_id) FROM activity_log",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("runs survived");
+    assert_eq!(copied, (runs, 0), "every run, each with a NULL event id");
+}
