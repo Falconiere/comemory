@@ -24,6 +24,7 @@ mapping; ambiguous, unsupported and unlabelled entries remain local.
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `auto.rs` | `run_auto` / `run_pass` | `comemory sync --action auto`, the pass git hooks and the agent `SessionStart` hook fire from any cwd: index the triggering checkout, refresh every stale hooked repo, then (logged in) pull, push and push moved code. Serialized on `sync.lock`; extra triggers coalesce through the one-slot `sync-auto.queue` |
 | `auth_file.rs` | `AuthFile` | Load/save `$COMEMORY_DATA_DIR/auth.json` v2 (0600 on unix); reject a v1 file. `load_usable` is the read-only probe `setup` detection uses — it never mints, dials, or starts anything |
 | `cloud.rs` + [`cloud/`](cloud/README.md) | `login` | API base URL resolution and the RFC 8628 device flow that mints the org key |
 | `login.rs` | `establish` | The three `comemory auth` sequences — login, status probe, logout — with the progress writer injected and no rendering |
@@ -53,7 +54,7 @@ mapping; ambiguous, unsupported and unlabelled entries remain local.
 | `vector_rule.rs` | `decide` | The one verdict both import wires apply to an arriving embedding: usable only from this engine's model at its `vec0` dimension, and a refusal stores the memory text anyway and records the id as needing an embedding |
 | `verify.rs` | `verify_manifests` | Compare and repair manifests over the locally authorized subset only |
 | `initial.rs` | `run_initial_sync` | Exhaustive pull-then-push that `auth login` runs before returning, then the code push — so the console's graph fills in from the first login |
-| `manual.rs` | `open_session` / `run_all` | What one `comemory sync` run does: the credential-then-store session it opens, and the three composite action sequences |
+| `manual.rs` | `open_session` / `run_all` | What one `comemory sync` run does: the credential-then-store session it opens, and the three composite action sequences; `run` and `push` hold `sync.lock` and refresh stale hooked repos before the code push |
 
 ### Filters, following, and the resident loop
 
@@ -63,7 +64,7 @@ mapping; ambiguous, unsupported and unlabelled entries remain local.
 | `rules.toml` | — | Compile-time rule patterns (AWS, GitHub/GitLab/Slack tokens, JWT, PEM, …), loaded by `redact.rs` through `include_str!` |
 | `skip_repos.rs` | `SkipMatcher` | Normalize a repo label and apply the operator's additional `[sync] skip_repos` withholding globs |
 | `watch.rs` | `follow` | Hold the workspace channel and pull on every nudge, with full-jitter reconnect. Emits `WatchEvent`s to a caller-supplied callback and takes the blocking-I/O escape hatch as an `OffRuntime`, so it renders nothing and names no delivery module |
-| `daemon.rs` | `run_foreground` | Periodic pull+push+verify loop the OS supervisor keeps alive — opt-in (`auth login --daemon`) since a save pushes itself |
+| `daemon.rs` | `run_foreground` | Periodic loop the OS supervisor keeps alive — each cycle is `auto::run_pass` under `sync.lock`, plus a verify when due — opt-in (`auth login --daemon`) since a save pushes itself and hooks fire passes |
 | `daemon_unit.rs` | `install` / `status` | launchd / systemd --user unit lifecycle |
 | `daemon_templates.rs` | plist / unit text | Rendered unit bodies |
 

@@ -7,7 +7,7 @@
 )]
 //! Hooks journey over `/api/v1` — the HTTP twin of
 //! `tests/cli_scenario_hooks.rs`: confirm-gated `POST /hooks/install` →
-//! `GET /hooks` reports all three git hooks installed → `PUT
+//! `GET /hooks` reports all four git hooks installed → `PUT
 //! /hooks/{name}` flips one back off → `index-code` (job) + `search-code`
 //! still work in that repo, against a real `comemory serve` and a real
 //! git fixture.
@@ -66,7 +66,7 @@ fn install_hooks_toggle_then_search_code_over_http() {
 
     let after_install = srv.get_q("/hooks", &[("repo", repo_s.as_str())]);
     let map = installed_by_name(&after_install);
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(map[hook], "{hook} must be installed: {after_install}");
     }
 

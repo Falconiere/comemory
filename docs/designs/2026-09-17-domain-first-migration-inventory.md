@@ -464,6 +464,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/sources.rs | comemory::cli::sources; preserve | none | none | delivery::cli | src/cli/sources.rs | retain |
 | src/cli/stats.rs | comemory::cli::stats; preserve | none | none | delivery::cli | src/cli/stats.rs | retain |
 | src/cli/sync.rs | comemory::cli::sync; preserve | none | none | delivery::cli | src/cli/sync.rs | retain |
+| src/cli/sync_auto.rs | comemory::cli::sync_auto; preserve | none | none | delivery::cli | src/cli/sync_auto.rs | retain |
 | src/cli/sync_render.rs | comemory::cli::sync_render; preserve | src/cli/tests/sync_render.rs | none | delivery::cli | src/cli/sync_render.rs | retain |
 | src/cli/tune.rs | comemory::cli::tune; preserve | none | none | delivery::cli | src/cli/tune.rs | retain |
 | src/cli/unindex.rs | comemory::cli::unindex; preserve | none | none | delivery::cli | src/cli/unindex.rs | retain |
@@ -515,6 +516,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/code/ast/pattern_cache.rs | private | src/domains/code/ast/tests/pattern_cache.rs | none | domains::code | src/domains/code/ast/pattern_cache.rs | retain |
 | src/domains/code/generation.rs | comemory::domains::code::generation; preserve | src/domains/code/tests/generation.rs | none | domains::code | src/domains/code/generation.rs | retain |
 | src/domains/code/git_utils.rs | comemory::domains::code::git_utils; crate-root-alias | src/domains/code/tests/git_utils.rs | none | domains::code | src/domains/code/git_utils.rs | retain |
+| src/domains/code/hooked_refresh.rs | comemory::domains::code::hooked_refresh; preserve | src/domains/code/tests/hooked_refresh.rs | none | domains::code | src/domains/code/hooked_refresh.rs | retain |
 | src/domains/code/hooks.rs | comemory::domains::code::hooks; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/code/tests/hooks.rs | none | domains::code | src/domains/code/hooks.rs | retain |
 | src/domains/code/index_code.rs | comemory::domains::code::index_code; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/code/tests/index_code.rs | none | domains::code | src/domains/code/index_code.rs | retain |
 | src/domains/code/index_code/walk.rs | comemory::domains::code::index_code::walk; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/code/index_code/tests/walk.rs | none | domains::code | src/domains/code/index_code/walk.rs | retain |
@@ -706,6 +708,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/retrieval/unified/fuse_domains.rs | comemory::domains::retrieval::unified::fuse_domains; crate-root-alias | none | none | domains::retrieval | src/domains/retrieval/unified/fuse_domains.rs | retain |
 | src/domains/sync.rs | comemory::domains::sync; crate-root-alias | none | none | domains::sync | src/domains/sync.rs | retain |
 | src/domains/sync/auth_file.rs | comemory::domains::sync::auth_file; crate-root-alias | src/domains/sync/tests/auth_file.rs | none | domains::sync | src/domains/sync/auth_file.rs | retain |
+| src/domains/sync/auto.rs | comemory::domains::sync::auto; preserve | src/domains/sync/tests/auto.rs | none | domains::sync | src/domains/sync/auto.rs | retain |
 | src/domains/sync/client.rs | comemory::domains::sync::client; crate-root-alias | src/domains/sync/tests/client.rs; src/domains/sync/tests/client_https.rs | none | domains::sync | src/domains/sync/client.rs | retain |
 | src/domains/sync/client_code.rs | comemory::domains::sync::client_code; crate-root-alias | none | none | domains::sync | src/domains/sync/client_code.rs | retain |
 | src/domains/sync/client_policy.rs | comemory::domains::sync::client_policy; preserve | none | none | domains::sync | src/domains/sync/client_policy.rs | retain |

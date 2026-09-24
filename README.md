@@ -276,13 +276,13 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory rebuild` | Drop `comemory.db` and repopulate it from `memories/*.md` |
 | `comemory gc` | Purge old entries from `memories/.trash/` and aged telemetry |
 | `comemory completions` | Generate shell completions |
-| `comemory install-hooks` | Install git hooks that reindex code on commit/merge/checkout |
+| `comemory install-hooks` | Install git hooks that index and sync the repo on commit/merge/checkout/rewrite — no `cd` needed afterwards |
 | `comemory hooks` | Report and toggle those hooks individually, plus search→edit reinforcement |
 | `comemory upgrade` | Move this binary to the newest release (`--check` only reports; `--version` pins) |
 | `comemory auth login` | Log in; mint an organization `cmk_` into `auth.json` and run the first sync (`--api-url`) |
 | `comemory auth status` | Check whether local / `COMEMORY_API_KEY` credentials still authenticate |
 | `comemory auth logout` | Delete local `auth.json` (no remote revoke) |
-| `comemory sync` | Push/pull against the bound organization (`--action`, `--allow-secret`) |
+| `comemory sync` | Push/pull against the bound organization (`--action`, `--allow-secret`); `--action auto` is the pass the hooks fire |
 | `comemory watch` | Follow the organization's changes over the workspace channel and pull on each (`--once`) |
 | `comemory capture session` | Redact a coding-tool transcript and POST a receipt (`--path` / `--session-id` / `--from-hook`, `--dry-run`, `--allow-secret`) |
 | `comemory capture sources` | List platform capture-consent rows (CLI cannot enable capture) |
@@ -498,6 +498,13 @@ comemory auth logout                 # delete local auth.json (no remote revoke)
 Mints a **workspace-bound** `cmk_` (not a sync device key). Credentials live at
 `$COMEMORY_DATA_DIR/auth.json` (mode `0600`). `COMEMORY_API_KEY` overrides the
 file secret for scripting/CI.
+
+Every repo with comemory's git hooks (`comemory install-hooks --repo <path>`)
+then syncs itself: each commit, merge, checkout or rebase in any hooked repo,
+and each agent session start, runs `comemory sync --action auto`, which
+re-indexes every hooked repo whose HEAD moved and pulls and pushes — from any
+working directory. See
+[automatic sync from git hooks](docs/guides/cloud-sync.md#hooks).
 
 Point a newer `comemory` binary at an existing `~/.comemory` and the schema
 migrates automatically on your next command — there is no `comemory migrate`

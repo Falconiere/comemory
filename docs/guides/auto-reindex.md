@@ -15,8 +15,8 @@ Set `COMEMORY_INDEXING_AUTO_REINDEX` to one of three modes (default `lazy`):
 | Mode   | What it does                                                        | When to use                                                       |
 |--------|---------------------------------------------------------------------|-------------------------------------------------------------------|
 | `lazy` | A search whose repo HEAD moved spawns a background `index-code`.     | Default. You want freshness with zero setup and no query latency. |
-| `hook` | Git hooks run `index-code` on commit / merge / checkout.            | You want the refresh to happen at commit time, not at query time. |
-| `off`  | Nothing automatic; you run `index-code` yourself.                    | Scripted or CI pipelines that index explicitly.                   |
+| `hook` | Git hooks refresh (and sync) on commit / merge / checkout / rewrite. | You want the refresh to happen at commit time, not at query time. |
+| `off`  | No search-time trigger; installed hooks still run.                   | Scripted or CI pipelines that index explicitly.                   |
 
 ```bash
 export COMEMORY_INDEXING_AUTO_REINDEX=lazy   # or hook, or off
@@ -105,30 +105,49 @@ archive it rather than disconnecting it.
 ## Hook mode
 
 In `hook` mode comemory does nothing at query time; instead git hooks run the
-refresh. Install them once per repo:
+refresh. Install them once per repo — from anywhere:
 
 ```bash
-comemory install-hooks
+comemory install-hooks --repo /path/to/repo
 ```
 
-This installs `post-commit`, `post-merge`, and `post-checkout` hooks that
-trigger `comemory index-code`, so the index refreshes whenever your HEAD moves
-through git. The hooks are written where git runs them — the shared
-`.git/hooks` of the main worktree, even when you install from a linked worktree
-— and a commit made in a linked worktree refreshes the main repo's label (see
-*Worktrees* above).
+This installs `post-commit`, `post-merge`, `post-checkout` and `post-rewrite`
+(rebase, `pull --rebase`, amend), so every git operation that moves HEAD runs
+`comemory sync --action auto --path <checkout>` in the background, and runs
+that pass once right away. The pass indexes the checkout, then re-indexes
+every *other* repo whose comemory hooks are installed and whose HEAD moved —
+so a repo whose HEAD moved with no hook firing is caught by the next hook in
+any repo, the next agent session start, or the next `comemory sync` — and,
+when you are logged in, syncs them all. See
+[automatic sync from git hooks](cloud-sync.md#hooks) for the coalescing rules
+and what leaves the machine.
+
+The hooks are written where git runs them — the shared `.git/hooks` of the
+main worktree, even when you install from a linked worktree — and a commit made
+in a linked worktree refreshes the main repo's label (see *Worktrees* above).
+The hook finds `comemory` on `PATH`, then in `~/.cargo/bin`,
+`/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`, because GUI git
+clients and IDEs often run hooks without your shell's `PATH`.
+
+Installed hooks are the opt-in: they run in every mode, and
+`COMEMORY_INDEXING_AUTO_REINDEX=off` stops only the lazy search-time trigger,
+not the hooks or the sweep they drive.
 
 Re-running `install-hooks` **refreshes any hook comemory wrote**, no `--force`
 needed: the body is rewritten to the one your current binary ships. That
 matters because a hook is a copy on disk, not a link — a repo whose hooks were
-installed before the worktree rule kept running the old script, passing the
-checkout's own basename as `--repo`, so every `git worktree add` fired
-`post-checkout` and registered one more "repository". `--force` now has one
-job: clobbering a hook comemory did *not* write, which is somebody else's file.
+installed before this release still runs `index-code` directly, and has no
+`post-rewrite` at all, until you re-run `install-hooks` (or `comemory setup`,
+which reports the missing hook). `--force` has one job: clobbering a hook
+comemory did *not* write, which is somebody else's file — including a
+`post-rewrite` another tool installed.
 
 ## Off / manual
 
-In `off` mode nothing is automatic — refresh the index yourself:
+In `off` mode no search triggers a reindex. Repos with comemory's git hooks
+installed are still refreshed by those hooks (remove them with
+`comemory hooks --disable <hook>` for a repo that must stay manual); refresh
+any other repo yourself:
 
 ```bash
 comemory index-code --repo myrepo --path .

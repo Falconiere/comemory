@@ -108,6 +108,8 @@ pub mod sources;
 pub mod stats;
 /// `comemory sync`: push/pull against the platform (CLI-only).
 pub mod sync;
+/// `comemory sync --action auto`: the hook-fired pass and its `--json`.
+pub mod sync_auto;
 /// Rendering for `comemory sync` (TTY + `--json` shapes).
 pub mod sync_render;
 /// `comemory tune`: grid/sampled search over the ranking knobs.
@@ -240,8 +242,8 @@ pub enum Cmd {
     /// retention.
     #[command(after_help = gc::EXAMPLES)]
     Gc,
-    /// Install git hooks that trigger `comemory index-code` on
-    /// `post-commit`, `post-merge`, and `post-checkout`.
+    /// Install git hooks that index and sync the repo on `post-commit`,
+    /// `post-merge`, `post-checkout` and `post-rewrite`.
     InstallHooks(install_hooks::Args),
     /// Install bundled skills and hooks for Claude Code or Codex.
     Install(install::Args),

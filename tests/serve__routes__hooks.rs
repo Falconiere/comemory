@@ -55,7 +55,7 @@ fn build_repo(root: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
-fn v1_get_hooks_reports_three_uninstalled_git_hooks_and_the_config_backed_row() {
+fn v1_get_hooks_reports_four_uninstalled_git_hooks_and_the_config_backed_row() {
     let home = TempDir::new().expect("home");
     let allowed = TempDir::new().expect("allowed dir");
     let repo = build_repo(allowed.path());
@@ -75,15 +75,16 @@ fn v1_get_hooks_reports_three_uninstalled_git_hooks_and_the_config_backed_row() 
     let body: serde_json::Value = res.json().expect("json");
     assert_eq!(body["meta"]["command"], "hooks");
     let hooks = body["data"]["hooks"].as_array().expect("hooks array");
-    assert_eq!(hooks.len(), 4);
+    assert_eq!(hooks.len(), 5);
     assert_eq!(hooks[0]["name"], "post-commit");
     assert_eq!(hooks[0]["installed"], serde_json::json!(false));
-    // The fourth row is config-backed, not a file in .git/hooks, and
+    assert_eq!(hooks[3]["name"], "post-rewrite");
+    // The last row is config-backed, not a file in .git/hooks, and
     // `[reinforce] enabled` defaults to true — so it reads installed on a
-    // fresh repo while the three git hooks do not.
-    assert_eq!(hooks[3]["name"], "search-edit-reinforcement");
-    assert_eq!(hooks[3]["installed"], serde_json::json!(true));
-    assert_eq!(hooks[3]["source"], "config");
+    // fresh repo while the four git hooks do not.
+    assert_eq!(hooks[4]["name"], "search-edit-reinforcement");
+    assert_eq!(hooks[4]["installed"], serde_json::json!(true));
+    assert_eq!(hooks[4]["source"], "config");
 }
 
 #[test]

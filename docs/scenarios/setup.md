@@ -36,7 +36,7 @@ The ids `--only` / `--skip` accept, and what each reports as already done:
 | --- | --- |
 | `data-dir` | `comemory.db` exists and is writable |
 | `agent-host` | the bundle for this comemory version is installed in the host |
-| `git-hooks` | all three reindex hooks are installed in the repo |
+| `git-hooks` | all four reindex hooks are installed in the repo (a repo hooked before `post-rewrite` existed plans the missing one) |
 | `index-code` | `comemory repos` reports the repo `fresh` |
 | `index-docs` | at least one document source is registered for the repo |
 | `reinforce` | `[reinforce] enabled` is on (it ships on) |
@@ -69,7 +69,7 @@ The ids `--only` / `--skip` accept, and what each reports as already done:
 - **Setup:** an empty data dir and a fresh repo with four real `.rs` files
 - **Command:** `comemory setup --yes --repo /path/to/repo --skip agent-host`
 - **Expect:** `data-dir`, `git-hooks`, and `index-code` all `applied`; the
-  three hook files exist; `comemory search-code gamma` then finds an indexed
+  four hook files exist; `comemory search-code gamma` then finds an indexed
   symbol. A second identical run applies nothing and reports `satisfied`.
 - **Covered by:** `tests/cli_scenario_setup.rs::setup_yes_indexes_a_fresh_repo_then_search_code_finds_a_symbol`
 

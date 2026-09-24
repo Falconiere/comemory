@@ -7,7 +7,8 @@
 //! repository inventory; [`git_utils`][git_utils] answers the Git questions the
 //! rest of the capability asks (repo label, HEAD, blob OIDs);
 //! [`hooks`][hooks] and [`install_hooks`][install_hooks] own the reindex hooks;
-//! [`reindex_policy`][reindex_policy] decides when a lazy reindex is due.
+//! [`hooked_refresh`][hooked_refresh] keeps every hooked repo fresh from any
+//! cwd; [`reindex_policy`][reindex_policy] decides when a lazy reindex is due.
 //! `store` keeps every SQL string, and the CLI owns the detached process
 //! launch.
 //!
@@ -26,6 +27,7 @@
 //! [git_utils]: crate::domains::code::git_utils
 //! [hooks]: crate::domains::code::hooks
 //! [install_hooks]: crate::domains::code::install_hooks
+//! [hooked_refresh]: crate::domains::code::hooked_refresh
 //! [reindex_policy]: crate::domains::code::reindex_policy
 
 /// Symbol extraction and AST pattern search via ast-grep.
@@ -34,6 +36,8 @@ pub mod ast;
 pub mod generation;
 /// Repo/author detection, blob lookup, and Git-hook installation helpers.
 pub mod git_utils;
+/// Index the checkout a hook fired in and refresh every stale hooked repo.
+pub mod hooked_refresh;
 /// `comemory hooks`: read and toggle the git reindex hooks.
 pub mod hooks;
 /// `comemory index-code` (DB-write path): mirror a repo's symbols.

@@ -57,7 +57,7 @@ pub struct ReinforceConfig {
     /// Whether search→edit auto-reinforcement runs at all. File-only (no
     /// env override — same convention as [`BanditConfig::enabled`]),
     /// toggled by `comemory hooks --enable/--disable search-edit-reinforcement`
-    /// (`domains::code::hooks`), which reports this row alongside the three git hooks.
+    /// (`domains::code::hooks`), which reports this row alongside the four git hooks.
     #[serde(default = "default_reinforce_enabled")]
     pub enabled: bool,
 }

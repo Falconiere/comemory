@@ -46,7 +46,7 @@ fn fresh_repo_reports_all_four_rows_with_git_hooks_uninstalled_and_reinforce_ena
     let resp =
         crate::domains::code::hooks::run(&mut ctx, request(&repo, None, None)).expect("hooks run");
 
-    assert_eq!(resp.hooks.len(), 4);
+    assert_eq!(resp.hooks.len(), 5);
     let names: Vec<&str> = resp.hooks.iter().map(|h| h.name.as_str()).collect();
     assert_eq!(
         names,
@@ -54,20 +54,21 @@ fn fresh_repo_reports_all_four_rows_with_git_hooks_uninstalled_and_reinforce_ena
             "post-commit",
             "post-merge",
             "post-checkout",
+            "post-rewrite",
             "search-edit-reinforcement",
         ]
     );
-    for row in &resp.hooks[..3] {
+    for row in &resp.hooks[..4] {
         assert!(!row.installed, "{} must start uninstalled", row.name);
         assert_eq!(row.source, "git");
     }
-    let reinforce = &resp.hooks[3];
+    let reinforce = &resp.hooks[4];
     assert!(reinforce.installed, "reinforce defaults to enabled");
     assert_eq!(reinforce.source, "config");
 }
 
 #[test]
-fn after_install_hooks_all_three_git_rows_report_installed() {
+fn after_install_hooks_every_git_row_reports_installed() {
     let home = tempfile::tempdir().expect("tempdir");
     let repo = fake_repo(home.path());
     let paths = Paths::new(home.path());
@@ -85,7 +86,7 @@ fn after_install_hooks_all_three_git_rows_report_installed() {
     let resp =
         crate::domains::code::hooks::run(&mut ctx, request(&repo, None, None)).expect("hooks run");
 
-    for row in &resp.hooks[..3] {
+    for row in &resp.hooks[..4] {
         assert!(row.installed, "{} must be installed", row.name);
     }
 }
@@ -207,7 +208,7 @@ fn reinforce_toggle_round_trips_through_config_toml() {
         ),
     )
     .expect("disable reinforce");
-    assert!(!resp.hooks[3].installed);
+    assert!(!resp.hooks[4].installed);
 
     // Round-trips through the real typed config loader, not just raw TOML —
     // proves the toggle doesn't break every other command's config load.
@@ -226,7 +227,7 @@ fn reinforce_toggle_round_trips_through_config_toml() {
         ),
     )
     .expect("re-enable reinforce");
-    assert!(resp2.hooks[3].installed);
+    assert!(resp2.hooks[4].installed);
 
     let reloaded2 = Config::defaults()
         .with_file(&paths.config_file())

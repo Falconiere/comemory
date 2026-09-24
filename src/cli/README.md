@@ -52,7 +52,7 @@ One line per file, named after its primary item:
 | `index_code.rs` | `Args` | `comemory index-code` — incremental symbol extraction over a git repo |
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
 | `install.rs` | `Args` | `comemory install` — install the embedded agent skills and hooks through the native Claude Code or Codex plugin manager; core in `domains::integrations::install` |
-| `install_hooks.rs` | `Args` | `comemory install-hooks` — install git hooks that trigger `index-code` |
+| `install_hooks.rs` | `Args` | `comemory install-hooks` — install the four git hooks that run `sync --action auto`, then run the new `post-commit` once (`kicked`) so the repo is indexed and synced without a commit |
 | `export_dataset.rs` | `Args` | `comemory export-dataset` — write the reviewed relevance dataset and its manifest as versioned JSONL, with grouped splits, a withheld holdout and the TTY summary of everything the export refused |
 | `judge.rs` | `Args` | `comemory judge` — record reviewed relevance verdicts against a captured candidate observation, or report that observation |
 | `lazy_reindex.rs` | `RepoContext` | Detached, non-blocking auto-reindex trigger behind `indexing.auto_reindex = lazy` |
@@ -76,6 +76,7 @@ One line per file, named after its primary item:
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |
 | `sync.rs` | `Args` | `comemory sync` — nested `push` / `pull` / `status` / `verify` for cloud sync; the run sequences are `domains::sync::manual`, and `run` and `push` still push the code index after the memories |
+| `sync_auto.rs` | `run` | `comemory sync --action auto` — dispatched before any login is required; runs `domains::sync::auto::run_auto` off the runtime and prints its `--json` report (nothing without `--json`) |
 | `sync_render.rs` | `emit_run` | The TTY and `--json` shapes of `comemory sync`: the run counters (memories and code), `status`'s cursors plus one `code` row per indexed repo (`moved_since_push`, and `withheld` when the row's root is a linked worktree, gone, or not a checkout), the verify report, the daemon status, and the login report's code line |
 | `watch.rs` | `Args` | `comemory watch` — the one long-lived command; arguments, launch and reporting for `domains::sync::watch`, which holds the workspace channel open and pulls on every nudge. This module supplies the `OffRuntime` the service isolates blocking platform calls through |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |

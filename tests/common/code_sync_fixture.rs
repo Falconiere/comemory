@@ -105,3 +105,28 @@ pub fn projection(conn: &Connection) -> Vec<CodeFileWire> {
         })
         .collect()
 }
+
+/// Install comemory's real hooks into `tree` with hook *execution* switched
+/// off (`core.hooksPath=/dev/null`): the repo counts as hooked — the hooks
+/// directory is read from the common dir, not `core.hooksPath` — but no
+/// commit launches whatever `comemory` is on this host's `PATH` against its
+/// real data directory.
+pub fn install_inert_hooks(paths: &Paths, cfg: &Config, tree: &Path) {
+    super::git_repo::run_git(tree, &["config", "core.hooksPath", "/dev/null"]);
+    let mut ctx = Ctx::lazy(paths, cfg);
+    comemory::domains::code::install_hooks::run(
+        &mut ctx,
+        comemory::domains::code::install_hooks::Request {
+            repo: tree.display().to_string(),
+            force: false,
+        },
+    )
+    .expect("install hooks");
+}
+
+/// Commit `files` into `tree` — a HEAD move no hook saw once
+/// [`install_inert_hooks`] ran — and return the new HEAD oid.
+pub fn commit_hookless(tree: &Path, files: &[(&str, &str)], msg: &str) -> String {
+    super::git_commit::commit_files(tree, files, msg);
+    comemory::domains::code::git_utils::current_head(tree).expect("head")
+}

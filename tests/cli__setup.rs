@@ -264,7 +264,7 @@ fn applying_git_hooks_writes_them_and_a_second_run_is_satisfied() {
     let first = setup_json(data.path(), &args);
     assert_eq!(state_of(&first, "git-hooks"), "applied");
     assert_eq!(first["applied"].as_u64().unwrap(), 1);
-    for hook in ["post-commit", "post-merge", "post-checkout"] {
+    for hook in ["post-commit", "post-merge", "post-checkout", "post-rewrite"] {
         assert!(
             repo.path().join(".git/hooks").join(hook).exists(),
             "{hook} must exist on disk"

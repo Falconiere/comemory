@@ -20,7 +20,7 @@ project-skill settings, and migration from toolu.
 | `COMEMORY_DATA_DIR` | Root data directory (`memories/` + `comemory.db`). | `~/.comemory` |
 | `COMEMORY_API` | Platform API base for `comemory auth` (trailing slash stripped). Overridden by `auth login` / `auth status --api-url`. | `https://api.comemory.io` |
 | `COMEMORY_API_KEY` | Optional override of the `auth.json` device secret (CI / scripting without writing the file). | unset |
-| `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — automatic code-index refresh. See [Keep the code index fresh](guides/auto-reindex.md). | `lazy` |
+| `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — the search-time code-index refresh. Installed git hooks, and the `sync --action auto` pass they fire, run in every mode. See [Keep the code index fresh](guides/auto-reindex.md). | `lazy` |
 | `COMEMORY_RETRIEVAL_TOP_K` | Results returned by the hybrid router (also the default page size for `search` / `search-code` / `context`). | `12` |
 | `COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW` | Maximum depth pagination can reach into the ranked list; `has_more` is forced false at this ceiling. Validated `> 0`. | `200` |
 | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table. | `0.55` |

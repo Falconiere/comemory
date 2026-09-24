@@ -12,6 +12,10 @@
 //! `flock(2)` on unix and `LockFileEx` on Windows internally — no FFI, no
 //! `unsafe`, and no new dependency needed here.
 //!
+//! `sync.lock` / `sync-auto.queue` (`domains::sync::auto`) are the third
+//! and fourth consumers; the queue slot is why [`FileLock::try_acquire`]
+//! exists.
+//!
 //! Two owners across two future domains (documents and infrastructure) is
 //! exactly why #166 gave it a neutral home here rather than leaving it under
 //! the source registry (now `domains::documents::source`), where
@@ -37,14 +41,32 @@ impl FileLock {
     /// `"registry"`, `"migration"`) so a failed-unlock warning identifies
     /// which lock misbehaved.
     pub fn acquire(path: &Path, label: &'static str) -> Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(path)?;
+        let file = open(path)?;
         file.lock()?;
         Ok(Self { file, label })
     }
+
+    /// Like [`FileLock::acquire`], but never waits: `Ok(None)` when another
+    /// open of `path` — in this process or any other — already holds the
+    /// lock. The coalescing slot of `comemory sync --action auto` is the
+    /// caller that needs "someone is already queued" rather than a queue.
+    pub fn try_acquire(path: &Path, label: &'static str) -> Result<Option<Self>> {
+        let file = open(path)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(Self { file, label })),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+            Err(std::fs::TryLockError::Error(e)) => Err(e.into()),
+        }
+    }
+}
+
+/// Open (creating if absent) the lock file both acquisition modes lock.
+fn open(path: &Path) -> Result<File> {
+    Ok(OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)?)
 }
 
 impl Drop for FileLock {

@@ -17,9 +17,11 @@ the recall/judge/save loop, with the wrapper as fallback) and
 repo cannot derive from itself, triggered by the SessionStart nudge when a
 repo has zero memories and the integration is enabled). Stop emits a compact,
 advisory repository-window reminder; it never blocks another agent for shared
-activity. A Claude-only `SessionEnd` hook (`hooks/session-end.sh`) launches
-`comemory capture session --from-hook` detached so a session receipt is
-captured without waiting for upload. The shared hook exits silently under Codex;
+activity. `SessionStart` (`hooks/session-start.sh`) launches `comemory sync --action
+auto` detached, so every session re-indexes the stale hooked repos and — when
+logged in — syncs them, whatever its cwd. A Claude-only `SessionEnd` hook
+(`hooks/session-end.sh`) launches `comemory capture session --from-hook`
+detached so a session receipt is captured without waiting for upload. The shared hook exits silently under Codex;
 Codex transcript capture is not implemented. Both hosts support the MCP tools.
 
 See [installation and migration](../docs/guides/agent-integration.md).

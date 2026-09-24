@@ -28,10 +28,19 @@ worktrees share knowledge; `--repo NAME` selects an explicit scope. The agent
 recalls targeted knowledge, verifies its work, compares existing memories,
 saves useful corrections and discoveries, and records retrieval feedback.
 
+SessionStart also launches `comemory sync --action auto` detached, whatever
+the session's working directory: every repo whose comemory git hooks are
+installed and whose HEAD moved is re-indexed, and — only when this machine is
+logged in (`comemory auth login`) — pending memories and code indexes are
+pushed and peers' changes pulled, under the same repository policy as
+`comemory sync` (see [cloud sync](cloud-sync.md#hooks)). Logged out, the pass
+stays local.
+
 Prompt and compaction hooks provide compact reminders. Stop runs local retrieval
 maintenance at most once per UTC day in a detached process. Recall and maintenance
-run locally without models and upload nothing. The separate Claude SessionEnd
-receipt capture, the one hook that does upload, is described below.
+run locally without models and upload nothing. Besides the SessionStart sync
+pass above, the only hook that uploads is the Claude SessionEnd receipt
+capture, described below.
 
 ## MCP registration
 
