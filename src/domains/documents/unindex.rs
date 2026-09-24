@@ -67,3 +67,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         documents_removed: doc_ids.len(),
     })
 }
+
+#[cfg(test)]
+#[path = "tests/unindex.rs"]
+mod tests;

@@ -579,3 +579,133 @@ pub fn shared_paths(data_dir: &std::path::Path, repo: &str) -> Vec<String> {
         .map(|f| f.path)
         .collect()
 }
+
+// ---------------------------------------------------------------------------
+// Document replication (#253) support.
+// ---------------------------------------------------------------------------
+
+/// The repository label the document cases share.
+pub const DOC_REPO: &str = "Falconiere/comemory";
+
+/// Copy this repository's own `docs/guides` into `<root>/docs/guides` and
+/// return the repository root that contains it.
+///
+/// Real documentation, not fixtures: the chunk boundaries, headings and links
+/// these cases assert on are whatever the shipped extractor produces from the
+/// files this repository ships.
+pub fn docs_tree(root: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let repo = root.join(name);
+    let guides = repo.join("docs").join("guides");
+    std::fs::create_dir_all(&guides).expect("create docs dir");
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/guides");
+    for entry in std::fs::read_dir(&source).expect("read docs/guides") {
+        let path = entry.expect("entry").path();
+        if path.extension().is_some_and(|e| e == "md") {
+            let file = path.file_name().expect("file name");
+            std::fs::copy(&path, guides.join(file)).expect("copy guide");
+        }
+    }
+    repo
+}
+
+/// Approve `DOC_REPO` on `engine` and record `root` as its indexed root.
+///
+/// A policy load is what writes `repository_approval`, and these engines have
+/// no platform to load one from — so the two rows a policy load would leave
+/// are written directly, into the same real tables the shipped code reads. The
+/// alternative would be a fake platform, which would prove less.
+pub fn approve_docs(engine: &Engine, root: &std::path::Path) {
+    let conn = engine.db();
+    comemory::store::repository_approval::replace_all(
+        &conn,
+        &[(DOC_REPO.to_string(), DOC_REPO.to_string())],
+        "2026-09-23T10:00:00Z",
+    )
+    .expect("approve");
+    conn.execute(
+        "INSERT INTO repo_marker (repo, root_path) VALUES (?1, ?2) \
+         ON CONFLICT(repo) DO UPDATE SET root_path = excluded.root_path",
+        rusqlite::params![
+            DOC_REPO,
+            std::fs::canonicalize(root)
+                .expect("canonicalize root")
+                .to_str()
+                .expect("utf8 root")
+        ],
+    )
+    .expect("record the indexed root");
+}
+
+/// Index `dir` as a document source through the real CLI, under `DOC_REPO`.
+pub fn index_docs_cli(engine: &Engine, dir: &std::path::Path) -> Value {
+    engine.cli(&[
+        "index",
+        dir.to_str().expect("utf8 path"),
+        "--repo",
+        DOC_REPO,
+    ])
+}
+
+/// Every `(shared_id, path)` this data directory has minted a portable name
+/// for, ascending by path.
+pub fn shared_names(data_dir: &std::path::Path) -> Vec<(String, String)> {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    let mut statement = conn
+        .prepare("SELECT shared_id, path FROM document_share ORDER BY path")
+        .expect("prepare");
+    statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .expect("query")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("collect")
+}
+
+/// The wire payload this data directory journalled for `shared_id`, as a peer
+/// would receive it.
+pub fn journalled_revision(data_dir: &std::path::Path, shared_id: &str) -> Value {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    let bytes: String = conn
+        .query_row(
+            "SELECT p.bytes FROM replica_feed f JOIN replica_payload p ON p.digest = f.payload_digest \
+              WHERE f.entity_kind = 'document_revision' AND f.entity_key = ?1 \
+              ORDER BY f.sequence DESC LIMIT 1",
+            [shared_id],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|e| panic!("no journalled revision for {shared_id}: {e}"));
+    serde_json::from_str(&bytes).expect("payload json")
+}
+
+/// Every `(entity_key, op)` a document mutation journalled here, oldest first.
+pub fn document_feed(data_dir: &std::path::Path) -> Vec<(String, String)> {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    let mut statement = conn
+        .prepare(
+            "SELECT entity_key, op FROM replica_feed \
+              WHERE entity_kind = 'document_revision' ORDER BY sequence",
+        )
+        .expect("prepare");
+    statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .expect("query")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("collect")
+}
+
+/// An import envelope carrying one document revision.
+pub fn document_envelope(operation_id: &str, payload: &Value) -> Value {
+    let (_, digest) =
+        comemory::utilities::canonical_json::bytes_and_digest(payload).expect("digest");
+    serde_json::json!({
+        "protocol": "replica-v1",
+        "operations": [{
+            "operation_id": operation_id,
+            "entity_kind": "document_revision",
+            "entity_key": payload["shared_id"],
+            "op": "upsert",
+            "schema_version": 1,
+            "payload_digest": digest,
+            "payload": payload,
+        }],
+    })
+}

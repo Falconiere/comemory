@@ -13,7 +13,7 @@
 
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::rebuild_copy::copy_table;
+use crate::store::rebuild_copy::{copy_table, old_table_exists};
 
 /// Copy `source_files`, `documents`, `document_chunks`, and `document_fts`
 /// from `old` into `main`, in FK/parent-before-child order: `source_files`
@@ -26,7 +26,55 @@ pub(crate) fn copy_document_tables_inner(conn: &Connection) -> Result<()> {
     copy_source_files(conn)?;
     copy_documents(conn)?;
     copy_document_chunks(conn)?;
-    copy_document_fts(conn)
+    copy_document_fts(conn)?;
+    copy_shared_document_tables(conn)
+}
+
+/// `(table, columns)` for the tables #253 added, in FK order.
+///
+/// `document_share` comes after `documents` — `document_share.document_id`
+/// references it, and with `PRAGMA foreign_keys=ON` an `INSERT OR IGNORE`
+/// whose parent row is missing fails outright rather than skipping the row.
+/// A share row whose document did not survive the copy is therefore dropped
+/// by the same `IN (SELECT …)` narrowing the code side uses, not left to
+/// abort the rebuild.
+///
+/// The four `remote_document*` tables have no foreign key and no local
+/// dependency at all: a pulled revision describes a file this machine may not
+/// have. They are copied because nothing on this disk could re-derive them.
+///
+/// `repository_approval` is server state for the same reason. Dropping it
+/// would leave every document withheld until the next policy load, which a
+/// rebuild gives an operator no sign of needing.
+const SHARED_DOCUMENT_TABLES: &[(&str, &str)] = &[
+    (
+        "remote_document",
+        "repo, shared_id, path, title, format, revision_hash, chunk_count, accepted_at",
+    ),
+    (
+        "remote_document_chunk",
+        "repo, shared_id, ordinal, heading_path, char_start, char_end, line_start,          line_end, simhash, text",
+    ),
+    ("remote_document_link", "repo, shared_id, ordinal, target"),
+    (
+        "remote_document_fts",
+        "repo, shared_id, ordinal, title, headings, passage, path_tokens",
+    ),
+    ("repository_approval", "label, canonical, updated_at"),
+];
+
+/// Copy the pulled document cache, the approval map, and the share mapping
+/// for every document that survived the copy above.
+fn copy_shared_document_tables(conn: &Connection) -> Result<()> {
+    for (table, columns) in SHARED_DOCUMENT_TABLES {
+        copy_table(conn, table, columns)?;
+    }
+    if old_table_exists(conn, "document_share")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.document_share(                 document_id, repo, shared_id, path, blocked_reason, updated_at)              SELECT document_id, repo, shared_id, path, blocked_reason, updated_at              FROM old.document_share               WHERE document_id IN (SELECT id FROM main.documents);",
+        )?;
+    }
+    Ok(())
 }
 
 /// Copy `source_files` rows: the discovery-walk candidate list (path,

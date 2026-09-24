@@ -13,6 +13,7 @@ use crate::domains::memories::replica_payload::MemoryPayloadV1;
 use crate::domains::memories::{MemoryStore, SaveParams, journal, mirror};
 use crate::domains::sync::replica::code_accept;
 use crate::domains::sync::replica::contract::{Disposition, Operation, OperationResult};
+use crate::domains::sync::replica::document_accept;
 use crate::domains::sync::vector_rule;
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
@@ -37,6 +38,11 @@ pub(crate) fn apply(
     // transaction of its own.
     if code_accept::handles(operation) {
         return code_accept::apply(ctx, epoch, operation, &at);
+    }
+    // Nor does a document revision: its text lands in tables only a pull
+    // writes, so it has no markdown half and no local row to touch either.
+    if document_accept::handles(operation) {
+        return document_accept::apply(ctx, epoch, operation, &at);
     }
     // The markdown tree is the source of truth and cannot join a SQLite
     // transaction, so it moves first; the database half then commits as one

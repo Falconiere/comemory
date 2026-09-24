@@ -7,7 +7,6 @@
 //! transaction PER FILE rather than one transaction for a whole walk — see
 //! the design spec's "Index lifecycle and freshness" section.
 
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -15,6 +14,7 @@ use time::OffsetDateTime;
 
 use super::fingerprint::{self, FileStat};
 use super::{DocumentFormat, ExtractedDocument, extract};
+use crate::domains::documents::journal;
 use crate::domains::documents::source::classify::Classification;
 use crate::domains::documents::source::discover::Candidate;
 use crate::domains::graph::doc_link;
@@ -22,9 +22,8 @@ use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::document_fts;
 use crate::store::documents::{self, ChunkRow, DocumentUpsert};
-use crate::store::edges;
 use crate::store::memory_row::iso_format;
-use crate::store::sources::{self, SourceFileRow, SourceFileUpsert};
+use crate::store::sources::{self, SourceFileUpsert};
 
 /// Outcome of [`update_file`] for one candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,7 +147,7 @@ fn update_document(
         sources::touch_file(conn, stat.file_id, stat.size, stat.mtime, &iso_now()?)?;
         return Ok(UpdateOutcome::Unchanged);
     }
-    extract_and_write(conn, repo, &stat, format, &bytes, &hash)
+    extract_and_write(conn, repo, &stat, source_root, format, &bytes, &hash)
 }
 
 /// Re-resolve `absolute_path` and read it only if the resolved target
@@ -181,6 +180,7 @@ fn extract_and_write(
     conn: &mut Connection,
     repo: Option<&str>,
     stat: &FileStat<'_>,
+    source_root: &Path,
     format: DocumentFormat,
     bytes: &[u8],
     hash: &str,
@@ -201,7 +201,15 @@ fn extract_and_write(
         }
     };
     let document_id = fingerprint::document_id_of(stat.file_id);
-    write_indexed(conn, repo, stat, &document_id, hash, &extracted)?;
+    write_indexed(
+        conn,
+        repo,
+        stat,
+        source_root,
+        &document_id,
+        hash,
+        &extracted,
+    )?;
     // Design spec: "After a file's transaction commits, the link deriver
     // writes edges" — deliberately AFTER `write_indexed`'s own transaction,
     // not inside it.
@@ -223,6 +231,7 @@ fn write_indexed(
     conn: &mut Connection,
     repo: Option<&str>,
     stat: &FileStat<'_>,
+    source_root: &Path,
     document_id: &str,
     hash: &str,
     extracted: &ExtractedDocument,
@@ -258,6 +267,20 @@ fn write_indexed(
         },
     )?;
     write_chunks(&tx, document_id, stat.relative_path, extracted)?;
+    // Inside this transaction on purpose: a document that exists locally but
+    // owes no upload is the divergence the journal exists to prevent.
+    journal::record_revision(
+        &tx,
+        &journal::IndexedRevision {
+            label: repo,
+            source_root,
+            relative_path: stat.relative_path,
+            document_id,
+            revision_hash: hash,
+            extracted,
+            at: &now,
+        },
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -305,45 +328,6 @@ fn write_chunks(
     Ok(())
 }
 
-/// Given the FULL set of relative paths an authoritative discovery walk
-/// of `source_id` just saw, tombstone every `source_files` row for that
-/// source NOT in `seen`: its `documents`/`document_chunks`/
-/// `document_fts` rows are removed and its own row flips to `deleted`
-/// (spec step 5). A row already `deleted` is left alone — idempotent.
-/// Returns the number of rows newly tombstoned.
-pub fn reconcile_deletions<S: ::std::hash::BuildHasher>(
-    conn: &mut Connection,
-    source_id: &str,
-    seen: &HashSet<String, S>,
-) -> Result<usize> {
-    let mut removed = 0usize;
-    for row in sources::list_files_by_source(conn, source_id)? {
-        if row.status == "deleted" || seen.contains(&row.relative_path) {
-            continue;
-        }
-        tombstone(conn, &row)?;
-        removed += 1;
-    }
-    Ok(removed)
-}
-
-/// Remove `row`'s derived document rows (plus the `member_of_source` /
-/// `references_document` edges it owns — `edges` has no FK, so a soft
-/// delete must purge them explicitly) and flip it to `deleted`, all in
-/// one transaction.
-fn tombstone(conn: &mut Connection, row: &SourceFileRow) -> Result<()> {
-    let document_id = fingerprint::document_id_of(&row.id);
-    let now = iso_now()?;
-    let tx = conn.transaction()?;
-    documents::delete_document(&tx, &document_id)?;
-    document_fts::delete_document(&tx, &document_id)?;
-    edges::delete_touching(&tx, "file", &row.id)?;
-    edges::delete_touching(&tx, "document", &document_id)?;
-    sources::mark_deleted(&tx, &row.id, &now)?;
-    tx.commit()?;
-    Ok(())
-}
-
 /// The file stem of `relative_path` (its own file name for a
 /// single-file source) — the extractor's title fallback when the
 /// format carries no heading.
@@ -357,8 +341,9 @@ fn file_stem_of(relative_path: &str) -> String {
 
 /// Current wall-clock time as the RFC3339/ISO8601 string every
 /// `created_at`/`updated_at` column stores (`store::memory_row`'s
-/// house format). `pub(super)` so [`super::fingerprint::upsert_stat`]
-/// shares this one house-format implementation rather than its own.
+/// house format). `pub(super)` so [`super::fingerprint::upsert_stat`] and
+/// [`super::deletions`] — both siblings inside `document` — share this one
+/// house-format implementation rather than each having its own.
 pub(super) fn iso_now() -> Result<String> {
     iso_format(OffsetDateTime::now_utc())
 }

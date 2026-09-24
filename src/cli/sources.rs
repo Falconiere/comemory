@@ -71,6 +71,16 @@ fn emit(json_flag: bool, rows: &[sources::Row]) -> Result<()> {
             r.stale,
             r.last_checked,
         )?;
+        // Neither of the next two lines can be inferred from the counts: a
+        // document is indexed the same whether or not it is shared.
+        match (&r.shared_as, &r.unshared_reason) {
+            (Some(repo), _) => writeln!(out, "    shared as {repo}")?,
+            (None, Some(reason)) => writeln!(out, "    not shared: {reason}")?,
+            (None, None) => {}
+        }
+        for (path, rule) in &r.withheld {
+            writeln!(out, "    withheld  {path}  ({rule})")?;
+        }
     }
     Ok(())
 }

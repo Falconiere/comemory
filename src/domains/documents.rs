@@ -15,6 +15,14 @@
 pub mod document;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
+/// The `replica-v1` feed positions a document mutation owes.
+mod journal;
+/// The `document_revision` wire payload: its canonical bytes, its digest and
+/// the identity its repository and path earn.
+pub mod replica_payload;
+/// A document's portable name: the digest of its canonical repository and
+/// its normalized repository-relative path.
+pub mod share;
 /// Durable source registry, classification, discovery, and the SQLite mirror.
 pub mod source;
 /// `comemory sources`: list registered sources, optionally reconciling first.

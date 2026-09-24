@@ -10,6 +10,8 @@
 
 /// Size-bounded splitter shared by every extractor.
 pub mod chunk;
+/// Tombstoning what an authoritative walk no longer sees.
+pub mod deletions;
 /// CSV/TSV extraction via the `csv` crate.
 pub mod delimited;
 /// Format dispatch plus the TXT/Markdown extractors.
@@ -36,6 +38,21 @@ pub enum DocumentFormat {
     Html,
     /// CSV or TSV.
     Delimited,
+}
+
+impl DocumentFormat {
+    /// The wire and SQL literal for this format — the same four values
+    /// `remote_document.format`'s CHECK constraint allows, so a replicated
+    /// revision cannot name a format the schema would reject.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Txt => "txt",
+            Self::Markdown => "markdown",
+            Self::Html => "html",
+            Self::Delimited => "delimited",
+        }
+    }
 }
 
 /// One ordered passage of an extracted document: a heading- or

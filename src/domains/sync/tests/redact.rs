@@ -5,11 +5,11 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Tests for [`crate::domains::sync::redact`].
+//! Tests for [`crate::domains::sync::redact`] — the per-memory override, and
+//! the re-export every existing caller imports through. The shared rule set's
+//! own behavior is tested beside it in `src/utilities/tests/secret_scan.rs`.
 
-use comemory::domains::sync::redact::{
-    RULE_SET_VERSION, findings, redact, scan, scan_with_override,
-};
+use comemory::domains::sync::redact::{scan, scan_with_override};
 use comemory::domains::sync::{
     scan as scan_reexport, scan_with_override as scan_override_reexport,
 };
@@ -20,86 +20,13 @@ fn aws_example_key() -> String {
     format!("AKIA{}{}", "IOSFODNN7", "EXAMPLE")
 }
 
-fn github_pat_example() -> String {
-    format!("ghp_{}", "1234567890abcdefghijklmnopqrstuv")
-}
-
+/// The rule set moved to `utilities::secret_scan`; both paths callers still
+/// import through must answer from it.
 #[test]
-fn rule_set_version_is_one() {
-    assert_eq!(RULE_SET_VERSION, 1);
-}
-
-#[test]
-fn scan_detects_aws_access_key_example() {
+fn the_re_exported_scan_still_answers_from_the_shared_rule_set() {
     let body = format!("export AWS_ACCESS_KEY_ID={}", aws_example_key());
     assert_eq!(scan(&body).as_deref(), Some("aws-access-key-id"));
     assert_eq!(scan_reexport(&body).as_deref(), Some("aws-access-key-id"));
-}
-
-#[test]
-fn scan_detects_github_pat_example() {
-    let body = format!("token={}", github_pat_example());
-    assert_eq!(scan(&body).as_deref(), Some("github-token"));
-}
-
-#[test]
-fn scan_clean_body_returns_none() {
-    assert!(scan("nothing sensitive here").is_none());
-}
-
-#[test]
-fn findings_aggregate_counts() {
-    let body = format!(
-        "a={} b={} c={}",
-        aws_example_key(),
-        aws_example_key(),
-        github_pat_example()
-    );
-    let f = findings(&body);
-    let aws = f.iter().find(|x| x.rule == "aws-access-key-id").unwrap();
-    assert_eq!(aws.count, 2);
-    let gh = f.iter().find(|x| x.rule == "github-token").unwrap();
-    assert_eq!(gh.count, 1);
-}
-
-#[test]
-fn redact_strips_secret_and_attests() {
-    let key = aws_example_key();
-    let body = format!("key={key} ok");
-    let (out, f) = redact(&body);
-    assert!(!out.contains(&key));
-    assert!(out.contains("[REDACTED:aws-access-key-id]"));
-    let aws = f.iter().find(|x| x.rule == "aws-access-key-id").unwrap();
-    assert_eq!(aws.count, 1);
-}
-
-#[test]
-fn redact_clean_body_has_empty_findings() {
-    let (out, f) = redact("nothing sensitive here");
-    assert_eq!(out, "nothing sensitive here");
-    assert!(f.is_empty());
-}
-
-#[test]
-fn redact_multiple_rules() {
-    let body = format!("a={} b={}", aws_example_key(), github_pat_example());
-    let (out, f) = redact(&body);
-    assert!(out.contains("[REDACTED:aws-access-key-id]"));
-    assert!(out.contains("[REDACTED:github-token]"));
-    assert!(!out.contains(&aws_example_key()));
-    assert!(!out.contains(&github_pat_example()));
-    assert_eq!(f.len(), 2);
-    assert_eq!(
-        f.iter()
-            .find(|x| x.rule == "aws-access-key-id")
-            .unwrap()
-            .count,
-        1
-    );
-    assert_eq!(
-        f.iter().find(|x| x.rule == "github-token").unwrap().count,
-        1
-    );
 }
 
 #[test]

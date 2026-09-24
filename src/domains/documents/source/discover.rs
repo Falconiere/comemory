@@ -29,6 +29,22 @@ pub struct Candidate {
     pub classification: Classification,
 }
 
+/// What one discovery walk saw, and whether it saw all of it.
+#[derive(Debug)]
+pub struct Discovery {
+    /// Every candidate found, sorted by `relative_path`.
+    pub candidates: Vec<Candidate>,
+    /// `false` when at least one entry could not be read.
+    ///
+    /// This is the difference between "the file is gone" and "this walk could
+    /// not see it". A skipped entry makes the candidate list SHORT, and a
+    /// short list read as authoritative tombstones files that still exist —
+    /// locally that self-heals on the next scan, but a replicated deletion
+    /// does not, so the caller must not reconcile absences from an incomplete
+    /// walk.
+    pub complete: bool,
+}
+
 /// Discover candidate files under `root` (a source root's already
 /// canonicalized path), excluding anything under `memories_dir` —
 /// Comemory's own managed directory (rule 3). `SourceKind::File` yields
@@ -39,14 +55,21 @@ pub struct Candidate {
 /// `.gitignore`, hidden-file defaults, and `.comemoryignore` (rule 2)
 /// alongside the memories-dir prune. Sorted by `relative_path` for
 /// determinism; a walk or read failure on one entry is skipped rather
-/// than failing the whole discovery.
-pub fn discover(root: &Path, kind: SourceKind, memories_dir: &Path) -> Vec<Candidate> {
+/// than failing the whole discovery, and reported through
+/// [`Discovery::complete`].
+pub fn discover(root: &Path, kind: SourceKind, memories_dir: &Path) -> Discovery {
     if kind == SourceKind::File {
-        return vec![single_file_candidate(root, memories_dir)];
+        return Discovery {
+            candidates: vec![single_file_candidate(root, memories_dir)],
+            complete: true,
+        };
     }
-    let mut found = walk_dir(root, memories_dir);
-    found.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
-    found
+    let (mut candidates, complete) = walk_dir(root, memories_dir);
+    candidates.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Discovery {
+        candidates,
+        complete,
+    }
 }
 
 /// Build the one [`Candidate`] a single-file source yields.
@@ -70,8 +93,14 @@ fn single_file_candidate(root: &Path, memories_dir: &Path) -> Candidate {
 /// (rule 2) plus a `memories_dir` prune (rule 3), never following
 /// directory symlinks. A plain file is classified directly; a symlinked
 /// file is accepted only when [`resolve_symlink_file`] confirms its
-/// target stays in-boundary. Unreadable walk entries are skipped.
-fn walk_dir(root: &Path, memories_dir: &Path) -> Vec<Candidate> {
+/// target stays in-boundary.
+///
+/// Returns the candidates plus whether every entry was readable. An
+/// unreadable entry is still skipped rather than failing the walk — a
+/// permission-denied subdirectory must not stop the rest of a source being
+/// indexed — but the caller is told, because absences can no longer be
+/// trusted.
+fn walk_dir(root: &Path, memories_dir: &Path) -> (Vec<Candidate>, bool) {
     let mut walker = WalkBuilder::new(root);
     walker.standard_filters(true);
     walker.follow_links(false);
@@ -80,13 +109,18 @@ fn walk_dir(root: &Path, memories_dir: &Path) -> Vec<Candidate> {
     walker.filter_entry(move |entry| !entry.path().starts_with(&pruned));
 
     let mut out = Vec::new();
-    for entry in walker.build().filter_map(|r| match r {
-        Ok(e) => Some(e),
-        Err(e) => {
-            tracing::warn!(error = %e, "discover: walk entry error; skipping");
-            None
+    let mut complete = true;
+    let mut entries = Vec::new();
+    for result in walker.build() {
+        match result {
+            Ok(e) => entries.push(e),
+            Err(e) => {
+                tracing::warn!(error = %e, "discover: walk entry error; skipping");
+                complete = false;
+            }
         }
-    }) {
+    }
+    for entry in entries {
         let path = entry.path();
         if entry.path_is_symlink() {
             if let Some(target) = resolve_symlink_file(path, root) {
@@ -98,7 +132,7 @@ fn walk_dir(root: &Path, memories_dir: &Path) -> Vec<Candidate> {
             out.push(candidate_of(root, path, path));
         }
     }
-    out
+    (out, complete)
 }
 
 /// Resolve a symlink at `path` to its canonical target, accepting it

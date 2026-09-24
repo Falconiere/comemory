@@ -10,6 +10,9 @@ use super::schema_code_generation::{
     CodeGeneration, RemoteCodeEdge, RemoteCodeFile, RemoteCodeSymbol,
 };
 use super::schema_core::{EdgeFts, SchemaMeta};
+use super::schema_document_revision::{
+    DocumentShare, RemoteDocument, RemoteDocumentChunk, RemoteDocumentFts, RemoteDocumentLink,
+};
 use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFiles, SourceRoots};
 use super::schema_graph::{CodeRef, Edges};
 use super::schema_history::{ActivityLog, EvalRuns, GcRuns, IndexFailures, IndexRuns};
@@ -25,7 +28,7 @@ use super::schema_replica::{
     ReplicaCursor, ReplicaFeed, ReplicaOperation, ReplicaPayload, ReplicaReceipt, ReplicaRevision,
     ReplicaStagedPart, ReplicaStream,
 };
-use super::schema_sync::{SyncBinding, SyncLog, SyncState};
+use super::schema_sync::{RepositoryApproval, SyncBinding, SyncLog, SyncState};
 
 /// Every table `registry()` declares, by name, sorted. The fidelity test
 /// asserts the registry equals this list, so adding a struct without
@@ -44,6 +47,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "code_vec",
     "document_chunks",
     "document_fts",
+    "document_share",
     "documents",
     "edge_fts",
     "edges",
@@ -65,6 +69,10 @@ pub const DECLARED_TABLES: &[&str] = &[
     "remote_code_edge",
     "remote_code_file",
     "remote_code_symbol",
+    "remote_document",
+    "remote_document_chunk",
+    "remote_document_fts",
+    "remote_document_link",
     "replica_cursor",
     "replica_feed",
     "replica_operation",
@@ -74,6 +82,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "replica_staged_part",
     "replica_stream",
     "repo_marker",
+    "repository_approval",
     "retrieval_log",
     "schema_meta",
     "source_files",
@@ -102,6 +111,7 @@ pub fn registry() -> SchemaRegistry {
         CodeVec::table_def(),
         DocumentChunks::table_def(),
         DocumentFts::table_def(),
+        DocumentShare::table_def(),
         Documents::table_def(),
         EdgeFts::table_def(),
         Edges::table_def(),
@@ -123,6 +133,10 @@ pub fn registry() -> SchemaRegistry {
         RemoteCodeEdge::table_def(),
         RemoteCodeFile::table_def(),
         RemoteCodeSymbol::table_def(),
+        RemoteDocument::table_def(),
+        RemoteDocumentChunk::table_def(),
+        RemoteDocumentFts::table_def(),
+        RemoteDocumentLink::table_def(),
         ReplicaCursor::table_def(),
         ReplicaFeed::table_def(),
         ReplicaOperation::table_def(),
@@ -132,6 +146,7 @@ pub fn registry() -> SchemaRegistry {
         ReplicaStagedPart::table_def(),
         ReplicaStream::table_def(),
         RepoMarker::table_def(),
+        RepositoryApproval::table_def(),
         RetrievalLog::table_def(),
         SchemaMeta::table_def(),
         SourceFiles::table_def(),

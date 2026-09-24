@@ -415,3 +415,207 @@ fn a_rebuild_replays_every_memory_and_adds_no_feed_position() {
          so it leaves none behind"
     );
 }
+
+// ---------------------------------------------------------------------------
+// AC-11: a rebuild carries what no local file could re-derive. Listing a table
+// in `COPIED_TABLES` satisfies the coverage test and copies nothing on its
+// own, so these assert the rows themselves.
+//
+// The local half is registered through the real `index::run`, which writes
+// `sources.toml`: `source_roots` is RECONSTRUCTED from that file before the
+// copy runs, and `source_files.source_id` references it, so a fixture that
+// seeded those rows directly would make the copy fail on the missing parent
+// rather than prove anything.
+// ---------------------------------------------------------------------------
+
+const SHARE_REPO: &str = "Falconiere/comemory";
+const SHARE_AT: &str = "2026-09-23T10:00:00Z";
+const SHARED_PATH: &str = "docs/guides/cloud-sync.md";
+
+/// Index this repository's own `docs/guides` into `home` under `SHARE_REPO`,
+/// approved and rooted, so the run really shares what it indexes.
+fn index_real_guides(home: &TempDir) -> TempDir {
+    let workspace = tempdir().expect("workspace");
+    let docs = workspace.path().join("docs").join("guides");
+    std::fs::create_dir_all(&docs).expect("mkdir");
+    for name in ["http-api.md", "replication-e2e.md"] {
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("docs/guides")
+                .join(name),
+            docs.join(name),
+        )
+        .expect("copy real guide");
+    }
+    {
+        let conn = open_db_with_vec(home);
+        comemory::store::repository_approval::replace_all(
+            &conn,
+            &[(SHARE_REPO.to_string(), SHARE_REPO.to_string())],
+            SHARE_AT,
+        )
+        .expect("approve");
+        let root = std::fs::canonicalize(workspace.path()).expect("canonicalize");
+        conn.execute(
+            "INSERT INTO repo_marker (repo, root_path) VALUES (?1, ?2)",
+            rusqlite::params![SHARE_REPO, root.to_str().expect("utf8")],
+        )
+        .expect("record the root");
+    }
+    let paths = Paths::new(home.path());
+    let cfg = Config::defaults();
+    let mut conn = open_db_with_vec(home);
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let output = comemory::domains::documents::index::run(
+        &mut ctx,
+        comemory::domains::documents::index::Request {
+            path: vec![docs.to_str().expect("utf8 path").to_string()],
+            repo: Some(SHARE_REPO.to_string()),
+            strict: false,
+        },
+    )
+    .expect("index the real guides");
+    assert_eq!(output.sources[0].indexed, 2, "{output:?}");
+    workspace
+}
+
+/// Put a real pulled revision of a document this machine has NO file for.
+fn hold_pulled_revision(home: &TempDir) -> String {
+    use comemory::domains::documents::document::DocumentFormat;
+    use comemory::domains::documents::document::extract::extract;
+    use comemory::store::remote_document::{self, Chunk, Link, Revision};
+
+    let conn = open_db_with_vec(home);
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(SHARED_PATH);
+    let bytes = std::fs::read(&file).expect("read the real guide");
+    let doc = extract(DocumentFormat::Markdown, &bytes, "doc").expect("real extraction");
+    let shared_id = comemory::domains::documents::share::shared_id(SHARE_REPO, SHARED_PATH);
+    let revision = Revision {
+        repo: SHARE_REPO.to_string(),
+        shared_id: shared_id.clone(),
+        path: SHARED_PATH.to_string(),
+        title: doc.title.clone(),
+        format: "markdown".to_string(),
+        revision_hash: "a".repeat(64),
+        chunk_count: doc.chunks.len() as i64,
+    };
+    let chunks: Vec<Chunk> = doc
+        .chunks
+        .iter()
+        .map(|c| Chunk {
+            ordinal: c.ordinal as i64,
+            heading_path: c.heading_path.join(" > "),
+            char_range: (c.char_range.0 as i64, c.char_range.1 as i64),
+            line_range: (c.line_range.0 as i64, c.line_range.1 as i64),
+            simhash: c.simhash as i64,
+            text: c.text.clone(),
+        })
+        .collect();
+    remote_document::replace_revision(
+        &conn,
+        &revision,
+        &chunks,
+        &[Link {
+            ordinal: 0,
+            target: "docs/guides/http-api.md".to_string(),
+        }],
+        SHARE_AT,
+    )
+    .expect("hold a pulled revision");
+    shared_id
+}
+
+/// The six counts a rebuild must preserve.
+fn shared_counts(home: &TempDir) -> [i64; 6] {
+    let conn = open_db_with_vec(home);
+    [
+        count(&conn, "SELECT COUNT(*) FROM remote_document"),
+        count(&conn, "SELECT COUNT(*) FROM remote_document_chunk"),
+        count(&conn, "SELECT COUNT(*) FROM remote_document_link"),
+        count(&conn, "SELECT COUNT(*) FROM remote_document_fts"),
+        count(&conn, "SELECT COUNT(*) FROM document_share"),
+        count(&conn, "SELECT COUNT(*) FROM repository_approval"),
+    ]
+}
+
+#[test]
+fn a_rebuild_keeps_every_pulled_revision_and_share_mapping() {
+    let home = tempdir().expect("tempdir");
+    run_save(
+        &home,
+        &[
+            "--kind",
+            "note",
+            "a memory so the replay has something to do",
+        ],
+    );
+    let _workspace = index_real_guides(&home);
+    let shared_id = hold_pulled_revision(&home);
+    let before = shared_counts(&home);
+    assert!(
+        before.iter().all(|n| *n > 0),
+        "the fixture really seeded the state a rebuild must carry: {before:?}"
+    );
+
+    run_rebuild_api(&home).expect("rebuild");
+
+    assert_eq!(
+        shared_counts(&home),
+        before,
+        "nothing on this disk could re-derive a peer's revision, or what a \
+         local document is called upstream, so a rebuild carries every row"
+    );
+    let conn = open_db_with_vec(&home);
+    let held = comemory::store::remote_document::revision(&conn, SHARE_REPO, &shared_id)
+        .expect("read")
+        .expect("the revision survived");
+    assert_eq!(held.path, SHARED_PATH);
+    assert_eq!(held.revision_hash, "a".repeat(64));
+    assert_eq!(
+        comemory::store::repository_approval::canonical_for(&conn, SHARE_REPO)
+            .expect("read")
+            .as_deref(),
+        Some(SHARE_REPO),
+        "the approval map too, or every document would be withheld until the \
+         next policy load"
+    );
+    assert_eq!(
+        count(&conn, "SELECT COUNT(*) FROM source_roots"),
+        1,
+        "and `source_roots` is still reconstructed from sources.toml, not copied"
+    );
+}
+
+#[test]
+fn every_share_mapping_a_rebuild_keeps_still_names_a_document() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "a memory"]);
+    let _workspace = index_real_guides(&home);
+    let before = count(
+        &open_db_with_vec(&home),
+        "SELECT COUNT(*) FROM document_share",
+    );
+    assert!(before > 0, "the index run shared what it indexed");
+
+    run_rebuild_api(&home).expect("rebuild");
+
+    let conn = open_db_with_vec(&home);
+    assert_eq!(
+        count(&conn, "SELECT COUNT(*) FROM document_share"),
+        before,
+        "the mappings survive with the documents they name"
+    );
+    // `document_share.document_id` is a foreign key, so a mapping naming a
+    // document the copy did not carry would have aborted the rebuild rather
+    // than reaching this assertion. Checking the join anyway states the
+    // invariant the copy's narrowing exists to keep.
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM document_share s \
+              WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = s.document_id)",
+        ),
+        0,
+        "no mapping is left naming a document that does not exist"
+    );
+}

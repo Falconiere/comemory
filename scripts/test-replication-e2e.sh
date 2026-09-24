@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents)
 
 case_name=""
 platform_root=""
@@ -137,6 +137,19 @@ run_code() {
   log_ok "replication" "code generation suite passed"
 }
 
+# The document surface (#253): one portable identity two checkouts agree on,
+# a rename journalled old-path-first, an import that touches no local row and
+# writes no file, a machine with no registration answering from what it pulled,
+# and a revoked repository going quiet. Real spawned engines and the real CLI
+# over temp copies of this repository's own docs/, in-repo like the code case.
+run_documents() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_documents --test replica_documents_2
+  )
+  log_ok "replication" "document revision suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -221,5 +234,6 @@ case "$case_name" in
   contract) run_contract ;;
   memories) run_memories ;;
   code) run_code ;;
+  documents) run_documents ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

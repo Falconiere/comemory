@@ -283,6 +283,32 @@ See [The HTTP API](http-api.md) § Cloud sync. `auth` and `sync` themselves are
 2. Have organization members run `comemory auth login`. That is the whole
    client-side rollout.
 
+## Documents a repository shares
+
+A document is replicated under a name that does not depend on where the file
+sits: the digest of the canonical repository and the document's
+repository-relative path. Two machines that indexed the same file from two
+checkouts therefore agree on it, and no path of yours crosses the wire — what is
+sent is the extracted text, its passages and its links, never the original file.
+
+Sharing is off unless three things are true: the source was registered with
+`--repo`, a policy load has approved that repository, and the repository has an
+indexed root on this machine (`comemory index-code`). `comemory sources` names
+which one is missing rather than leaving you to guess, and a document that is
+not shared is still indexed and searchable here.
+
+A revision whose text, title, headings or links match a redaction rule is
+withheld **whole** — shared entirely or not at all — and `comemory sources`
+reports the rule that stopped it.
+
+A machine that pulled a document can search it with no registration and no file:
+`comemory search --only document --json` marks those hits with `shared_from` and
+`revision`, because there is nothing local to open. When both machines hold the
+same document, search returns it once, from the local copy. Revoking a
+repository's approval stops its pulled revisions answering immediately and
+reapproving resumes them, with no re-indexing either way. The full contract is
+[document revision replication](../designs/2026-09-23-document-revision-replication.md).
+
 ## What replicates, and what does not
 
 Every write that changes a memory a peer can observe produces exactly one

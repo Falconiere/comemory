@@ -63,6 +63,9 @@ pub mod connection;
 pub mod doctor_probes;
 /// `document_fts` insert/delete helpers + the BM25 MATCH query leg.
 pub mod document_fts;
+/// `document_share` row CRUD — what a local document is called upstream,
+/// and why it is withheld when it is.
+pub mod document_share;
 /// `documents` + `document_chunks` row CRUD.
 pub mod documents;
 /// FTS5 triplet index over `edges` (rendering + refresh + lexical ladder).
@@ -152,6 +155,12 @@ pub mod remote_code;
 /// Repo-scoped reads over the ACTIVE pulled generation: which repos a peer
 /// shared, and what the shared side contributes to the code graph.
 pub mod remote_code_view;
+/// The pulled document cache: the revision of a shared document this machine
+/// holds, its passages, its links and its own FTS index.
+pub mod remote_document;
+/// The shared half of document search, and the reads a pulled hit resolves
+/// through.
+pub mod remote_document_view;
 /// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
 pub mod replica_cursor;
 /// `replica-v1` journal writes: the payload row, the feed append and the
@@ -182,6 +191,9 @@ pub mod repo_marker_roots;
 /// The `repo_marker` join behind `comemory repos`: one row per indexed repo
 /// plus its per-repo file/symbol/memory counters.
 pub mod repos_inventory;
+/// The label to canonical-repository map the last policy load resolved, so an
+/// offline run can tell whether a repository is approved.
+pub mod repository_approval;
 /// `retrieval_log` reads — the raw `returned_ids` window query behind the
 /// search→edit lookback, plus the `(query_id, query, at)` scan behind
 /// `eval::mine`.
@@ -196,6 +208,9 @@ pub mod schema_code;
 pub mod schema_code_generation;
 /// Declared tables no domain owns: `schema_meta`, `edge_fts`.
 pub mod schema_core;
+/// Declared document-replication tables: the `remote_document*` pulled
+/// revision cache and the `document_share` local-to-portable mapping.
+pub mod schema_document_revision;
 /// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod schema_documents;
 /// Declared graph tables: `edges`, `code_ref`.

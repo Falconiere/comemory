@@ -115,3 +115,28 @@ echo '{"embedding":[...]}' | comemory search "knn dim guard" --vector-stdin --js
   `score_parts`); the CSV parser is the shared `utilities::embedding_input` path.
 - **Covered by:** `tests/cli__search_legs.rs::a_hybrid_search_reports_both_legs` (stdin twin),
   `tests/cli__save.rs::save_with_vector_csv_flag_writes_memory_vec_row` (CSV parser)
+
+### search-10 A document a peer shared
+
+The document leg reads two indexes: documents indexed from files here, and
+revisions pulled from a peer. A document both sides hold is returned ONCE, from
+the local row — the copy with a file behind it. A pulled revision is returned
+with where it came from, because there is no file on this machine to open.
+
+The limit applies to the union, not to each side, so how much a peer has shared
+cannot change how many local hits come back.
+
+A pulled revision only answers while its repository is approved: revoking the
+approval stops it immediately and reapproving resumes it, with no re-indexing
+either way, because the text never moved.
+
+- **Flags:** `--only document --json`
+- **Setup:** a pulled revision of a repository document, its repository approved
+- **Command:** `comemory search QUERY --only document --json`
+- **Expect:** the hit carries `shared_from: <owner/name>` and `revision: <hash>`,
+  and its `citation.path` is repository-relative. A locally indexed document has
+  both fields `null`. TTY appends `shared from <owner/name>` to the hit line.
+- **Covered by:**
+  `src/domains/retrieval/tests/doc_route.rs::a_pulled_revision_is_returned_with_its_provenance`,
+  `::a_document_held_on_both_sides_is_returned_once_from_the_local_row`, and
+  `src/store/tests/remote_document_view.rs::k_bounds_the_union_rather_than_each_half`

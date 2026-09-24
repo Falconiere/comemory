@@ -144,6 +144,12 @@
       "name": "0024_code_generation.sql",
       "hash": "sha256:03a5cfb1dc92bb4c33225e8b715fbaea4e6a9d6eef4418f257ce96238b0cdaa8",
       "created_at": 1790113093
+    },
+    {
+      "idx": 24,
+      "name": "0025_document_revision.sql",
+      "hash": "sha256:04547cb3d562b8604cfdf26bec6b92c1646cdd2709d84c36cfe31515dea35ba1",
+      "created_at": 1790197365
     }
   ]
 }
