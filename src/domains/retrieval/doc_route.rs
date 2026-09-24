@@ -56,7 +56,9 @@ pub struct DocHit {
     /// The winning chunk's raw passage text — the result's snippet.
     pub snippet: String,
     /// 1-based position of this document within the leg's own BM25
-    /// ordering (score desc, document id tie-break).
+    /// ordering (score desc, then id ascending — the local `documents.id` or
+    /// the `shared_id`, whichever this hit carries, so the tie-break does not
+    /// depend on which index answered).
     pub bm25_rank: usize,
 }
 
@@ -85,7 +87,7 @@ pub fn route_documents(
     winners.sort_by(|a, b| {
         b.score
             .total_cmp(&a.score)
-            .then_with(|| source_key(&a.source).cmp(&source_key(&b.source)))
+            .then_with(|| source_id(&a.source).cmp(source_id(&b.source)))
     });
     let mut out = Vec::with_capacity(winners.len());
     for (rank, hit) in winners.into_iter().enumerate() {
@@ -154,10 +156,23 @@ fn wins(candidate: &DocumentFtsHit, incumbent: &DocumentFtsHit) -> bool {
 }
 
 /// One document's identity within its own index — what coalescing groups by.
+///
+/// The side is part of the GROUPING key because the two id spaces are
+/// independent, but it is deliberately not part of the ORDERING key: prefixing
+/// it would sort every local hit before every shared one at equal scores,
+/// which is not the tie-break [`DocHit::bm25_rank`] documents.
 fn source_key(source: &HitSource) -> String {
     match source {
         HitSource::Local(document_id) => format!("local:{document_id}"),
         HitSource::Shared { repo, shared_id } => format!("shared:{repo}:{shared_id}"),
+    }
+}
+
+/// The bare id a hit carries, which is what an equal-score tie breaks on.
+fn source_id(source: &HitSource) -> &str {
+    match source {
+        HitSource::Local(document_id) => document_id,
+        HitSource::Shared { shared_id, .. } => shared_id,
     }
 }
 

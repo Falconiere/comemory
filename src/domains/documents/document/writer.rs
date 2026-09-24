@@ -341,9 +341,10 @@ fn file_stem_of(relative_path: &str) -> String {
 
 /// Current wall-clock time as the RFC3339/ISO8601 string every
 /// `created_at`/`updated_at` column stores (`store::memory_row`'s
-/// house format). `pub(super)` so [`super::fingerprint::upsert_stat`]
-/// shares this one house-format implementation rather than its own.
-pub(crate) fn iso_now() -> Result<String> {
+/// house format). `pub(super)` so [`super::fingerprint::upsert_stat`] and
+/// [`super::deletions`] — both siblings inside `document` — share this one
+/// house-format implementation rather than each having its own.
+pub(super) fn iso_now() -> Result<String> {
     iso_format(OffsetDateTime::now_utc())
 }
 

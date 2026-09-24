@@ -413,11 +413,21 @@ fn a_pulled_revision_is_returned_with_its_provenance() {
 fn a_document_held_on_both_sides_is_returned_once_from_the_local_row() {
     let tmp = TempDir::new().expect("tempdir");
     let mut conn = open_db(&tmp);
-    // Index the fixture locally, then map it onto the shared name a peer uses.
-    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
-    let UpdateOutcome::Indexed { document_id } =
-        index(&mut conn, &path, "guide.md", DocumentFormat::Markdown, None)
-    else {
+    // The SAME real guide on both sides: indexed from a file here, and held as
+    // a peer's revision. Indexing a different document would leave the local
+    // half not matching the query at all, and "returned once" would be true of
+    // an empty result.
+    let real =
+        std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/guides/cloud-sync.md"))
+            .expect("read the real guide");
+    let path = write_fixture(&tmp, "cloud-sync.md", &real);
+    let UpdateOutcome::Indexed { document_id } = index(
+        &mut conn,
+        &path,
+        "cloud-sync.md",
+        DocumentFormat::Markdown,
+        None,
+    ) else {
         panic!("expected Indexed")
     };
     let shared_id = hold_shared(&conn, "docs/guides/cloud-sync.md", &"e".repeat(64));
@@ -436,6 +446,11 @@ fn a_document_held_on_both_sides_is_returned_once_from_the_local_row() {
 
     let hits = route_documents(&conn, SHARED_TERM, Filters::none(), &[], K).expect("route");
 
+    assert!(
+        hits.iter().any(|h| h.document_id == document_id),
+        "the LOCAL document must answer, or the assertions below pass over an \
+         empty result: {hits:?}"
+    );
     assert_eq!(
         hits.iter().filter(|h| h.document_id == shared_id).count(),
         0,
