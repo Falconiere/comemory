@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-09-24
+
+### Added
+
+- keep every hooked repo indexed and synced from any cwd ([#292](https://github.com/Falconiere/comemory/pull/292))
+- replicate document revisions under a portable identity ([#289](https://github.com/Falconiere/comemory/pull/289))
+
 ## [0.46.0] - 2026-09-23
 
 ### Added
