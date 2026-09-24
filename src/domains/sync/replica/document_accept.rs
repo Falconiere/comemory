@@ -121,7 +121,10 @@ fn write_revision(tx: &Connection, payload: &DocumentRevisionV1, at: &str) -> Re
 }
 
 /// Record the acceptance receipt and the answer the sender reads back.
-fn accept(
+///
+/// Shared with [`super::event_accept`]: every kind whose whole state is rows
+/// owes the same receipt, in the transaction that wrote those rows.
+pub(super) fn accept(
     tx: &Connection,
     operation: &Operation,
     epoch: &str,

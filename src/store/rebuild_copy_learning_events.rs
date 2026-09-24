@@ -25,10 +25,22 @@ pub(crate) fn copy_event_and_mined_tables(conn: &Connection) -> Result<()> {
         } else {
             "'manual'"
         };
+        // The v26 identity and origin columns: `NULL` from an older source,
+        // which is what the migration leaves in every pre-existing row.
+        let mut shared = Vec::new();
+        for column in ["event_id", "device", "surface", "actor"] {
+            shared.push(if old_column_exists(conn, "feedback_events", column)? {
+                column
+            } else {
+                "NULL"
+            });
+        }
+        let shared = shared.join(", ");
         conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.feedback_events(\
-                 id, query_id, memory_id, verdict, at, target_kind, provenance) \
-             SELECT id, query_id, memory_id, verdict, at, {target_expr}, {prov_expr} \
+                 id, query_id, memory_id, verdict, at, target_kind, provenance, \
+                 event_id, device, surface, actor) \
+             SELECT id, query_id, memory_id, verdict, at, {target_expr}, {prov_expr}, {shared} \
              FROM old.feedback_events;"
         ))?;
     }

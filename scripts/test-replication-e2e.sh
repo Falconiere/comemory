@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events)
 
 case_name=""
 platform_root=""
@@ -150,6 +150,20 @@ run_documents() {
   log_ok "replication" "document revision suite passed"
 }
 
+# The event surface (#254): verdicts and activity runs with stable ids and
+# their provenance, counted exactly once through replays, echoes, an induced
+# fault and a kill, retention and purge reaching the journal, and the text
+# policy on what may leave. Real spawned engines, the real CLI and real HTTP,
+# in-repo like the documents case.
+run_events() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_events --test replica_events_2 \
+      --test replica_events_3
+  )
+  log_ok "replication" "feedback and activity event suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -235,5 +249,6 @@ case "$case_name" in
   memories) run_memories ;;
   code) run_code ;;
   documents) run_documents ;;
+  events) run_events ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

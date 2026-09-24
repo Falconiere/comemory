@@ -20,6 +20,9 @@ pub enum PayloadState {
     Absent,
     /// The bytes were permanently erased; the digest remains as the barrier.
     Erased,
+    /// Retention removed the bytes; the digest remains, so the position still
+    /// deduplicates a later offer of the same event (#254).
+    Expired,
 }
 
 /// One accepted position on the wire.

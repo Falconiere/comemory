@@ -7,11 +7,11 @@
 use rusqlite::Connection;
 use toolu_orm::core::query_column::{CommonOps, NumericOps};
 
+use super::orm;
 use super::schema_replica::{
     ReplicaFeed, ReplicaRevision, replica_feed as feed_col, replica_payload as payload_col,
     replica_revision as revision_col,
 };
-use super::{orm, schema_replica};
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 
@@ -32,16 +32,48 @@ pub struct FeedRow {
     pub payload_digest: Option<String>,
     /// Payload schema version.
     pub schema_version: i64,
-    /// Canonical payload bytes; `None` for a tombstone or an erased payload.
+    /// Canonical payload bytes; `None` for a tombstone or a redacted payload.
     pub payload: Option<String>,
-    /// `true` when the payload row exists but its bytes were erased.
-    pub payload_erased: bool,
+    /// Why the payload row has no bytes, when it has none.
+    pub redaction: Option<Redaction>,
     /// Local or imported.
     pub origin: ReplicaOrigin,
     /// Canonical repository, when the entity has one.
     pub repository: Option<String>,
     /// RFC3339 provenance time.
     pub at: String,
+}
+
+/// Why a payload's bytes are gone. The digest — and with it the barrier —
+/// stays either way; the two differ in what a replay is told.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Redaction {
+    /// Permanently erased (a purge). A replay answers `payload_erased`.
+    Erased,
+    /// Past retention. A replay answers `payload_expired`.
+    Expired,
+}
+
+impl Redaction {
+    /// The stored `replica_payload.redaction` literal.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Erased => "erased",
+            Self::Expired => "expired",
+        }
+    }
+
+    /// Read a row's redaction state. A row redacted before v26 has
+    /// `redacted_at` and no kind, and reads as erased — the only redaction
+    /// that existed then.
+    pub(super) fn of(redacted_at: Option<&str>, kind: Option<&str>) -> Option<Self> {
+        redacted_at?;
+        Some(match kind {
+            Some("expired") => Self::Expired,
+            _ => Self::Erased,
+        })
+    }
 }
 
 /// The current state of one entity.
@@ -82,6 +114,7 @@ pub fn page(
         .column_expr(&feed_col::schema_version.qualified(), "schema_version")
         .column_expr(&payload_col::bytes.qualified(), "payload")
         .column_expr(&payload_col::redacted_at.qualified(), "redacted_at")
+        .column_expr(&payload_col::redaction.qualified(), "redaction")
         .column_expr(&feed_col::origin.qualified(), "origin")
         .column_expr(&feed_col::repository.qualified(), "repository")
         .column_expr(&feed_col::at.qualified(), "at")
@@ -106,9 +139,10 @@ pub fn page(
             r.get::<_, i64>(6)?,
             r.get::<_, Option<String>>(7)?,
             r.get::<_, Option<String>>(8)?,
-            r.get::<_, String>(9)?,
-            r.get::<_, Option<String>>(10)?,
-            r.get::<_, String>(11)?,
+            r.get::<_, Option<String>>(9)?,
+            r.get::<_, String>(10)?,
+            r.get::<_, Option<String>>(11)?,
+            r.get::<_, String>(12)?,
         ))
     })?;
     rows.into_iter().map(decode_feed_row).collect()
@@ -216,25 +250,6 @@ pub fn kind_digests(conn: &Connection) -> Result<Vec<(String, Vec<String>)>> {
     Ok(grouped)
 }
 
-/// Whether retention has erased the bytes behind `digest`.
-///
-/// A narrow probe rather than a row read: acceptance only needs to know
-/// whether the barrier stands, and a feed page already carries the bytes.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn is_erased(conn: &Connection, digest: &str) -> Result<bool> {
-    let erased: i64 = orm::query_one(
-        conn,
-        schema_replica::ReplicaPayload::select()
-            .filter(payload_col::digest.eq(digest))
-            .filter(payload_col::redacted_at.is_not_null())
-            .to_count_sql(),
-        |r| r.get(0),
-    )?;
-    Ok(erased > 0)
-}
-
 /// Decode one raw feed tuple.
 type RawFeedRow = (
     i64,
@@ -244,6 +259,7 @@ type RawFeedRow = (
     String,
     Option<String>,
     i64,
+    Option<String>,
     Option<String>,
     Option<String>,
     String,
@@ -262,6 +278,7 @@ fn decode_feed_row(raw: RawFeedRow) -> Result<FeedRow> {
         schema_version,
         payload,
         redacted_at,
+        redaction,
         origin,
         repository,
         at,
@@ -275,7 +292,7 @@ fn decode_feed_row(raw: RawFeedRow) -> Result<FeedRow> {
         payload_digest,
         schema_version,
         payload,
-        payload_erased: redacted_at.is_some(),
+        redaction: Redaction::of(redacted_at.as_deref(), redaction.as_deref()),
         origin: ReplicaOrigin::parse(&origin)?,
         repository,
         at,

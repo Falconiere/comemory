@@ -224,6 +224,27 @@ resumable from any position because it is read from the journal.
 `POST /api/v1/sync/replica/activate` takes `{ protocol, staging_id, operation }`
 where the operation's `payload` is absent.
 
+### Event kinds (#254)
+
+Two kinds added after this contract shipped are immutable events rather than
+revisable entities: `feedback_event` (one verdict) and `activity_event` (one
+recorded command run), both `schema_version: 1`, keyed by a stable
+`ev-<32 hex>` event id. They differ from the kinds above in three ways, all
+additive to this wire:
+
+- Only `upsert` is valid; a `tombstone` or `restore` is `rejected_invalid`.
+- An event this engine already holds is answered, never applied again,
+  whatever `operation_id` carries it: the same bytes are `duplicate` with the
+  position it was first accepted at, different bytes are `rejected_conflict`.
+- Retention blanks an event's bytes as **expired** rather than erased.
+  `changes` reports `payload_state: "expired"`, a later offer of that digest is
+  `payload_expired`, and an event upsert that arrives with a digest and no
+  payload is `payload_expired` too — so a bootstrap walking expired history
+  advances instead of stalling.
+
+The full contract is
+[feedback and activity replication](2026-09-24-feedback-activity-replication.md).
+
 ### Route classes
 
 | Route | Class |

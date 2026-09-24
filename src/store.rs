@@ -20,6 +20,9 @@ pub use rusqlite::Transaction;
 pub mod activity;
 /// Per-command rollups over `activity_log`: runs, errors, p50/p95 duration.
 pub mod activity_rollups;
+/// The `activity_log` reads and writes sharing a run needs: the capture
+/// batch and event-id stamping.
+pub mod activity_share;
 /// `bandit_arms` row CRUD: seed/load/record-outcome behind `eval::bandit`.
 pub mod bandit_arms;
 /// Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`.
@@ -88,6 +91,9 @@ pub mod eval_runs;
 /// `feedback_events` inserts, plus the `eval::mine`/`eval::golden` reads over
 /// `feedback_events`.
 pub mod feedback;
+/// The `feedback_events` reads and writes sharing a verdict needs: event-id
+/// stamping, the legacy backfill walk, a purged memory's event ids.
+pub mod feedback_share;
 /// FTS5 insert/search helpers for the code leg.
 pub mod fts;
 /// Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded).
@@ -163,6 +169,8 @@ pub mod remote_document;
 pub mod remote_document_view;
 /// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
 pub mod replica_cursor;
+/// This database's device id — the origin every shared event carries.
+pub mod replica_device;
 /// `replica-v1` journal writes: the payload row, the feed append and the
 /// revision update one accepted mutation owes, in the caller's transaction.
 pub mod replica_journal;
@@ -175,6 +183,8 @@ pub mod replica_read;
 /// `replica_receipt` row CRUD — the decision written in the accept
 /// transaction and read back on a replay.
 pub mod replica_receipt;
+/// Retention expiry and purge erasure of shared events' journal copies.
+pub mod replica_redaction;
 /// `replica_staged_part` row CRUD — parts of an oversized revision and their
 /// assembly, invisible until activation.
 pub mod replica_staging;
@@ -232,6 +242,8 @@ pub mod schema_meta;
 /// `replica_feed`, `replica_revision`, `replica_operation`, `replica_receipt`,
 /// `replica_cursor`, `replica_staged_part`.
 pub mod schema_replica;
+/// Declared `replica_device`: the machine a database belongs to.
+pub mod schema_replica_device;
 /// Declared cloud-sync tables: `sync_state`, `sync_binding`.
 pub mod schema_sync;
 /// The ordered live-memory id scan journal seeding resumes from.

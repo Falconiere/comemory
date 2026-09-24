@@ -9,11 +9,12 @@
 
 use time::OffsetDateTime;
 
+use crate::domains::learning::feedback_share::{self, Caller, Judged, Recorded};
 use crate::domains::learning::telemetry::StatsDb;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::connection::write_transaction;
-use crate::store::feedback as store_feedback;
+use crate::store::feedback::{self as store_feedback, NewFeedbackEvent};
 use crate::store::memory_row;
 use crate::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
 
@@ -69,6 +70,9 @@ impl Source {
 /// `comemory feedback` / HTTP path is [`record_with_provenance`], which
 /// writes [`PROV_MANUAL`] or [`PROV_IMPLICIT`] through the same
 /// [`store_feedback::insert_event`].
+///
+/// A search→edit reward is journalled for sharing like a stated verdict; a
+/// co-activation reward is not (`replica_payload::SHAREABLE_PROVENANCE`).
 pub(crate) fn record_implicit_used(
     conn: &Connection,
     id: &str,
@@ -76,16 +80,62 @@ pub(crate) fn record_implicit_used(
     provenance: &str,
     query_id: &str,
 ) -> Result<()> {
-    store_feedback::insert_event(
+    write_one(
         conn,
-        query_id,
-        id,
-        "used",
-        at,
-        crate::utilities::telemetry::target::MEMORY,
-        provenance,
+        &Written {
+            query_id,
+            id,
+            verdict: "used",
+            at,
+            provenance,
+            caller: Caller::default(),
+        },
     )?;
     store_feedback::upsert_used(conn, id, at)?;
+    Ok(())
+}
+
+/// One memory-target verdict to write: its event row, then its journal
+/// position when it may be shared.
+struct Written<'a> {
+    query_id: &'a str,
+    id: &'a str,
+    verdict: &'a str,
+    at: &'a str,
+    provenance: &'a str,
+    caller: Caller<'a>,
+}
+
+/// Insert the event row and journal it, in the caller's transaction. The
+/// counter is the caller's step: a verdict's two halves differ by verdict.
+fn write_one(conn: &Connection, verdict: &Written<'_>) -> Result<()> {
+    let row_id = store_feedback::insert_event(
+        conn,
+        &NewFeedbackEvent {
+            query_id: verdict.query_id,
+            memory_id: verdict.id,
+            verdict: verdict.verdict,
+            at: verdict.at,
+            target_kind: crate::utilities::telemetry::target::MEMORY,
+            provenance: verdict.provenance,
+            surface: verdict.caller.surface,
+            actor: verdict.caller.actor,
+            device: None,
+            event_id: None,
+        },
+    )?;
+    feedback_share::journal(
+        conn,
+        &Recorded {
+            row_id,
+            query_id: verdict.query_id,
+            verdict: verdict.verdict,
+            at: verdict.at,
+            provenance: verdict.provenance,
+            caller: verdict.caller,
+            target: Judged::Memory(verdict.id),
+        },
+    )?;
     Ok(())
 }
 
@@ -115,7 +165,14 @@ pub fn record_with_provenance(
     provenance: &str,
 ) -> Result<()> {
     let tx = write_transaction(db.conn_mut())?;
-    write_with_provenance(&tx, query_id, used, irrelevant, provenance)?;
+    write_with_provenance(
+        &tx,
+        query_id,
+        used,
+        irrelevant,
+        provenance,
+        Caller::default(),
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -129,30 +186,46 @@ pub(crate) fn write_with_provenance(
     used: &[String],
     irrelevant: &[String],
     provenance: &str,
+    caller: Caller<'_>,
 ) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
-    write_verdict_group(conn, query_id, used, "used", &now, provenance)?;
-    write_verdict_group(conn, query_id, irrelevant, "irrelevant", &now, provenance)
+    let batch = Batch {
+        query_id,
+        now: &now,
+        provenance,
+        caller,
+    };
+    write_verdict_group(conn, &batch, used, "used")?;
+    write_verdict_group(conn, &batch, irrelevant, "irrelevant")
+}
+
+/// What every verdict of one call shares.
+struct Batch<'a> {
+    query_id: &'a str,
+    now: &'a str,
+    provenance: &'a str,
+    caller: Caller<'a>,
 }
 
 /// Write one verdict group in caller order, sharing the batch timestamp.
 fn write_verdict_group(
     conn: &Connection,
-    query_id: &str,
+    batch: &Batch<'_>,
     ids: &[String],
     verdict: &str,
-    now: &str,
-    provenance: &str,
 ) -> Result<()> {
+    let now = batch.now;
     for id in ids {
-        store_feedback::insert_event(
+        write_one(
             conn,
-            query_id,
-            id,
-            verdict,
-            now,
-            crate::utilities::telemetry::target::MEMORY,
-            provenance,
+            &Written {
+                query_id: batch.query_id,
+                id,
+                verdict,
+                at: now,
+                provenance: batch.provenance,
+                caller: batch.caller,
+            },
         )?;
         if verdict == "used" {
             store_feedback::upsert_used(conn, id, now)?;

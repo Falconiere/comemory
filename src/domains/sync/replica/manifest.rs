@@ -6,11 +6,12 @@
 
 use crate::domains::memories::replica_payload::MEMORY_PAYLOAD_VERSION;
 use crate::domains::sync::exchange::manifest::bucket_digests;
-use crate::domains::sync::replica::bootstrap;
+use crate::domains::sync::replica::bootstrap::{self, Progress};
 use crate::domains::sync::replica::contract::PROTOCOL;
 use crate::domains::sync::replica::contract_views::{
     BootstrapStatus, KindManifest, ManifestResponse,
 };
+use crate::domains::sync::replica::event_capture;
 use crate::prelude::*;
 use crate::store::replica_journal::stream_epoch;
 use crate::store::{needs_embedding, replica_read};
@@ -21,7 +22,7 @@ use crate::utilities::context::Ctx;
 /// # Errors
 /// Propagates SQLite failures.
 pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
-    let progress = bootstrap::advance(ctx)?;
+    let progress = merged(&bootstrap::advance(ctx)?, &event_capture::advance(ctx)?);
     let conn = ctx.conn()?;
     let stream = stream_epoch(conn)?;
     let head_sequence = replica_read::head(conn)?;
@@ -51,6 +52,23 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
         },
         needs_embedding: i64::try_from(needs_embedding::pending(conn)?.len()).unwrap_or(i64::MAX),
     })
+}
+
+/// One seeding state out of two walks, in the wire's three values: the memory
+/// bootstrap's own state until it completes, then `seeding` until the verdict
+/// backfill completes too. The capability waits for both.
+fn merged(memories: &Progress, verdicts: &Progress) -> Progress {
+    let state = if !memories.complete() {
+        memories.state.clone()
+    } else if verdicts.complete() {
+        bootstrap::STATE_COMPLETE.to_string()
+    } else {
+        "seeding".to_string()
+    };
+    Progress {
+        state,
+        through: memories.through.clone(),
+    }
 }
 
 #[cfg(test)]

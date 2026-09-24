@@ -1,8 +1,9 @@
 //! The run-history half of [`super::rebuild_copy`]'s preservation copy —
 //! `eval_runs` (v14, plus v15's `discarded` flag), `gc_runs` (v14),
 //! `index_runs` (v15), the v16 cloud-sync tables (`sync_log` / `sync_state` /
-//! `sync_binding`), the v22 `replica-v1` journal and the v23
-//! `memory_needs_embedding` backlog the journal's import path produces.
+//! `sync_binding`), the v22 `replica-v1` journal, the v23
+//! `memory_needs_embedding` backlog the journal's import path produces, the
+//! v26 `replica_device` identity, and the `activity_log` feed.
 //! History is exactly what markdown cannot reconstruct: a rebuild that
 //! dropped it would erase every recorded eval, gc, and index run (and
 //! re-offer every discarded knob proposal), would reset sync cursors /
@@ -81,9 +82,11 @@ const PRESERVED: &[(&str, &str)] = &[
         "memory_id, workspace_id, secret_override_rule, secret_override_at",
     ),
     ("replica_stream", "id, epoch, created_at"),
+    ("replica_device", "id, device_id, created_at"),
     (
         "replica_payload",
-        "digest, entity_kind, schema_version, bytes, byte_len, created_at, redacted_at",
+        "digest, entity_kind, schema_version, bytes, byte_len, created_at, redacted_at, \
+         redaction",
     ),
     (
         "replica_feed",
@@ -113,7 +116,21 @@ const PRESERVED: &[(&str, &str)] = &[
         "memory_needs_embedding",
         "memory_id, reason, model, dims, recorded_at",
     ),
+    // The activity feed was listed in `COPIED_TABLES` without ever having a
+    // pass, so every rebuild dropped it. Its event ids now matter too: an
+    // echoed event whose id a rebuild forgot would be counted again.
+    (
+        "activity_log",
+        "id, at, command, source, actor, repo, duration_ms, ok, error_code, summary, \
+         event_id, device",
+    ),
 ];
+
+/// Tables a rebuild replaces rather than merges: the fresh database minted its
+/// own row at migration time, and keeping it would hand every peer a new
+/// identity — a stream epoch their cursors do not belong to, or a device id
+/// the events this machine already shared do not carry.
+const REPLACED: &[&str] = &["replica_stream", "replica_device"];
 
 /// Tables whose copy is narrowed to memories the replay actually restored.
 ///
@@ -127,17 +144,26 @@ const MEMORY_SCOPED: &[&str] = &["memory_needs_embedding"];
 
 /// Copy one table's columns from the attached `old` database, if it has it.
 ///
-/// `replica_stream` is replaced rather than merged: the fresh database minted
-/// its own epoch at migration time, and keeping that one would tell every peer
-/// its cursor belongs to a stream that no longer exists. A [`MEMORY_SCOPED`]
-/// table is narrowed to the memories the replay restored.
+/// A [`REPLACED`] table's fresh row is dropped first. A [`MEMORY_SCOPED`]
+/// table is narrowed to the memories the replay restored. A column the source
+/// predates is carried as `NULL`, which is what the migration that added it
+/// leaves in every older row.
 fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
     if !old_table_exists(conn, table)? {
         return Ok(());
     }
-    if table == "replica_stream" {
-        conn.execute_batch("DELETE FROM main.replica_stream;")?;
+    if REPLACED.contains(&table) {
+        conn.execute_batch(&format!("DELETE FROM main.{table};"))?;
     }
+    let mut selected = Vec::new();
+    for column in columns.split(',').map(str::trim) {
+        selected.push(if old_column_exists(conn, table, column)? {
+            column
+        } else {
+            "NULL"
+        });
+    }
+    let selected = selected.join(", ");
     let scope = if MEMORY_SCOPED.contains(&table) {
         " WHERE memory_id IN (SELECT id FROM main.memories)"
     } else {
@@ -145,7 +171,7 @@ fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
     };
     conn.execute_batch(&format!(
         "INSERT OR IGNORE INTO main.{table}({columns}) \
-         SELECT {columns} FROM old.{table}{scope};"
+         SELECT {selected} FROM old.{table}{scope};"
     ))?;
     Ok(())
 }

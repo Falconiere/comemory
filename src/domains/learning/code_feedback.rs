@@ -30,12 +30,14 @@
 
 use time::OffsetDateTime;
 
+use crate::domains::learning::feedback_share::{self, Caller, Judged, Recorded};
 use crate::domains::learning::telemetry::StatsDb;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::code_feedback as store_code_feedback;
 use crate::store::code_feedback::SymbolIdentity;
 use crate::store::connection::write_transaction;
+use crate::store::feedback::{self as store_feedback, NewFeedbackEvent};
 use crate::store::memory_row;
 
 /// Resolve a `code_symbols` rowid to its stable identity, or error loudly
@@ -58,7 +60,7 @@ use crate::store::memory_row;
 /// verdict to — the rowid may already name an unrelated symbol (recycled by
 /// a re-index purge+reinsert), so writing it anyway would be exactly the
 /// misattribution the identity key exists to prevent.
-fn resolve_identity(conn: &Connection, id: i64) -> Result<SymbolIdentity> {
+pub(crate) fn resolve_identity(conn: &Connection, id: i64) -> Result<SymbolIdentity> {
     let (own, parent_id) = store_code_feedback::own_identity(conn, id)?.ok_or_else(|| {
         Error::Config(format!(
             "code feedback: symbol id {id} not found in code_symbols \
@@ -93,7 +95,14 @@ pub fn record_code_with_provenance(
     provenance: &str,
 ) -> Result<()> {
     let tx = write_transaction(db.conn_mut())?;
-    write_code_with_provenance(&tx, query_id, used, irrelevant, provenance)?;
+    write_code_with_provenance(
+        &tx,
+        query_id,
+        used,
+        irrelevant,
+        provenance,
+        Caller::default(),
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -107,33 +116,47 @@ pub(crate) fn write_code_with_provenance(
     used: &[i64],
     irrelevant: &[i64],
     provenance: &str,
+    caller: Caller<'_>,
 ) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
-    for id in used {
-        let sym = resolve_identity(conn, *id)?;
-        store_code_feedback::insert_event(
+    let verdicts = used
+        .iter()
+        .map(|id| (*id, "used"))
+        .chain(irrelevant.iter().map(|id| (*id, "irrelevant")));
+    for (id, verdict) in verdicts {
+        let sym = resolve_identity(conn, id)?;
+        let row_id = store_feedback::insert_event(
             conn,
-            query_id,
-            *id,
-            "used",
-            &now,
-            crate::utilities::telemetry::target::CODE,
-            provenance,
+            &NewFeedbackEvent {
+                query_id,
+                memory_id: &id.to_string(),
+                verdict,
+                at: &now,
+                target_kind: crate::utilities::telemetry::target::CODE,
+                provenance,
+                surface: caller.surface,
+                actor: caller.actor,
+                device: None,
+                event_id: None,
+            },
         )?;
-        store_code_feedback::upsert_used(conn, &sym, &now)?;
-    }
-    for id in irrelevant {
-        let sym = resolve_identity(conn, *id)?;
-        store_code_feedback::insert_event(
+        feedback_share::journal(
             conn,
-            query_id,
-            *id,
-            "irrelevant",
-            &now,
-            crate::utilities::telemetry::target::CODE,
-            provenance,
+            &Recorded {
+                row_id,
+                query_id,
+                verdict,
+                at: &now,
+                provenance,
+                caller,
+                target: Judged::Code(&sym),
+            },
         )?;
-        store_code_feedback::upsert_irrelevant(conn, &sym)?;
+        if verdict == "used" {
+            store_code_feedback::upsert_used(conn, &sym, &now)?;
+        } else {
+            store_code_feedback::upsert_irrelevant(conn, &sym)?;
+        }
     }
     Ok(())
 }

@@ -84,6 +84,7 @@ pub struct GcRuns {
 #[table(name = "activity_log")]
 #[index("idx_activity_log_at", desc(at), id)]
 #[index("idx_activity_log_command_at", command, desc(at), id)]
+#[unique_index("uq_activity_log_event_id", event_id)]
 pub struct ActivityLog {
     /// Monotonic id, and the SSE cursor.
     #[column(primary_key, autoincrement)]
@@ -114,6 +115,11 @@ pub struct ActivityLog {
     /// Bounded per-command JSON summary; NULL when `activity.summaries` is
     /// off (the row still records that the command ran).
     pub summary: Text,
+    /// Device that ran the command; `NULL` means this machine (v26).
+    pub device: Text,
+    /// Stable replica event id (`ev-<32 hex>`), minted when the row is
+    /// journalled; `NULL` for a row that never left this machine (v26).
+    pub event_id: Text,
 }
 
 /// `index_failures`: swallowed indexing failures, appended in order.

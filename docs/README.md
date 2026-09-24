@@ -102,6 +102,12 @@ Understanding-oriented background:
   hold the file: the portable name two checkouts agree on, the approval map that
   makes it answerable offline, the secret scan that blocks a revision whole, and
   one search leg over both indexes with the local side winning.
+- **[Feedback and activity replication](designs/2026-09-24-feedback-activity-replication.md)** —
+  verdicts and command runs as immutable `replica-v1` events counted exactly
+  once: the event id and device every one carries, the namespaced query id
+  that keeps an import out of this machine's recall loop, what is shared and
+  what stays local (the summary allowlist, machine paths, secrets,
+  co-activation rewards), and retention and purge reaching the journal.
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.

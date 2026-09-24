@@ -73,3 +73,14 @@ pub(crate) const COACTIVATION_QUERY_ID: &str = "auto-coactivation";
 /// Sentinel `query_id` for search→edit implicit `used` rows. Same golden
 /// exclusion contract as [`COACTIVATION_QUERY_ID`].
 pub(crate) const SEARCH_EDIT_QUERY_ID: &str = "auto-search-edit";
+
+/// The `replica_feed.entity_kind` values of the two shared event kinds
+/// (#254). Here rather than beside their payload types because `store` must
+/// name them too — retention and purge redact these kinds' journal copies —
+/// and `store` may not import a domain.
+pub(crate) mod entity {
+    /// One feedback verdict (`domains::learning::replica_payload`).
+    pub(crate) const FEEDBACK_EVENT: &str = "feedback_event";
+    /// One recorded command run (`domains::sync::replica::activity_payload`).
+    pub(crate) const ACTIVITY_EVENT: &str = "activity_event";
+}

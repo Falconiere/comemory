@@ -158,6 +158,10 @@
     },
     {
       "source": "domains::sync",
+      "target": "domains::learning"
+    },
+    {
+      "source": "domains::sync",
       "target": "domains::memories"
     }
   ],

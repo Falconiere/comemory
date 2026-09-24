@@ -60,7 +60,7 @@ fn append_stores_the_payload_assigns_a_sequence_and_points_the_revision_at_it() 
     assert_eq!(page[0].sequence, 1);
     assert_eq!(page[0].payload.as_deref(), Some(payload.bytes));
     assert_eq!(page[0].entity_key, "a1b2c3d4");
-    assert!(!page[0].payload_erased);
+    assert_eq!(page[0].redaction, None);
 
     let revision = replica_read::revision(&conn, "memory", "a1b2c3d4")
         .expect("revision")
@@ -106,8 +106,11 @@ fn a_second_payload_with_the_same_digest_does_not_replace_the_stored_bytes() {
 
     let page = replica_read::page(&conn, 0, 10, None).expect("page");
     assert_eq!(page[0].payload.as_deref(), Some(r#"{"body":"first"}"#));
-    assert!(!page[0].payload_erased);
-    assert!(!replica_read::is_erased(&conn, digest).expect("erased"));
+    assert_eq!(page[0].redaction, None);
+    assert_eq!(
+        comemory::store::replica_redaction::redaction_of(&conn, digest).expect("redaction"),
+        None
+    );
 }
 
 #[test]
@@ -218,14 +221,15 @@ fn redaction_blanks_the_bytes_and_keeps_the_barrier() {
     let redacted = redact_payload(&conn, digest, "2026-09-21T11:00:00Z").expect("redact");
     assert_eq!(redacted, 1);
 
-    assert!(
-        replica_read::is_erased(&conn, digest).expect("erased"),
+    assert_eq!(
+        comemory::store::replica_redaction::redaction_of(&conn, digest).expect("redaction"),
+        Some(replica_read::Redaction::Erased),
         "the row stays as the erasure barrier"
     );
 
     let page = replica_read::page(&conn, 0, 10, None).expect("page");
     assert_eq!(page[0].payload, None);
-    assert!(page[0].payload_erased);
+    assert_eq!(page[0].redaction, Some(replica_read::Redaction::Erased));
     assert_eq!(
         page[0].payload_digest.as_deref(),
         Some(digest),

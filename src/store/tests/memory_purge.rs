@@ -380,3 +380,62 @@ fn trashed_with_hash_is_true_only_after_a_soft_delete_of_that_hash() {
         "an unrelated hash must not match"
     );
 }
+
+#[test]
+fn purge_erases_the_journal_copies_of_the_shared_verdicts_on_the_memory() {
+    use comemory::store::replica_read::Redaction;
+    use comemory::store::replica_redaction::redaction_of;
+    let home = tempfile::tempdir().expect("tempdir");
+    let (paths, cfg, mut conn) = open(home.path());
+    comemory::store::repository_approval::replace_all(
+        &conn,
+        &[("demo".to_string(), "Falconiere/comemory".to_string())],
+        "2026-09-24T10:00:00Z",
+    )
+    .expect("approve");
+    let id = save(
+        &paths,
+        &cfg,
+        &mut conn,
+        "shared verdicts outlive nothing a purge removes",
+        &[],
+    );
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        feedback::run(
+            &mut ctx,
+            feedback::Request {
+                query_id: generate_query_id("shared verdicts", OffsetDateTime::now_utc()),
+                used: vec![id.clone()],
+                irrelevant: Vec::new(),
+                used_code: Vec::new(),
+                irrelevant_code: Vec::new(),
+                source: None,
+            },
+        )
+        .expect("record feedback");
+    }
+    let digest: String = conn
+        .query_row(
+            "SELECT payload_digest FROM replica_feed WHERE entity_kind = 'feedback_event'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("the verdict was journalled");
+    soft_delete(&paths, &cfg, &mut conn, &id);
+
+    assert!(purge_memory(&mut conn, &id).expect("purge"));
+
+    assert_eq!(
+        redaction_of(&conn, &digest).expect("redaction"),
+        Some(Redaction::Erased)
+    );
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM feedback_events WHERE memory_id = ?1",
+            &id
+        ),
+        0
+    );
+}

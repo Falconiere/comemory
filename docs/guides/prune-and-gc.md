@@ -201,6 +201,15 @@ the count evicted is reported as `activity_rows`):
 COMEMORY_LEARNING_RETENTION_DAYS=7 comemory gc
 ```
 
+A verdict or activity run that was shared with other machines also has a copy
+in the replication journal. The same sweep **expires** that copy — its bytes
+are blanked and `changes` reports it as `payload_state: "expired"` — while the
+position, the digest and the receipts stay, so a peer that offers the event
+again is answered `payload_expired` rather than counted a second time. Purging
+a memory **erases** the shared copies of the verdicts on it the same way, and
+a replay of one is answered `payload_erased`. See
+[feedback and activity replication](../designs/2026-09-24-feedback-activity-replication.md).
+
 Aggregated `feedback` counters and mined `query_expansions` **never expire** —
 `gc` keeps them no matter how old, so your learned ranking signal survives the
 purge. The one exception is the counter row of a memory `gc` has hard-deleted:

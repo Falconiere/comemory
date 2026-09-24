@@ -74,9 +74,11 @@ pub struct QueryExpansions {
 }
 
 /// `feedback_events`: one row per feedback verdict, memory- or code-tagged,
-/// with the provenance the auto-reinforcement pass stamps (v8).
+/// with the provenance the auto-reinforcement pass stamps (v8), and — since
+/// v26 — the identity and origin a shared verdict carries (#254).
 #[table(name = "feedback_events")]
 #[index("idx_feedback_events_query", query_id)]
+#[unique_index("uq_feedback_events_event_id", event_id)]
 pub struct FeedbackEvents {
     /// Rowid alias.
     #[column(primary_key)]
@@ -99,6 +101,19 @@ pub struct FeedbackEvents {
     /// `manual` / `auto_search_edit` / … (v8).
     #[column(not_null, default = "'manual'")]
     pub provenance: Text,
+    // The v26 columns (#254) are declared in the order `ALTER TABLE ... ADD
+    // COLUMN` appends them, which the schema fidelity test compares.
+    /// Caller label the caller declared; `NULL` when none (v26).
+    pub actor: Text,
+    /// Device that recorded the verdict; `NULL` means this machine (v26).
+    pub device: Text,
+    /// Stable replica event id (`ev-<32 hex>`), minted when the verdict is
+    /// journalled; `NULL` for a verdict that never left this machine (v26).
+    pub event_id: Text,
+    /// Delivery surface the verdict arrived through; `NULL` when unknown —
+    /// a verdict recorded before v26, or an internal reward (v26).
+    #[column(check = "surface IN ('cli', 'http', 'mcp')")]
+    pub surface: Text,
 }
 
 /// `retrieval_log`: one row per `search` / `context` run, keyed by the

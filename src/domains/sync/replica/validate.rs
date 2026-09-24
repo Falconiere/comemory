@@ -10,14 +10,22 @@ use crate::domains::code::replica_payload::{
 use crate::domains::documents::replica_payload::{
     DOCUMENT_ENTITY_KIND, DOCUMENT_PAYLOAD_VERSION, DocumentRevisionV1,
 };
+use crate::domains::learning::replica_payload::{
+    FEEDBACK_ENTITY_KIND, FEEDBACK_PAYLOAD_VERSION, FeedbackEventV1,
+};
 use crate::domains::memories::id::{is_valid_memory_id, memory_id};
 use crate::domains::memories::replica_payload::{
     MEMORY_ENTITY_KIND, MEMORY_PAYLOAD_VERSION, MemoryPayloadV1,
 };
 use crate::domains::sync::replica::accept::needs_payload;
+use crate::domains::sync::replica::activity_payload::{
+    ACTIVITY_ENTITY_KIND, ACTIVITY_PAYLOAD_VERSION, ActivityEventV1,
+};
 use crate::domains::sync::replica::contract::{CursorRef, Disposition, Operation};
+use crate::domains::sync::replica::validate_events;
 use crate::prelude::*;
 use crate::store::replica_journal::ReplicaOp;
+use crate::store::replica_read::Redaction;
 use crate::store::{replica_outbox, replica_read};
 use crate::utilities::canonical_json;
 use crate::utilities::context::Ctx;
@@ -67,10 +75,12 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
         return Ok(problem);
     }
     let conn = ctx.conn()?;
-    if let Some(digest) = operation.payload_digest.as_deref()
-        && replica_read::is_erased(conn, digest)?
-    {
-        return Ok(Disposition::PayloadErased);
+    if let Some(digest) = operation.payload_digest.as_deref() {
+        match crate::store::replica_redaction::redaction_of(conn, digest)? {
+            Some(Redaction::Erased) => return Ok(Disposition::PayloadErased),
+            Some(Redaction::Expired) => return Ok(Disposition::PayloadExpired),
+            None => {}
+        }
     }
     // A local mutation this machine has not yet pushed is the only record of
     // that edit: the outbox holds its payload, and materializing the peer's
@@ -79,6 +89,11 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
     // for the push that will order the two properly.
     if replica_outbox::has_pending_for(conn, &operation.entity_kind, &operation.entity_key)? {
         return Ok(Disposition::RejectedStale);
+    }
+    // An event is immutable and counted once: a second offer of one this
+    // engine already holds is answered, never applied (#254).
+    if let Some(known) = validate_events::known_event(conn, operation)? {
+        return Ok(known);
     }
     let revision = replica_read::revision(conn, &operation.entity_kind, &operation.entity_key)?;
     Ok(order(operation, revision.as_ref()))
@@ -100,6 +115,12 @@ fn kind_and_shape(operation: &Operation) -> Option<Disposition> {
         }
         DOCUMENT_ENTITY_KIND if operation.schema_version == DOCUMENT_PAYLOAD_VERSION => {
             shape(operation, identity::<DocumentRevisionV1>)
+        }
+        FEEDBACK_ENTITY_KIND if operation.schema_version == FEEDBACK_PAYLOAD_VERSION => {
+            validate_events::shape::<FeedbackEventV1>(operation)
+        }
+        ACTIVITY_ENTITY_KIND if operation.schema_version == ACTIVITY_PAYLOAD_VERSION => {
+            validate_events::shape::<ActivityEventV1>(operation)
         }
         _ => Some(Disposition::RejectedUnsupported),
     }
@@ -128,7 +149,7 @@ fn shape(
 /// One rule per kind, stated by the kind itself: the invariant is a property of
 /// the payload rather than of the validator that happens to ask, so a third
 /// kind adds a rule and not a third copy of the decode-and-refuse skeleton.
-trait Identity: serde::de::DeserializeOwned {
+pub(super) trait Identity: serde::de::DeserializeOwned {
     /// Whether the payload holds together under `entity_key`.
     fn holds_for(&self, entity_key: &str) -> bool;
 }
@@ -181,7 +202,7 @@ impl Identity for DocumentRevisionV1 {
 /// shared: a payload this build cannot READ is unsupported and the sender
 /// should stop offering it, while one that reads but does not hold together is
 /// invalid and the sender has a bug.
-fn identity<T: Identity>(operation: &Operation, text: &str) -> Option<Disposition> {
+pub(super) fn identity<T: Identity>(operation: &Operation, text: &str) -> Option<Disposition> {
     // Deserialized here rather than through each type's own `decode`: those
     // differ only in the error message they build, and the message is thrown
     // away — all this needs to know is whether the bytes read at all.
@@ -193,7 +214,7 @@ fn identity<T: Identity>(operation: &Operation, text: &str) -> Option<Dispositio
 
 /// The operation's payload as canonical text, with the declared digest
 /// verified against the bytes that actually arrived.
-fn canonical_text(operation: &Operation) -> std::result::Result<String, Disposition> {
+pub(super) fn canonical_text(operation: &Operation) -> std::result::Result<String, Disposition> {
     let (Some(payload), Some(digest)) = (
         operation.payload.as_ref(),
         operation.payload_digest.as_deref(),

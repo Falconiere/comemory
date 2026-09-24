@@ -33,6 +33,8 @@ pub mod eval;
 pub mod evaluation;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
+/// Record-time journalling of a shareable verdict (#254).
+pub mod feedback_share;
 /// Per-memory feedback counters and the caller-facing `Source` vocabulary.
 pub mod feedback_tracking;
 /// `comemory judge`: record reviewed relevance verdicts against a captured
@@ -47,6 +49,8 @@ pub mod observation_capture;
 /// `comemory recall-status`: tracked queries, verdicts, saves and pending
 /// recalls for a repo + lower time bound.
 pub mod recall_status;
+/// `FeedbackEventV1`: one shared verdict on the `replica-v1` wire (#254).
+pub mod replica_payload;
 /// The shared `comemory.db` connection handle the feedback writers borrow.
 pub mod telemetry;
 /// `comemory tune`: grid-search the blend knobs, confirm, apply.

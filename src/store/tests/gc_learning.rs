@@ -79,3 +79,59 @@ fn no_rows_past_cutoff_is_a_no_op() {
     assert_eq!(logs, 0);
     assert_eq!(events, 0);
 }
+
+/// Journal one shared event of `kind` under `event_id`, and return its digest.
+fn journal_event(conn: &rusqlite::Connection, kind: &str, event_id: &str) -> String {
+    use comemory::store::replica_journal::{self, LocalEvent, PayloadRef};
+    let bytes = format!(r#"{{"event_id":"{event_id}"}}"#);
+    let digest = comemory::utilities::digest::sha256_hex(bytes.as_bytes());
+    replica_journal::append_local_event(
+        conn,
+        &LocalEvent {
+            entity_kind: kind,
+            event_id,
+            schema_version: 1,
+            repository: "Falconiere/comemory",
+            payload: PayloadRef {
+                digest: &digest,
+                bytes: &bytes,
+            },
+            // A recent feed position, so only the row arm can reach it.
+            at: "2026-09-24T10:00:00Z",
+        },
+    )
+    .expect("journal");
+    digest
+}
+
+#[test]
+fn eviction_expires_the_journal_copies_of_the_shared_events_it_removes() {
+    use comemory::store::replica_read::Redaction;
+    use comemory::store::replica_redaction::redaction_of;
+    let (_dir, conn) = seed_db();
+    let verdict = journal_event(&conn, "feedback_event", "ev-verdict");
+    let run = journal_event(&conn, "activity_event", "ev-run");
+    let kept = journal_event(&conn, "feedback_event", "ev-kept");
+    conn.execute_batch(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, event_id) \
+           VALUES ('q', 'aaaa0001', 'used', '2026-01-01T00:00:00Z', 'ev-verdict'), \
+                  ('q', 'aaaa0001', 'used', '2026-09-24T00:00:00Z', 'ev-kept'); \
+         INSERT INTO activity_log(at, command, source, duration_ms, event_id) \
+           VALUES ('2026-01-01T00:00:00Z', 'find', 'cli', 3, 'ev-run');",
+    )
+    .expect("rows");
+
+    let (_, events) = evict_before(&conn, "2026-06-01T00:00:00Z").expect("evict");
+
+    assert_eq!(events, 1);
+    assert_eq!(
+        redaction_of(&conn, &verdict).expect("verdict"),
+        Some(Redaction::Expired)
+    );
+    assert_eq!(
+        redaction_of(&conn, &run).expect("run"),
+        Some(Redaction::Expired),
+        "the activity row gc deletes next is already expired in the journal"
+    );
+    assert_eq!(redaction_of(&conn, &kept).expect("kept"), None);
+}

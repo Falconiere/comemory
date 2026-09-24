@@ -20,11 +20,16 @@ use crate::prelude::*;
 /// `used_count = 1` or bump the existing count, refreshing `last_used` to
 /// `now` either way. Accepts any [`Connection`] (a `rusqlite::Transaction`
 /// derefs to one).
+///
+/// `last_used` only ever moves forward: an imported verdict (#254) carries its
+/// original, possibly older, time, and must not make a memory look staler
+/// than a local verdict already proved it was.
 pub(crate) fn upsert_used(conn: &Connection, id: &str, now: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used)
              VALUES (?1, 1, 0, ?2)
-             ON CONFLICT(memory_id) DO UPDATE SET used_count = used_count + 1, last_used = ?2",
+             ON CONFLICT(memory_id) DO UPDATE SET used_count = used_count + 1,
+                 last_used = MAX(COALESCE(last_used, ?2), ?2)",
         params![id, now],
     )?;
     Ok(())
@@ -43,44 +48,65 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Insert one memory-tagged `feedback_events` row. `target_kind` and
-/// `provenance` are the shared vocabulary constants from
-/// `crate::utilities::telemetry` (`target::*` and `PROV_*`), passed
-/// explicitly by the caller rather than hardcoded (or, for `provenance`,
-/// left to the column's `'manual'` default) so this helper stays
-/// table-shaped, not domain-shaped. The one INSERT behind every
-/// memory-target verdict: manual and HTTP-implicit
-/// (`domains::learning::feedback_tracking::record_with_provenance`) and the
-/// co-activation / search→edit rewards
-/// (`domains::learning::feedback_tracking::record_implicit_used`).
-pub(crate) fn insert_event(
-    conn: &Connection,
-    query_id: &str,
-    id: &str,
-    verdict: &str,
-    at: &str,
-    target_kind: &str,
-    provenance: &str,
-) -> Result<()> {
+/// One `feedback_events` row to insert. `target_kind` and `provenance` are the
+/// shared vocabulary constants from `crate::utilities::telemetry`
+/// (`target::*` and `PROV_*`), passed explicitly by the caller rather than
+/// hardcoded (or, for `provenance`, left to the column's `'manual'` default)
+/// so this helper stays table-shaped, not domain-shaped.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NewFeedbackEvent<'a> {
+    /// The query the verdict answers (namespaced for an imported one).
+    pub(crate) query_id: &'a str,
+    /// Memory id, text-encoded symbol rowid, or an imported code identity.
+    pub(crate) memory_id: &'a str,
+    /// `used` or `irrelevant`.
+    pub(crate) verdict: &'a str,
+    /// ISO-8601 time of the verdict.
+    pub(crate) at: &'a str,
+    /// `memory` or `code`.
+    pub(crate) target_kind: &'a str,
+    /// Stored provenance.
+    pub(crate) provenance: &'a str,
+    /// Delivery surface, when known.
+    pub(crate) surface: Option<&'a str>,
+    /// Declared caller label, when one was given.
+    pub(crate) actor: Option<&'a str>,
+    /// Recording device; `None` means this machine.
+    pub(crate) device: Option<&'a str>,
+    /// Replica event id, for an imported verdict.
+    pub(crate) event_id: Option<&'a str>,
+}
+
+/// Insert one `feedback_events` row and return its rowid. The one INSERT
+/// behind every verdict of either target kind: manual and HTTP-implicit
+/// (`domains::learning::feedback_tracking`, `domains::learning::code_feedback`),
+/// the co-activation / search→edit rewards (`record_implicit_used`), and an
+/// accepted import (`domains::sync::replica::event_accept`).
+pub(crate) fn insert_event(conn: &Connection, row: &NewFeedbackEvent<'_>) -> Result<i64> {
     orm::execute(
         conn,
         FeedbackEvents::insert()
-            .set(&col::query_id, query_id)
-            .set(&col::memory_id, id)
-            .set(&col::verdict, verdict)
-            .set(&col::at, at)
-            .set(&col::target_kind, target_kind)
-            .set(&col::provenance, provenance)
+            .set(&col::query_id, row.query_id)
+            .set(&col::memory_id, row.memory_id)
+            .set(&col::verdict, row.verdict)
+            .set(&col::at, row.at)
+            .set(&col::target_kind, row.target_kind)
+            .set(&col::provenance, row.provenance)
+            .set(&col::surface, row.surface)
+            .set(&col::actor, row.actor)
+            .set(&col::device, row.device)
+            .set(&col::event_id, row.event_id)
             .to_sql(),
     )?;
-    Ok(())
+    Ok(conn.last_insert_rowid())
 }
 
 /// Distinct `query_id`s carrying at least one `used` verdict of `target_kind`
 /// and `provenance` — the "this query succeeded" set behind `eval::mine`'s
 /// reformulation scan, which passes `utilities::telemetry::PROV_MANUAL` so an
 /// HTTP-implicit `used` on a real query id never marks a rewording
-/// successful.
+/// successful. Imported verdicts (`device` set, #254) are excluded: they
+/// cite another machine's query.
 pub(crate) fn used_query_ids(
     conn: &Connection,
     target_kind: &str,
@@ -88,7 +114,8 @@ pub(crate) fn used_query_ids(
 ) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT query_id FROM feedback_events
-          WHERE verdict = 'used' AND target_kind = ?1 AND provenance = ?2",
+          WHERE verdict = 'used' AND target_kind = ?1 AND provenance = ?2
+            AND device IS NULL",
     )?;
     let ids = stmt
         .query_map([target_kind, provenance], |r| r.get(0))?
@@ -118,7 +145,9 @@ pub struct GoldenFeedbackRow {
 /// carry more than one verdict row across retries). `eval::golden::harvest`
 /// passes `utilities::telemetry::PROV_MANUAL`: only a human-stated verdict is
 /// ground truth, so an HTTP-implicit `used` with a real query id — which
-/// the JOIN would otherwise admit — never mints a golden pair.
+/// the JOIN would otherwise admit — never mints a golden pair. A verdict
+/// imported from another machine (`device` set, #254) never does either,
+/// whatever its provenance: its query was asked somewhere else.
 pub fn used_events_for_golden(
     conn: &Connection,
     target_kind: &str,
@@ -133,6 +162,7 @@ pub fn used_events_for_golden(
           WHERE e.verdict = 'used' AND e.target_kind = ?1
             AND r.source != ?2
             AND e.provenance = ?3
+            AND e.device IS NULL
           ORDER BY r.query, r.repo, r.kind, e.memory_id",
     )?;
     let rows = stmt
@@ -154,7 +184,8 @@ pub fn used_events_for_golden(
 /// report. A `LEFT JOIN`: a verdict with no matching `retrieval_log` row
 /// (e.g. a co-activation sentinel query id) still counts when `repo` is
 /// `None`, and is excluded — rather than assumed — once a `repo` filter
-/// asks a question the row cannot answer. Text `>=` and the join both became
+/// asks a question the row cannot answer. An imported verdict (#254) is not
+/// part of this machine's recall loop and is never counted. Text `>=` and the join both became
 /// expressible in toolu-orm 0.10.1 (`Scalar::gte`, `SelectBuilder::left_join`);
 /// this is still hand SQL, awaiting conversion — see
 /// `docs/guides/runtime-orm.md`.
@@ -162,7 +193,7 @@ pub fn events_since(conn: &Connection, repo: Option<&str>, since: &str) -> Resul
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM feedback_events fe \
            LEFT JOIN retrieval_log rl ON rl.query_id = fe.query_id \
-          WHERE fe.at >= ?1 AND (?2 IS NULL OR rl.repo = ?2)",
+          WHERE fe.at >= ?1 AND (?2 IS NULL OR rl.repo = ?2) AND fe.device IS NULL",
         params![since, repo],
         |r| r.get(0),
     )?;

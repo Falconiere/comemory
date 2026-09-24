@@ -79,7 +79,22 @@ pub(crate) fn apply_one(
     }
     let decision = validate::decide(ctx, operation)?;
     if decision != Disposition::Accepted {
-        return record_refusal(ctx, epoch, operation, decision, validate::reason(decision));
+        // An event this engine already holds is answered with the position
+        // it was first accepted at, as a replay under its own id would be.
+        let sequence = if decision == Disposition::Duplicate {
+            replica_read::revision(ctx.conn()?, &operation.entity_kind, &operation.entity_key)?
+                .map(|revision| revision.sequence)
+        } else {
+            None
+        };
+        return record_refusal(
+            ctx,
+            epoch,
+            operation,
+            decision,
+            validate::reason(decision),
+            sequence,
+        );
     }
     materialize::apply(ctx, epoch, operation)
 }
@@ -123,18 +138,22 @@ fn replayed(conn: &Connection, operation: &Operation) -> Result<Option<Operation
 }
 
 /// Persist a refusal so a replay reads the same answer, and return it.
+///
+/// `sequence` is `Some` only for a `duplicate` event: the position the event
+/// already holds, which the receipt keeps so a later replay reads it too.
 fn record_refusal(
     ctx: &mut Ctx<'_>,
     epoch: &str,
     operation: &Operation,
     disposition: Disposition,
     reason: Option<String>,
+    sequence: Option<i64>,
 ) -> Result<OperationResult> {
     let at = memory_row::iso_format(time::OffsetDateTime::now_utc())?;
     let receipt = Receipt {
         operation_id: operation.operation_id.clone(),
         epoch: epoch.to_string(),
-        sequence: None,
+        sequence,
         // The digest of what arrived, not of what was claimed: this is the
         // identity a replay is matched against, and storing the claim would
         // make the retry of a refused operation look like new bytes.
@@ -149,7 +168,7 @@ fn record_refusal(
     Ok(OperationResult {
         operation_id: operation.operation_id.clone(),
         disposition,
-        sequence: None,
+        sequence,
         payload_digest: operation.payload_digest.clone(),
         reason,
     })

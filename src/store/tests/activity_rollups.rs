@@ -25,6 +25,8 @@ fn row<'a>(at: &'a str, command: &'a str, duration_ms: i64, ok: bool) -> NewActi
         ok,
         error_code: (!ok).then_some("internal"),
         summary: None,
+        device: None,
+        event_id: None,
     }
 }
 

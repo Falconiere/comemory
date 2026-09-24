@@ -146,7 +146,10 @@ fn an_erased_payload_is_refused_with_its_own_disposition() {
         Disposition::PayloadErased,
         "the barrier stands even though the bytes are gone"
     );
-    assert!(replica_read::is_erased(&peer.conn, &digest).expect("erased"));
+    assert_eq!(
+        crate::store::replica_redaction::redaction_of(&peer.conn, &digest).expect("redaction"),
+        Some(replica_read::Redaction::Erased)
+    );
 }
 
 #[test]

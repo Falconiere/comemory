@@ -55,6 +55,11 @@ pub struct ReplicaPayload {
     pub created_at: Text,
     /// RFC3339 time the bytes were erased, if they were.
     pub redacted_at: Text,
+    /// Why the bytes are gone: `erased` (permanent erasure — a purge) or
+    /// `expired` (retention). `NULL` with `redacted_at` set is a row redacted
+    /// before v26, which reads as erased.
+    #[column(check = "redaction IN ('erased', 'expired')")]
+    pub redaction: Text,
 }
 
 /// `replica_feed`: the ordered acceptance record. One row per accepted

@@ -374,3 +374,58 @@ fn events_for_query_reads_back_each_verdict_with_its_provenance() {
         "a query with no verdicts reads back empty, not an error"
     );
 }
+
+#[test]
+fn an_imported_verdict_never_feeds_the_harvest_mining_or_recall_counts() {
+    use comemory::store::feedback::{NewFeedbackEvent, insert_event};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let conn = comemory::store::connection::open(dir.path().join("comemory.db")).expect("open");
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, source) \
+         VALUES ('q-20260924-1a2b3c4d', 'replica receipts', '[]', '2026-09-24T09:00:00Z', 'find')",
+        [],
+    )
+    .expect("query row");
+    conn.execute(
+        "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash, \
+                              body, created_at, updated_at, md_path, simhash, deleted_at) \
+         VALUES ('a1b2c3d4','a','note',NULL,'f',3,1,'h1','b','2026-09-24T00:00:00Z', \
+                 '2026-09-24T00:00:00Z','a',0,NULL)",
+        [],
+    )
+    .expect("live memory");
+    // The query id a relay would never produce — an import carries a
+    // namespaced one — so this proves the device filter itself.
+    insert_event(
+        &conn,
+        &NewFeedbackEvent {
+            query_id: "q-20260924-1a2b3c4d",
+            memory_id: "a1b2c3d4",
+            verdict: "used",
+            at: "2026-09-24T10:00:00Z",
+            target_kind: "memory",
+            provenance: PROV_MANUAL,
+            surface: Some("cli"),
+            actor: None,
+            device: Some("9a1e0c2b4d6f8a1e0c2b4d6f8a1e0c2b"),
+            event_id: Some("ev-4f0c0123456789abcdef0123456789ab"),
+        },
+    )
+    .expect("imported verdict");
+
+    assert!(
+        used_events_for_golden(&conn, "memory", "search-code", PROV_MANUAL)
+            .expect("golden")
+            .is_empty()
+    );
+    assert!(
+        comemory::store::feedback::used_query_ids(&conn, "memory", PROV_MANUAL)
+            .expect("mine")
+            .is_empty()
+    );
+    assert_eq!(
+        comemory::store::feedback::events_since(&conn, None, "2026-01-01T00:00:00Z")
+            .expect("recall"),
+        0
+    );
+}

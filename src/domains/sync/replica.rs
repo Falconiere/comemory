@@ -14,6 +14,8 @@ pub(crate) mod test_support;
 
 /// The acceptance path: decide, materialize, journal, receipt.
 pub mod accept;
+/// `ActivityEventV1` and the allowlist of what a shared run's summary carries.
+pub mod activity_payload;
 /// Journal seeding for memories that predate the journal.
 pub mod bootstrap;
 /// `GET /sync/replica/changes` — the ordered page above a cursor.
@@ -27,6 +29,11 @@ pub mod contract;
 pub mod contract_views;
 /// Acceptance for a pulled document revision: one transaction, no local row.
 pub mod document_accept;
+/// Acceptance for a feedback or activity event: row, counter, position and
+/// receipt in one transaction.
+pub mod event_accept;
+/// The activity capture sweep and the one-time verdict backfill.
+pub mod event_capture;
 /// `GET /sync/replica/events` — notification-only frames.
 pub mod events;
 /// `GET /sync/replica/manifest` — holdings, capability and seeding progress.
@@ -37,3 +44,5 @@ pub mod materialize;
 pub mod staging;
 /// The acceptance decision, made before any state moves.
 pub mod validate;
+/// The acceptance rules only the two event kinds have.
+pub mod validate_events;
