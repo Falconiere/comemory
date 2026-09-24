@@ -7,8 +7,14 @@
 )]
 //! Integration tests for `comemory sync` (cloud push/pull CLI).
 
+#[path = "common/auth_fixture.rs"]
+mod auth_fixture;
+#[path = "common/sync_platform_server.rs"]
+mod sync_platform_server;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
+use sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 use tempfile::TempDir;
 
 fn bin(home: &TempDir) -> Command {
@@ -111,4 +117,77 @@ fn sync_loads_a_config_carrying_every_deprecated_key() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("not logged in"));
+}
+
+/// A data dir holding an org credential for `server`, as `auth login` leaves it.
+fn logged_in(server: &SyncPlatformServer) -> TempDir {
+    let home = TempDir::new().unwrap();
+    let paths = comemory::config::Paths::new(home.path().join(".comemory"));
+    paths.ensure_dirs().unwrap();
+    auth_fixture::seed_org_auth(
+        &paths,
+        &server.base,
+        &server.snapshot().secret,
+        auth_fixture::FIXTURE_WORKSPACE,
+    );
+    home
+}
+
+fn sync_json(home: &TempDir, args: &[&str]) -> serde_json::Value {
+    let out = bin(home)
+        .arg("sync")
+        .args(args)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "sync {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+/// The default action through the built binary: every leg runs, including the
+/// hooked-repo refresh that precedes the code push, and the platform sees the
+/// pull before anything is pushed.
+#[test]
+fn a_default_run_reports_every_leg_and_pulls_first() {
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = logged_in(&server);
+
+    let report = sync_json(&home, &[]);
+
+    assert_eq!(report["workspace"], auth_fixture::FIXTURE_WORKSPACE);
+    for leg in ["pull", "push", "code", "refresh"] {
+        assert!(report[leg].is_object(), "{leg} ran: {report}");
+    }
+    assert!(server.saw_path("/v1/sync/changes"), "{:?}", server.paths());
+}
+
+#[test]
+fn a_pull_action_pulls_and_pushes_nothing() {
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = logged_in(&server);
+
+    let report = sync_json(&home, &["--action", "pull"]);
+
+    assert!(report["pull"].is_object(), "{report}");
+    assert!(
+        report["push"].is_null() && report["code"].is_null(),
+        "{report}"
+    );
+    assert!(server.saw_path("/v1/sync/changes"));
+    assert!(!server.saw_path("/v1/sync/import"), "{:?}", server.paths());
+}
+
+#[test]
+fn a_verify_action_compares_manifests() {
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = logged_in(&server);
+
+    let report = sync_json(&home, &["--action", "verify"]);
+
+    assert_eq!(report["differing_buckets"], 0, "{report}");
+    assert!(server.saw_path("/v1/sync/manifest"), "{:?}", server.paths());
 }
