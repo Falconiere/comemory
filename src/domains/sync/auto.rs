@@ -67,8 +67,15 @@ pub enum AutoOutcome {
 pub fn run_auto(paths: &Paths, cfg: &Config, checkout_path: Option<&Path>) -> Result<AutoOutcome> {
     paths.ensure_dirs()?;
     let checkout = checkout_path.and_then(hooked_refresh::resolve_checkout);
+    // Opened only when a checkout needs the coverage test, and then kept for
+    // the pass: a hook fire opens the store once, a coalesced agent trigger
+    // not at all.
+    let mut early = None;
     let must_run = match &checkout {
-        Some(c) => !hooked_refresh::swept_by_a_later_pass(&connection::open(paths.db_path())?, c)?,
+        Some(c) => {
+            let conn = early.insert(connection::open(paths.db_path())?);
+            !hooked_refresh::swept_by_a_later_pass(conn, c)?
+        }
         None => false,
     };
     let queued = if must_run {
@@ -86,7 +93,10 @@ pub fn run_auto(paths: &Paths, cfg: &Config, checkout_path: Option<&Path>) -> Re
     if let (Some(path), None) = (checkout_path, &checkout) {
         refresh.record_failure(&path.display().to_string(), "not inside a git work tree");
     }
-    let mut conn = connection::open(paths.db_path())?;
+    let mut conn = match early {
+        Some(conn) => conn,
+        None => connection::open(paths.db_path())?,
+    };
     run_pass(paths, cfg, &mut conn, checkout.as_ref(), refresh).map(AutoOutcome::Ran)
 }
 

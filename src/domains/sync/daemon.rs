@@ -1,11 +1,10 @@
-//! Optional user-level OS daemon that periodically pull+push syncs.
+//! Optional user-level OS daemon that periodically runs the
+//! `sync --action auto` pass: re-index stale hooked repos, then pull and push
+//! (logged out, only the re-index).
 //!
-//! Opt-in since the 2026-09-14 sync design: `comemory auth login --daemon`
-//! installs and starts it, logout stops it (the unit stays installed). A plain
-//! login installs nothing, because a save pushes inline (`domains::sync::push_on_save`)
-//! and `comemory watch` covers the pull direction from the foreground. What is
-//! left for a daemon is a headless host that wants pulls without either.
-//! Manual `comemory sync` works with the daemon stopped, as it always did.
+//! Opt-in (`comemory auth login --daemon`); logout stops it, the unit stays.
+//! Saves push inline, git and agent hooks fire the same pass, and `comemory
+//! watch` covers live pulls, so what is left for a daemon is a headless host.
 //!
 //! Unit install/start/stop/status live in [`crate::domains::sync::daemon_unit`].
 

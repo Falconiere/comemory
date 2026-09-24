@@ -214,6 +214,33 @@ fn a_commit_with_no_comemory_on_path_is_indexed_through_the_fallback() {
     sb.wait_for_head("gui", Some(&new_head));
 }
 
+/// `post-rewrite`, the hook this release adds, runs the pass on its own: with
+/// the other three disabled, an amend (a rewrite) still reaches the index.
+#[test]
+fn an_amend_reaches_the_index_through_post_rewrite_alone() {
+    let sb = Sandbox::new();
+    let repo = sb.repo("rewritten");
+    sb.install_hooks(&repo);
+    sb.wait_for_head("rewritten", None);
+    sb.settle();
+    for hook in ["post-commit", "post-merge", "post-checkout"] {
+        sb.run_json(&[
+            "hooks",
+            "--repo",
+            repo.to_str().unwrap(),
+            "--disable",
+            hook,
+            "--json",
+        ]);
+    }
+    std::fs::write(repo.join("src/lib.rs"), "pub fn one() -> u8 { 11 }\n").unwrap();
+    sb.git(&repo, &["add", "-A"]);
+
+    sb.git(&repo, &["commit", "-q", "--amend", "-m", "amended"]);
+
+    sb.wait_for_head("rewritten", Some(&head(&repo)));
+}
+
 /// AC-12: a commit in a linked worktree indexes under the main label.
 #[test]
 fn a_commit_in_a_linked_worktree_indexes_under_the_main_label() {
