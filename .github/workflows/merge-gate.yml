@@ -1,0 +1,42 @@
+name: Merge Gate
+
+# Re-evaluates the `merge-gate` required check between pushes. The first
+# verdict for each commit comes from the `merge-gate` job in code-review.yml,
+# after the reviewer has posted; this workflow only answers the events that
+# can turn it green afterwards: a reply on a review thread, or a label added
+# or removed by hand. Branch protection reads the newest `merge-gate` check on
+# the head commit, whichever workflow produced it.
+#
+# Resolving a thread is not a workflow trigger, which is why resolution is
+# left to branch protection's required conversation resolution rather than
+# checked here — a verdict taken before the resolve could never refresh.
+on:
+  pull_request:
+    types: [labeled, unlabeled]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Replying in the UI fires both a review and a review-comment event; only the
+# newest evaluation matters.
+concurrency:
+  group: merge-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  merge-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/merge-gate
+        with:
+          github-token: ${{ github.token }}
