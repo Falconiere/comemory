@@ -46,6 +46,14 @@ fn absolute_machine_paths_are_stripped_in_every_spelling() {
 }
 
 #[test]
+fn whitespace_around_a_stripped_path_is_kept_as_written() {
+    assert_eq!(
+        for_share("first line\n\tthen /Users/alice/app/main.rs  and  more"),
+        Shared::Kept(format!("first line\n\tthen {PATH}  and  more"))
+    );
+}
+
+#[test]
 fn a_secret_withholds_the_whole_field() {
     assert_eq!(
         for_share(&format!("rotate {} before release", example_key())),

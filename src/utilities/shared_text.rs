@@ -43,20 +43,20 @@ pub fn label_for_share(raw: &str) -> Option<String> {
 }
 
 /// Replace every whitespace-separated token that is an absolute machine path
-/// with [`PATH`], keeping the punctuation around it. Tokens are rejoined with
-/// single spaces.
+/// with [`PATH`], keeping the punctuation around it. Everything else —
+/// whitespace included, tabs and newlines as written — is left byte for byte.
 fn strip_machine_paths(raw: &str) -> String {
-    raw.split_whitespace()
-        .map(|token| {
+    raw.split_inclusive(char::is_whitespace)
+        .map(|piece| {
+            let token = piece.trim_end_matches(char::is_whitespace);
             let core = token.trim_matches(|c: char| WRAPPERS.contains(c));
-            if is_machine_path(core) {
-                token.replacen(core, PATH, 1)
+            if !core.is_empty() && is_machine_path(core) {
+                piece.replacen(core, PATH, 1)
             } else {
-                token.to_string()
+                piece.to_string()
             }
         })
-        .collect::<Vec<_>>()
-        .join(" ")
+        .collect()
 }
 
 /// Punctuation that may wrap a path inside prose.
