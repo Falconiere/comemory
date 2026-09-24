@@ -81,7 +81,11 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Vec<Row>> {
     for root in sources::list(conn)? {
         let counts = sources::file_status_counts(conn, &root.id)?;
         let id = root.id.clone();
-        let sharing = sharing_of(conn, root.repo.as_deref(), policy_loaded)?;
+        let (shared_as, unshared_reason) =
+            match sharing_of(conn, root.repo.as_deref(), policy_loaded)? {
+                Ok(repo) => (Some(repo), None),
+                Err(reason) => (None, Some(reason)),
+            };
         rows.push(Row {
             id: root.id,
             canonical_path: root.canonical_path,
@@ -93,8 +97,8 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Vec<Row>> {
             stale: counts.stale,
             last_checked: root.updated_at,
             withheld: document_share::blocked_for_source(conn, &id)?,
-            shared_as: sharing.clone().ok(),
-            unshared_reason: sharing.err(),
+            shared_as,
+            unshared_reason,
         });
     }
     Ok(rows)
