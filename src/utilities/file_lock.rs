@@ -60,11 +60,13 @@ impl FileLock {
     }
 }
 
-/// Open (creating if absent) the lock file both acquisition modes lock.
+/// Open (creating if absent) the lock file both acquisition modes lock. It
+/// carries no data, so nothing is truncated: the lock lives on the open file
+/// description, and an open by a waiter must not rewrite the holder's file.
 fn open(path: &Path) -> Result<File> {
     Ok(OpenOptions::new()
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .write(true)
         .open(path)?)
 }

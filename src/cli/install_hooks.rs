@@ -78,14 +78,17 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     Ok(())
 }
 
-/// Run the freshly written `post-commit` hook once, exactly as git would, so
-/// the repo is registered, indexed and synced without waiting for a commit.
-/// The hook backgrounds its pass and returns at once; `data_dir` is passed
-/// down so the pass writes to the store this command was pointed at. `false`
-/// when the hook could not be run — the install stands either way.
+/// Run the hook body this binary ships once in `repo`, exactly as git runs a
+/// hook (cwd = the checkout), so the repo is registered, indexed and synced
+/// without waiting for a commit. The script comes from the binary, never from
+/// the repo's hooks directory, so the kick cannot execute a file someone else
+/// placed there. It backgrounds its pass and returns at once; `data_dir` is
+/// passed down so the pass writes to the store this command was pointed at.
+/// `false` when `bash` could not be run — the install stands either way.
 fn kick(repo: &Path, data_dir: &Path) -> bool {
-    let hook = git_utils::hooks_dir(repo).join("post-commit");
-    let status = Command::new(&hook)
+    let status = Command::new("bash")
+        .arg("-c")
+        .arg(git_utils::REINDEX_HOOK_SCRIPT)
         .current_dir(repo)
         .env("COMEMORY_DATA_DIR", data_dir)
         .stdin(Stdio::null())
@@ -95,7 +98,7 @@ fn kick(repo: &Path, data_dir: &Path) -> bool {
     match status {
         Ok(st) => st.success(),
         Err(e) => {
-            tracing::debug!(hook = %hook.display(), error = %e, "install-hooks: kick failed");
+            tracing::debug!(repo = %repo.display(), error = %e, "install-hooks: kick failed");
             false
         }
     }

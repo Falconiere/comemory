@@ -78,6 +78,10 @@ fn install_hooks_toggle_then_search_code_over_http() {
     assert!(!map["post-commit"], "post-commit flipped: {after_disable}");
     assert!(map["post-merge"]);
     assert!(map["post-checkout"]);
+    assert!(
+        map["post-rewrite"],
+        "post-rewrite must remain installed: {after_disable}"
+    );
 
     let after_disable_reread = srv.get_q("/hooks", &[("repo", repo_s.as_str())]);
     let map = installed_by_name(&after_disable_reread);
@@ -87,6 +91,7 @@ fn install_hooks_toggle_then_search_code_over_http() {
     );
     assert!(map["post-merge"]);
     assert!(map["post-checkout"]);
+    assert!(map["post-rewrite"]);
 
     let indexed = srv.job(
         "/code/index",

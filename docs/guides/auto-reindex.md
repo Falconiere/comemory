@@ -16,7 +16,7 @@ Set `COMEMORY_INDEXING_AUTO_REINDEX` to one of three modes (default `lazy`):
 |--------|---------------------------------------------------------------------|-------------------------------------------------------------------|
 | `lazy` | A search whose repo HEAD moved spawns a background `index-code`.     | Default. You want freshness with zero setup and no query latency. |
 | `hook` | Git hooks refresh (and sync) on commit / merge / checkout / rewrite. | You want the refresh to happen at commit time, not at query time. |
-| `off`  | No search-time trigger; installed hooks still run.                   | Scripted or CI pipelines that index explicitly.                   |
+| `off`  | No search-time trigger; installed hooks still run (disable them per repo). | Scripted or CI pipelines that index explicitly; disable the hooks of a repo that must stay manual. |
 
 ```bash
 export COMEMORY_INDEXING_AUTO_REINDEX=lazy   # or hook, or off

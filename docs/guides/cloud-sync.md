@@ -90,7 +90,7 @@ failure in step 3 is reported, not fatal: the outbox waits, as it does after
 an offline `save`. Archived repos, repos without comemory's hooks, and
 registered roots that are gone, unopenable or linked worktrees are never
 re-indexed by the sweep (the same rows a code push withholds).
-`COMEMORY_INDEXING_AUTO_REINDEX` does not gate it — the installed hooks are
+`COMEMORY_INDEXING_AUTO_REINDEX` does not gate it — installing the hooks is
 the opt-in.
 
 **Coalescing.** Passes run one at a time (`$COMEMORY_DATA_DIR/sync.lock`). A

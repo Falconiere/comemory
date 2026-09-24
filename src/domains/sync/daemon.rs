@@ -74,8 +74,8 @@ fn run_one_cycle(
 ) -> Result<()> {
     let _pass = auto::hold_pass_lock(paths)?;
     let mut conn = open(paths.db_path())?;
-    let stats = auto::run_pass(paths, cfg, &mut conn, None, RefreshStats::default())?;
-    let Some(auth) = AuthFile::load_usable(paths)?.filter(|_| stats.logged_in) else {
+    auto::run_pass(paths, cfg, &mut conn, None, RefreshStats::default())?;
+    let Some(auth) = AuthFile::load_usable(paths)? else {
         tracing::debug!("sync daemon: not logged in — network legs skipped");
         return Ok(());
     };

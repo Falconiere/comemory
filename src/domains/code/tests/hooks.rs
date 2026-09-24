@@ -186,7 +186,14 @@ fn unknown_hook_name_is_rejected_and_writes_nothing() {
 
     let err = crate::domains::code::hooks::run(&mut ctx, request(&repo, Some("pre-push"), None))
         .expect_err("unknown hook must be rejected");
-    assert!(err.to_string().contains("pre-push"));
+    let msg = err.to_string();
+    assert!(msg.contains("pre-push"), "{msg}");
+    assert!(
+        msg.contains(
+            "post-commit, post-merge, post-checkout, post-rewrite, search-edit-reinforcement"
+        ),
+        "the error names every accepted hook: {msg}"
+    );
     assert!(!repo.join(".git").join("hooks").join("pre-push").exists());
 }
 

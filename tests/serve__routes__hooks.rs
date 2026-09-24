@@ -78,6 +78,8 @@ fn v1_get_hooks_reports_four_uninstalled_git_hooks_and_the_config_backed_row() {
     assert_eq!(hooks.len(), 5);
     assert_eq!(hooks[0]["name"], "post-commit");
     assert_eq!(hooks[0]["installed"], serde_json::json!(false));
+    assert_eq!(hooks[1]["name"], "post-merge");
+    assert_eq!(hooks[2]["name"], "post-checkout");
     assert_eq!(hooks[3]["name"], "post-rewrite");
     // The last row is config-backed, not a file in .git/hooks, and
     // `[reinforce] enabled` defaults to true — so it reads installed on a

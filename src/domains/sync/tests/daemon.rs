@@ -91,7 +91,7 @@ fn a_cycle_refreshes_a_stale_hooked_repo_and_pushes_its_code() {
         &paths,
         &cfg,
         &mut last_verify,
-        std::time::Duration::from_secs(3600),
+        std::time::Duration::from_hours(1),
     )
     .expect("cycle");
 
@@ -138,7 +138,7 @@ fn a_logged_out_cycle_refreshes_locally_and_succeeds() {
         &paths,
         &cfg,
         &mut last_verify,
-        std::time::Duration::from_secs(3600),
+        std::time::Duration::from_hours(1),
     )
     .expect("a logged-out cycle is not an error");
 

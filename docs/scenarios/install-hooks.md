@@ -3,11 +3,11 @@
 Write `post-commit` / `post-merge` / `post-checkout` / `post-rewrite` into a
 git repo so every HEAD move runs `comemory sync --action auto --path <checkout>`
 in the background: the checkout is indexed, every other stale hooked repo is
-refreshed, and — logged in — everything syncs. The CLI then runs the new
-`post-commit` hook once, so the repo is registered and synced now rather than
-at its next commit; `--json` reports that as `kicked` (`false` only when the
-hook could not be run — the install stands either way). The HTTP route writes
-the hooks without the kick.
+refreshed, and — logged in — everything syncs. The CLI then runs the shipped hook body once in the repo (from the binary,
+never a file in the repo's hooks directory), so the repo is registered and
+synced now rather than at its next commit; `--json` reports that as `kicked`
+(`false` only when `bash` could not be run — the install stands either way).
+The HTTP route writes the hooks without the kick.
 
 **Runnable tests:** `tests/cli__hooks.rs`, `tests/api__install_hooks.rs`,
 `tests/cli_scenario_hooks.rs`, `tests/cli__sync_auto.rs`

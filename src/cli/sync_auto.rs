@@ -5,18 +5,22 @@
 
 use std::path::Path;
 
-use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
 use crate::cli::output::json;
+use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::domains::sync::auto::{self, AutoOutcome};
 use crate::prelude::*;
 
 /// Run one auto pass for `checkout` (the hook's `--path`), or for no
 /// particular checkout.
-pub(crate) fn run(paths: &Paths, checkout: Option<&Path>, json_flag: bool) -> Result<()> {
-    let cfg = load_config(paths)?;
-    let outcome = off_runtime(|| auto::run_auto(paths, &cfg, checkout))?;
+pub(crate) fn run(
+    paths: &Paths,
+    cfg: &Config,
+    checkout: Option<&Path>,
+    json_flag: bool,
+) -> Result<()> {
+    let outcome = off_runtime(|| auto::run_auto(paths, cfg, checkout))?;
     if !json_flag {
         return Ok(());
     }
