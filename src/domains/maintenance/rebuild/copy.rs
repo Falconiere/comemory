@@ -86,6 +86,7 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "candidate_observations",
     "candidate_judgments",
     "replica_stream",
+    "replica_device",
     "replica_payload",
     "replica_feed",
     "replica_revision",

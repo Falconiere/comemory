@@ -13,14 +13,14 @@
 use super::{
     orm,
     schema_code::{CodeSymbols, code_symbols as c},
-    schema_learning::{FeedbackEvents, feedback_events as e},
 };
 use rusqlite::{Connection, params};
 use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 
-/// Stable identity of one code symbol: the `code_feedback` key.
+/// Stable identity of one code symbol: the `code_feedback` key, plus the
+/// content version the row was indexed at.
 pub(crate) struct SymbolIdentity {
     /// Repo label.
     pub(crate) repo: String,
@@ -28,15 +28,19 @@ pub(crate) struct SymbolIdentity {
     pub(crate) path: String,
     /// Symbol name (or `<parent>#<n>` for a cAST chunk).
     pub(crate) symbol: String,
+    /// The file's blob OID at index time — not part of the counter key, but
+    /// the code version a shared verdict names (#254).
+    pub(crate) version: Option<String>,
 }
 
-/// Map one `(repo, path, symbol)` projection row into a [`SymbolIdentity`].
-/// Shared by both lookups below.
+/// Map one `(repo, path, symbol, blob_oid)` projection row into a
+/// [`SymbolIdentity`]. Shared by both lookups below.
 fn identity_columns(r: &rusqlite::Row<'_>) -> rusqlite::Result<SymbolIdentity> {
     Ok(SymbolIdentity {
         repo: r.get(0)?,
         path: r.get(1)?,
         symbol: r.get(2)?,
+        version: r.get(3)?,
     })
 }
 
@@ -49,10 +53,10 @@ pub(crate) fn own_identity(
     orm::query_optional(
         conn,
         CodeSymbols::select()
-            .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::parent_id])
+            .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::blob_oid, &c::parent_id])
             .filter(c::id.eq(id))
             .to_sql(),
-        |r| Ok((identity_columns(r)?, r.get(3)?)),
+        |r| Ok((identity_columns(r)?, r.get(4)?)),
     )
 }
 
@@ -62,7 +66,7 @@ pub(crate) fn parent_identity(conn: &Connection, parent_id: i64) -> Result<Optio
     orm::query_optional(
         conn,
         CodeSymbols::select()
-            .columns_typed(&[&c::repo, &c::path, &c::symbol])
+            .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::blob_oid])
             .filter(c::id.eq(parent_id))
             .to_sql(),
         identity_columns,
@@ -77,7 +81,8 @@ pub(crate) fn upsert_used(conn: &Connection, sym: &SymbolIdentity, now: &str) ->
         "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count, last_used)
              VALUES (?1, ?2, ?3, 1, 0, ?4)
              ON CONFLICT(repo, path, symbol)
-             DO UPDATE SET used_count = used_count + 1, last_used = ?4",
+             DO UPDATE SET used_count = used_count + 1,
+                 last_used = MAX(COALESCE(last_used, ?4), ?4)",
         params![sym.repo, sym.path, sym.symbol, now],
     )?;
     Ok(())
@@ -94,34 +99,6 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, sym: &SymbolIdentity) -> Resu
              ON CONFLICT(repo, path, symbol)
              DO UPDATE SET irrelevant_count = irrelevant_count + 1",
         params![sym.repo, sym.path, sym.symbol],
-    )?;
-    Ok(())
-}
-
-/// Insert one code-tagged `feedback_events` row, text-encoding the symbol
-/// rowid into the `memory_id` column (a memory-era column-name wart the
-/// reader must know about — see `crate::domains::learning::code_feedback`'s module
-/// doc). `provenance` is written explicitly, never left to the column
-/// default, mirroring [`crate::store::feedback::insert_event`].
-pub(crate) fn insert_event(
-    conn: &Connection,
-    query_id: &str,
-    id: i64,
-    verdict: &str,
-    at: &str,
-    target_kind: &str,
-    provenance: &str,
-) -> Result<()> {
-    orm::execute(
-        conn,
-        FeedbackEvents::insert()
-            .set(&e::query_id, query_id)
-            .set(&e::memory_id, id.to_string())
-            .set(&e::verdict, verdict)
-            .set(&e::at, at)
-            .set(&e::target_kind, target_kind)
-            .set(&e::provenance, provenance)
-            .to_sql(),
     )?;
     Ok(())
 }

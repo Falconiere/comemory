@@ -81,6 +81,9 @@ pub struct Item {
     /// The bounded per-command summary; `null` when summaries were off (or
     /// when the stored text could not be parsed — see [`Item::from_row`]).
     pub summary: Option<Value>,
+    /// The device that ran the command; `null` for a run recorded here, set
+    /// for one imported from another machine (#254).
+    pub device: Option<String>,
 }
 
 impl Item {
@@ -108,6 +111,7 @@ impl Item {
             ok: row.ok,
             error_code: row.error_code,
             summary,
+            device: row.device,
         }
     }
 }

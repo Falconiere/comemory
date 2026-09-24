@@ -28,6 +28,7 @@ use super::schema_replica::{
     ReplicaCursor, ReplicaFeed, ReplicaOperation, ReplicaPayload, ReplicaReceipt, ReplicaRevision,
     ReplicaStagedPart, ReplicaStream,
 };
+use super::schema_replica_device::ReplicaDevice;
 use super::schema_sync::{RepositoryApproval, SyncBinding, SyncLog, SyncState};
 
 /// Every table `registry()` declares, by name, sorted. The fidelity test
@@ -74,6 +75,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "remote_document_fts",
     "remote_document_link",
     "replica_cursor",
+    "replica_device",
     "replica_feed",
     "replica_operation",
     "replica_payload",
@@ -138,6 +140,7 @@ pub fn registry() -> SchemaRegistry {
         RemoteDocumentFts::table_def(),
         RemoteDocumentLink::table_def(),
         ReplicaCursor::table_def(),
+        ReplicaDevice::table_def(),
         ReplicaFeed::table_def(),
         ReplicaOperation::table_def(),
         ReplicaPayload::table_def(),

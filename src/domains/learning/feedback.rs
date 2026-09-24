@@ -15,6 +15,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::domains::learning::code_feedback::write_code_with_provenance;
+use crate::domains::learning::feedback_share::Caller;
 use crate::domains::learning::feedback_tracking::{Source, write_with_provenance};
 use crate::domains::learning::telemetry::StatsDb;
 use crate::prelude::*;
@@ -145,6 +146,8 @@ fn apply(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         .map_or(Ok(Source::default()), Source::parse)?
         .provenance();
 
+    let origin = ctx.origin.clone();
+    let caller = Caller::of(&origin);
     let mut db = StatsDb::open(ctx.paths.stats_db())?;
     let tx = write_transaction(db.conn_mut())?;
     let known = retrieval_log::contains_query_id(&tx, &req.query_id)?;
@@ -152,13 +155,21 @@ fn apply(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         tracing::warn!(query_id = %req.query_id,
             "query id not found in retrieval_log (evicted or never logged); recording anyway");
     }
-    write_with_provenance(&tx, &req.query_id, &used_ids, &irrelevant_ids, provenance)?;
+    write_with_provenance(
+        &tx,
+        &req.query_id,
+        &used_ids,
+        &irrelevant_ids,
+        provenance,
+        caller,
+    )?;
     write_code_with_provenance(
         &tx,
         &req.query_id,
         &used_code_ids,
         &irrelevant_code_ids,
         provenance,
+        caller,
     )?;
     tx.commit()?;
 

@@ -83,6 +83,24 @@ pub fn canonical_for(conn: &Connection, label: &str) -> Result<Option<String>> {
     )
 }
 
+/// The label this machine files `canonical` under, or `None` when no approved
+/// label resolves to it. When several do, the smallest wins, so every call
+/// answers the same one.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn label_for(conn: &Connection, canonical: &str) -> Result<Option<String>> {
+    let labels: Vec<String> = orm::query_all(
+        conn,
+        RepositoryApproval::select()
+            .columns_typed(&[&col::label])
+            .filter(col::canonical.eq(canonical))
+            .to_sql(),
+        |r| r.get(0),
+    )?;
+    Ok(labels.into_iter().min())
+}
+
 #[cfg(test)]
 #[path = "tests/repository_approval.rs"]
 mod tests;

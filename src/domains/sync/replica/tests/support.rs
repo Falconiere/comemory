@@ -213,3 +213,36 @@ pub fn mark_pushed(conn: &Connection, entity_key: &str) {
         }
     }
 }
+
+/// Every position of `kind` in `conn`'s feed, as the operations a relay would
+/// offer a peer — the same ids, keys, digests and bytes.
+pub fn journalled_ops(conn: &Connection, kind: &str) -> Vec<Operation> {
+    crate::store::replica_read::page(conn, 0, 500, Some(kind))
+        .expect("page")
+        .into_iter()
+        .map(|row| Operation {
+            operation_id: row.operation_id,
+            entity_kind: row.entity_kind,
+            entity_key: row.entity_key,
+            op: row.op,
+            schema_version: row.schema_version,
+            payload_digest: row.payload_digest,
+            payload: row
+                .payload
+                .map(|bytes| serde_json::from_str(&bytes).expect("payload json")),
+            observed_sequence: None,
+            repository: row.repository,
+            vector: None,
+        })
+        .collect()
+}
+
+/// Approve `label` as `Falconiere/comemory` on `conn`, as a policy load would.
+pub fn approve(conn: &Connection, label: &str) {
+    crate::store::repository_approval::replace_all(
+        conn,
+        &[(label.to_string(), "Falconiere/comemory".to_string())],
+        "2026-09-24T10:00:00Z",
+    )
+    .expect("approve");
+}

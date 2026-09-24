@@ -25,6 +25,8 @@ fn row<'a>(at: &'a str, command: &'a str, source: &'a str) -> NewActivityRow<'a>
         ok: true,
         error_code: None,
         summary: Some(r#"{"id":"a1b2c3d4"}"#),
+        device: None,
+        event_id: None,
     }
 }
 
@@ -186,6 +188,8 @@ fn a_failed_run_round_trips_its_slug_and_a_summary_less_row_reads_back_null() {
             ok: false,
             error_code: Some("bad_request"),
             summary: None,
+            device: None,
+            event_id: None,
         },
     )
     .unwrap();

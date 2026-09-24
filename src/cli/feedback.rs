@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::cli::output::json;
-use crate::config::Config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::learning::feedback;
 use crate::prelude::*;
@@ -60,13 +59,15 @@ pub struct Args {
 /// one-line ack (or a JSON envelope with the recorded counts under
 /// `--json`).
 ///
-/// Uses a lazy `Ctx` (no `config.toml` read, no data-dir/DB touch) so
-/// `feedback::run`'s validation runs first, exactly as
-/// `cli::feedback::run` did pre-extraction (AC-13: a malformed query id or
-/// id list must not create the data dir or `comemory.db`).
+/// Uses a lazy `Ctx` (no data-dir/DB touch) so `feedback::run`'s validation
+/// runs first, exactly as `cli::feedback::run` did pre-extraction (AC-13: a
+/// malformed query id or id list must not create the data dir or
+/// `comemory.db`). The layered config IS read — it creates nothing — because
+/// `activity.*` and `COMEMORY_ACTOR` decide what the verdict records about its
+/// caller and whether its run is recorded at all (#254).
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
-    let cfg = Config::defaults();
+    let cfg = crate::cli::load_config(&paths)?;
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
     let req = feedback::Request {

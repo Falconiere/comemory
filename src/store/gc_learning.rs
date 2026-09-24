@@ -25,9 +25,23 @@ use crate::prelude::*;
 /// (`memory_row::iso_format`), so the plain string `<` compares
 /// chronologically — see `maintenance::gc::sweep_learning`'s doc for the format
 /// note this preserves.
+///
+/// Before either delete, the journal copies of every shared event past the
+/// same cutoff are expired (#254) — the `feedback_events` rows about to go
+/// here and the `activity_log` rows `maintenance::gc` evicts right after —
+/// in the same transaction, so a shared event's detail never outlives its
+/// retention in the journal while its dedupe metadata stays.
 pub fn evict_before(conn: &Connection, cutoff: &str) -> Result<(u64, u64)> {
-    let logs = conn.execute("DELETE FROM retrieval_log WHERE at < ?1", [cutoff])?;
-    let events = conn.execute("DELETE FROM feedback_events WHERE at < ?1", [cutoff])?;
+    let at = super::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
+    let tx = conn.unchecked_transaction()?;
+    super::replica_redaction::redact(
+        &tx,
+        super::replica_redaction::Reach::PastRetention(cutoff),
+        &at,
+    )?;
+    let logs = tx.execute("DELETE FROM retrieval_log WHERE at < ?1", [cutoff])?;
+    let events = tx.execute("DELETE FROM feedback_events WHERE at < ?1", [cutoff])?;
+    tx.commit()?;
     Ok((logs as u64, events as u64))
 }
 

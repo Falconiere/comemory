@@ -153,6 +153,53 @@ fn update_revision(tx: &Connection, new: &NewOperation<'_>, sequence: i64) -> Re
     Ok(())
 }
 
+/// One event recorded on this machine, to journal as a local upsert (#254).
+#[derive(Debug, Clone, Copy)]
+pub struct LocalEvent<'a> {
+    /// Entity kind (`feedback_event` or `activity_event`).
+    pub entity_kind: &'a str,
+    /// The event id.
+    pub event_id: &'a str,
+    /// Payload schema version.
+    pub schema_version: i64,
+    /// Canonical repository the event is shared under.
+    pub repository: &'a str,
+    /// The canonical payload.
+    pub payload: PayloadRef<'a>,
+    /// The event's own time, which the feed position carries.
+    pub at: &'a str,
+}
+
+/// Journal one local event under a freshly minted operation id, in the
+/// caller's transaction. Returns the feed sequence. An event is immutable, so
+/// it is only ever an upsert, and a local one is never enqueued: the feed
+/// position is what a push reads.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn append_local_event(tx: &Connection, event: &LocalEvent<'_>) -> Result<i64> {
+    let operation_id = crate::utilities::dated_id::dated_id(
+        "op",
+        &format!("{}:{}:upsert", event.entity_kind, event.event_id),
+        time::OffsetDateTime::now_utc(),
+    );
+    append(
+        tx,
+        &stream_epoch(tx)?,
+        &NewOperation {
+            operation_id: &operation_id,
+            entity_kind: event.entity_kind,
+            entity_key: event.event_id,
+            op: ReplicaOp::Upsert,
+            payload: Some(event.payload),
+            schema_version: event.schema_version,
+            repository: Some(event.repository),
+            origin: ReplicaOrigin::Local,
+            at: event.at,
+        },
+    )
+}
+
 /// Blank a payload's bytes while keeping the row.
 ///
 /// Permanent erasure must remove the text without removing the barrier: the
@@ -167,6 +214,7 @@ pub fn redact_payload(conn: &Connection, digest: &str, at: &str) -> Result<usize
         ReplicaPayload::update()
             .set(&payload_col::bytes, None::<&str>)
             .set(&payload_col::redacted_at, at)
+            .set(&payload_col::redaction, "erased")
             .filter(payload_col::digest.eq(digest))
             .filter(payload_col::redacted_at.is_null())
             .to_sql(),

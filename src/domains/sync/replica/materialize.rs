@@ -14,6 +14,7 @@ use crate::domains::memories::{MemoryStore, SaveParams, journal, mirror};
 use crate::domains::sync::replica::code_accept;
 use crate::domains::sync::replica::contract::{Disposition, Operation, OperationResult};
 use crate::domains::sync::replica::document_accept;
+use crate::domains::sync::replica::event_accept;
 use crate::domains::sync::vector_rule;
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
@@ -43,6 +44,10 @@ pub(crate) fn apply(
     // writes, so it has no markdown half and no local row to touch either.
     if document_accept::handles(operation) {
         return document_accept::apply(ctx, epoch, operation, &at);
+    }
+    // Nor does an event: a verdict or a run is rows, a counter and a receipt.
+    if event_accept::handles(operation) {
+        return event_accept::apply(ctx, epoch, operation, &at);
     }
     // The markdown tree is the source of truth and cannot join a SQLite
     // transaction, so it moves first; the database half then commits as one

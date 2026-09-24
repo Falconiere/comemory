@@ -4,13 +4,13 @@
 //! from the immutable payload row rather than from live state, so history
 //! describes what happened instead of what is true now.
 
-use crate::domains::sync::replica::bootstrap;
 use crate::domains::sync::replica::contract::{CursorRef, PROTOCOL};
 use crate::domains::sync::replica::contract_views::{ChangeEntry, ChangesResponse, PayloadState};
 use crate::domains::sync::replica::validate;
+use crate::domains::sync::replica::{bootstrap, event_capture};
 use crate::prelude::*;
 use crate::store::replica_journal::stream_epoch;
-use crate::store::replica_read::{self, FeedRow};
+use crate::store::replica_read::{self, FeedRow, Redaction};
 use crate::utilities::context::Ctx;
 
 /// Smallest and largest page a peer may ask for.
@@ -40,6 +40,7 @@ pub fn run(
     });
     validate::check_cursor(cursor.as_ref(), &stream)?;
     bootstrap::advance(ctx)?;
+    event_capture::advance(ctx)?;
 
     let conn = ctx.conn()?;
     let head_sequence = replica_read::head(conn)?;
@@ -58,12 +59,11 @@ pub fn run(
 
 /// Render one stored position on the wire.
 fn entry(row: FeedRow) -> Result<ChangeEntry> {
-    let payload_state = if row.payload_erased {
-        PayloadState::Erased
-    } else if row.payload.is_some() {
-        PayloadState::Present
-    } else {
-        PayloadState::Absent
+    let payload_state = match (row.redaction, row.payload.is_some()) {
+        (Some(Redaction::Erased), _) => PayloadState::Erased,
+        (Some(Redaction::Expired), _) => PayloadState::Expired,
+        (None, true) => PayloadState::Present,
+        (None, false) => PayloadState::Absent,
     };
     let payload = row
         .payload

@@ -39,6 +39,10 @@ pub struct NewActivityRow<'a> {
     pub error_code: Option<&'a str>,
     /// Pre-serialized JSON summary, `None` when summaries are off.
     pub summary: Option<&'a str>,
+    /// Device that ran the command; `None` for a run recorded here.
+    pub device: Option<&'a str>,
+    /// Replica event id, for an imported run (#254).
+    pub event_id: Option<&'a str>,
 }
 
 /// One `activity_log` row as the read surfaces return it. `summary` stays the
@@ -66,6 +70,8 @@ pub struct ActivityRow {
     pub error_code: Option<String>,
     /// Stored JSON summary text, when one was written.
     pub summary: Option<String>,
+    /// Device that ran the command; `None` for a run recorded here (#254).
+    pub device: Option<String>,
 }
 
 /// What a read narrows to. Every field is `None` by default — an all-`None`
@@ -88,7 +94,7 @@ pub struct ActivityFilter<'a> {
 
 /// The projection both readers share, so a column added to one cannot go
 /// missing from the other.
-fn select_rows() -> SelectBuilder {
+pub(super) fn select_rows() -> SelectBuilder {
     ActivityLog::select().columns_typed(&[
         &col::id,
         &col::at,
@@ -100,6 +106,7 @@ fn select_rows() -> SelectBuilder {
         &col::ok,
         &col::error_code,
         &col::summary,
+        &col::device,
     ])
 }
 
@@ -146,6 +153,8 @@ pub fn insert(conn: &Connection, row: &NewActivityRow<'_>) -> Result<i64> {
             .set(&col::ok, i64::from(row.ok))
             .set(&col::error_code, row.error_code)
             .set(&col::summary, row.summary)
+            .set(&col::device, row.device)
+            .set(&col::event_id, row.event_id)
             .to_sql(),
     )?;
     Ok(conn.last_insert_rowid())
@@ -233,7 +242,7 @@ pub fn delete_before(conn: &Connection, cutoff: &str) -> Result<u64> {
 }
 
 /// Map one projected row into an [`ActivityRow`].
-fn row_from_query(r: &rusqlite::Row<'_>) -> rusqlite::Result<ActivityRow> {
+pub(super) fn row_from_query(r: &rusqlite::Row<'_>) -> rusqlite::Result<ActivityRow> {
     Ok(ActivityRow {
         id: r.get(0)?,
         at: r.get(1)?,
@@ -245,6 +254,7 @@ fn row_from_query(r: &rusqlite::Row<'_>) -> rusqlite::Result<ActivityRow> {
         ok: r.get::<_, i64>(7)? != 0,
         error_code: r.get(8)?,
         summary: r.get(9)?,
+        device: r.get(10)?,
     })
 }
 

@@ -202,6 +202,8 @@ pub fn record(
         ok,
         error_code,
         summary: summary.as_deref(),
+        device: None,
+        event_id: None,
     };
     if let Err(e) = activity::insert(conn, &row) {
         tracing::warn!(error = %e, command, "activity row not written");

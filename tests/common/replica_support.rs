@@ -60,6 +60,15 @@ impl Engine {
         Self::spawn_with(home, data_dir, extra_args)
     }
 
+    /// Spawn `comemory serve` over `data_dir` with `RUST_LOG=debug` and its
+    /// stderr written to `log` — for the cases that must prove a value never
+    /// reaches a log line.
+    pub fn spawn_logged(data_dir: &std::path::Path, log: &std::path::Path) -> Self {
+        let home = tempfile::TempDir::new().expect("tempdir");
+        let file = std::fs::File::create(log).expect("create log");
+        Self::spawn_inner(home, data_dir.to_path_buf(), &[], Stdio::from(file), true)
+    }
+
     /// The shared spawn: bind port 0, read the JSON banner, keep the child
     /// under a guard that kills it on drop.
     fn spawn_with(
@@ -67,12 +76,26 @@ impl Engine {
         data_dir: std::path::PathBuf,
         extra_args: &[&str],
     ) -> Self {
-        let mut child = Command::new(cargo_bin("comemory"))
+        Self::spawn_inner(home, data_dir, extra_args, Stdio::null(), false)
+    }
+
+    fn spawn_inner(
+        home: tempfile::TempDir,
+        data_dir: std::path::PathBuf,
+        extra_args: &[&str],
+        stderr: Stdio,
+        debug: bool,
+    ) -> Self {
+        let mut command = Command::new(cargo_bin("comemory"));
+        if debug {
+            command.env("RUST_LOG", "debug");
+        }
+        let mut child = command
             .env("COMEMORY_DATA_DIR", &data_dir)
             .args(["--json", "serve", "--port", "0"])
             .args(extra_args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr)
             .spawn()
             .expect("spawn serve");
         let stdout = child.stdout.take().expect("piped stdout");

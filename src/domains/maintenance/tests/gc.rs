@@ -434,6 +434,8 @@ fn gc_evicts_activity_rows_past_the_window_and_reports_the_count() {
                 ok: true,
                 error_code: None,
                 summary: None,
+                device: None,
+                event_id: None,
             },
         )
         .expect("insert activity row");

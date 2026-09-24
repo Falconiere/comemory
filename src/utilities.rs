@@ -63,6 +63,9 @@ pub mod repo_label;
 pub mod repo_root;
 /// The curated secret scan both sync and the documents capability run.
 pub mod secret_scan;
+/// The free-text policy for anything shared with another machine: machine
+/// paths stripped, secret-bearing text withheld.
+pub mod shared_text;
 /// 64-bit SimHash and Hamming distance over tokenized bodies.
 pub mod simhash;
 /// The persisted retrieval-log / feedback vocabularies.

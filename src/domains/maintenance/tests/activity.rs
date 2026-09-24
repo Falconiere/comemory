@@ -26,6 +26,8 @@ fn row<'a>(at: &'a str, command: &'a str, source: &'a str) -> NewActivityRow<'a>
         ok: true,
         error_code: None,
         summary: Some(r#"{"id":"a1b2c3d4"}"#),
+        device: None,
+        event_id: None,
     }
 }
 
@@ -205,6 +207,8 @@ fn an_unparsable_summary_is_dropped_without_failing_the_page() {
         &conn,
         &NewActivityRow {
             summary: Some("{not json"),
+            device: None,
+            event_id: None,
             ..row("2026-09-20T10:00:00Z", "save", "cli")
         },
     )

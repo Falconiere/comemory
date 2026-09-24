@@ -370,6 +370,39 @@ repository's approval stops its pulled revisions answering immediately and
 reapproving resumes them, with no re-indexing either way. The full contract is
 [document revision replication](../designs/2026-09-23-document-revision-replication.md).
 
+## Feedback and activity a repository shares
+
+Verdicts (`comemory feedback`, the HTTP and MCP feedback routes) and the
+activity feed replicate as events (`replica-v1` kinds `feedback_event` and
+`activity_event`), never as counters: each machine adds one
+contribution per event it receives, so replaying, relaying or echoing an event
+back changes nothing, while two separate verdicts on the same result both
+count. Every event carries the device that recorded it, its original time, the
+surface and declared caller, and its provenance.
+
+What is shared, exactly:
+
+| History | Shared | Stays local |
+| --- | --- | --- |
+| Verdicts | `manual`, `implicit` and search→edit (`auto_search_edit`) verdicts on a memory or code symbol whose repository is approved | co-activation rewards (every indexing machine mints its own), unscoped targets, verdicts recorded before this release on code symbols |
+| Activity | `save`, `update`, `delete`, `restore`, `search`, `context`, `find`, `search-code`, `feedback` and `index-code` runs scoped to an approved repository | unscoped runs, `sync.import`, every other command |
+| Activity summaries | the counts, ids and kind fields each command lists, and the query text with machine paths replaced by `<path>` | memory titles, local query ids, result lists, and any query or caller label that matches a secret rule (the event says `query_withheld: true`) |
+| Counters | nothing — each machine derives its own from the events | the contribution of events that expired before they were shared |
+| Query history | nothing: a verdict cites `<device>:<query id>`, which never matches a local query | `retrieval_log`, candidate observations and judgments, bandit state |
+
+An imported verdict never enters this machine's golden harvest, never marks a
+query successful for `comemory mine`, and is not counted by
+`comemory recall-status`. An imported activity run appears in
+`GET /api/v1/activity` with its origin `device`; this machine's own runs have
+`device: null`. `activity.enabled = false` records nothing to share, and
+`activity.summaries = false` shares runs without their summary; on a receiving
+machine the same two settings decide whether an imported run is shown and with
+what. `comemory gc` expires the shared copy of an event when its retention
+window passes, and purging a memory erases the shared copies of the verdicts on
+it; a peer that offers either again is answered, not re-counted. The full
+contract is
+[feedback and activity replication](../designs/2026-09-24-feedback-activity-replication.md).
+
 ## What replicates, and what does not
 
 Every write that changes a memory a peer can observe produces exactly one
