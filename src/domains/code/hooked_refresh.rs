@@ -58,16 +58,24 @@ pub struct Checkout {
 /// Resolve `path` (any directory inside a work tree) to its [`Checkout`];
 /// `None` outside a git work tree, on a bare repository, or when the main
 /// worktree's name is not UTF-8.
+///
+/// A workdir git just opened that still fails to canonicalize (permissions,
+/// a symlink loop) is kept as git reported it, and the failure is logged:
+/// at worst the trigger then runs its own incremental pass instead of
+/// coalescing, whereas dropping the checkout would skip its index entirely.
 pub fn resolve_checkout(path: &Path) -> Option<Checkout> {
     let git = Repository::discover(path).ok()?;
+    let label = git_utils::repo_label(&git)?;
     let workdir = git.workdir()?;
-    let root = workdir
-        .canonicalize()
-        .unwrap_or_else(|_| workdir.to_path_buf());
-    Some(Checkout {
-        label: git_utils::repo_label(&git)?,
-        root,
-    })
+    let root = workdir.canonicalize().unwrap_or_else(|e| {
+        tracing::warn!(
+            workdir = %workdir.display(),
+            error = %e,
+            "hooked refresh: workdir did not canonicalize; using it as git reported it",
+        );
+        workdir.to_path_buf()
+    });
+    Some(Checkout { label, root })
 }
 
 /// Whether a later pass's [`refresh_stale`] would re-index `checkout` on its
