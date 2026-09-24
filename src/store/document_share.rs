@@ -8,7 +8,7 @@
 //! There is no deletion function here on purpose. `document_id` is declared
 //! `REFERENCES documents(id) ON DELETE CASCADE`, so the row goes when the
 //! document does — which is what both local deletion paths already do
-//! (`document::writer::tombstone` deletes the `documents` row, `unindex`
+//! (`document::deletions` deletes the `documents` row, `unindex`
 //! deletes the `source_roots` row above it). A hand-called purge would be one
 //! more thing for a third deletion path to forget.
 

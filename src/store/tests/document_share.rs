@@ -202,7 +202,7 @@ fn deleting_the_document_takes_its_portable_name_with_it() {
     .expect("record");
 
     // The production deletion path, not a purge written for this table:
-    // `document::writer::tombstone` and `unindex` both remove the parent row,
+    // `document::deletions` and `unindex` both remove the parent row,
     // and `ON DELETE CASCADE` is what carries the share away with it.
     documents::delete_document(&conn, "local-doc-1").expect("delete the document");
 

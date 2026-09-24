@@ -167,7 +167,7 @@ pub struct RemoteDocumentFts {
 pub struct DocumentShare {
     /// The local `documents.id`, unchanged. The cascade is the whole
     /// lifecycle: a portable name means nothing without the document it
-    /// names, and both local deletion paths (`documents::tombstone` and
+    /// names, and both local deletion paths (`document::deletions` and
     /// `unindex`) drop the parent row, so neither can leave a share behind.
     #[column(not_null, references = "documents(id)", on_delete = "cascade")]
     pub document_id: Text,
