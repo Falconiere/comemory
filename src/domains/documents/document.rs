@@ -10,13 +10,13 @@
 
 /// Size-bounded splitter shared by every extractor.
 pub mod chunk;
-/// Per-candidate fingerprint bundle, the size+mtime skip check, SHA-256
 /// Tombstoning what an authoritative walk no longer sees.
 pub mod deletions;
 /// CSV/TSV extraction via the `csv` crate.
 pub mod delimited;
 /// Format dispatch plus the TXT/Markdown extractors.
 pub mod extract;
+/// Per-candidate fingerprint bundle, the size+mtime skip check, SHA-256
 /// identity hashing, and the `source_files` fingerprint upsert.
 pub mod fingerprint;
 /// HTML/XHTML extraction via the `tl` crate.

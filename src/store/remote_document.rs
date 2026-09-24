@@ -153,17 +153,20 @@ fn write_passage(tx: &Connection, revision: &Revision, chunk: &Chunk) -> Result<
     Ok(())
 }
 
-/// Every table one pulled document's rows live in, children before parents.
+/// One `DELETE` per table a pulled document's rows live in, children before
+/// parents, each taking `(repo, shared_id)`.
+///
+/// Whole statements rather than table names formatted into one: they all share
+/// a key, so a loop is the right shape, but nothing should be interpolated into
+/// SQL when the alternative is this cheap.
 ///
 /// `remote_document_fts` is a virtual table with no foreign key, so its rows
-/// are deleted explicitly — the same obligation `document_fts` has. The other
-/// three are listed rather than cascaded because they all share one key, which
-/// is also why one loop can clear them.
-const PULLED_TABLES: [&str; 4] = [
-    "remote_document_fts",
-    "remote_document_chunk",
-    "remote_document_link",
-    "remote_document",
+/// are deleted explicitly — the same obligation `document_fts` has.
+const PULLED_DELETES: [&str; 4] = [
+    "DELETE FROM remote_document_fts WHERE repo = ?1 AND shared_id = ?2",
+    "DELETE FROM remote_document_chunk WHERE repo = ?1 AND shared_id = ?2",
+    "DELETE FROM remote_document_link WHERE repo = ?1 AND shared_id = ?2",
+    "DELETE FROM remote_document WHERE repo = ?1 AND shared_id = ?2",
 ];
 
 /// Forget everything this machine holds for one document — what a tombstone
@@ -172,12 +175,8 @@ const PULLED_TABLES: [&str; 4] = [
 /// # Errors
 /// Propagates SQLite failures.
 pub fn purge(tx: &Connection, repo: &str, shared_id: &str) -> Result<()> {
-    for table in PULLED_TABLES {
-        // The table name comes from the const above, never from a caller.
-        tx.execute(
-            &format!("DELETE FROM {table} WHERE repo = ?1 AND shared_id = ?2"),
-            rusqlite::params![repo, shared_id],
-        )?;
+    for sql in PULLED_DELETES {
+        tx.execute(sql, rusqlite::params![repo, shared_id])?;
     }
     Ok(())
 }

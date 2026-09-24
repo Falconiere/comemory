@@ -54,8 +54,9 @@ fn tombstone(conn: &mut Connection, row: &SourceFileRow) -> Result<()> {
     let document_id = fingerprint::document_id_of(&row.id);
     let now = iso_now()?;
     let tx = conn.transaction()?;
-    // Before the delete: `document_share.document_id` cascades, so the row
-    // naming what a peer received is gone the moment the parent is.
+    // First, while the share row still exists: `document_share.document_id`
+    // cascades from the `documents` row deleted below, so reading it after
+    // would find nothing and a peer would never be told the document is gone.
     journal::record_tombstone(&tx, &document_id, &now)?;
     documents::delete_document(&tx, &document_id)?;
     document_fts::delete_document(&tx, &document_id)?;
