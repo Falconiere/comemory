@@ -34,7 +34,7 @@ pub const STEP_IDS: &[&str] = &[
 pub const DATA_DIR: &str = "data-dir";
 /// Bundled skills and hooks inside an agent host.
 pub const AGENT_HOST: &str = "agent-host";
-/// The three git reindex hooks in this repo.
+/// The four git reindex hooks in this repo.
 pub const GIT_HOOKS: &str = "git-hooks";
 /// This repo's code index.
 pub const INDEX_CODE: &str = "index-code";

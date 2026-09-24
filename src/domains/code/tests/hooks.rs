@@ -36,7 +36,7 @@ fn request(
 }
 
 #[test]
-fn fresh_repo_reports_all_four_rows_with_git_hooks_uninstalled_and_reinforce_enabled() {
+fn fresh_repo_reports_all_five_rows_with_git_hooks_uninstalled_and_reinforce_enabled() {
     let home = tempfile::tempdir().expect("tempdir");
     let repo = fake_repo(home.path());
     let paths = Paths::new(home.path());
