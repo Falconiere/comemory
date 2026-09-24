@@ -82,3 +82,98 @@ fn status_protocol_workspace_and_mapping_are_validated() {
     }]);
     assert!(RepositoryPolicy::resolve(&conn, wrong_mapping, "ws-org").is_err());
 }
+
+#[test]
+fn the_persisted_map_holds_exactly_the_labels_that_resolve() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    let repo = code_sync_fixture::write_ts_repo(home.path());
+    let mut conn = connection::open(paths.db_path()).expect("db");
+    code_sync_fixture::index(&paths, &Config::defaults(), &mut conn, &repo);
+    let mut unapproved = status(vec![RepositoryMapping {
+        label: "old-comemory".into(),
+        full_name: "falconiere/comemory".into(),
+    }]);
+    // A mapping the allowlist does not cover must not reach the map: a capture
+    // reading it would mint an id for a repository this workspace refuses.
+    unapproved.repo_mappings.push(RepositoryMapping {
+        label: "elsewhere".into(),
+        full_name: "falconiere/comemory".into(),
+    });
+    let policy = RepositoryPolicy::resolve(&conn, unapproved, "ws-org").expect("policy");
+
+    policy
+        .persist_resolved_labels(&mut conn)
+        .expect("persist the resolved labels");
+
+    // Every label the policy resolves, and nothing else — read back through
+    // the offline reader a capture actually uses.
+    for label in [
+        "falconiere/comemory",
+        "old-comemory",
+        "scratch",
+        "elsewhere",
+    ] {
+        assert_eq!(
+            comemory::store::repository_approval::canonical_for(&conn, label)
+                .expect("read")
+                .as_deref(),
+            policy.memory_repository(label),
+            "`{label}` must read back exactly as the policy resolves it"
+        );
+    }
+    assert_eq!(
+        comemory::store::repository_approval::canonical_for(&conn, "never-heard-of-it")
+            .expect("read"),
+        None
+    );
+}
+
+#[test]
+fn a_later_policy_load_replaces_the_map_rather_than_adding_to_it() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    let repo = code_sync_fixture::write_ts_repo(home.path());
+    let mut conn = connection::open(paths.db_path()).expect("db");
+    code_sync_fixture::index(&paths, &Config::defaults(), &mut conn, &repo);
+    let first = RepositoryPolicy::resolve(
+        &conn,
+        status(vec![RepositoryMapping {
+            label: "old-comemory".into(),
+            full_name: "falconiere/comemory".into(),
+        }]),
+        "ws-org",
+    )
+    .expect("first policy");
+    first
+        .persist_resolved_labels(&mut conn)
+        .expect("first load");
+    assert_eq!(
+        comemory::store::repository_approval::canonical_for(&conn, "old-comemory")
+            .expect("read")
+            .as_deref(),
+        Some("falconiere/comemory"),
+        "it resolved a moment ago, so its disappearance below means something"
+    );
+
+    // The next load no longer confirms that mapping.
+    let second = RepositoryPolicy::resolve(&conn, status(vec![]), "ws-org").expect("second policy");
+    second
+        .persist_resolved_labels(&mut conn)
+        .expect("second load");
+
+    assert_eq!(
+        comemory::store::repository_approval::canonical_for(&conn, "old-comemory").expect("read"),
+        None,
+        "a withdrawn mapping stops resolving, rather than lingering as a stale row"
+    );
+    assert_eq!(
+        comemory::store::repository_approval::canonical_for(&conn, "falconiere/comemory")
+            .expect("read")
+            .as_deref(),
+        Some("falconiere/comemory"),
+        "while the repository itself is still approved"
+    );
+}
