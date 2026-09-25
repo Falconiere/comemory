@@ -162,6 +162,12 @@
       "name": "0027_replica_exchange.sql",
       "hash": "sha256:78dab6574fec71e75fa076a8151f0fbe3c490233abf7a0e164d46869cbf834d1",
       "created_at": 1790295645
+    },
+    {
+      "idx": 27,
+      "name": "0028_historical_document_revision.sql",
+      "hash": "sha256:8685a58f30c6ed9969b7d0390684031f1ffec4f78fec08832f0d4a85aa0bc2a5",
+      "created_at": 1790347956
     }
   ]
 }

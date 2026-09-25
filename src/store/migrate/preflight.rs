@@ -47,6 +47,11 @@ use crate::store::{
 };
 use crate::utilities::file_lock::FileLock;
 
+// A branch build shipped this marker for repository_approval before that
+// table's identical DDL was folded into 0025_document_revision. Keep the
+// stored marker, but do not mistake it for an unknown schema change.
+const LEGACY_REPOSITORY_APPROVAL: &str = "0026_repository_approval";
+
 /// Guard and, if needed, snapshot the database at `db_path` (already open
 /// as `conn`) before [`super::run`] touches it. See the module doc for the
 /// four branches this implements.
@@ -81,9 +86,11 @@ pub(crate) fn preflight(conn: &Connection, db_path: &Path) -> Result<()> {
 
 /// The applied-migration keys recorded in `schema_meta` — every row whose
 /// key looks like a migration marker (`0001_schema_meta`,
-/// `0004_simhash_backfill`, ...). Only called once `schema_meta` is known
-/// to exist. `pub(crate)`: [`crate::domains::maintenance::doctor`] reuses this against its
-/// own read-only fallback connection rather than re-querying by hand.
+/// `0004_simhash_backfill`, ...), except the known historical
+/// `0026_repository_approval` alias whose DDL is now part of migration 25.
+/// Only called once `schema_meta` is known to exist. `pub(crate)`:
+/// [`crate::domains::maintenance::doctor`] reuses this against its own
+/// read-only fallback connection rather than re-querying by hand.
 ///
 /// Fetches every `schema_meta` row and filters in Rust with
 /// [`is_migration_marker`] rather than a `WHERE key LIKE '0%'` SQL
@@ -104,7 +111,7 @@ pub(crate) fn applied_keys(conn: &Connection) -> Result<BTreeSet<String>> {
     )?;
     Ok(keys
         .into_iter()
-        .filter(|k| is_migration_marker(k))
+        .filter(|k| is_migration_marker(k) && k.as_str() != LEGACY_REPOSITORY_APPROVAL)
         .collect())
 }
 

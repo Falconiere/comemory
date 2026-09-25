@@ -147,6 +147,103 @@ fn unknown_marker_is_refused_when_version_still_says_current_after_crash() {
 }
 
 #[test]
+fn historical_repository_approval_marker_migrates_old_document_shape() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    build_legacy_db(&db, 25, "26", "aaaa1111");
+    {
+        let raw = Connection::open(&db).expect("open historical database");
+        comemory::store::tokenizer::ffi::register(&raw).expect("register identifier tokenizer");
+        raw.execute_batch(
+            "DROP TABLE remote_document;
+             CREATE TABLE remote_document (
+                 repo TEXT NOT NULL, shared_id TEXT NOT NULL, path TEXT NOT NULL,
+                 title TEXT NOT NULL, format TEXT NOT NULL,
+                 revision_hash TEXT NOT NULL, chunk_count INTEGER NOT NULL,
+                 state TEXT NOT NULL DEFAULT 'staged', created_at TEXT NOT NULL,
+                 activated_at TEXT, PRIMARY KEY (repo, shared_id)
+             );
+             CREATE INDEX idx_remote_document_state ON remote_document(repo, state);
+             CREATE INDEX idx_remote_document_path ON remote_document(repo, path);
+             INSERT INTO remote_document VALUES
+                 ('owner/project', 'active', 'docs/active.md', 'Active', 'markdown',
+                  'hash-active', 1, 'active', '2026-09-24T00:00:00Z', '2026-09-25T00:00:00Z'),
+                 ('owner/project', 'staged', 'docs/staged.md', 'Staged', 'markdown',
+                  'hash-staged', 1, 'staged', '2026-09-24T00:00:00Z', NULL),
+                 ('owner/project', 'superseded', 'docs/old.md', 'Old', 'markdown',
+                  'hash-old', 1, 'superseded', '2026-09-23T00:00:00Z', '2026-09-24T00:00:00Z');
+             INSERT INTO remote_document_chunk(repo, shared_id, ordinal,
+                 char_start, char_end, line_start, line_end, simhash, text)
+             VALUES ('owner/project', 'active', 0, 0, 6, 1, 1, 0, 'active'),
+                    ('owner/project', 'staged', 0, 0, 6, 1, 1, 0, 'staged'),
+                    ('owner/project', 'superseded', 0, 0, 3, 1, 1, 0, 'old');
+             INSERT INTO remote_document_link(repo, shared_id, ordinal, target)
+             VALUES ('owner/project', 'active', 0, 'docs/current.md'),
+                    ('owner/project', 'staged', 0, 'docs/pending.md'),
+                    ('owner/project', 'superseded', 0, 'docs/old.md');
+             INSERT INTO remote_document_fts(repo, shared_id, ordinal, title,
+                 headings, passage, path_tokens)
+             VALUES ('owner/project', 'active', '0', 'Active', '', 'active',
+                     'docs/active.md'),
+                    ('owner/project', 'staged', '0', 'Staged', '', 'staged',
+                     'docs/staged.md'),
+                    ('owner/project', 'superseded', '0', 'Old', '', 'old',
+                     'docs/old.md');
+             INSERT INTO schema_meta(key, value) VALUES('0026_repository_approval', '1');
+             INSERT INTO repository_approval(label, canonical, updated_at)
+             VALUES('project', 'owner/project', '2026-09-25T00:00:00Z');",
+        )
+        .expect("apply historical approval migration marker and row");
+    }
+
+    let conn = connection::open(&db).expect("historical marker must not block migration");
+    let canonical: String = conn
+        .query_row(
+            "SELECT canonical FROM repository_approval WHERE label = 'project'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("historical approval row survived");
+    assert_eq!(canonical, "owner/project");
+    let accepted_at: String = conn
+        .query_row(
+            "SELECT accepted_at FROM remote_document WHERE shared_id = 'active'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("active revision survived with its acceptance time");
+    assert_eq!(accepted_at, "2026-09-25T00:00:00Z");
+    let active_passages: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM remote_document_fts WHERE shared_id = 'active'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("accepted passages remain searchable");
+    assert_eq!(active_passages, 1);
+    let retained: (i64, i64, i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT count(*) FROM remote_document),
+                    (SELECT count(*) FROM remote_document_chunk),
+                    (SELECT count(*) FROM remote_document_link),
+                    (SELECT count(*) FROM remote_document_fts)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("count retained document rows");
+    assert_eq!(retained, (1, 1, 1, 1), "only active revision rows survive");
+    let markers = schema_meta_snapshot(&conn);
+    assert!(
+        markers
+            .iter()
+            .any(|(key, _)| key == "0026_repository_approval")
+    );
+    assert!(markers.iter().any(|(key, _)| key == "0026_replica_events"));
+    drop(conn);
+    connection::open(&db).expect("subsequent open must accept both markers");
+}
+
+#[test]
 fn v12_database_snapshots_to_pre_v12_bak_with_matching_pre_upgrade_contents() {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("comemory.db");

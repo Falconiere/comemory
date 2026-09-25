@@ -33,8 +33,7 @@ use super::apply;
 #[test]
 fn fresh_db_runs_all_migrations_to_current_version() {
     let dir = tempdir().expect("tempdir");
-    let path = dir.path().join("comemory.db");
-    let mut conn = connection::open(&path).expect("open");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
 
     migrate::run(&mut conn).expect("migrate");
 
@@ -69,8 +68,7 @@ fn fresh_db_runs_all_migrations_to_current_version() {
 #[test]
 fn running_migrations_twice_is_idempotent() {
     let dir = tempdir().expect("tempdir");
-    let path = dir.path().join("comemory.db");
-    let mut conn = connection::open(&path).expect("open");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
 
     migrate::run(&mut conn).expect("first run");
     migrate::run(&mut conn).expect("second run is a no-op");
@@ -218,7 +216,7 @@ fn v10_creates_bandit_arms_table() {
         .expect("schema version");
     assert_eq!(v, migrate::CURRENT_VERSION);
     // Update this pin alongside the next CURRENT_VERSION change.
-    assert_eq!(migrate::CURRENT_VERSION, "27");
+    assert_eq!(migrate::CURRENT_VERSION, "28");
 }
 
 #[test]

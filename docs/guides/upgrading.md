@@ -60,6 +60,13 @@ Before the migration chain touches your database, a preflight guard runs:
    error and exits `70`, and nothing is written. Point `COMEMORY_DATA_DIR` at
    a different directory, or install a comemory at least as new as the one
    that last touched this database.
+
+   Migration 28 recognizes one historical exception:
+   `0026_repository_approval`, written by a short-lived build before that
+   table joined the released migration 25. It keeps the repository approval
+   rows and repairs that build's document table to the released shape,
+   retaining active revisions and removing staged or superseded revisions.
+   Other unknown migration markers still cause a refusal.
 2. **If any migration is pending — additive or destructive — comemory
    snapshots the whole database first**, with SQLite's `VACUUM INTO` —
    safer than a raw file copy, since it captures committed writes still
