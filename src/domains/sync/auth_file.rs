@@ -66,11 +66,11 @@ fn read_if_present(path: &std::path::Path) -> Result<Option<String>> {
 /// The error for a credential this build cannot read, or `None` when the
 /// version matches.
 ///
-/// The version is probed before the strict parse because a v1 file is missing
-/// every org field, so parsing it directly would report a confusing
-/// "missing field `organization_id`" instead of "log in again". A *newer*
-/// file gets its own message: telling someone their v3 credential predates
-/// organization scoping would send them to fix the wrong thing.
+/// The version and org fields are probed before the strict parse because old
+/// files can carry a v2 stamp yet lack org scope. Parsing them directly would
+/// report the first missing field instead of telling the user to log in again.
+/// A *newer* file gets its own message: telling someone their v3 credential
+/// predates organization scoping would send them to fix the wrong thing.
 fn schema_mismatch(raw: &str, path: &std::path::Path) -> Result<Option<Error>> {
     let probe: VersionProbe = serde_json::from_str(raw)?;
     if probe.version < AUTH_SCHEMA_VERSION {
@@ -86,6 +86,15 @@ fn schema_mismatch(raw: &str, path: &std::path::Path) -> Result<Option<Error>> {
             probe.version
         ))));
     }
+    if probe.organization_id.is_none()
+        && probe.organization_slug.is_none()
+        && probe.organization_name.is_none()
+    {
+        return Ok(Some(Error::Usage(format!(
+            "credentials at {} carry no organization scope — run `comemory auth login`",
+            path.display()
+        ))));
+    }
     Ok(None)
 }
 
@@ -94,13 +103,16 @@ fn schema_mismatch(raw: &str, path: &std::path::Path) -> Result<Option<Error>> {
 struct VersionProbe {
     #[serde(default = "legacy_version")]
     version: u8,
+    organization_id: Option<String>,
+    organization_slug: Option<String>,
+    organization_name: Option<String>,
 }
 
 impl AuthFile {
     /// Load `auth.json` when present; missing file → `Ok(None)`.
     ///
     /// # Errors
-    /// [`Error::Usage`] when the file predates organization scoping, naming
+    /// [`Error::Usage`] when the file lacks organization scope, naming
     /// `comemory auth login` as the fix. Any other malformed file surfaces the
     /// underlying `serde_json` error.
     pub fn load(paths: &Paths) -> Result<Option<Self>> {
@@ -132,7 +144,7 @@ impl AuthFile {
     /// a warning about a stale credential would be noise. The commands the
     /// user ran on purpose — `sync`, `auth status` — still report it.
     ///
-    /// It re-derives the version rather than catching [`Error::Usage`] from
+    /// It re-derives the schema mismatch rather than catching [`Error::Usage`] from
     /// [`Self::load`]: matching on the error variant would silently swallow
     /// any *future* usage error `load` grows, turning a real misconfiguration
     /// into a silent no-sync.

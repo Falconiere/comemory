@@ -173,6 +173,23 @@ fn cloud_auth_is_reported_not_applied_and_issues_no_request() {
 }
 
 #[test]
+fn setup_reports_a_pre_org_credential_with_a_v2_stamp_as_signed_out() {
+    let data = tempfile::tempdir().unwrap();
+    std::fs::write(
+        data.path().join("auth.json"),
+        r#"{"version":2,"secret":"cmk_old","api_url":"https://api.comemory.io","workspace_id":"ws-old"}"#,
+    )
+    .unwrap();
+
+    let envelope = setup_json(data.path(), &["--dry-run", "--only", "cloud-auth"]);
+    assert_eq!(state_of(&envelope, "cloud-auth"), "unavailable");
+    assert!(
+        data.path().join("auth.json").exists(),
+        "setup must leave the credential for an explicit auth login"
+    );
+}
+
+#[test]
 fn a_non_git_directory_reports_unavailable_repo_steps_and_exits_zero() {
     let data = tempfile::tempdir().unwrap();
     let plain = tempfile::tempdir().unwrap();
