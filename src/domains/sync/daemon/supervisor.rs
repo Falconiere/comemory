@@ -134,11 +134,16 @@ fn home() -> Result<PathBuf> {
         .ok_or_else(|| Error::Config("HOME is unset — cannot place the sync daemon unit".into()))
 }
 
-/// Write `unit`'s file for `exe`/`canonical`; a no-op outside launchd/systemd.
+/// Write `unit`'s file for `exe`/`canonical`, then start (or kick a stale)
+/// it; a no-op outside launchd/systemd — the caller spawns
+/// [`Kind::Process`] itself (`super::spawn`). Every caller writes and starts
+/// together, so there is one native round trip per backend, not two.
 ///
 /// # Errors
-/// The unit directory cannot be created or the file written.
-pub fn write(kind: Kind, unit: &Unit, exe: &Path, canonical: &Path) -> Result<()> {
+/// The unit directory cannot be created or written, or a supervisor CLI
+/// could not be invoked ([`Kind::External`] never gets here: `ensure`
+/// verifies only).
+pub fn activate(kind: Kind, unit: &Unit, exe: &Path, canonical: &Path) -> Result<()> {
     match kind {
         Kind::Launchd => {
             if let Some(parent) = unit.path.parent() {
@@ -148,29 +153,6 @@ pub fn write(kind: Kind, unit: &Unit, exe: &Path, canonical: &Path) -> Result<()
                 &unit.path,
                 render_launch_agent_plist(&unit.name, exe, canonical),
             )?;
-            Ok(())
-        }
-        Kind::Systemd => {
-            if let Some(parent) = unit.path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&unit.path, render_systemd_unit(exe, canonical))?;
-            run_supervisor("systemctl", &["--user", "daemon-reload"]);
-            Ok(())
-        }
-        Kind::Process | Kind::External | Kind::Unsupported => Ok(()),
-    }
-}
-
-/// Start (or kick a stale) unit; a no-op for [`Kind::Process`] — the caller
-/// spawns it (`super::spawn`).
-///
-/// # Errors
-/// A supervisor CLI could not be invoked ([`Kind::External`] never gets here:
-/// `ensure` verifies only).
-pub fn start(kind: Kind, unit: &Unit) -> Result<()> {
-    match kind {
-        Kind::Launchd => {
             let uid = users_uid()?;
             let domain = format!("gui/{uid}");
             let status = Command::new("launchctl")
@@ -186,6 +168,11 @@ pub fn start(kind: Kind, unit: &Unit) -> Result<()> {
             Ok(())
         }
         Kind::Systemd => {
+            if let Some(parent) = unit.path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&unit.path, render_systemd_unit(exe, canonical))?;
+            run_supervisor("systemctl", &["--user", "daemon-reload"]);
             let status = Command::new("systemctl")
                 .args(["--user", "start", &unit.name])
                 .status()
@@ -239,29 +226,25 @@ pub fn remove(kind: Kind, unit: &Unit) {
 /// Boot out and remove the pre-#257 single-daemon unit, if any, so a
 /// repaired directory never runs two coordinators under two labels.
 pub fn remove_legacy(kind: Kind) {
+    if let Some(unit) = legacy_unit(kind) {
+        remove(kind, &unit);
+    }
+}
+
+/// The pre-#257 un-id'd unit's name and path, when `kind` has one.
+fn legacy_unit(kind: Kind) -> Option<Unit> {
     match kind {
-        Kind::Launchd => {
-            if let Ok(uid) = users_uid() {
-                run_supervisor(
-                    "launchctl",
-                    &["bootout", &format!("gui/{uid}/{LEGACY_LAUNCHD_LABEL}")],
-                );
-            }
-            if let Ok(home) = home() {
-                let plist = home
-                    .join("Library/LaunchAgents")
-                    .join(format!("{LEGACY_LAUNCHD_LABEL}.plist"));
-                let _ = fs::remove_file(plist);
-            }
-        }
-        Kind::Systemd => {
-            run_supervisor("systemctl", &["--user", "stop", LEGACY_SYSTEMD_UNIT]);
-            if let Ok(home) = home() {
-                let unit = home.join(".config/systemd/user").join(LEGACY_SYSTEMD_UNIT);
-                let _ = fs::remove_file(unit);
-            }
-        }
-        Kind::Process | Kind::External | Kind::Unsupported => {}
+        Kind::Launchd => home().ok().map(|home| Unit {
+            name: LEGACY_LAUNCHD_LABEL.into(),
+            path: home
+                .join("Library/LaunchAgents")
+                .join(format!("{LEGACY_LAUNCHD_LABEL}.plist")),
+        }),
+        Kind::Systemd => home().ok().map(|home| Unit {
+            name: LEGACY_SYSTEMD_UNIT.into(),
+            path: home.join(".config/systemd/user").join(LEGACY_SYSTEMD_UNIT),
+        }),
+        Kind::Process | Kind::External | Kind::Unsupported => None,
     }
 }
 

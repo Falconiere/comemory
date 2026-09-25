@@ -96,7 +96,9 @@ fn accept(intent: Intent, probe: Probe) -> Option<Ensured> {
     acceptable.then(|| Ensured {
         ready: true,
         action: "none",
-        supervisor: supervisor::Kind::External,
+        // `detect` is a pure env/OS check (no I/O), so the fast accept path
+        // still reports the real backend rather than a placeholder.
+        supervisor: supervisor::detect().unwrap_or(supervisor::Kind::External),
         notes: Vec::new(),
         daemon: Some(*readiness),
         error: None,
@@ -131,7 +133,7 @@ fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
             return Ok(Ensured {
                 ready: true,
                 action: "none",
-                supervisor: supervisor::Kind::External,
+                supervisor: supervisor::detect().unwrap_or(supervisor::Kind::External),
                 notes: vec!["a concurrent ensure already repaired the coordinator".into()],
                 daemon: Some(*readiness),
                 error: None,
@@ -190,9 +192,7 @@ fn start_backend(
         let unit = supervisor::plan(canonical, kind)?;
         let me = identity::BinaryIdentity::current()?;
         supervisor::remove_legacy(kind);
-        let native = supervisor::write(kind, &unit, &me.path, canonical)
-            .and_then(|()| supervisor::start(kind, &unit));
-        match native {
+        match supervisor::activate(kind, &unit, &me.path, canonical) {
             Ok(()) => return Ok((kind, Vec::new())),
             Err(e) => {
                 spawn::spawn(paths)?;

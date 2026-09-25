@@ -414,6 +414,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/completions.rs | comemory::cli::completions; preserve | none | none | delivery::cli | src/cli/completions.rs | retain |
 | src/cli/consolidate.rs | comemory::cli::consolidate; preserve | none | none | delivery::cli | src/cli/consolidate.rs | retain |
 | src/cli/context.rs | comemory::cli::context; preserve | none | none | delivery::cli | src/cli/context.rs | retain |
+| src/cli/daemon_preflight.rs | private | src/cli/tests/daemon_preflight.rs | none | delivery::cli | src/cli/daemon_preflight.rs | retain |
 | src/cli/delete.rs | comemory::cli::delete; preserve | none | none | delivery::cli | src/cli/delete.rs | retain |
 | src/cli/distill.rs | comemory::cli::distill; preserve | none | none | delivery::cli | src/cli/distill.rs | retain |
 | src/cli/doctor.rs | comemory::cli::doctor; preserve | none | none | delivery::cli | src/cli/doctor.rs | retain |

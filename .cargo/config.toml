@@ -14,3 +14,11 @@ SCCACHE_CACHE_SIZE = { value = "20G", force = false }
 # read this file, so end users keep the `lazy` default. Tests that exercise the
 # feature set the var explicitly per-command, which overrides this.
 COMEMORY_INDEXING_AUTO_REINDEX = { value = "off", force = false }
+# Hermetic dev/test default (#257): keep `cargo run`/`cargo test`/`cargo
+# nextest` invoked from this worktree from ensuring a real resident daemon
+# for the developer's `~/.comemory` (or a test's temp data dir) as a side
+# effect of an ordinary command's preflight. The installed binary does not
+# read this file, so end users keep the required daemon on by default.
+# Daemon-specific tests remove the var explicitly per spawned command
+# (`tests/common/daemon_support.rs`), which overrides this.
+COMEMORY_SYNC_DAEMON = { value = "0", force = false }

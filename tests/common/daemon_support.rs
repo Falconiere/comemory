@@ -180,6 +180,28 @@ impl DaemonHome {
         Foreground { child, log }
     }
 
+    /// A background `comemory serve` (ephemeral port), killed by the caller.
+    pub fn spawn_serve(&self) -> std::process::Child {
+        self.command()
+            .args(["serve", "--port", "0"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn serve")
+    }
+
+    /// A background `comemory mcp --read-only`, killed by the caller.
+    pub fn spawn_mcp_read_only(&self) -> std::process::Child {
+        self.command()
+            .args(["mcp", "--read-only"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn mcp")
+    }
+
     /// Probe the coordinator from this process.
     pub fn probe(&self) -> Probe {
         client::probe(&self.paths(), client::PROBE_BOUND)
