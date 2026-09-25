@@ -20,10 +20,10 @@ mod fault_proxy;
 #[path = "common/replica_support.rs"]
 mod replica_support;
 
-use std::thread;
 use std::time::Duration;
 
 use exchange_support::{Client, Hub, REPO, WORKSPACE, guide_body};
+use fault_proxy::Fault;
 use serde_json::{Value, json};
 
 /// A client with `REPO` approved on `hub`.
@@ -200,14 +200,23 @@ fn verify_and_rebootstrap_after_stream_changes() {
     );
 
     // Two SIGKILLs during the rebootstrap over the 1,500-entry hub: neither
-    // one is allowed to leave B looking caught up.
+    // one is allowed to leave B looking caught up. Each kill lands while the
+    // rebootstrap's pull is parked on the proxy — after the pass began it —
+    // so it is never a race against how fast the machine drains.
     for attempt in 0..2 {
+        hub.proxy.arm(Fault::HoldRequest {
+            path: "/sync/replica/changes".into(),
+        });
         let mut child = b.spawn(&["sync"], &[]);
-        thread::sleep(Duration::from_millis(300));
+        assert!(
+            hub.proxy.wait_held(Duration::from_mins(1)),
+            "attempt {attempt}: the rebootstrap's pull is parked"
+        );
         child
             .kill()
             .unwrap_or_else(|e| panic!("kill attempt {attempt}: {e}"));
         let _ = child.wait();
+        hub.proxy.clear();
         let status = b.exchange_status();
         assert_ne!(
             status["caught_up"], true,

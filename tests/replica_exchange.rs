@@ -160,6 +160,34 @@ fn fault_proxy_flips_one_byte_of_one_response_and_holds_until_released() {
     assert_eq!(waiter.join().expect("join").expect("answered"), 200);
 }
 
+/// Whether `pid` still names a process (a zombie included), asked of the
+/// real `kill -0`.
+fn alive(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+#[test]
+fn a_spawned_daemon_is_reaped_when_its_guard_drops() {
+    let hub = Hub::start();
+    let client = exchange_support::Client::new();
+    client.login(&hub);
+    let daemon = client.spawn(&["sync", "daemon", "run"], &[]);
+    let pid = daemon.id();
+    assert!(alive(pid), "the daemon is running");
+
+    // What a failed assertion or an early return does to the guard.
+    drop(daemon);
+
+    assert!(
+        !alive(pid),
+        "dropping the guard killed and reaped the daemon"
+    );
+}
+
 fn get_through_with(hub: &Hub, path: &str, token: &str) -> (u16, String) {
     let response = reqwest::blocking::Client::new()
         .get(format!("{}{path}", hub.proxy.origin()))

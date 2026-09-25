@@ -299,14 +299,18 @@ impl Client {
         )
     }
 
-    /// A spawned child running `comemory <args>` (a daemon, a long drain).
-    pub fn spawn(&self, args: &[&str], env: &[(&str, &str)]) -> std::process::Child {
-        self.command(env)
-            .args(args)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .expect("spawn comemory")
+    /// A spawned child running `comemory <args>` (a daemon, a long drain),
+    /// killed and reaped when the returned guard drops — on a failed
+    /// assertion as much as at the end of the test.
+    pub fn spawn(&self, args: &[&str], env: &[(&str, &str)]) -> Spawned {
+        Spawned(
+            self.command(env)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("spawn comemory"),
+        )
     }
 
     /// One manual `comemory sync`.
@@ -364,6 +368,32 @@ impl Client {
             .expect("query")
             .collect::<Result<Vec<_>, _>>()
             .expect("collect")
+    }
+}
+
+/// A child a test spawned. It dereferences to the [`std::process::Child`], and
+/// dropping it kills and reaps the process, so a test that fails or returns
+/// early never leaves a daemon running against a deleted data directory.
+pub struct Spawned(std::process::Child);
+
+impl std::ops::Deref for Spawned {
+    type Target = std::process::Child;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Spawned {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for Spawned {
+    fn drop(&mut self) {
+        // Already exited or already killed: nothing is left to stop.
+        let _ = self.0.kill();
+        let _ = self.0.wait();
     }
 }
 
