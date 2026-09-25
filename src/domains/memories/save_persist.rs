@@ -7,6 +7,7 @@
 //! place: intent, markdown, then mirror + journal + clear.
 
 use crate::domains::memories::journal;
+use crate::domains::memories::save_lock::SaveGuard;
 use crate::domains::memories::{MemoryStore, SaveParams, id, mirror};
 use crate::prelude::*;
 use crate::store::memory_intent::{self, Intent, IntentKind};
@@ -22,6 +23,7 @@ use crate::store::{Connection, memory_row, vector};
 /// leaves a memory on disk the database has never seen; the outstanding
 /// intent is what lets the next open finish it (`memories::recover`).
 pub(super) fn persist(
+    guard: &SaveGuard,
     conn: &mut Connection,
     store: &MemoryStore,
     params: SaveParams<'_>,
@@ -43,7 +45,7 @@ pub(super) fn persist(
             started_at: memory_row::iso_format(time::OffsetDateTime::now_utc())?,
         },
     )?;
-    let rec = store.save(params)?;
+    let rec = store.save(guard, params)?;
     let md_path = rec.path.clone();
     write_sqlite_mirror(conn, &rec, &tags, vector_opt, &operation_id, &entity_key).map_err(
         |e| {

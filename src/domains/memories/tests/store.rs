@@ -10,6 +10,7 @@
 use std::time::{Duration, SystemTime};
 
 use comemory::config::paths::Paths;
+use comemory::domains::memories::save_lock::{self, SaveGuard};
 use comemory::domains::memories::{Kind, MemoryStore, Relations, SaveParams};
 use comemory::errors::Error;
 
@@ -25,22 +26,31 @@ fn quick(body: &str) -> SaveParams<'_> {
     }
 }
 
+/// A `SaveGuard` over `paths`' `memory-save.lock`, free in a fresh sandbox.
+fn guard(paths: &Paths) -> SaveGuard {
+    save_lock::acquire_within(paths, Duration::from_secs(5)).unwrap()
+}
+
 #[test]
 fn save_then_load_round_trips() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
     let tags = vec!["postgres".to_string()];
     let rec = store
-        .save(SaveParams {
-            repo: "qwick-backend",
-            tags: &tags,
-            author: "falconiere",
-            quality: 4,
-            ..SaveParams::new("Use Postgres for analytics", Kind::Decision)
-        })
+        .save(
+            &guard,
+            SaveParams {
+                repo: "qwick-backend",
+                tags: &tags,
+                author: "falconiere",
+                quality: 4,
+                ..SaveParams::new("Use Postgres for analytics", Kind::Decision)
+            },
+        )
         .unwrap();
     assert_eq!(rec.frontmatter.kind, Kind::Decision);
     assert_eq!(rec.frontmatter.tags, vec!["postgres".to_string()]);
@@ -56,15 +66,19 @@ fn save_writes_relations_into_frontmatter() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
     let rec = store
-        .save(SaveParams {
-            relations: Relations {
-                supersedes: vec!["a1b2c3d4".to_string()],
-                ..Relations::default()
+        .save(
+            &guard,
+            SaveParams {
+                relations: Relations {
+                    supersedes: vec!["a1b2c3d4".to_string()],
+                    ..Relations::default()
+                },
+                ..SaveParams::new("new convention replacing an old one", Kind::Convention)
             },
-            ..SaveParams::new("new convention replacing an old one", Kind::Convention)
-        })
+        )
         .unwrap();
     assert_eq!(rec.frontmatter.relations.supersedes, vec!["a1b2c3d4"]);
 
@@ -80,7 +94,8 @@ fn save_is_atomic_under_failure() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
-    let _ = store.save(quick("body")).unwrap();
+    let guard = guard(&paths);
+    let _ = store.save(&guard, quick("body")).unwrap();
     let entries: Vec<_> = std::fs::read_dir(paths.memories_dir())
         .unwrap()
         .filter_map(std::result::Result::ok)
@@ -102,9 +117,10 @@ fn list_returns_all_saved() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
+    let guard = guard(&paths);
     let store = MemoryStore::new(paths);
-    let _ = store.save(quick("first")).unwrap();
-    let _ = store.save(quick("second")).unwrap();
+    let _ = store.save(&guard, quick("first")).unwrap();
+    let _ = store.save(&guard, quick("second")).unwrap();
     let all = store.list().unwrap();
     assert_eq!(all.len(), 2);
 }
@@ -115,8 +131,9 @@ fn delete_removes_file_and_returns_record() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
-    let rec = store.save(quick("to delete")).unwrap();
-    let removed = store.delete(&rec.frontmatter.id).unwrap();
+    let guard = guard(&paths);
+    let rec = store.save(&guard, quick("to delete")).unwrap();
+    let removed = store.delete(&guard, &rec.frontmatter.id).unwrap();
     assert_eq!(removed.frontmatter.id, rec.frontmatter.id);
     assert!(store.load(&rec.frontmatter.id).is_err());
 }
@@ -127,12 +144,13 @@ fn list_returns_results_sorted_by_created_desc() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
-    let _ = store.save(quick("alpha")).unwrap();
+    let _ = store.save(&guard, quick("alpha")).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(10));
-    let _ = store.save(quick("beta")).unwrap();
+    let _ = store.save(&guard, quick("beta")).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(10));
-    let _ = store.save(quick("gamma")).unwrap();
+    let _ = store.save(&guard, quick("gamma")).unwrap();
 
     let list = store.list().unwrap();
     assert_eq!(list.len(), 3);
@@ -151,8 +169,9 @@ fn list_skips_malformed_files_and_returns_valid_ones() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
-    let good = store.save(quick("valid memory")).unwrap();
+    let good = store.save(&guard, quick("valid memory")).unwrap();
 
     // Drop a malformed .md file alongside the valid one.
     let bad_path = paths.memories_dir().join("zzzzzzzz-bad.md");
@@ -194,8 +213,9 @@ fn list_skips_dot_prefix_md_and_non_md_files() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
-    let good = store.save(quick("real memory")).unwrap();
+    let good = store.save(&guard, quick("real memory")).unwrap();
 
     // File that starts with '.' and ends with '.md' — should be skipped.
     let hidden_md = paths.memories_dir().join(".hidden.md");
@@ -225,8 +245,11 @@ fn list_and_find_by_id_match_the_md_extension_case_insensitively() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
-    let saved = store.save(quick("uppercase extension memory")).unwrap();
+    let saved = store
+        .save(&guard, quick("uppercase extension memory"))
+        .unwrap();
     let lower = saved.path.clone();
     let upper = lower.with_extension("MD");
     std::fs::rename(&lower, &upper).unwrap();
@@ -271,8 +294,9 @@ fn delete_stamps_the_trashed_file_mtime_as_the_deletion_instant() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
     let rec = store
-        .save(quick("written long ago, deleted today"))
+        .save(&guard, quick("written long ago, deleted today"))
         .unwrap();
     backdate(&rec.path, 45);
     assert!(
@@ -281,7 +305,7 @@ fn delete_stamps_the_trashed_file_mtime_as_the_deletion_instant() {
     );
 
     let before = SystemTime::now();
-    store.delete(&rec.frontmatter.id).unwrap();
+    store.delete(&guard, &rec.frontmatter.id).unwrap();
 
     let trashed = paths.trash_dir().join(rec.path.file_name().unwrap());
     assert!(trashed.exists(), "delete must move the file into .trash/");
@@ -303,22 +327,26 @@ fn restore_refuses_to_clobber_a_live_re_save_of_the_same_body() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
-    let first = store.save(quick("same body, saved twice")).unwrap();
+    let guard = guard(&paths);
+    let first = store.save(&guard, quick("same body, saved twice")).unwrap();
     let id = first.frontmatter.id.clone();
-    store.delete(&id).unwrap();
+    store.delete(&guard, &id).unwrap();
 
     let tags = vec!["fresh".to_string()];
     let second = store
-        .save(SaveParams {
-            tags: &tags,
-            quality: 5,
-            ..quick("same body, saved twice")
-        })
+        .save(
+            &guard,
+            SaveParams {
+                tags: &tags,
+                quality: 5,
+                ..quick("same body, saved twice")
+            },
+        )
         .unwrap();
     assert_eq!(second.frontmatter.id, id, "same body ⇒ same id");
     let live_bytes = std::fs::read_to_string(&second.path).unwrap();
 
-    let err = store.restore(&id).unwrap_err();
+    let err = store.restore(&guard, &id).unwrap_err();
     assert!(matches!(err, Error::BadRequest(_)), "got {err:?}");
     assert_eq!(
         std::fs::read_to_string(&second.path).unwrap(),
@@ -336,13 +364,14 @@ fn re_save_of_a_deleted_body_purges_its_trash_copy() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
-    let rec = store.save(quick("deleted then re-saved")).unwrap();
+    let guard = guard(&paths);
+    let rec = store.save(&guard, quick("deleted then re-saved")).unwrap();
     let file_name = rec.path.file_name().unwrap().to_owned();
-    store.delete(&rec.frontmatter.id).unwrap();
+    store.delete(&guard, &rec.frontmatter.id).unwrap();
     let trashed = paths.trash_dir().join(&file_name);
     assert!(trashed.exists(), "delete must move the file into .trash/");
 
-    store.save(quick("deleted then re-saved")).unwrap();
+    store.save(&guard, quick("deleted then re-saved")).unwrap();
 
     assert!(
         !trashed.exists(),
@@ -363,14 +392,15 @@ fn restore_checks_the_live_tree_before_the_trash() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
-    let rec = store.save(quick("live wins over trash")).unwrap();
+    let guard = guard(&paths);
+    let rec = store.save(&guard, quick("live wins over trash")).unwrap();
     let live_bytes = std::fs::read_to_string(&rec.path).unwrap();
     let stale = paths.trash_dir().join(rec.path.file_name().unwrap());
     std::fs::write(&stale, STALE).unwrap();
 
     // A fresh store, so nothing is served out of the id -> path cache.
     let err = MemoryStore::new(paths.clone())
-        .restore(&rec.frontmatter.id)
+        .restore(&guard, &rec.frontmatter.id)
         .unwrap_err();
     match err {
         Error::BadRequest(msg) => assert!(msg.contains("not in the trash"), "{msg}"),

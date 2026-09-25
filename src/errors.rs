@@ -178,6 +178,13 @@ pub enum Error {
     #[error("embedder unavailable: {0}")]
     Embedder(String),
 
+    /// A cross-process advisory lock (`memory-save.lock`) was still held by
+    /// another writer after the configured `[sync] pause_wait` bound. Maps
+    /// to HTTP `503 busy`; on the CLI path it maps to EX_TEMPFAIL (75) —
+    /// retry once the other writer finishes (#256, B-3/B-6).
+    #[error("busy: {0}")]
+    Busy(String),
+
     /// A catch-all for failures that don't fit another variant.
     #[error("other: {0}")]
     Other(String),

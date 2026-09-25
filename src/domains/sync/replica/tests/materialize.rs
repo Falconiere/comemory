@@ -10,7 +10,10 @@
 //! after an interrupted delete still retires the mirror row, and the derived
 //! graph refresh belongs to the caller, once per envelope.
 
+use std::time::Duration;
+
 use crate::domains::memories::MemoryStore;
+use crate::domains::memories::save_lock;
 use crate::domains::sync::replica::contract::Disposition;
 use crate::domains::sync::replica::materialize::{self, Order};
 use crate::domains::sync::replica::{accept, test_support as support};
@@ -62,9 +65,14 @@ fn tombstone_replay_after_the_markdown_moved_still_retires_the_row() {
     // The state a kill between the markdown move and the commit leaves: the
     // file is already in the trash, the mirror row is still live. Produced
     // with the same library call the materializer makes.
-    MemoryStore::new(home.paths.clone())
-        .delete(&id)
-        .expect("markdown moved to the trash");
+    {
+        let guard = save_lock::acquire_within(&home.paths, Duration::from_secs(5)).expect("guard");
+        MemoryStore::new(home.paths.clone())
+            .delete(&guard, &id)
+            .expect("markdown moved to the trash");
+        // Dropped before the replay below, which acquires its own guard over
+        // the same lock file — held past this point it would deadlock.
+    }
     let live_before: Option<String> = home
         .conn
         .query_row(

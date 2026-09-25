@@ -149,13 +149,18 @@ enum Prepared {
 /// a later pull from re-creating what was deleted.
 fn prepare_markdown(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Prepared> {
     let store = MemoryStore::new(ctx.paths.clone());
+    let guard = crate::domains::memories::save_lock::acquire_within(
+        ctx.paths,
+        ctx.cfg.sync.pause_wait_duration()?,
+    )?;
     match operation.op {
         ReplicaOp::Upsert | ReplicaOp::Restore => Ok(Prepared::Written(Box::new(write_markdown(
+            &guard,
             &store,
             &decode(operation)?,
         )?))),
         ReplicaOp::Tombstone => {
-            let removed = match store.delete(&operation.entity_key) {
+            let removed = match store.delete(&guard, &operation.entity_key) {
                 Ok(record) => Some(record),
                 Err(Error::NotFound(_)) => None,
                 Err(e) => return Err(e),
@@ -203,6 +208,7 @@ where
 /// The author is deliberately left empty on a create: the accepting side
 /// stamps authorship, so a peer cannot claim it through the payload.
 fn write_markdown(
+    guard: &crate::domains::memories::SaveGuard,
     store: &MemoryStore,
     payload: &MemoryPayloadV1,
 ) -> Result<crate::domains::memories::MemoryRecord> {
@@ -234,20 +240,23 @@ fn write_markdown(
             // imported from one another.
             existing.frontmatter.created = payload.created_at()?;
             existing.body.clone_from(&payload.body);
-            store.rewrite(&existing)?;
+            store.rewrite(guard, &existing)?;
             Ok(existing)
         }
-        Err(Error::NotFound(_)) => store.save(SaveParams {
-            body: &payload.body,
-            kind: payload.kind,
-            repo: &payload.repo,
-            tags: &payload.tags,
-            author: "",
-            quality: payload.quality,
-            relations: payload.relations.clone(),
-            references: payload.references.clone(),
-            created: Some(payload.created_at()?),
-        }),
+        Err(Error::NotFound(_)) => store.save(
+            guard,
+            SaveParams {
+                body: &payload.body,
+                kind: payload.kind,
+                repo: &payload.repo,
+                tags: &payload.tags,
+                author: "",
+                quality: payload.quality,
+                relations: payload.relations.clone(),
+                references: payload.references.clone(),
+                created: Some(payload.created_at()?),
+            },
+        ),
         Err(e) => Err(e),
     }
 }

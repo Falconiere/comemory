@@ -424,18 +424,26 @@ fn an_unfinished_write_is_exactly_an_intent_plus_markdown_the_database_never_saw
         },
     )
     .expect("record intent");
+    let guard = comemory::domains::memories::save_lock::acquire_within(
+        &home.paths,
+        std::time::Duration::from_secs(5),
+    )
+    .expect("guard");
     store
-        .save(comemory::domains::memories::SaveParams {
-            body: BODY,
-            kind: Kind::Decision,
-            repo: "Falconiere/comemory",
-            tags: &["sync".to_string()],
-            author: "tester",
-            quality: 4,
-            relations: comemory::domains::memories::Relations::default(),
-            references: comemory::domains::memories::References::default(),
-            created: None,
-        })
+        .save(
+            &guard,
+            comemory::domains::memories::SaveParams {
+                body: BODY,
+                kind: Kind::Decision,
+                repo: "Falconiere/comemory",
+                tags: &["sync".to_string()],
+                author: "tester",
+                quality: 4,
+                relations: comemory::domains::memories::Relations::default(),
+                references: comemory::domains::memories::References::default(),
+                created: None,
+            },
+        )
         .expect("markdown lands");
 
     assert!(planned.exists(), "the markdown is on disk");

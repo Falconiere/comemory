@@ -33,6 +33,7 @@ One line per file, named after its primary item:
 | `refresh_refs.rs` | `Response` | Console-only: `POST /api/v1/memories/{id}/references/refresh` — re-pin every anchored reference to the current HEAD through `utilities::repo_root::resolve_root` (explicit `--root` override before the stored `repo_marker.root_path`), writing through `update::mirror_record` rather than a second write path |
 | `restore.rs` | `Response` | Console-only: `POST /api/v1/memories/{id}/restore` and `POST /api/v1/trash/{id}/restore` — the exact reverse of `soft_delete`, re-deriving the incoming relation edges the restored markdown cannot regenerate |
 | `save.rs` | `Request` | Shared middle of `comemory save` / `POST /api/v1/memories` — the content-addressed replay contract, `supersedes` and `ref_*` validation ahead of every effect, the near-duplicate advisory, and the atomic markdown write plus the SQLite mirror through `mirror::insert_row` |
+| `save_lock.rs` | `SaveGuard` | The compiler-enforced lock every markdown writer holds: `SaveGuard` can only be constructed by `acquire_within`, over `memory-save.lock`, bounded by `[sync] pause_wait` (`Error::Busy` past it) — a writer that forgot to acquire one fails to compile, not to race |
 | `save_persist.rs` | `persist` | The persistence half of `save`: the write intent, then the markdown, then one transaction carrying the mirror, the vector, both journal feeds and the intent's clearing |
 | `show.rs` | `Request` | Shared middle of `comemory show` / `GET /api/v1/memories/{id}` — body, frontmatter, activation and code-reference freshness in one round trip |
 | `slug.rs` | `slug_from_body` | Filesystem-safe slug derivation for memory filenames |
@@ -60,7 +61,16 @@ owed to nobody; `recover::reconcile` is what finishes it. For `save` and
 there; for `update` and `restore` they are two transactions and the intent
 clears in the journal's, the last one those writes owe.
 
-Memory saves hold `memory-save.lock` across prior lookup, markdown staging and
-mirror commit, and reserve SQLite's writer before mirror reads. A lock failure keeps
-its retryable error class across CLI/HTTP/MCP; replaying the same content
-repairs a markdown record whose mirror could not yet be committed.
+Every markdown write — `save`, `rewrite`, the trash move/restore/purge helpers
+— takes a `&save_lock::SaveGuard` (#256, B-6): the type can only be constructed
+by `save_lock::acquire_within`, so a writer that forgot to hold
+`memory-save.lock` fails to compile rather than races one that does. Each
+top-level entry point (`save::run_with`, `update::patch_in_place`,
+`delete::soft_delete`, `restore::restore_one`, `refresh_refs::run`, the sync
+import and replica accept paths) acquires exactly one guard and passes it down
+— never acquires a second one while the first is still held, since the
+underlying `flock` is not reentrant. The wait is bounded by `[sync]
+pause_wait` (`Error::Busy`, HTTP `503`, CLI exit 75 past it), so a save
+contending with an in-place `comemory rebuild`'s writer pause waits, not
+hangs. Reserved before mirror reads, so replaying the same content repairs a
+markdown record whose mirror could not yet be committed.

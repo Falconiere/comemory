@@ -24,12 +24,19 @@
 
 use std::fs::{File, OpenOptions};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use crate::prelude::*;
+
+/// How long [`FileLock::acquire_within`] sleeps between polls. Short enough
+/// that a save waiting on a just-released lock does not feel it, long enough
+/// that polling itself is not the bottleneck.
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// RAII guard over an exclusive lock on a sibling lock file. The lock is
 /// released when the guard drops (explicit `unlock`, backstopped by the
 /// file descriptor closing regardless).
+#[derive(Debug)]
 pub struct FileLock {
     file: File,
     label: &'static str,
@@ -56,6 +63,28 @@ impl FileLock {
             Ok(()) => Ok(Some(Self { file, label })),
             Err(std::fs::TryLockError::WouldBlock) => Ok(None),
             Err(std::fs::TryLockError::Error(e)) => Err(e.into()),
+        }
+    }
+
+    /// Like [`FileLock::acquire`], but gives up after `timeout` rather than
+    /// blocking forever: polls [`FileLock::try_acquire`] until it succeeds
+    /// or the deadline passes, then `Ok(None)`. `memories::save_lock` is the
+    /// caller that turns a `None` here into `Error::Busy` (#256, B-6).
+    pub fn acquire_within(
+        path: &Path,
+        label: &'static str,
+        timeout: Duration,
+    ) -> Result<Option<Self>> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(lock) = Self::try_acquire(path, label)? {
+                return Ok(Some(lock));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(None);
+            }
+            std::thread::sleep(POLL_INTERVAL.min(remaining));
         }
     }
 }

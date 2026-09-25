@@ -68,6 +68,12 @@ pub struct SyncConfig {
     /// staged parts. Lower it behind a proxy with a smaller body limit.
     #[serde(default = "default_max_request_bytes")]
     pub max_request_bytes: u64,
+    /// How long a `memory-save.lock` acquire waits for another holder before
+    /// giving up `Error::Busy` (#256, B-3/B-6): a save contending with an
+    /// in-place `comemory rebuild`, or a rebuild waiting for writers to
+    /// drain, share this one bound.
+    #[serde(default = "default_pause_wait")]
+    pub pause_wait: String,
 }
 
 /// `[sync]` keys kept only so an existing `config.toml` still loads.
@@ -124,6 +130,7 @@ pub struct PartialSyncConfig {
     request_timeout: Option<String>,
     pass_budget: Option<String>,
     max_request_bytes: Option<u64>,
+    pause_wait: Option<String>,
 }
 
 /// File-overlay partial for [`EmbedConfig`].
@@ -151,6 +158,7 @@ impl SyncConfig {
             request_timeout: default_request_timeout(),
             pass_budget: default_pass_budget(),
             max_request_bytes: default_max_request_bytes(),
+            pause_wait: default_pause_wait(),
         }
     }
 
@@ -203,6 +211,9 @@ impl SyncConfig {
         if let Some(v) = partial.max_request_bytes {
             self.max_request_bytes = v;
         }
+        if let Some(v) = partial.pause_wait {
+            self.pause_wait = v;
+        }
     }
 
     /// Compile [`Self::skip_repos`] into a matcher.
@@ -242,6 +253,11 @@ impl SyncConfig {
     /// Parse [`Self::push_on_save_timeout`] as a [`Duration`].
     pub fn push_on_save_timeout_duration(&self) -> Result<Duration> {
         parse_duration(&self.push_on_save_timeout)
+    }
+
+    /// Parse [`Self::pause_wait`] as a [`Duration`].
+    pub fn pause_wait_duration(&self) -> Result<Duration> {
+        parse_duration(&self.pause_wait)
     }
 }
 
@@ -292,6 +308,11 @@ fn default_pass_budget() -> String {
 /// engine's 5 MiB envelope and body limits.
 const fn default_max_request_bytes() -> u64 {
     4 * 1024 * 1024
+}
+
+/// serde default for [`SyncConfig::pause_wait`].
+fn default_pause_wait() -> String {
+    "5s".into()
 }
 
 /// Warn that `key` is set but no longer does anything.

@@ -113,18 +113,26 @@ fn interrupted_save(home: &mut Home, body: &str) -> (String, std::path::PathBuf)
         },
     )
     .expect("record intent");
+    let guard = comemory::domains::memories::save_lock::acquire_within(
+        &home.paths,
+        std::time::Duration::from_secs(5),
+    )
+    .expect("guard");
     store
-        .save(SaveParams {
-            body,
-            kind: Kind::Decision,
-            repo: "Falconiere/comemory",
-            tags: &["sync".to_string()],
-            author: "tester",
-            quality: 4,
-            relations: Relations::default(),
-            references: References::default(),
-            created: None,
-        })
+        .save(
+            &guard,
+            SaveParams {
+                body,
+                kind: Kind::Decision,
+                repo: "Falconiere/comemory",
+                tags: &["sync".to_string()],
+                author: "tester",
+                quality: 4,
+                relations: Relations::default(),
+                references: References::default(),
+                created: None,
+            },
+        )
         .expect("markdown lands");
     (entity_key, planned)
 }

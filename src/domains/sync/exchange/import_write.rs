@@ -37,8 +37,12 @@ pub(crate) fn write_new_memory(
         references: fm.references.clone(),
         created: Some(fm.created),
     };
+    let guard = crate::domains::memories::save_lock::acquire_within(
+        &paths,
+        cfg.sync.pause_wait_duration()?,
+    )?;
     let store = MemoryStore::new(paths);
-    let rec = store.save(params)?;
+    let rec = store.save(&guard, params)?;
     let md_path = rec.path.to_string_lossy();
     let tx = conn.transaction()?;
     mirror::insert_row(
@@ -90,7 +94,11 @@ pub(crate) fn patch_frontmatter(
     if let Some(author) = author_override {
         rec.frontmatter.author = author.to_string();
     }
-    store.rewrite(&rec)?;
+    let guard = crate::domains::memories::save_lock::acquire_within(
+        ctx.paths,
+        ctx.cfg.sync.pause_wait_duration()?,
+    )?;
+    store.rewrite(&guard, &rec)?;
     crate::domains::memories::update::mirror_record(ctx, &rec)?;
     Ok(rec)
 }

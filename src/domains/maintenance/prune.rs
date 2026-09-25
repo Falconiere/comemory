@@ -71,7 +71,8 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     let mut scanned = scan(&*conn, paths, cfg, req.limit, req.offset)?;
     if req.apply {
         let selected = select_ids(&scanned.full_low_value, &req.ids)?;
-        scanned.report.derived_stale = apply(conn, paths, &selected)?;
+        let pause_wait = cfg.sync.pause_wait_duration()?;
+        scanned.report.derived_stale = apply(conn, paths, &selected, pause_wait)?;
     }
     Ok(scanned.report)
 }
@@ -234,8 +235,13 @@ fn trash_stats(paths: &Paths) -> (u64, u64) {
 /// no candidates exist.
 /// Returns whether the soft deletes left the derived artifacts stale — the
 /// same signal `delete` and `gc` report, carried up to the prune report.
-fn apply(conn: &mut Connection, paths: &Paths, low_value_ids: &[String]) -> Result<bool> {
-    let derived_stale = soft_delete_low_value(conn, paths, low_value_ids)?;
+fn apply(
+    conn: &mut Connection,
+    paths: &Paths,
+    low_value_ids: &[String],
+    pause_wait: std::time::Duration,
+) -> Result<bool> {
+    let derived_stale = soft_delete_low_value(conn, paths, low_value_ids, pause_wait)?;
     cleanup_orphans(conn)?;
     Ok(derived_stale)
 }
@@ -259,10 +265,18 @@ fn soft_delete_low_value(
     conn: &mut Connection,
     paths: &Paths,
     low_value_ids: &[String],
+    pause_wait: std::time::Duration,
 ) -> Result<bool> {
     let mut derived_stale = false;
     for id in low_value_ids {
-        match delete::soft_delete(paths, conn, id, Some(ReplicaOrigin::Local), None) {
+        match delete::soft_delete(
+            paths,
+            conn,
+            id,
+            Some(ReplicaOrigin::Local),
+            None,
+            pause_wait,
+        ) {
             Ok(removed) => derived_stale |= removed.derived_stale,
             // Half-deleted state: live DB row, markdown already gone —
             // producible by a crash inside `delete` between its file move

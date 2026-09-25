@@ -42,6 +42,8 @@ pub mod restore;
 pub mod save;
 /// The `save` activity summary: the asked-for fields and the JSON they build.
 pub mod save_activity;
+/// `memory-save.lock`, held by every markdown writer (#256, B-6).
+pub mod save_lock;
 pub mod save_persist;
 /// `comemory show` / `GET /memories/{id}`: one memory in full.
 pub mod show;
@@ -62,4 +64,5 @@ pub(crate) mod nav;
 pub use frontmatter::{Frontmatter, Kind, References, Relations};
 pub use prior::Prior;
 pub use references::Ref;
+pub use save_lock::SaveGuard;
 pub use store::{MemoryRecord, MemoryStore, SaveParams};
