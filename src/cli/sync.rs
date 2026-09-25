@@ -119,6 +119,10 @@ pub struct Args {
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     if let Some(SyncCmd::Daemon(d)) = a.cmd {
+        if matches!(d.cmd, DaemonCmd::Run) {
+            // Foreground: the supervisor's entry; it returns once stopped.
+            return daemon::run_foreground(&paths).await;
+        }
         return run_daemon(&paths, d.cmd, json_flag);
     }
     if a.path.is_some() && !matches!(a.action, SyncAction::Auto) {
@@ -174,10 +178,9 @@ fn run_daemon(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
             let st = daemon::status()?;
             emit_daemon_status(json_flag, &st)
         }
-        DaemonCmd::Run => {
-            // Foreground — never returns Ok on the happy path; Err propagates as the arm value.
-            off_runtime(|| daemon::run_foreground(paths))
-        }
+        DaemonCmd::Run => Err(Error::Other(
+            "`sync daemon run` is dispatched before this match".into(),
+        )),
     }
 }
 
