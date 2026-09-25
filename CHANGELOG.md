@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-09-25
+
+### Added
+
+- drain durable push/pull backlogs over replica-v1 ([#295](https://github.com/Falconiere/comemory/pull/295))
+
+### Fixed
+
+- recover historical repository approval databases ([#297](https://github.com/Falconiere/comemory/pull/297))
+
 ## [0.48.0] - 2026-09-24
 
 ### Added
