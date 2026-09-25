@@ -69,6 +69,23 @@ fn wait_caught_up(client: &Client, daemon: &mut Child, deadline: Instant) -> boo
     false
 }
 
+/// The daemon can hold the hub's write permit while pushing B's inline save.
+/// Retry only the documented busy response; the identical content-addressed
+/// request is idempotent, and the caller's overall drain deadline still applies.
+fn save_during_drain(hub: &Hub, n: usize) -> String {
+    let request = json!({"body": guide_body(n), "kind": "decision", "repo": REPO});
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let (status, body) = hub.engine().post("/api/v1/memories", &request);
+        if status == 503 && body["error"]["code"] == "busy" && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        assert!(status < 300, "extra hub save {n}: {status} {body}");
+        return body["data"]["id"].as_str().expect("id").to_string();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // AC-4: a large durable backlog drains in one client run plus one nudge.
 // ---------------------------------------------------------------------------
@@ -226,12 +243,7 @@ fn budgeted_pass_reschedules_and_yields() {
     std::thread::sleep(Duration::from_millis(300));
     let mut extra_ids: Vec<String> = Vec::with_capacity(20);
     for n in 0..20 {
-        let (status, body) = hub.engine().post(
-            "/api/v1/memories",
-            &json!({"body": guide_body(3_000 + n), "kind": "decision", "repo": REPO}),
-        );
-        assert!(status < 300, "extra hub save {n}: {status} {body}");
-        extra_ids.push(body["data"]["id"].as_str().expect("id").to_string());
+        extra_ids.push(save_during_drain(&hub, 3_000 + n));
     }
 
     let overall_deadline = daemon_start + Duration::from_mins(2);

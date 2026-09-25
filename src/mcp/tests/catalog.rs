@@ -5,22 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/mcp/catalog.rs`. The shape checks (fifteen unique
-//! names, exactly three writers, every description non-empty) plus the parity
-//! half this step can already prove: every `command` is a real clap
-//! subcommand, walked off the live `Cli::command()` rather than a copied list.
+//! Catalog shape and lookup checks. Command registration parity lives in
+//! `tests/mcp__parity.rs`, against the live `Cli::command()` tree.
 
 use std::collections::BTreeSet;
 
-use clap::{Command as ClapCommand, CommandFactory};
-use comemory::cli::Cli;
 use comemory::mcp::catalog::{self, TOOLS};
-
-/// Resolve a root or nested clap path such as `architecture scaffold`.
-fn command_at_path<'a>(root: &'a ClapCommand, path: &str) -> Option<&'a ClapCommand> {
-    path.split_whitespace()
-        .try_fold(root, |current, segment| current.find_subcommand(segment))
-}
 
 #[test]
 fn catalog_holds_fifteen_uniquely_named_tools() {
@@ -47,23 +37,6 @@ fn exactly_three_tools_mutate() {
     assert!(!catalog::is_mutating("find"));
     // An unknown name is not dispatchable at all, so it is not "mutating".
     assert!(!catalog::is_mutating("delete-everything"));
-}
-
-#[test]
-fn every_command_is_a_real_clap_subcommand() {
-    let root = Cli::command();
-    assert!(
-        root.find_subcommand("find").is_some(),
-        "clap has no find command"
-    );
-    for tool in TOOLS {
-        assert!(
-            command_at_path(&root, tool.command).is_some(),
-            "tool `{}` names command path `{}`, which clap does not have",
-            tool.name,
-            tool.command
-        );
-    }
 }
 
 #[test]

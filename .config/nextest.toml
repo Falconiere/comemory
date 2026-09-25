@@ -19,6 +19,12 @@ embedder = { max-threads = 1 }
 env-mutating = { max-threads = 1 }
 
 [[profile.default.overrides]]
+# These real-backlog tests dominated CI's tail when started after the unit
+# suite. Start them first so shorter tests can fill the remaining slots.
+filter = 'test(/^(budgeted_pass_reschedules_and_yields|large_backlog_drains_on_one_run|held_pages_then_allowed_entry|verify_and_rebootstrap_after_stream_changes)$/)'
+priority = 100
+
+[[profile.default.overrides]]
 filter = 'test(/embedder|memory_index|code_index/)'
 test-group = 'embedder'
 
