@@ -28,7 +28,7 @@ fn begin_records_the_horizon_and_queues_unqueued_revisions_once() {
         &NewOperation {
             operation_id: "op-20260923-legacydocument00000000000000001",
             entity_kind: "document_revision",
-            entity_key: "0123456789abcdef0123456789abcdef",
+            entity_key: &"0d".repeat(16),
             op: ReplicaOp::Upsert,
             payload: Some(PayloadRef {
                 digest: &digest,
