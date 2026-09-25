@@ -10,7 +10,7 @@ use crate::prelude::*;
 
 const POST_MARKER: &str = "0028_historical_document_revision_repair";
 
-/// Complete the v27 recovery after its SQL marker is recorded. The repair
+/// Complete the v28 recovery after its SQL marker is recorded. The repair
 /// and its own marker share one transaction, so an interruption can retry.
 pub(super) fn repair(conn: &mut Connection) -> Result<()> {
     if super::marker_done(conn, POST_MARKER) {
@@ -40,7 +40,7 @@ pub(super) fn repair(conn: &mut Connection) -> Result<()> {
 }
 
 /// Build the released table shape and retain only revisions the historical
-/// build marked active. Its incomplete staged and superseded rows must not
+/// build marked active. Its staged and superseded rows must not
 /// become searchable merely because the new schema has no state column.
 const REPAIR_SQL: &str = "
 CREATE TABLE remote_document_repaired (

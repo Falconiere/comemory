@@ -169,17 +169,26 @@ fn historical_repository_approval_marker_migrates_old_document_shape() {
                  ('owner/project', 'active', 'docs/active.md', 'Active', 'markdown',
                   'hash-active', 1, 'active', '2026-09-24T00:00:00Z', '2026-09-25T00:00:00Z'),
                  ('owner/project', 'staged', 'docs/staged.md', 'Staged', 'markdown',
-                  'hash-staged', 1, 'staged', '2026-09-24T00:00:00Z', NULL);
+                  'hash-staged', 1, 'staged', '2026-09-24T00:00:00Z', NULL),
+                 ('owner/project', 'superseded', 'docs/old.md', 'Old', 'markdown',
+                  'hash-old', 1, 'superseded', '2026-09-23T00:00:00Z', '2026-09-24T00:00:00Z');
              INSERT INTO remote_document_chunk(repo, shared_id, ordinal,
                  char_start, char_end, line_start, line_end, simhash, text)
              VALUES ('owner/project', 'active', 0, 0, 6, 1, 1, 0, 'active'),
-                    ('owner/project', 'staged', 0, 0, 6, 1, 1, 0, 'staged');
+                    ('owner/project', 'staged', 0, 0, 6, 1, 1, 0, 'staged'),
+                    ('owner/project', 'superseded', 0, 0, 3, 1, 1, 0, 'old');
+             INSERT INTO remote_document_link(repo, shared_id, ordinal, target)
+             VALUES ('owner/project', 'active', 0, 'docs/current.md'),
+                    ('owner/project', 'staged', 0, 'docs/pending.md'),
+                    ('owner/project', 'superseded', 0, 'docs/old.md');
              INSERT INTO remote_document_fts(repo, shared_id, ordinal, title,
                  headings, passage, path_tokens)
              VALUES ('owner/project', 'active', '0', 'Active', '', 'active',
                      'docs/active.md'),
                     ('owner/project', 'staged', '0', 'Staged', '', 'staged',
-                     'docs/staged.md');
+                     'docs/staged.md'),
+                    ('owner/project', 'superseded', '0', 'Old', '', 'old',
+                     'docs/old.md');
              INSERT INTO schema_meta(key, value) VALUES('0026_repository_approval', '1');
              INSERT INTO repository_approval(label, canonical, updated_at)
              VALUES('project', 'owner/project', '2026-09-25T00:00:00Z');",
@@ -212,14 +221,17 @@ fn historical_repository_approval_marker_migrates_old_document_shape() {
         )
         .expect("accepted passages remain searchable");
     assert_eq!(active_passages, 1);
-    let staged_rows: i64 = conn
+    let retained: (i64, i64, i64, i64) = conn
         .query_row(
-            "SELECT count(*) FROM remote_document_fts WHERE shared_id = 'staged'",
+            "SELECT (SELECT count(*) FROM remote_document),
+                    (SELECT count(*) FROM remote_document_chunk),
+                    (SELECT count(*) FROM remote_document_link),
+                    (SELECT count(*) FROM remote_document_fts)",
             [],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
-        .expect("staged passages are not searchable");
-    assert_eq!(staged_rows, 0);
+        .expect("count retained document rows");
+    assert_eq!(retained, (1, 1, 1, 1), "only active revision rows survive");
     let markers = schema_meta_snapshot(&conn);
     assert!(
         markers
