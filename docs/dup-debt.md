@@ -594,7 +594,6 @@ fresh and does not depend on these line numbers.
 
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
-| `src/serve.rs:145-151` method `swap_conn` | `src/serve.rs:162-171` method `reload_cfg` | 88.13% | trivial parallel getter methods on `AppState` |
 | `src/serve.rs:194-196` method `repo` | `src/serve.rs:219-221` method `embed_cmd` | 87.31% | trivial parallel getter methods on `AppState` |
 
 ### `src/cli/`

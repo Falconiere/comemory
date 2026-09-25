@@ -572,19 +572,18 @@ This is a per-server-process guarantee. A concurrent **CLI** write from a
 different process bypasses the permit and rides SQLite's own
 `busy_timeout`, exactly as two CLI processes contending today.
 
-### Job failure and the rebuild connection swap
+### Job failure and rebuild
 
 A failed job reaches `status: "error"` with the same `{code, message}`
 shape the synchronous envelope's `error` field carries (`GET /jobs/{id}`'s
 `result` is `null`; the SSE stream ends with an `error` event).
 
-`rebuild` is a special case: on success it renames a freshly built DB file
-over the live one, then swaps the server's long-lived shared connection in
-place (`AppState::swap_conn`) so later requests see the new DB rather than
-the unlinked pre-rebuild inode. If that swap itself fails, the job still
-reports `status: "error"` and the server is documented as serving stale
-reads (the old inode) until restart — it never crashes. A successful
-`tune`/`bandit --apply` job similarly reloads `config.toml` into
+`rebuild` is a special case: it holds `memory-save.lock` (bounded by
+`[sync] pause_wait`, `503 busy` past it) while it builds a fresh database and
+replaces the server's long-lived shared connection's content in place
+through SQLite's online backup API (`store::replace_in_place`), so later
+requests see the new content with no reconnect and no unlinked inode. A
+successful `tune`/`bandit --apply` job similarly reloads `config.toml` into
 `AppState`'s swappable config slot, so HTTP ranking picks up the new blend
 knobs without a restart.
 
