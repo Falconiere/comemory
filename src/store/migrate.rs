@@ -25,6 +25,7 @@ use crate::store::schema_replica::{ReplicaStream, replica_stream};
 /// [`preflight::preflight`] and `comemory rebuild`, not part of the public
 /// API.
 pub(crate) mod backup;
+mod historical_document_revision;
 /// The `MIGRATIONS` slice — key, SQL, destructiveness class, optional
 /// post-apply Rust pass, and `schema_meta` markers for every migration.
 /// [`run`] iterates it; the replay test helpers slice it too.
@@ -39,7 +40,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "27";
+pub const CURRENT_VERSION: &str = "28";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -160,6 +161,8 @@ pub const M_V26: &str = include_str!("../../migrations/0026_replica_events.sql")
 /// `replica_cursor` and the outbox's hold and stamp columns). Public so tests
 /// can replay historical schema states exactly as an old binary created them.
 pub const M_V27: &str = include_str!("../../migrations/0027_replica_exchange.sql");
+/// v28: conditional repair of the historical staged document table.
+pub const M_V28: &str = include_str!("../../migrations/0028_historical_document_revision.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply

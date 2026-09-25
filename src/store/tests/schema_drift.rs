@@ -36,7 +36,10 @@ const SHIPPED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
 /// snapshot — everything `run_generate` reads.
 fn shipped_copy() -> (tempfile::TempDir, PathBuf) {
     let dir = tempdir().expect("tempdir");
-    for name in ["_journal.json", "0027_replica_exchange.snapshot.json"] {
+    for name in [
+        "_journal.json",
+        "0028_historical_document_revision.snapshot.json",
+    ] {
         fs::copy(Path::new(SHIPPED).join(name), dir.path().join(name))
             .unwrap_or_else(|e| panic!("copy {name}: {e}"));
     }
@@ -69,7 +72,7 @@ fn schema_drift_registry_matches_shipped_snapshot() {
     assert_eq!(
         written, None,
         "run_generate wrote {written:?}: the registry differs from \
-         migrations/0027_replica_exchange.snapshot.json (a struct changed without `just migration <name>`, \
+         migrations/0028_historical_document_revision.snapshot.json (a struct changed without `just migration <name>`, \
          or a declared table was not re-adopted with `just migration-adopt`)"
     );
     assert_eq!(entries(&dir), before, "a no-op generate must write nothing");
