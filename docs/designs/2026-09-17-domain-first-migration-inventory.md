@@ -724,13 +724,19 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/code_plan.rs | comemory::domains::sync::code_plan; crate-root-alias | src/domains/sync/tests/code_plan.rs | none | domains::sync | src/domains/sync/code_plan.rs | retain |
 | src/domains/sync/code_repo_push.rs | comemory::domains::sync::code_repo_push; preserve | none | none | domains::sync | src/domains/sync/code_repo_push.rs | retain |
 | src/domains/sync/daemon.rs | comemory::domains::sync::daemon; crate-root-alias | src/domains/sync/tests/daemon.rs | none | domains::sync | src/domains/sync/daemon.rs | retain |
+| src/domains/sync/daemon/channel.rs | comemory::domains::sync::daemon::channel; preserve | none | none | domains::sync | src/domains/sync/daemon/channel.rs | retain |
 | src/domains/sync/daemon/client.rs | comemory::domains::sync::daemon::client; preserve | src/domains/sync/daemon/tests/client.rs | none | domains::sync | src/domains/sync/daemon/client.rs | retain |
 | src/domains/sync/daemon/control.rs | comemory::domains::sync::daemon::control; preserve | none | none | domains::sync | src/domains/sync/daemon/control.rs | retain |
+| src/domains/sync/daemon/coordinator.rs | comemory::domains::sync::daemon::coordinator; preserve | none | none | domains::sync | src/domains/sync/daemon/coordinator.rs | retain |
 | src/domains/sync/daemon/handshake.rs | comemory::domains::sync::daemon::handshake; preserve | src/domains/sync/daemon/tests/handshake.rs | none | domains::sync | src/domains/sync/daemon/handshake.rs | retain |
 | src/domains/sync/daemon/identity.rs | comemory::domains::sync::daemon::identity; preserve | src/domains/sync/daemon/tests/identity.rs | none | domains::sync | src/domains/sync/daemon/identity.rs | retain |
 | src/domains/sync/daemon/readiness.rs | comemory::domains::sync::daemon::readiness; preserve | none | none | domains::sync | src/domains/sync/daemon/readiness.rs | retain |
 | src/domains/sync/daemon/runtime_record.rs | comemory::domains::sync::daemon::runtime_record; preserve | src/domains/sync/daemon/tests/runtime_record.rs | none | domains::sync | src/domains/sync/daemon/runtime_record.rs | retain |
+| src/domains/sync/daemon/server.rs | comemory::domains::sync::daemon::server; preserve | none | none | domains::sync | src/domains/sync/daemon/server.rs | retain |
 | src/domains/sync/daemon/socket_path.rs | comemory::domains::sync::daemon::socket_path; preserve | src/domains/sync/daemon/tests/socket_path.rs | none | domains::sync | src/domains/sync/daemon/socket_path.rs | retain |
+| src/domains/sync/daemon/state.rs | comemory::domains::sync::daemon::state; preserve | none | none | domains::sync | src/domains/sync/daemon/state.rs | retain |
+| src/domains/sync/daemon/watchdog.rs | comemory::domains::sync::daemon::watchdog; preserve | none | none | domains::sync | src/domains/sync/daemon/watchdog.rs | retain |
+| src/domains/sync/daemon/worker.rs | comemory::domains::sync::daemon::worker; preserve | none | none | domains::sync | src/domains/sync/daemon/worker.rs | retain |
 | src/domains/sync/daemon_templates.rs | comemory::domains::sync::daemon_templates; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_templates.rs | retain |
 | src/domains/sync/daemon_unit.rs | comemory::domains::sync::daemon_unit; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_unit.rs | retain |
 | src/domains/sync/exchange.rs | comemory::domains::sync::exchange; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/sync/exchange/tests/changes.rs; src/domains/sync/exchange/tests/import.rs | none | domains::sync | src/domains/sync/exchange.rs | retain |

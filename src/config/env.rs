@@ -313,6 +313,15 @@ pub fn api_key_override() -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+/// `COMEMORY_DAEMON_SUPERVISOR` override: which OS supervisor the sync
+/// daemon reports and, for `ensure`, is asked to use (`launchd`, `systemd`,
+/// `process`, `external`). Unset → auto-detect.
+pub fn daemon_supervisor_override() -> Option<String> {
+    std::env::var("COMEMORY_DAEMON_SUPERVISOR")
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
 /// Whether a user-facing lookup (`search` / `context`) should record access
 /// tracking + the `retrieval_log` row this run — the `SearchOptions::track`
 /// gate. `true` (the default) for every real invocation; lowered to `false`

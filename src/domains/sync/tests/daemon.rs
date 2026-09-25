@@ -9,6 +9,7 @@
 
 use std::path::Path;
 
+use comemory::domains::sync::daemon::readiness::Trigger;
 use comemory::domains::sync::daemon::{
     DAEMON_LABEL, SYSTEMD_UNIT, render_launch_agent_plist, render_systemd_unit, status,
 };
@@ -86,14 +87,9 @@ fn a_cycle_refreshes_a_stale_hooked_repo_and_pushes_its_code() {
         "touch c",
     );
 
-    let mut last_verify = std::time::Instant::now();
-    super::run_one_cycle(
-        &paths,
-        &cfg,
-        &mut last_verify,
-        std::time::Duration::from_hours(1),
-    )
-    .expect("cycle");
+    let summary = super::worker::pass(&paths, Trigger::Tick, &[]);
+    assert_eq!(summary.error, None, "{summary:?}");
+    assert!(summary.logged_in);
 
     let conn = comemory::store::connection::open(paths.db_path()).unwrap();
     assert_eq!(
@@ -133,14 +129,9 @@ fn a_logged_out_cycle_refreshes_locally_and_succeeds() {
     );
     assert!(!paths.auth_file().exists(), "this machine is logged out");
 
-    let mut last_verify = std::time::Instant::now();
-    super::run_one_cycle(
-        &paths,
-        &cfg,
-        &mut last_verify,
-        std::time::Duration::from_hours(1),
-    )
-    .expect("a logged-out cycle is not an error");
+    let summary = super::worker::pass(&paths, Trigger::Tick, &[]);
+    assert_eq!(summary.error, None, "a logged-out pass is not an error");
+    assert!(!summary.logged_in);
 
     let conn = comemory::store::connection::open(paths.db_path()).unwrap();
     assert_eq!(
