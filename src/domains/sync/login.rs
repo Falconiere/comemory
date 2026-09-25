@@ -5,12 +5,16 @@
 //! clap flags, the progress destination and every line of output.
 
 use crate::domains::sync::cloud::{self, StatusReport};
+use crate::domains::sync::drain::adopt::{self, Reach};
+use crate::domains::sync::drain::{keying, network};
 use crate::domains::sync::{auth_file, daemon};
 use crate::prelude::*;
+use crate::store::connection;
+use crate::store::sync_exchange::ExchangeKey;
 
 use super::AuthFile;
-use crate::config::Paths;
 use crate::config::env;
+use crate::config::{Config, Paths};
 
 /// What a successful login established, before anything is rendered.
 pub struct Established {
@@ -36,13 +40,19 @@ pub struct Established {
 /// the stale-allowlist clear. A daemon install is best-effort and never fails
 /// the login.
 pub fn establish(
-    paths: &Paths,
+    (paths, cfg): (&Paths, &Config),
     api_url_override: Option<&str>,
     install_daemon: bool,
     progress: &mut impl std::io::Write,
 ) -> Result<Established> {
     let api_url = cloud::resolve_api_url(api_url_override)?;
     let outcome = cloud::login(&api_url, progress)?;
+    if let Some(previous) = outgoing(paths) {
+        let key = |a: &AuthFile| ExchangeKey::new(&a.api_url, &a.workspace_id);
+        if key(&previous) != key(&outcome.credentials) {
+            stamp_outgoing((paths, cfg), &previous)?;
+        }
+    }
     outcome.credentials.save(paths)?;
     auth_file::clear_stale_allowlist(paths)?;
     if !install_daemon {
@@ -101,14 +111,62 @@ pub fn status(paths: &Paths, api_url_override: Option<&str>) -> Result<Option<St
 /// rotates it.
 ///
 /// # Errors
-/// Propagates a failure to remove `auth.json`.
-pub fn logout(paths: &Paths) -> Result<bool> {
+/// As [`forget`]: a store failure leaves the credential in place.
+pub fn logout(paths: &Paths, cfg: &Config) -> Result<bool> {
     // Stop while credentials still exist so a failing stop does not leave the
     // daemon racing against a deleted auth.json mid-clear.
     daemon::stop_best_effort();
     let daemon_stopped = daemon::status().map_or(true, |s| !s.running);
-    AuthFile::clear(paths)?;
+    forget(paths, cfg)?;
     Ok(daemon_stopped)
+}
+
+/// The credential half of a logout: stamp every still-unstamped pending row
+/// with the key being left — they were made under it, and no later key may
+/// send them — then remove `auth.json`.
+///
+/// # Errors
+/// Propagates the store — queueing or stamping what the outgoing key owes —
+/// before the credential is touched, so a failure leaves it in place and no
+/// run made under it can reach another workspace; retrying once the store is
+/// writable finishes the logout. Then propagates the credential removal.
+pub fn forget(paths: &Paths, cfg: &Config) -> Result<()> {
+    if let Some(leaving) = outgoing(paths) {
+        stamp_outgoing((paths, cfg), &leaving)?;
+    }
+    AuthFile::clear(paths)
+}
+
+/// The credential being replaced or removed. One that cannot be read (a
+/// pre-organization v1 file, a corrupt one) names no key to stamp with — it
+/// must still be replaceable and removable, so that is a warning, not a
+/// failure: changes owed under it stay unstamped.
+fn outgoing(paths: &Paths) -> Option<AuthFile> {
+    match AuthFile::load(paths) {
+        Ok(found) => found,
+        Err(e) => {
+            tracing::warn!(error = %e, "the outgoing credential is unreadable; changes owed under it are not stamped with its workspace");
+            None
+        }
+    }
+}
+
+/// Stamp every unstamped pending row with the key `leaving` names. A machine
+/// with no store yet has nothing to stamp, and gets no store from this.
+///
+/// Runs recorded under that key are captured and queued first: a run reaches
+/// the outbox only when a pass adopts it, and the next key's first pass would
+/// otherwise adopt it and send it to the workspace being entered.
+fn stamp_outgoing((paths, cfg): (&Paths, &Config), leaving: &AuthFile) -> Result<()> {
+    if !paths.db_path().exists() {
+        return Ok(());
+    }
+    let mut conn = connection::open(paths.db_path())?;
+    let key = ExchangeKey::new(&leaving.api_url, &leaving.workspace_id);
+    let at = network::now()?;
+    adopt::events((paths, cfg), &mut conn, &at, Reach::All)?;
+    keying::stamp_outgoing(&conn, &key, &at)?;
+    Ok(())
 }
 
 #[cfg(test)]

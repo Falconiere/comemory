@@ -40,6 +40,8 @@ pub mod events;
 pub mod manifest;
 /// The write half of acceptance — markdown, mirror, journal and receipt.
 pub mod materialize;
+/// Apply one entry pulled from an upstream, in the upstream's order.
+pub mod pulled;
 /// Staged parts of an oversized revision and their activation.
 pub mod staging;
 /// The acceptance decision, made before any state moves.

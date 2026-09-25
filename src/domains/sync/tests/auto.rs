@@ -57,7 +57,7 @@ impl Rig {
 
     fn pass(&self, checkout: Option<&Path>) -> AutoStats {
         match run_auto(&self.paths, &self.cfg, checkout).expect("auto pass") {
-            AutoOutcome::Ran(stats) => stats,
+            AutoOutcome::Ran(stats) => *stats,
             AutoOutcome::Coalesced => panic!("nothing else holds the queue slot"),
         }
     }

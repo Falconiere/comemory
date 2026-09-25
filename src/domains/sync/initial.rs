@@ -19,16 +19,14 @@
 
 use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
+use crate::domains::sync::auto::hold_pass_lock;
 use crate::domains::sync::code::{self, CodePushStats};
-use crate::domains::sync::{pull, push};
+use crate::domains::sync::drain::{
+    self,
+    session::{Legs, Mode},
+};
 use crate::prelude::*;
-use crate::store::{connection, sync_state};
-
-/// Page size for each `run_pull` / `run_push` call inside the exhaustive loop.
-///
-/// Matches `comemory sync --action run`. The outer loop repeats until a page
-/// moves nothing, so a large org corpus is not truncated at login.
-const PAGE_LIMIT: usize = 2000;
+use crate::store::connection;
 
 /// What the first sync moved, for the login report.
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -50,38 +48,44 @@ pub struct InitialSyncStats {
     pub code_error: Option<String>,
 }
 
-/// Pull, then push, against the organization `auth` is scoped to — looping
-/// until each direction returns an empty page.
+/// Drain the key `auth` names — pull first, then push, until a pass ends
+/// without `more` — then, for a legacy key of a managed origin, push the code
+/// index (a `replica-v1` pass carries code generations itself).
 ///
 /// # Errors
-/// Propagates store and platform failures. Callers in the login path treat
-/// them as non-fatal: the credential is already on disk and useful, and a
-/// login that fails because the network blipped leaves the user with nothing
-/// and no obvious next step.
+/// Propagates store and configuration failures, and — as
+/// [`Error::Unavailable`] — a drain that ended on the network (recorded on
+/// the key too). Callers in the login path treat errors as non-fatal:
+/// the credential is already on disk and useful, and a login that fails
+/// because the network blipped leaves the user with nothing and no obvious
+/// next step.
 pub fn run_initial_sync(paths: &Paths, cfg: &Config, auth: &AuthFile) -> Result<InitialSyncStats> {
     paths.ensure_dirs()?;
+    let _pass = hold_pass_lock(paths)?;
     let mut conn = connection::open(paths.db_path())?;
     crate::config::sync::apply_embed_model(&conn, &cfg.embed)?;
-    sync_state::ensure(&conn, &auth.workspace_id, &auth.api_url)?;
-
-    let mut stats = InitialSyncStats::default();
-    loop {
-        let page = pull::run_pull(paths, cfg, &mut conn, auth, PAGE_LIMIT)?;
-        stats.pulled = stats.pulled.saturating_add(page.pulled);
-        if page.pulled == 0 {
-            break;
-        }
+    let drained = drain::drain(paths, cfg, &mut conn, auth, (Mode::Manual, Legs::Both))?;
+    if let Some(error) = drained.error {
+        return Err(Error::Unavailable(format!("first sync: {error}")));
     }
-    loop {
-        let page = push::run_push(paths, cfg, &mut conn, auth, None, PAGE_LIMIT)?;
-        stats.pushed = stats.pushed.saturating_add(page.pushed);
-        stats.skipped_config = stats.skipped_config.saturating_add(page.skipped_config);
-        stats.blocked_repo = stats.blocked_repo.saturating_add(page.blocked_repo);
-        if page.pushed == 0 {
-            // Skips are drained inside `run_push` without counting toward the
-            // page cap; a zero-push page means the local log is exhausted.
-            break;
-        }
+    let mut stats = InitialSyncStats {
+        pulled: drained.exchange.pulled,
+        pushed: drained.exchange.pushed,
+        ..InitialSyncStats::default()
+    };
+    let Some(legacy) = drained.legacy else {
+        return Ok(stats);
+    };
+    let (pull, push) = (
+        legacy.pull.unwrap_or_default(),
+        legacy.push.unwrap_or_default(),
+    );
+    stats.pulled = pull.pulled;
+    stats.pushed = push.pushed;
+    stats.skipped_config = push.skipped_config;
+    stats.blocked_repo = push.blocked_repo;
+    if !drained.managed {
+        return Ok(stats);
     }
     match code::run_code_push(cfg, &mut conn, auth) {
         Ok(code) => stats.code = code,

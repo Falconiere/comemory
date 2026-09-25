@@ -1,7 +1,8 @@
 //! Journal the shared events that are not journalled at record time (#254):
 //! every activity run, and — once — the verdicts recorded before sharing
 //! existed. Advanced beside [`super::bootstrap::advance`] in bounded,
-//! restartable batches. Activity is captured here, not where it is recorded,
+//! restartable batches, and by the exchange client before every push
+//! ([`crate::domains::sync::drain::adopt`]): nothing reads a client's feed. Activity is captured here, not where it is recorded,
 //! because recording is best-effort by contract: a failed capture is retried
 //! by the next call and never fails the command that ran.
 

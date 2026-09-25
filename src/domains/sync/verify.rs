@@ -1,17 +1,21 @@
 //! Manifest compare + repair for `comemory sync --action verify`.
 //!
-//! AC-9: when local and remote bucket digests diverge, reset cursors and
-//! re-pull / re-push so a missed log write can self-heal, then re-compare.
-
-use time::OffsetDateTime;
-use time::format_description::well_known::Iso8601;
+//! A `replica-v1` key compares per kind and repairs by a kind-scoped replay
+//! ([`crate::domains::sync::drain::verify`]). A legacy key keeps today's
+//! remedy (AC-9): when local and remote bucket digests diverge, reset both
+//! legacy cursors and drain again — now through the drain loop rather than a
+//! 2,000-entry cap — then re-compare. That repair re-imports everything, so
+//! it can re-patch a memory edited locally since: a known legacy hazard.
+//!
+//! The caller holds the sync pass lock.
 
 use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
-use crate::domains::sync::client;
+use crate::domains::sync::drain::negotiate::Protocol;
+use crate::domains::sync::drain::session::{self, Legs, Mode, Opened, Session};
+use crate::domains::sync::drain::verify::{self as replica_verify, Reopen, ReplicaVerify};
+use crate::domains::sync::drain::{self, network};
 use crate::domains::sync::exchange::ManifestResponse;
-use crate::domains::sync::repository_policy::RepositoryPolicy;
-use crate::domains::sync::{pull, push};
 use crate::prelude::*;
 use crate::store::{Connection, sync_log, sync_state};
 
@@ -30,43 +34,77 @@ pub struct VerifyReport {
     pub repaired: bool,
 }
 
-/// Compare local and remote manifests; when they differ, repair via full
-/// pull+push reconcile and re-compare (AC-9).
-pub fn verify_manifests(
+/// What a verify reports, by the protocol the key speaks.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum Verified {
+    /// A legacy key's one manifest.
+    Legacy(VerifyReport),
+    /// A `replica-v1` key's per-kind rows.
+    Replica(ReplicaVerify),
+}
+
+/// Compare local and remote manifests; when they differ, repair and
+/// re-compare.
+///
+/// # Errors
+/// [`Error::Unavailable`] when the upstream cannot be reached (the key's
+/// network state says why); store and configuration failures.
+pub fn verify(
     paths: &Paths,
     cfg: &Config,
     conn: &mut Connection,
     auth: &AuthFile,
-) -> Result<VerifyReport> {
-    let first = compare_once(conn, auth)?;
+) -> Result<Verified> {
+    let mut session = open(conn, cfg, auth)?;
+    if session.protocol == Protocol::Replica {
+        let reopen_session = |conn: &mut Connection| {
+            open(conn, cfg, auth).map(|s| (s.protocol == Protocol::Replica).then_some(s))
+        };
+        let reopen = Reopen {
+            paths,
+            cfg,
+            open: &reopen_session,
+        };
+        return replica_verify::run(conn, &reopen, &mut session).map(Verified::Replica);
+    }
+    let first = compare_once(conn, &session)?;
     if first.bucket_indices.is_empty() {
-        return Ok(VerifyReport {
-            repaired: false,
-            ..first
-        });
+        return Ok(Verified::Legacy(first));
     }
     repair_reconcile(paths, cfg, conn, auth)?;
-    let after = compare_once(conn, auth)?;
-    Ok(VerifyReport {
+    let reopened = open(conn, cfg, auth)?;
+    let after = compare_once(conn, &reopened)?;
+    Ok(Verified::Legacy(VerifyReport {
         repaired: after.bucket_indices.is_empty(),
-        differing_buckets: after.differing_buckets,
-        local_head_seq: after.local_head_seq,
-        remote_head_seq: after.remote_head_seq,
-        bucket_indices: after.bucket_indices,
-    })
+        ..after
+    }))
 }
 
-fn compare_once(conn: &mut Connection, auth: &AuthFile) -> Result<VerifyReport> {
-    let policy = RepositoryPolicy::load(conn, auth)?;
+/// A session for the key, or why there is none.
+fn open(conn: &mut Connection, cfg: &Config, auth: &AuthFile) -> Result<Box<Session>> {
+    match session::open(conn, cfg, auth, Mode::Manual)? {
+        Opened::Ready(session) => Ok(session),
+        Opened::Skipped(row) => Err(Error::Unavailable(format!(
+            "verify: {} ({})",
+            row.network_state,
+            row.last_error.unwrap_or_default()
+        ))),
+    }
+}
+
+fn compare_once(conn: &Connection, session: &Session) -> Result<VerifyReport> {
     let local = crate::domains::sync::exchange::manifest::from_hashes(
         sync_log::head_seq(conn)?,
-        policy.authorized_content_hashes(conn)?,
+        session.policy.authorized_content_hashes(conn)?,
     );
-    let secret = auth.effective_secret();
-    let remote = client::fetch_manifest(&auth.api_url, &secret, policy.revision())?;
+    let remote = session
+        .legacy
+        .retrying(|t| t.get::<ManifestResponse>("/v1/sync/manifest", &[]))
+        .map_err(|failure| Error::Unavailable(format!("verify: fetch manifest: {failure:?}")))?;
     let indices = diff_buckets(&local, &remote);
     Ok(VerifyReport {
-        differing_buckets: indices.len() as u32,
+        differing_buckets: u32::try_from(indices.len()).unwrap_or(u32::MAX),
         local_head_seq: local.head_seq,
         remote_head_seq: remote.head_seq,
         bucket_indices: indices,
@@ -80,30 +118,27 @@ fn repair_reconcile(
     conn: &mut Connection,
     auth: &AuthFile,
 ) -> Result<()> {
-    let at = now_iso()?;
+    let at = network::now()?;
     let workspace_id = auth.workspace_id.as_str();
     sync_state::ensure(conn, workspace_id, &auth.api_url)?;
     sync_state::set_pulled(conn, workspace_id, 0, &at)?;
     sync_state::set_pushed(conn, workspace_id, 0, &at)?;
-    let _ = pull::run_pull(paths, cfg, conn, auth, 2000)?;
-    let _ = push::run_push(paths, cfg, conn, auth, None, 2000)?;
-    Ok(())
+    let drained = drain::drain(paths, cfg, conn, auth, (Mode::Manual, Legs::Both))?;
+    match drained.error {
+        Some(error) => Err(Error::Unavailable(format!("verify repair: {error}"))),
+        None => Ok(()),
+    }
 }
 
 fn diff_buckets(local: &ManifestResponse, remote: &ManifestResponse) -> Vec<u32> {
-    let mut out = Vec::new();
-    for (i, (a, b)) in local.buckets.iter().zip(remote.buckets.iter()).enumerate() {
-        if a != b {
-            out.push(i as u32);
-        }
-    }
-    out
-}
-
-fn now_iso() -> Result<String> {
-    OffsetDateTime::now_utc()
-        .format(&Iso8601::DEFAULT)
-        .map_err(|e| Error::Other(format!("timestamp: {e}")))
+    local
+        .buckets
+        .iter()
+        .zip(&remote.buckets)
+        .enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .filter_map(|(i, _)| u32::try_from(i).ok())
+        .collect()
 }
 
 #[cfg(test)]

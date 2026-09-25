@@ -693,3 +693,17 @@ exchange is driven. All are resolved above. The one issue clause the engine
 cannot evidence, the platform's remote UI, belongs to comemory.io #185.
 **Status: Approved** for planning.
 
+## Changed by the exchange client (#255)
+
+Record time still queues nothing, but the feed position is no longer read
+directly by a push. Before every push
+[the exchange client](2026-09-24-replica-exchange-client.md) runs the capture
+(to completion, or one batch on the inline push after a save) and queues each
+local event position the outbox does not hold yet, from one cursor per kind.
+Logout and a login that switches workspace do the same before they stamp the
+rows the outgoing workspace owes, so a run never reaches a workspace other
+than the one it was recorded under. From there an event travels as an outbox row
+like any other. The capture batch skips a run that already carries an event
+id, so a rebuild, which drops the capture cursor, never shares a run twice. A
+pulled event this engine already holds is answered `duplicate` under any
+operation id, as the import route answers it.

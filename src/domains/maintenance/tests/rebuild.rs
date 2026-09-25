@@ -385,7 +385,7 @@ fn a_rebuild_replays_every_memory_and_adds_no_feed_position() {
     };
     let outbox_before = {
         let conn = open_db(&home);
-        comemory::store::replica_outbox::pending_count(&conn).expect("count")
+        comemory::store::replica_outbox::count(&conn, "pending").expect("count")
     };
     assert_eq!(before.len(), 2, "two saves, two positions");
 
@@ -404,7 +404,7 @@ fn a_rebuild_replays_every_memory_and_adds_no_feed_position() {
          position a peer already holds a receipt for"
     );
     assert_eq!(
-        comemory::store::replica_outbox::pending_count(&conn).expect("count"),
+        comemory::store::replica_outbox::count(&conn, "pending").expect("count"),
         outbox_before,
         "and it owes no new upload"
     );

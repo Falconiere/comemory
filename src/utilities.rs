@@ -47,6 +47,8 @@ pub mod file_lock;
 pub mod http_error;
 /// Comma-separated id-list splitting, de-duplication, and validation.
 pub(crate) mod id_list;
+/// `op-<yyyymmdd>-<32 hex>` ids for replicated mutations, unique across a workspace.
+pub(crate) mod operation_id;
 /// Page windows, the generic page envelope, and the retrieval page cursor.
 pub mod pagination;
 /// Canonicalize-and-contain path checks shared by every filesystem surface.

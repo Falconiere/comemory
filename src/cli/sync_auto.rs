@@ -37,6 +37,7 @@ pub(crate) fn run(
         report["pull"] = serde_json::json!(stats.run.pull);
         report["push"] = serde_json::json!(stats.run.push);
         report["code"] = serde_json::json!(stats.run.code);
+        report["exchange"] = serde_json::json!(stats.run.exchange);
         report["error"] = serde_json::json!(stats.error);
     }
     json::write(&report)

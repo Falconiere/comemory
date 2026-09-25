@@ -284,7 +284,7 @@ fn a_refresh_that_moves_the_anchor_adds_no_feed_position_and_no_outbox_row() {
             .expect("first refresh pins the anchor");
     }
     let after_save = feed_ops(&conn);
-    let outbox_before = comemory::store::replica_outbox::pending_count(&conn).expect("count");
+    let outbox_before = comemory::store::replica_outbox::count(&conn, "pending").expect("count");
     assert_eq!(after_save, vec![format!("upsert:{}", saved.id)]);
 
     // A real commit under the pin, re-indexed, so the second refresh has real
@@ -316,7 +316,7 @@ fn a_refresh_that_moves_the_anchor_adds_no_feed_position_and_no_outbox_row() {
          not change, so no operation is owed"
     );
     assert_eq!(
-        comemory::store::replica_outbox::pending_count(&conn).expect("count"),
+        comemory::store::replica_outbox::count(&conn, "pending").expect("count"),
         outbox_before,
         "and nothing new is queued for upload"
     );

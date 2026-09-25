@@ -156,6 +156,12 @@
       "name": "0026_replica_events.sql",
       "hash": "sha256:70ed4766f9c4a8dd69007438fff750f3548d7c4942c85c79993a50b8365d996d",
       "created_at": 1790278458
+    },
+    {
+      "idx": 26,
+      "name": "0027_replica_exchange.sql",
+      "hash": "sha256:78dab6574fec71e75fa076a8151f0fbe3c490233abf7a0e164d46869cbf834d1",
+      "created_at": 1790295645
     }
   ]
 }

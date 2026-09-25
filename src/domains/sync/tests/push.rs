@@ -12,6 +12,10 @@ use comemory::config::{Config, Paths};
 use comemory::domains::memories::Kind;
 use comemory::domains::memories::save;
 use comemory::domains::sync::AuthFile;
+use comemory::domains::sync::drain::{
+    self,
+    session::{Legs, Mode},
+};
 use comemory::domains::sync::push;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -75,9 +79,24 @@ impl Seeded {
         self.push_result().expect("push")
     }
 
+    /// Drain the push direction the way `comemory sync --action push` does;
+    /// a drain that ended on the network is the error it recorded.
     fn push_result(&mut self) -> crate::errors::Result<push::PushStats> {
         let auth = AuthFile::load(&self.paths).expect("load").expect("auth");
-        push::run_push(&self.paths, &self.cfg, &mut self.conn, &auth, None, 100)
+        let drained = drain::drain(
+            &self.paths,
+            &self.cfg,
+            &mut self.conn,
+            &auth,
+            (Mode::Manual, Legs::Push),
+        )?;
+        if let Some(error) = drained.error {
+            return Err(crate::errors::Error::Unavailable(error));
+        }
+        Ok(drained
+            .legacy
+            .and_then(|l| l.push)
+            .expect("a legacy push leg"))
     }
 }
 
@@ -255,4 +274,51 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
         after, 0,
         "a hard-reject batch must not advance pushed_seq, got {after}"
     );
+}
+
+#[test]
+fn withheld_rows_after_a_push_are_read_again_by_the_next_run() {
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+    let eligible = "the one memory in this run the platform accepts";
+    let id = comemory::domains::memories::id::memory_id(eligible);
+    let content_hash = comemory::utilities::digest::sha256_hex(eligible.trim_end().as_bytes());
+    server.update(|st| {
+        st.import_results = serde_json::json!([{
+            "id": id, "content_hash": content_hash, "status": "accepted", "seq": 1
+        }]);
+    });
+    // First batch (500 rows): the eligible memory, then unlabelled ones; the
+    // 501st row, also unlabelled, lands in a second batch that offers nothing.
+    let withheld: Vec<String> = (0..500)
+        .map(|n| format!("note {n} saved outside any git worktree"))
+        .collect();
+    let mut memories = vec![(eligible, "falconiere/comemory")];
+    memories.extend(withheld.iter().map(|b| (b.as_str(), "")));
+    let mut seeded = seeded(&server.base, &secret, Config::defaults(), &memories);
+
+    let stats = seeded.push();
+
+    assert_eq!((stats.pushed, stats.blocked_repo), (1, 500));
+    let seq_at = |offset: i64| -> i64 {
+        seeded
+            .conn
+            .query_row(
+                "SELECT seq FROM sync_log ORDER BY seq LIMIT 1 OFFSET ?1",
+                [offset],
+                |r| r.get(0),
+            )
+            .expect("seq")
+    };
+    let pushed_seq =
+        comemory::store::sync_state::get(&seeded.conn, common::auth_fixture::FIXTURE_WORKSPACE)
+            .expect("state")
+            .expect("row")
+            .pushed_seq;
+    assert_eq!(
+        pushed_seq,
+        seq_at(499),
+        "the stored cursor ends at the sent batch; the withheld row after it is read again"
+    );
+    assert!(seq_at(500) > pushed_seq);
 }

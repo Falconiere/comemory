@@ -207,3 +207,36 @@ fn a_feed_row_keeps_the_payload_it_named_after_the_entity_changes_again() {
         "history describes the bytes accepted at that position, not today's"
     );
 }
+
+#[test]
+fn kind_page_scans_raw_positions_and_continues_past_an_empty_window() {
+    let (_dir, mut conn) = migrated_db();
+    // Five memories then one document, in feed order.
+    for n in 0..5 {
+        accept(
+            &mut conn,
+            &format!("op-m{n}"),
+            "memory",
+            &format!("m{n}"),
+            &format!("{n}").repeat(64),
+        );
+    }
+    accept(
+        &mut conn,
+        "op-d0",
+        "document_revision",
+        "d0",
+        &"d".repeat(64),
+    );
+
+    let (rows, next) = replica_read::scan(&conn, 0, 2, Some("document_revision")).expect("scan");
+    assert!(rows.is_empty(), "no document in the first two positions");
+    assert_eq!(next, Some(2), "but the reader still moves past them");
+    let (rows, next) = replica_read::scan(&conn, 4, 2, Some("document_revision")).expect("scan");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].entity_key, "d0");
+    assert_eq!(next, Some(6));
+    let (rows, next) = replica_read::scan(&conn, 6, 2, Some("document_revision")).expect("scan");
+    assert!(rows.is_empty());
+    assert_eq!(next, None, "at the head there is nothing left to scan");
+}

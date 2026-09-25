@@ -166,3 +166,11 @@ The client push and pull loop is #255. This issue owns the entity: its identity,
 its payload, its capture, its acceptance and its readers. Nothing is enqueued on
 `replica_outbox` — the feed position is the durable record, and a queue entry
 with no consumer would be a claim this code cannot keep.
+
+## Changed by the exchange client (#255)
+
+A captured revision is now also queued on `replica_outbox` in the same
+transaction, and [the exchange client](2026-09-24-replica-exchange-client.md)
+pushes it. The first pass after a key selects `replica-v1` queues every
+revision journalled before this change, which had a feed position but no
+queue entry.

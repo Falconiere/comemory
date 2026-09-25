@@ -212,8 +212,10 @@ fn a_pulled_generation_is_the_next_parent_but_is_never_offered_for_upload() {
          accept a generation whose parent is not the one they are at"
     );
     assert_eq!(
-        code_generation::active_local(conn, REPO).expect("active_local"),
-        None,
+        code_generation::active(conn, REPO)
+            .expect("active")
+            .map(|g| g.origin),
+        Some(ReplicaOrigin::Sync),
         "and the pulled projection itself is never offered back for upload"
     );
 }

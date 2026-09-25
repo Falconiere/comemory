@@ -108,6 +108,12 @@ Understanding-oriented background:
   that keeps an import out of this machine's recall loop, what is shared and
   what stays local (the summary allowlist, machine paths, secrets,
   co-activation rewards), and retention and purge reaching the journal.
+- **[Replica exchange client](designs/2026-09-24-replica-exchange-client.md)** —
+  the client that drains both directions over `replica-v1` (or the old
+  protocol, never silently downgraded): one loop for every caller, a cursor
+  that means durable contiguous handling, held states that never starve the
+  rest, backoff and auth suspension, verify and rebootstrap, and keying by
+  API origin and workspace. The how-to is [cloud-sync](guides/cloud-sync.md#exchange).
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.

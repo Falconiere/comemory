@@ -110,6 +110,8 @@ pub mod stats;
 pub mod sync;
 /// `comemory sync --action auto`: the hook-fired pass and its `--json`.
 pub mod sync_auto;
+/// Rendering of the `exchange` state for `comemory sync`.
+pub mod sync_exchange_render;
 /// Rendering for `comemory sync` (TTY + `--json` shapes).
 pub mod sync_render;
 /// `comemory tune`: grid/sampled search over the ranking knobs.

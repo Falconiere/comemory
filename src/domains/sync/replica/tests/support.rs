@@ -90,6 +90,18 @@ impl Home {
     }
 }
 
+impl Home {
+    /// Make this engine a `replica-v1` client of some upstream — the only kind
+    /// of engine that owes uploads, so the only one that refuses an import
+    /// over an owed one.
+    pub fn make_client(&self) {
+        use crate::store::sync_exchange::{self, ExchangeKey, ExchangeRow};
+        let mut row = ExchangeRow::fresh(&ExchangeKey::new("http://127.0.0.1:9/api", "ws_a"));
+        row.protocol = Some("replica-v1".to_string());
+        sync_exchange::save(&self.conn, &row, "2026-09-24T10:00:00Z").expect("select replica");
+    }
+}
+
 /// An upsert operation carrying `payload` under `operation_id`.
 pub fn upsert(operation_id: &str, payload: &MemoryPayloadV1) -> Operation {
     let (bytes, digest) = payload.canonical().expect("canonical");
@@ -206,6 +218,7 @@ pub fn mark_pushed(conn: &Connection, entity_key: &str) {
                 Outcome::Accepted {
                     sequence: Some(1),
                     disposition: "accepted",
+                    epoch: None,
                 },
                 "2026-09-22T10:00:00Z",
             )

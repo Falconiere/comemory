@@ -398,6 +398,7 @@ pub fn mark_all_pushed(data_dir: &std::path::Path) {
             Outcome::Accepted {
                 sequence: Some(1),
                 disposition: "accepted",
+                epoch: None,
             },
             "2026-09-22T10:00:00Z",
         )

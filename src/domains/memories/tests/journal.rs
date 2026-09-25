@@ -146,7 +146,7 @@ fn a_metadata_only_edit_produces_a_new_digest_over_the_same_body() {
         "the first position still carries the bytes accepted at it"
     );
     assert_eq!(
-        replica_outbox::pending_count(&home.conn).expect("count"),
+        replica_outbox::count(&home.conn, "pending").expect("count"),
         2,
         "both mutations owe an upload"
     );
@@ -199,7 +199,7 @@ fn a_delete_and_a_restore_journal_a_tombstone_and_a_restore() {
         "the legacy feed describes the same history"
     );
     assert_eq!(
-        replica_outbox::pending_count(&home.conn).expect("count"),
+        replica_outbox::count(&home.conn, "pending").expect("count"),
         3,
         "every local mutation owes an upload, deletions included"
     );
@@ -217,7 +217,7 @@ fn every_journalled_operation_has_a_distinct_id_and_the_dated_shape() {
     assert_eq!(ids.len(), 2);
     assert_ne!(ids[0], ids[1], "two mutations, two operation ids");
     for operation_id in ids {
-        // `op-<yyyymmdd>-<8 lowercase hex>`, asserted part by part: a length
+        // `op-<yyyymmdd>-<32 lowercase hex>`, asserted part by part: a length
         // check alone would accept `op-12345678-xyz-`.
         let parts: Vec<&str> = operation_id.split('-').collect();
         assert_eq!(parts.len(), 3, "three segments: {operation_id}");
@@ -227,7 +227,7 @@ fn every_journalled_operation_has_a_distinct_id_and_the_dated_shape() {
             parts[1].chars().all(|c| c.is_ascii_digit()),
             "the date segment is digits: {operation_id}"
         );
-        assert_eq!(parts[2].len(), 8, "8 hex chars: {operation_id}");
+        assert_eq!(parts[2].len(), 32, "32 hex chars: {operation_id}");
         assert!(
             parts[2]
                 .chars()

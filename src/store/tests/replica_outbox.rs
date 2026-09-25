@@ -69,7 +69,7 @@ fn pending_drains_oldest_first_and_counts_what_is_owed() {
     assert_eq!(pending[0].observed_sequence, Some(3));
     assert_eq!(pending[0].op, ReplicaOp::Upsert);
     assert_eq!(pending[0].attempts, 0);
-    assert_eq!(replica_outbox::pending_count(&conn).expect("count"), 2);
+    assert_eq!(replica_outbox::count(&conn, "pending").expect("count"), 2);
 
     let one = replica_outbox::pending(&conn, 1).expect("limited");
     assert_eq!(one.len(), 1, "the limit bounds one envelope");
@@ -94,12 +94,13 @@ fn settling_an_operation_removes_it_from_what_is_owed_and_keeps_the_answer() {
         Outcome::Accepted {
             sequence: Some(77),
             disposition: "accepted",
+            epoch: None,
         },
         "2026-09-21T10:01:00Z",
     )
     .expect("record");
     assert_eq!(settled, 1);
-    assert_eq!(replica_outbox::pending_count(&conn).expect("count"), 0);
+    assert_eq!(replica_outbox::count(&conn, "pending").expect("count"), 0);
 
     let (state, sequence, disposition): (String, Option<i64>, Option<String>) = conn
         .query_row(
@@ -136,7 +137,7 @@ fn a_rejection_keeps_the_row_for_diagnosis() {
     )
     .expect("record");
 
-    assert_eq!(replica_outbox::pending_count(&conn).expect("count"), 0);
+    assert_eq!(replica_outbox::count(&conn, "pending").expect("count"), 0);
     let rows: i64 = conn
         .query_row("SELECT count(*) FROM replica_operation", [], |r| r.get(0))
         .expect("count");

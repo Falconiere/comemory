@@ -10,13 +10,17 @@ use time::format_description::well_known::Iso8601;
 
 use crate::domains::code::git_utils;
 use crate::domains::sync::AuthFile;
-use crate::domains::sync::client_policy::{self, SyncPolicyStatus};
+use crate::domains::sync::client_policy::{
+    self, ApprovedRepository, RepositoryMapping, SyncPolicyStatus,
+};
 use crate::domains::sync::client_protocol::SYNC_PROTOCOL;
 use crate::domains::sync::repository_identity::{
     canonical_github_name, canonical_github_repository,
 };
 use crate::domains::sync::skip_repos::normalize_repo_label;
 use crate::prelude::*;
+use crate::store::sync_exchange::ExchangeKey;
+use crate::store::sync_policy_snapshot::{self, PolicySnapshot};
 use crate::store::{Connection, repo_marker, repository_approval, sync_manifest, sync_state};
 
 const IMPORT_GATE: &str = "repository_allowlist";
@@ -45,12 +49,67 @@ impl RepositoryPolicy {
     ) -> Result<Self> {
         let secret = auth.effective_secret();
         let status = client_policy::fetch_with_timeout(&auth.api_url, &secret, timeout)?;
+        Self::from_status(conn, status, auth)
+    }
+
+    /// Resolve a policy a managed origin answered with: validate it, persist
+    /// the label map and the key's snapshot, and reconcile the legacy cursor
+    /// fingerprint.
+    ///
+    /// # Errors
+    /// [`Error::Other`] for a policy this client does not accept; propagates
+    /// SQLite failures.
+    pub fn from_status(
+        conn: &mut Connection,
+        status: SyncPolicyStatus,
+        auth: &AuthFile,
+    ) -> Result<Self> {
+        let snapshot = snapshot_of(&status);
         let policy = Self::resolve(conn, status, &auth.workspace_id)?;
         policy.persist_resolved_labels(conn)?;
+        sync_policy_snapshot::save(
+            conn,
+            &ExchangeKey::new(&auth.api_url, &auth.workspace_id),
+            &snapshot,
+        )?;
         sync_state::ensure(conn, &auth.workspace_id, &auth.api_url)?;
         let fingerprint = policy.fingerprint(&auth.api_url);
         let _ = sync_state::reconcile_policy(conn, &auth.workspace_id, &fingerprint)?;
         Ok(policy)
+    }
+
+    /// The policy an unmanaged engine's session runs under: the snapshot
+    /// persisted for this exact key, or — with none — one that approves
+    /// nothing.
+    ///
+    /// # Errors
+    /// Propagates SQLite failures and a stored snapshot that does not validate.
+    pub fn from_snapshot(conn: &Connection, key: &ExchangeKey) -> Result<Self> {
+        let snapshot = sync_policy_snapshot::load(conn, key)?;
+        let status = SyncPolicyStatus {
+            workspace_id: key.workspace_id.clone(),
+            allowlist: snapshot
+                .as_ref()
+                .map(|s| s.allowlist.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|full_name| ApprovedRepository {
+                    name: full_name.rsplit('/').next().unwrap_or_default().to_string(),
+                    full_name,
+                })
+                .collect(),
+            repo_mappings: snapshot
+                .as_ref()
+                .map(|s| s.mappings.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(label, full_name)| RepositoryMapping { label, full_name })
+                .collect(),
+            policy_revision: snapshot.as_ref().map_or(0, |s| s.revision),
+            sync_protocol: SYNC_PROTOCOL.to_string(),
+            import_gate: IMPORT_GATE.to_string(),
+        };
+        Self::resolve(conn, status, &key.workspace_id)
     }
 
     /// Policy revision carried by every managed data request.
@@ -191,6 +250,41 @@ impl RepositoryPolicy {
             hasher.update(value.as_bytes());
         }
         hex_digest(hasher.finalize().as_slice())
+    }
+}
+
+/// The snapshot a managed status answer is persisted as.
+fn snapshot_of(status: &SyncPolicyStatus) -> PolicySnapshot {
+    let allowlist: Vec<String> = status
+        .allowlist
+        .iter()
+        .map(|r| r.full_name.clone())
+        .collect();
+    let mappings: BTreeMap<String, String> = status
+        .repo_mappings
+        .iter()
+        .map(|m| (m.label.clone(), m.full_name.clone()))
+        .collect();
+    let mut hasher = Sha256::new();
+    hasher.update(status.policy_revision.to_be_bytes());
+    for name in &allowlist {
+        hasher.update(b"\0a:");
+        hasher.update(name.as_bytes());
+    }
+    for (label, name) in &mappings {
+        hasher.update(b"\0m:");
+        hasher.update(label.as_bytes());
+        hasher.update(b"=");
+        hasher.update(name.as_bytes());
+    }
+    PolicySnapshot {
+        revision: status.policy_revision,
+        fingerprint: hex_digest(hasher.finalize().as_slice()),
+        allowlist,
+        mappings,
+        loaded_at: OffsetDateTime::now_utc()
+            .format(&Iso8601::DEFAULT)
+            .unwrap_or_default(),
     }
 }
 

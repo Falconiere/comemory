@@ -13,9 +13,11 @@ use super::orm;
 use super::schema_history::{ActivityLog, activity_log as col};
 use crate::prelude::*;
 
-/// Up to `limit` runs recorded HERE above `after_id`, ascending by id. An
-/// imported run is never returned: re-capturing one is how a replication
-/// loop would start.
+/// Up to `limit` runs recorded HERE above `after_id` and not yet shared,
+/// ascending by id. An imported run is never returned: re-capturing one is how
+/// a replication loop would start. Nor is a run that already carries an event
+/// id: the cursor lives in `schema_meta`, which a rebuild does not carry, and
+/// re-walking a shared run would mint it a second id peers count again.
 ///
 /// # Errors
 /// Propagates SQLite failures.
@@ -29,6 +31,7 @@ pub fn capture_batch_after(
         select_rows()
             .filter(col::id.gt(after_id))
             .filter(col::device.is_null())
+            .filter(col::event_id.is_null())
             .order_by(col::id.asc())
             .limit(i64::try_from(limit).unwrap_or(i64::MAX))
             .to_sql(),

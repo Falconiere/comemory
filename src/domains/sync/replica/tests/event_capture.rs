@@ -169,5 +169,38 @@ fn the_capability_waits_for_the_backfill() {
     let mut ctx = home.ctx();
     let finished = manifest::run(&mut ctx).expect("manifest");
     assert_eq!(finished.bootstrap.state, "complete");
-    assert_eq!(finished.capabilities, vec!["replica-v1".to_string()]);
+    assert_eq!(finished.capabilities, manifest::advertised());
+}
+
+#[test]
+fn a_lost_capture_cursor_never_shares_a_run_twice() {
+    let mut home = Home::new();
+    approve(&home);
+    home.save(BODY, &["sync"]);
+    let mut ctx = home.ctx();
+    event_capture::advance(&mut ctx).expect("capture");
+    let stamped = |home: &Home| -> String {
+        home.conn
+            .query_row("SELECT event_id FROM activity_log", [], |r| r.get(0))
+            .expect("stamped")
+    };
+    let first = stamped(&home);
+    // What a rebuild leaves: `activity_log` and the feed copied, the capture
+    // cursor (in `schema_meta`) gone.
+    home.conn
+        .execute(
+            "DELETE FROM schema_meta WHERE key = ?1",
+            [event_capture::ACTIVITY_THROUGH],
+        )
+        .expect("forget cursor");
+
+    let mut ctx = home.ctx();
+    event_capture::advance(&mut ctx).expect("rewalk");
+
+    assert_eq!(
+        journalled(&home, "activity_event").len(),
+        1,
+        "the shared run is not journalled again under a new id"
+    );
+    assert_eq!(stamped(&home), first, "its event id is kept");
 }

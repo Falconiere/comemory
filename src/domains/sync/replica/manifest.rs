@@ -4,8 +4,14 @@
 //! `capabilities` is empty until journal seeding completes, which is how a
 //! peer tells "nothing to send" from "not finished remembering what I have".
 
-use crate::domains::memories::replica_payload::MEMORY_PAYLOAD_VERSION;
+use crate::domains::code::replica_payload::{CODE_ENTITY_KIND, CODE_PAYLOAD_VERSION};
+use crate::domains::documents::replica_payload::{DOCUMENT_ENTITY_KIND, DOCUMENT_PAYLOAD_VERSION};
+use crate::domains::learning::replica_payload::{FEEDBACK_ENTITY_KIND, FEEDBACK_PAYLOAD_VERSION};
+use crate::domains::memories::replica_payload::{MEMORY_ENTITY_KIND, MEMORY_PAYLOAD_VERSION};
 use crate::domains::sync::exchange::manifest::bucket_digests;
+use crate::domains::sync::replica::activity_payload::{
+    ACTIVITY_ENTITY_KIND, ACTIVITY_PAYLOAD_VERSION,
+};
 use crate::domains::sync::replica::bootstrap::{self, Progress};
 use crate::domains::sync::replica::contract::PROTOCOL;
 use crate::domains::sync::replica::contract_views::{
@@ -41,7 +47,7 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
         stream_epoch: stream,
         head_sequence,
         capabilities: if progress.complete() {
-            vec![PROTOCOL.to_string()]
+            advertised()
         } else {
             Vec::new()
         },
@@ -69,6 +75,21 @@ fn merged(memories: &Progress, verdicts: &Progress) -> Progress {
         state,
         through: memories.through.clone(),
     }
+}
+
+/// What a seeded engine advertises: the protocol, then one `<kind>@<version>`
+/// per payload it can accept — how a client learns which of its operations
+/// this engine can read before it spends an operation id on a refusal.
+#[must_use]
+pub fn advertised() -> Vec<String> {
+    vec![
+        PROTOCOL.to_string(),
+        format!("{MEMORY_ENTITY_KIND}@{MEMORY_PAYLOAD_VERSION}"),
+        format!("{CODE_ENTITY_KIND}@{CODE_PAYLOAD_VERSION}"),
+        format!("{DOCUMENT_ENTITY_KIND}@{DOCUMENT_PAYLOAD_VERSION}"),
+        format!("{FEEDBACK_ENTITY_KIND}@{FEEDBACK_PAYLOAD_VERSION}"),
+        format!("{ACTIVITY_ENTITY_KIND}@{ACTIVITY_PAYLOAD_VERSION}"),
+    ]
 }
 
 #[cfg(test)]

@@ -41,6 +41,16 @@ use crate::store::Connection;
 /// pulled-projection tables with the generations that survived, so a rebuild
 /// never leaves a projection whose generation is gone.
 ///
+/// The #255 exchange-client tables are copied because each is a fact about an
+/// upstream this machine cannot re-derive: what a key negotiated and how far
+/// its network backoff runs (`sync_exchange`), the policy last loaded for it
+/// (`sync_policy_snapshot`), the pulled positions it passed and must revisit
+/// (`replica_pull_hold`), what the upstream last held for each entity
+/// (`replica_binding`), and a compacting replay's scratch rows
+/// (`replica_replay`), so a replay interrupted by a rebuild resumes instead of
+/// falling back to a forward pull that could put an older revision over a
+/// newer one.
+///
 /// The three candidate-observation tables (#209) are copied for the strongest
 /// reason on this list: a reviewed relevance judgment is human work, and the
 /// bounded passage it was made against is a snapshot of content that may
@@ -98,6 +108,11 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "remote_code_file",
     "remote_code_symbol",
     "remote_code_edge",
+    "sync_exchange",
+    "sync_policy_snapshot",
+    "replica_pull_hold",
+    "replica_binding",
+    "replica_replay",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.

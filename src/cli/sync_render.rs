@@ -6,11 +6,14 @@
 use std::io::Write as _;
 
 use crate::cli::output::json;
+use crate::cli::sync_exchange_render::{exchange_run_line, exchange_status_lines};
+use crate::domains::sync::AuthFile;
 use crate::domains::sync::code::{self, CodePushStats, NotARepository};
 use crate::domains::sync::daemon::{self, DaemonStatus};
+use crate::domains::sync::drain::status;
 use crate::domains::sync::initial::InitialSyncStats;
 use crate::domains::sync::manual::RunStats;
-use crate::domains::sync::verify;
+use crate::domains::sync::verify::Verified;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::{code_sync, indexed_files, repo_marker, sync_log, sync_state};
@@ -108,7 +111,8 @@ pub(crate) fn emit_daemon_status(json_flag: bool, st: &DaemonStatus) -> Result<(
     Ok(())
 }
 
-pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &str) -> Result<()> {
+pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, auth: &AuthFile) -> Result<()> {
+    let workspace = auth.workspace_id.as_str();
     let row = sync_state::get(conn, workspace)?;
     let head = sync_log::head_seq(conn)?;
     let (pushed, pulled, last_sync) = row.as_ref().map_or((0, 0, None), |r| {
@@ -116,18 +120,10 @@ pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &st
     });
     let pending = sync_log::pending_local(conn, pushed)?;
     let code = code_status_rows(conn)?;
-    let daemon = match daemon::status() {
-        Ok(st) => st,
-        Err(_) => DaemonStatus {
-            platform: "unknown",
-            unit_path: None,
-            installed: false,
-            running: false,
-            detail: "daemon status unavailable".into(),
-        },
-    };
+    let exchange = status::status(conn, auth)?;
+    let daemon = daemon_status();
     if json_flag {
-        json::write(&serde_json::json!({
+        return json::write(&serde_json::json!({
             "workspace": workspace,
             "pushed_seq": pushed,
             "pulled_seq": pulled,
@@ -136,76 +132,123 @@ pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &st
             "last_sync_at": last_sync,
             "daemon": daemon,
             "code": code,
-        }))?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "workspace: {workspace}")?;
-        writeln!(out, "pushed_seq: {pushed}")?;
-        writeln!(out, "pulled_seq: {pulled}")?;
-        writeln!(out, "head_seq: {head}")?;
-        writeln!(out, "pending: {pending}")?;
-        writeln!(
-            out,
+            "exchange": exchange,
+        }));
+    }
+    let mut lines = vec![
+        format!("workspace: {workspace}"),
+        format!("pushed_seq: {pushed}"),
+        format!("pulled_seq: {pulled}"),
+        format!("head_seq: {head}"),
+        format!("pending: {pending}"),
+        format!(
             "daemon: installed={} running={} ({})",
             daemon.installed, daemon.running, daemon.detail
-        )?;
-        for row in &code {
-            writeln!(
-                out,
-                "code: {} files={} head={} pushed_head={} moved_since_push={}{}",
-                row.repo,
-                row.files,
-                row.head.as_deref().unwrap_or("-"),
-                row.pushed_head.as_deref().unwrap_or("never"),
-                row.moved_since_push,
-                row.withheld
-                    .map(|why| format!(" withheld={why}"))
-                    .unwrap_or_default()
-            )?;
-        }
-        if let Some(warn) = daemon.inactive_warning() {
-            writeln!(out, "warning: {warn}")?;
-        }
+        ),
+    ];
+    lines.extend(code.iter().map(code_status_line));
+    lines.extend(exchange_status_lines(&exchange));
+    lines.extend(
+        daemon
+            .inactive_warning()
+            .map(|warn| format!("warning: {warn}")),
+    );
+    let mut out = std::io::stdout().lock();
+    for line in lines {
+        writeln!(out, "{line}")?;
     }
     Ok(())
 }
 
-pub(crate) fn emit_verify(json_flag: bool, report: &verify::VerifyReport) -> Result<()> {
+/// One repo's line in the TTY status.
+fn code_status_line(row: &CodeStatusRow) -> String {
+    format!(
+        "code: {} files={} head={} pushed_head={} moved_since_push={}{}",
+        row.repo,
+        row.files,
+        row.head.as_deref().unwrap_or("-"),
+        row.pushed_head.as_deref().unwrap_or("never"),
+        row.moved_since_push,
+        row.withheld
+            .map(|why| format!(" withheld={why}"))
+            .unwrap_or_default()
+    )
+}
+
+/// The daemon's status, or an honest "unavailable" when the probe fails.
+fn daemon_status() -> DaemonStatus {
+    daemon::status().unwrap_or_else(|_| DaemonStatus {
+        platform: "unknown",
+        unit_path: None,
+        installed: false,
+        running: false,
+        detail: "daemon status unavailable".into(),
+    })
+}
+
+pub(crate) fn emit_verify(json_flag: bool, verified: &Verified) -> Result<()> {
     if json_flag {
-        json::write(report)?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        if report.differing_buckets == 0 {
-            let suffix = if report.repaired { " after repair" } else { "" };
-            writeln!(
-                out,
-                "Manifests match{suffix} (head local={}, remote={})",
-                report.local_head_seq, report.remote_head_seq
-            )?;
-        } else {
-            writeln!(
-                out,
-                "{} bucket(s) still differ after repair (local head={}, remote head={})",
-                report.differing_buckets, report.local_head_seq, report.remote_head_seq
-            )?;
-        }
+        return json::write(verified);
+    }
+    let mut out = std::io::stdout().lock();
+    for line in verify_lines(verified) {
+        writeln!(out, "{line}")?;
     }
     Ok(())
+}
+
+/// The TTY lines of a verify report.
+fn verify_lines(verified: &Verified) -> Vec<String> {
+    match verified {
+        Verified::Legacy(report) if report.differing_buckets == 0 => vec![format!(
+            "Manifests match{} (head local={}, remote={})",
+            if report.repaired { " after repair" } else { "" },
+            report.local_head_seq,
+            report.remote_head_seq
+        )],
+        Verified::Legacy(report) => vec![format!(
+            "{} bucket(s) still differ after repair (local head={}, remote head={})",
+            report.differing_buckets, report.local_head_seq, report.remote_head_seq
+        )],
+        Verified::Replica(report) => report
+            .kinds
+            .iter()
+            .map(|kind| {
+                let repaired = if kind.repaired { " — repaired" } else { "" };
+                format!(
+                    "{}: {} differing bucket(s){repaired}",
+                    kind.kind, kind.differing_buckets
+                )
+            })
+            .chain([format!("held positions: {}", report.held_positions)])
+            .collect(),
+    }
+}
+
+/// The `--json` object of a run: every leg, `null` for one that did not run.
+/// On a `replica-v1` key the `exchange` leg stands in for `push`, `pull` and
+/// `code`, which are then `null`.
+pub(crate) fn run_json(workspace: &str, stats: &RunStats) -> serde_json::Value {
+    serde_json::json!({
+        "workspace": workspace,
+        "push": stats.push,
+        "pull": stats.pull,
+        "code": stats.code,
+        "refresh": stats.refresh,
+        "exchange": stats.exchange,
+    })
 }
 
 /// A `run` / `push` / `pull` report: one line per leg that ran, or the
 /// `--json` object with every leg (`null` for one that did not).
 pub(crate) fn emit_run(json_flag: bool, workspace: &str, stats: &RunStats) -> Result<()> {
     if json_flag {
-        return json::write(&serde_json::json!({
-            "workspace": workspace,
-            "push": stats.push,
-            "pull": stats.pull,
-            "code": stats.code,
-            "refresh": stats.refresh,
-        }));
+        return json::write(&run_json(workspace, stats));
     }
     let mut out = std::io::stdout().lock();
+    if let Some(x) = &stats.exchange {
+        writeln!(out, "{}", exchange_run_line(x))?;
+    }
     if let Some(p) = &stats.pull {
         writeln!(
             out,

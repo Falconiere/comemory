@@ -3,7 +3,9 @@
 //! `index_runs` (v15), the v16 cloud-sync tables (`sync_log` / `sync_state` /
 //! `sync_binding`), the v22 `replica-v1` journal, the v23
 //! `memory_needs_embedding` backlog the journal's import path produces, the
-//! v26 `replica_device` identity, and the `activity_log` feed.
+//! v26 `replica_device` identity, the `activity_log` feed, and the v27
+//! exchange-client state (`sync_exchange`, `sync_policy_snapshot`,
+//! `replica_pull_hold`, `replica_binding`, `replica_replay`).
 //! History is exactly what markdown cannot reconstruct: a rebuild that
 //! dropped it would erase every recorded eval, gc, and index run (and
 //! re-offer every discarded knob proposal), would reset sync cursors /
@@ -102,7 +104,8 @@ const PRESERVED: &[(&str, &str)] = &[
         "replica_operation",
         "operation_id, entity_kind, entity_key, op, payload_digest, schema_version, \
          repository, observed_sequence, state, upstream_sequence, disposition, attempts, \
-         last_error, created_at, updated_at",
+         last_error, created_at, updated_at, api_url, hold_detail, hold_reason, \
+         upstream_epoch, wire_repository, workspace_id",
     ),
     (
         "replica_receipt",
@@ -110,7 +113,8 @@ const PRESERVED: &[(&str, &str)] = &[
     ),
     (
         "replica_cursor",
-        "workspace_id, api_url, stream_epoch, applied_sequence, updated_at",
+        "api_url, workspace_id, stream_epoch, applied_sequence, anchor_sequence, \
+         anchor_operation_id, updated_at",
     ),
     (
         "memory_needs_embedding",
@@ -123,6 +127,31 @@ const PRESERVED: &[(&str, &str)] = &[
         "activity_log",
         "id, at, command, source, actor, repo, duration_ms, ok, error_code, summary, \
          event_id, device",
+    ),
+    (
+        "sync_exchange",
+        "api_url, workspace_id, protocol, coverage_reason, selected_at, upgrade_through, \
+         replay_kind, replay_state, replay_scan_through, replay_target, network_state, \
+         retry_at, consecutive_failures, last_error, suspended_fingerprint, upstream_head, \
+         stall_sequence, stall_reason, last_session_at, last_ok_at, updated_at",
+    ),
+    (
+        "sync_policy_snapshot",
+        "api_url, workspace_id, revision, fingerprint, allowlist_json, mappings_json, loaded_at",
+    ),
+    (
+        "replica_pull_hold",
+        "api_url, workspace_id, stream_epoch, from_sequence, to_sequence, reason, \
+         entity_kind, entity_key, repository, policy_revision, recorded_at",
+    ),
+    (
+        "replica_binding",
+        "api_url, workspace_id, entity_kind, entity_key, synced_digest, synced_deleted, \
+         synced_sequence, synced_epoch, updated_at",
+    ),
+    (
+        "replica_replay",
+        "api_url, workspace_id, entity_kind, entity_key, sequence, entry_json",
     ),
 ];
 
@@ -179,3 +208,7 @@ fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
     ))?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/rebuild_copy_history.rs"]
+mod tests;

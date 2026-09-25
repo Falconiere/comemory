@@ -160,3 +160,35 @@ fn an_unapproved_repository_mints_no_name_and_journals_nothing() {
         "and `comemory sources` says which of the four reasons it was: {sources}"
     );
 }
+
+#[test]
+fn indexing_a_shared_document_queues_its_upload() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let root = docs_tree(workspace.path(), "checkout");
+    let engine = Engine::spawn(&[]);
+    approve_docs(&engine, &root);
+    index_docs_cli(&engine, &root.join("docs/guides"));
+
+    let feed = document_feed(&engine.data_dir());
+    assert!(!feed.is_empty(), "the guides were shared");
+    let queued: Vec<(String, String)> = {
+        let conn = engine.db();
+        let mut statement = conn
+            .prepare(
+                "SELECT entity_key, state FROM replica_operation \
+                 WHERE entity_kind = 'document_revision' ORDER BY created_at, rowid",
+            )
+            .expect("prepare");
+        statement
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("collect")
+    };
+    assert_eq!(
+        queued.len(),
+        feed.len(),
+        "every shared revision owes exactly one upload: {queued:?}"
+    );
+    assert!(queued.iter().all(|(_, state)| state == "pending"));
+}

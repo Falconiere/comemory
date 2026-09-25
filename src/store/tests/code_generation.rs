@@ -159,8 +159,10 @@ fn only_a_locally_built_generation_is_offered_upstream() {
         "the pulled generation is what the repo is at"
     );
     assert_eq!(
-        code_generation::active_local(&conn, REPO).expect("active_local"),
-        None,
+        code_generation::active(&conn, REPO)
+            .expect("active")
+            .map(|g| g.origin),
+        Some(ReplicaOrigin::Sync),
         "but it is never offered back — that is how a replication loop is prevented"
     );
 }

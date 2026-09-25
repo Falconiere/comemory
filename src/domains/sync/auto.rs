@@ -1,7 +1,7 @@
 //! `comemory sync --action auto` — the unattended pass git hooks and the
 //! agent `SessionStart` hook fire from any cwd: index the triggering checkout,
-//! re-index every other stale hooked repo, then (logged in) pull, push, and
-//! push moved code. Passes serialize on [`PASS_LOCK`]; a trigger that finds a
+//! re-index every other stale hooked repo, then (logged in) drain the key
+//! until a pass ends without `more` — one nudge drains any backlog. Passes serialize on [`PASS_LOCK`]; a trigger that finds a
 //! pass already queued ([`QUEUE_LOCK`]) exits, unless a later sweep would not
 //! cover its checkout.
 
@@ -11,8 +11,13 @@ use crate::config::sync::apply_embed_model;
 use crate::config::{Config, Paths};
 use crate::domains::code::hooked_refresh::{self, Checkout, RefreshStats};
 use crate::domains::sync::AuthFile;
-use crate::domains::sync::manual::{RUN_LIMIT, RunStats};
-use crate::domains::sync::{code, pull, push};
+use crate::domains::sync::code;
+use crate::domains::sync::drain::{
+    self, Drained,
+    report::End,
+    session::{Legs, Mode},
+};
+use crate::domains::sync::manual::RunStats;
 use crate::prelude::*;
 use crate::store::{Connection, connection};
 use crate::utilities::file_lock::FileLock;
@@ -55,7 +60,7 @@ pub enum AutoOutcome {
     /// trigger's work; nothing ran here.
     Coalesced,
     /// This invocation ran a pass.
-    Ran(AutoStats),
+    Ran(Box<AutoStats>),
 }
 
 /// Run one auto pass for the checkout at `checkout_path` (the hook's
@@ -97,7 +102,8 @@ pub fn run_auto(paths: &Paths, cfg: &Config, checkout_path: Option<&Path>) -> Re
         Some(conn) => conn,
         None => connection::open(paths.db_path())?,
     };
-    run_pass(paths, cfg, &mut conn, checkout.as_ref(), refresh).map(AutoOutcome::Ran)
+    run_pass(paths, cfg, &mut conn, checkout.as_ref(), refresh)
+        .map(|stats| AutoOutcome::Ran(Box::new(stats)))
 }
 
 /// The pass itself, for a caller that already holds [`PASS_LOCK`] (this
@@ -130,22 +136,47 @@ pub fn run_pass(
     };
     stats.logged_in = true;
     apply_embed_model(conn, &cfg.embed)?;
-    stats.run.pull = note(
+    let drained = note(
         &mut stats.error,
-        "pull",
-        pull::run_pull(paths, cfg, conn, &auth, RUN_LIMIT),
+        "exchange",
+        drain::drain(paths, cfg, conn, &auth, (Mode::Unattended, Legs::Both)),
     );
-    stats.run.push = note(
-        &mut stats.error,
-        "push",
-        push::run_push(paths, cfg, conn, &auth, None, RUN_LIMIT),
-    );
-    stats.run.code = note(
-        &mut stats.error,
-        "code push",
-        code::run_code_push_if_moved(cfg, conn, &auth),
-    );
+    if let Some(drained) = drained {
+        report(cfg, conn, &auth, drained, &mut stats);
+    }
     Ok(stats)
+}
+
+/// Fold a drain into the pass's stats; a legacy key of a managed origin then
+/// pushes its moved code index.
+fn report(
+    cfg: &Config,
+    conn: &mut Connection,
+    auth: &AuthFile,
+    drained: Drained,
+    stats: &mut AutoStats,
+) {
+    if let Some(error) = drained
+        .error
+        .as_ref()
+        .filter(|_| drained.exchange.end == End::Network)
+    {
+        stats
+            .error
+            .get_or_insert_with(|| format!("exchange: {error}"));
+    }
+    stats.run.exchange = Some(drained.exchange);
+    if let Some(legacy) = drained.legacy {
+        stats.run.pull = legacy.pull;
+        stats.run.push = legacy.push;
+        if drained.managed {
+            stats.run.code = note(
+                &mut stats.error,
+                "code push",
+                code::run_code_push_if_moved(cfg, conn, auth),
+            );
+        }
+    }
 }
 
 /// Keep a leg's stats, or log its failure and remember the first one.

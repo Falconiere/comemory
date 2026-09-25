@@ -8,8 +8,6 @@
 //! here aborts the mutation's transaction: a memory that exists locally but
 //! owes no upload is the divergence this journal exists to prevent.
 
-use time::OffsetDateTime;
-
 use crate::domains::memories::Frontmatter;
 use crate::domains::memories::replica_payload::{
     MEMORY_ENTITY_KIND, MEMORY_PAYLOAD_VERSION, MemoryPayloadV1,
@@ -20,7 +18,7 @@ use crate::store::replica_journal::{
     self, NewOperation, PayloadRef, ReplicaOp, ReplicaOrigin, stream_epoch,
 };
 use crate::store::{replica_outbox, sync_log};
-use crate::utilities::dated_id::dated_id;
+use crate::utilities::operation_id;
 
 /// Where one journalled mutation landed in each feed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,17 +143,9 @@ fn operation_id_for(supplied: Option<&str>, entity_key: &str, op: ReplicaOp) -> 
     supplied.map_or_else(|| mint_operation_id(entity_key, op), str::to_string)
 }
 
-/// Mint `op-<yyyymmdd>-<8hex>` for one mutation.
-///
-/// The seed carries the entity and the operation so two different mutations
-/// cannot collide on a slow clock, and `dated_id` mixes in nanoseconds so the
-/// same entity mutated twice yields two ids.
+/// Mint the operation id for one memory mutation.
 pub(crate) fn mint_operation_id(entity_key: &str, op: ReplicaOp) -> String {
-    dated_id(
-        "op",
-        &format!("{MEMORY_ENTITY_KIND}:{entity_key}:{}", op.as_str()),
-        OffsetDateTime::now_utc(),
-    )
+    operation_id::mint(MEMORY_ENTITY_KIND, entity_key, op.as_str())
 }
 
 #[cfg(test)]

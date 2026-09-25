@@ -135,3 +135,15 @@ The payload lives under `domains/code`, not under `domains/sync`: the planner
 needs it, and `domains::code -> domains::sync` is forbidden. Putting it there
 also collapsed what would have been two independent derivations of the same
 digest into one.
+
+## Changed by the exchange client (#255)
+
+A generation is captured for upload at push time by
+[the exchange client](2026-09-24-replica-exchange-client.md): only one planned
+from this machine's own index, and only when its contents differ from the
+generation the repository is at (a generation's id is minted over its parent,
+so ids alone cannot tell). The pull path activates a pulled generation in the
+upstream's order without the parent check the import route keeps, and a
+pending local plan is then answered stale upstream and replanned.
+`code_generation::active_local`, which stood in for that upload selection, is
+gone.

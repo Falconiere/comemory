@@ -77,6 +77,7 @@ One line per file, named after its primary item:
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |
 | `sync.rs` | `Args` | `comemory sync` — nested `push` / `pull` / `status` / `verify` for cloud sync; the run sequences are `domains::sync::manual`, and `run` and `push` still push the code index after the memories |
 | `sync_auto.rs` | `run` | `comemory sync --action auto` — dispatched before any login is required; runs `domains::sync::auto::run_auto` off the runtime and prints its `--json` report (nothing without `--json`) |
+| `sync_exchange_render.rs` | `exchange_status_lines` | The TTY lines of `status`'s `exchange` block (protocol, network, cursor against the upstream head, outbox and pull holds by reason, a stall) and the one-line summary of a run's `exchange` leg |
 | `sync_render.rs` | `emit_run` | The TTY and `--json` shapes of `comemory sync`: the run counters (memories and code), `status`'s cursors plus one `code` row per indexed repo (`moved_since_push`, and `withheld` when the row's root is a linked worktree, gone, or not a checkout), the verify report, the daemon status, and the login report's code line |
 | `watch.rs` | `Args` | `comemory watch` — the one long-lived command; arguments, launch and reporting for `domains::sync::watch`, which holds the workspace channel open and pulls on every nudge. This module supplies the `OffRuntime` the service isolates blocking platform calls through |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |

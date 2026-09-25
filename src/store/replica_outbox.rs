@@ -5,6 +5,7 @@
 //! that committed can never forget that it owes an upload.
 
 use rusqlite::Connection;
+use toolu_orm::core::expr::Scalar;
 use toolu_orm::core::query_column::CommonOps;
 
 use super::orm;
@@ -33,6 +34,22 @@ pub struct PendingOperation {
     pub observed_sequence: Option<i64>,
     /// Upload attempts so far.
     pub attempts: i64,
+    /// Last transport or rejection detail.
+    pub last_error: Option<String>,
+    /// Why the row is not sent now; `None` when it is eligible.
+    pub hold_reason: Option<String>,
+    /// Detail for the hold.
+    pub hold_detail: Option<String>,
+    /// Platform API base the row is stamped with.
+    pub api_url: Option<String>,
+    /// Workspace the row is stamped with.
+    pub workspace_id: Option<String>,
+    /// Canonical repository resolved at first send.
+    pub wire_repository: Option<String>,
+    /// RFC3339 time it was enqueued.
+    pub created_at: String,
+    /// `pending`, `accepted` or `rejected`.
+    pub state: String,
 }
 
 /// Enqueue a mutation. The caller owns the transaction, which must be the one
@@ -64,61 +81,103 @@ pub fn enqueue(
     Ok(())
 }
 
-/// The oldest `limit` operations still pending, oldest first.
+/// The oldest `limit` operations still pending, held or not, in the order
+/// they were made.
 ///
 /// # Errors
 /// Propagates SQLite failures and an `op` literal the schema's `CHECK` should
 /// have refused.
 pub fn pending(conn: &Connection, limit: usize) -> Result<Vec<PendingOperation>> {
-    let limit = i64::try_from(limit)
-        .map_err(|_| Error::Other(format!("outbox limit not representable: {limit}")))?;
-    let rows = orm::query_all(
-        conn,
-        ReplicaOperation::select()
-            .columns_typed(&[
-                &col::operation_id,
-                &col::entity_kind,
-                &col::entity_key,
-                &col::op,
-                &col::payload_digest,
-                &col::schema_version,
-                &col::repository,
-                &col::observed_sequence,
-                &col::attempts,
-            ])
+    read(conn, Scope::All, limit)
+}
+
+/// Which outbox rows a read covers.
+#[derive(Debug, Clone, Copy)]
+pub enum Scope<'a> {
+    /// Every pending row, held or not.
+    All,
+    /// Pending rows with no hold — what the next push batch sends.
+    Eligible,
+    /// Pending rows for one `(kind, key)`.
+    Entity(&'a str, &'a str),
+    /// One operation by id, WHATEVER its state — how a client recognizes its
+    /// own operation when the upstream feed hands it back.
+    Operation(&'a str),
+}
+
+/// The outbox rows `scope` covers, in the order they were made (`rowid`
+/// breaks a `created_at` tie), at most `limit`.
+///
+/// # Errors
+/// Propagates SQLite failures and an `op` literal the schema's `CHECK` should
+/// have refused.
+pub fn read(conn: &Connection, scope: Scope<'_>, limit: usize) -> Result<Vec<PendingOperation>> {
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    let mut query = ReplicaOperation::select().columns_typed(&[
+        &col::operation_id,
+        &col::entity_kind,
+        &col::entity_key,
+        &col::op,
+        &col::payload_digest,
+        &col::schema_version,
+        &col::repository,
+        &col::observed_sequence,
+        &col::attempts,
+        &col::last_error,
+        &col::hold_reason,
+        &col::hold_detail,
+        &col::api_url,
+        &col::workspace_id,
+        &col::wire_repository,
+        &col::created_at,
+        &col::state,
+    ]);
+    query = match scope {
+        Scope::All => query.filter(col::state.eq("pending")),
+        Scope::Eligible => query
             .filter(col::state.eq("pending"))
+            .filter(col::hold_reason.is_null()),
+        Scope::Entity(kind, key) => query
+            .filter(col::state.eq("pending"))
+            .filter(col::entity_kind.eq(kind))
+            .filter(col::entity_key.eq(key)),
+        Scope::Operation(operation_id) => query.filter(col::operation_id.eq(operation_id)),
+    };
+    orm::query_all(
+        conn,
+        query
             .order_by(col::created_at.asc())
+            .order_by(Scalar::raw("rowid", Vec::new()).asc())
             .limit(limit)
             .to_sql(),
-        |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, Option<String>>(4)?,
-                r.get::<_, i64>(5)?,
-                r.get::<_, Option<String>>(6)?,
-                r.get::<_, Option<i64>>(7)?,
-                r.get::<_, i64>(8)?,
-            ))
-        },
-    )?;
-    rows.into_iter()
-        .map(|row| {
-            Ok(PendingOperation {
-                operation_id: row.0,
-                entity_kind: row.1,
-                entity_key: row.2,
-                op: ReplicaOp::parse(&row.3)?,
-                payload_digest: row.4,
-                schema_version: row.5,
-                repository: row.6,
-                observed_sequence: row.7,
-                attempts: row.8,
-            })
-        })
-        .collect()
+        decode,
+    )
+}
+
+/// One outbox row, in [`read`]'s column order.
+fn decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<PendingOperation> {
+    let op: String = r.get(3)?;
+    Ok(PendingOperation {
+        operation_id: r.get(0)?,
+        entity_kind: r.get(1)?,
+        entity_key: r.get(2)?,
+        op: ReplicaOp::parse(&op).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        payload_digest: r.get(4)?,
+        schema_version: r.get(5)?,
+        repository: r.get(6)?,
+        observed_sequence: r.get(7)?,
+        attempts: r.get(8)?,
+        last_error: r.get(9)?,
+        hold_reason: r.get(10)?,
+        hold_detail: r.get(11)?,
+        api_url: r.get(12)?,
+        workspace_id: r.get(13)?,
+        wire_repository: r.get(14)?,
+        created_at: r.get(15)?,
+        state: r.get(16)?,
+    })
 }
 
 /// Whether this machine still owes an upload for one entity.
@@ -142,17 +201,31 @@ pub fn has_pending_for(conn: &Connection, entity_kind: &str, entity_key: &str) -
     Ok(count > 0)
 }
 
-/// How many operations are still pending — what a push still owes.
+/// How many operations are in `state` (`pending` is what a push still owes).
 ///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn pending_count(conn: &Connection) -> Result<i64> {
+pub fn count(conn: &Connection, state: &str) -> Result<i64> {
     orm::query_one(
         conn,
         ReplicaOperation::select()
-            .filter(col::state.eq("pending"))
+            .filter(col::state.eq(state))
             .to_count_sql(),
         |r| r.get(0),
+    )
+}
+
+/// Remove an operation from the outbox — for a journalled write that owes no
+/// upload (journal seeding), in the transaction that enqueued it.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn discard(tx: &Connection, operation_id: &str) -> Result<usize> {
+    orm::execute(
+        tx,
+        ReplicaOperation::delete()
+            .filter(col::operation_id.eq(operation_id))
+            .to_sql(),
     )
 }
 
@@ -165,6 +238,8 @@ pub enum Outcome<'a> {
         sequence: Option<i64>,
         /// Disposition it answered with.
         disposition: &'a str,
+        /// Upstream epoch `sequence` belongs to.
+        epoch: Option<&'a str>,
     },
     /// The upstream refused it. The row stays as evidence.
     Rejected {
@@ -197,10 +272,14 @@ pub fn record(
         Outcome::Accepted {
             sequence,
             disposition,
+            epoch,
         } => update
             .set(&col::state, "accepted")
             .set(&col::upstream_sequence, sequence)
-            .set(&col::disposition, disposition),
+            .set(&col::upstream_epoch, epoch)
+            .set(&col::disposition, disposition)
+            .set(&col::hold_reason, None::<&str>)
+            .set(&col::hold_detail, None::<&str>),
         Outcome::Rejected { disposition } => update
             .set(&col::state, "rejected")
             .set(&col::disposition, disposition),

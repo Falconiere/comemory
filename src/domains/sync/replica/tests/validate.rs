@@ -208,6 +208,7 @@ fn an_import_is_refused_while_this_machine_owes_a_change_to_the_same_memory() {
     // A real local save leaves a pending outbox row carrying its payload —
     // the only record of that edit until it is pushed.
     let mut home = Home::new();
+    home.make_client();
     let id = home.save(BODY, &["sync"]);
     assert!(
         crate::store::replica_outbox::has_pending_for(&home.conn, "memory", &id)
@@ -253,6 +254,7 @@ fn the_same_import_is_accepted_once_the_local_change_has_been_pushed() {
         crate::store::replica_outbox::Outcome::Accepted {
             sequence: Some(7),
             disposition: "accepted",
+            epoch: None,
         },
         "2026-09-22T10:00:00Z",
     )
@@ -272,6 +274,32 @@ fn the_same_import_is_accepted_once_the_local_change_has_been_pushed() {
         validate::decide(&mut ctx, &operation).expect("decide"),
         Disposition::RejectedStale,
         "with nothing owed, ordinary revision ordering decides"
+    );
+}
+
+#[test]
+fn hub_accepts_an_import_for_an_entity_its_own_writes_left_pending() {
+    // An engine nobody is a client of: its own save journalled (and queued) a
+    // write, but it has no upstream to owe it to, so a client's edit of the
+    // same memory is ordered, not refused.
+    let mut home = Home::new();
+    let id = home.save(BODY, &["sync"]);
+    assert!(
+        crate::store::replica_outbox::has_pending_for(&home.conn, "memory", &id)
+            .expect("has pending")
+    );
+    let mut peer = Home::new();
+    let remote_id = peer.save(BODY, &["sync", "remote"]);
+    let operation = upsert(
+        "op-20260924-hubaccepts000000000000000001",
+        &peer.payload(&remote_id),
+    );
+
+    let mut ctx = home.ctx();
+    assert_ne!(
+        validate::decide(&mut ctx, &operation).expect("decide"),
+        Disposition::RejectedStale,
+        "the hub owes no upload, so nothing is refused on its account"
     );
 }
 
@@ -391,6 +419,7 @@ fn a_code_generation_on_an_unknown_schema_version_is_unsupported() {
 #[test]
 fn a_pending_local_generation_refuses_an_incoming_one_for_the_same_repo() {
     let mut home = Home::new();
+    home.make_client();
     let repo = "Falconiere/comemory";
     // The same guard memories get: an unpushed local change is the only copy
     // of itself, so a peer's version waits for the push.

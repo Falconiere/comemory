@@ -150,3 +150,42 @@ fn an_unreachable_platform_returns_inside_the_budget_and_keeps_the_outbox() {
         "the write is still journalled for the next push"
     );
 }
+
+#[test]
+fn skips_when_pass_holds_lock() {
+    use comemory::domains::sync::auto::hold_pass_lock;
+
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path());
+    let cfg = Config::defaults();
+    saved(&paths, &cfg, "a note saved while a sync pass is running");
+    common::auth_fixture::seed_org_auth(
+        &paths,
+        &server.base,
+        &secret,
+        common::auth_fixture::FIXTURE_WORKSPACE,
+    );
+    let pass = hold_pass_lock(&paths).expect("a running pass holds the lock");
+
+    let started = Instant::now();
+    after_write_best_effort(&paths, &cfg);
+
+    assert!(
+        started.elapsed().as_secs() < 1,
+        "the save does not wait for the pass: {:?}",
+        started.elapsed()
+    );
+    assert!(
+        server.requests().is_empty(),
+        "the running pass sends the write; the inline push made no request: {:?}",
+        server.paths()
+    );
+    drop(pass);
+    after_write_best_effort(&paths, &cfg);
+    assert!(
+        server.saw_path("/v1/sync/status"),
+        "with the lock free the inline push runs"
+    );
+}

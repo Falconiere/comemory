@@ -9,8 +9,8 @@ use toolu_orm::core::query_column::{CommonOps, NumericOps};
 
 use super::orm;
 use super::schema_replica::{
-    ReplicaFeed, ReplicaRevision, replica_feed as feed_col, replica_payload as payload_col,
-    replica_revision as revision_col,
+    ReplicaFeed, ReplicaPayload, ReplicaRevision, replica_feed as feed_col,
+    replica_payload as payload_col, replica_revision as revision_col,
 };
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
@@ -146,6 +146,29 @@ pub fn page(
         ))
     })?;
     rows.into_iter().map(decode_feed_row).collect()
+}
+
+/// A filtered page with its raw continuation: `limit` RAW positions above
+/// `since` are scanned, the ones of `kind` (every one, with `None`) are
+/// returned, and the last position scanned is the continuation — so a window
+/// with no match still advances the reader, the way a policy-filtered
+/// platform page does.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn scan(
+    conn: &Connection,
+    since: i64,
+    limit: usize,
+    kind: Option<&str>,
+) -> Result<(Vec<FeedRow>, Option<i64>)> {
+    let raw = page(conn, since, limit, None)?;
+    let scanned_through = raw.last().map(|row| row.sequence);
+    let rows = raw
+        .into_iter()
+        .filter(|row| kind.is_none_or(|k| row.entity_kind == k))
+        .collect();
+    Ok((rows, scanned_through))
 }
 
 /// The feed position an operation was accepted at, if it was.
@@ -297,6 +320,24 @@ fn decode_feed_row(raw: RawFeedRow) -> Result<FeedRow> {
         repository,
         at,
     })
+}
+
+/// The canonical bytes stored for `digest`, or `None` when this engine never
+/// stored them or a purge or retention removed them — what a push sends, so a
+/// retry is byte-identical to the first attempt.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn payload_bytes(conn: &Connection, digest: &str) -> Result<Option<String>> {
+    let bytes: Option<Option<String>> = orm::query_optional(
+        conn,
+        ReplicaPayload::select()
+            .columns_typed(&[&payload_col::bytes])
+            .filter(payload_col::digest.eq(digest))
+            .to_sql(),
+        |r| r.get(0),
+    )?;
+    Ok(bytes.flatten())
 }
 
 #[cfg(test)]

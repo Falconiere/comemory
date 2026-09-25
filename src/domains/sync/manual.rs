@@ -1,25 +1,32 @@
 //! What one `comemory sync` run does, without its reports.
 //!
-//! A run needs a credential and an open store before it can do anything, and
-//! three of the five actions are compositions rather than a single call: a
-//! push is followed by the code-index push, and a full run pulls first. Those
-//! sequences live here; the caller owns the flags, the blocking-I/O isolation
-//! and every emitted line.
+//! A run needs a credential and an open store before it can do anything.
+//! Then, under the sync pass lock: a secret override is recorded, stale
+//! hooked repos are refreshed (so a code capture sees their latest HEAD), and
+//! the key is drained ([`crate::domains::sync::drain`]) until a pass ends
+//! without `more` — no per-run cap. A legacy key on a managed origin then
+//! pushes the code index as before. The caller owns the flags, the
+//! blocking-I/O isolation and every emitted line.
+
+use time::OffsetDateTime;
+use time::format_description::well_known::Iso8601;
 
 use crate::config::sync::apply_embed_model;
 use crate::config::{Config, Paths};
 use crate::domains::code::hooked_refresh::{self, RefreshStats};
 use crate::domains::sync::auto::hold_pass_lock;
 use crate::domains::sync::code::{self, CodePushStats};
-use crate::domains::sync::pull::{self, PullStats};
-use crate::domains::sync::push::{self, PushStats};
+use crate::domains::sync::drain::{
+    self,
+    report::Report,
+    session::{Legs, Mode},
+};
+use crate::domains::sync::pull::PullStats;
+use crate::domains::sync::push::PushStats;
 use crate::prelude::*;
-use crate::store::Connection;
+use crate::store::{Connection, sync_binding};
 
 use super::AuthFile;
-
-/// Entries one manual run may push or pull per direction.
-pub const RUN_LIMIT: usize = 2000;
 
 /// The credential and open store a manual run works through.
 pub struct Session {
@@ -31,18 +38,25 @@ pub struct Session {
 
 /// What one run did. A field is `None` when that leg was not part of the
 /// requested action, which is how the report distinguishes "did not run" from
-/// "ran and moved nothing".
+/// "ran and moved nothing". On a `replica-v1` key the `exchange` leg replaces
+/// `pull`, `push` and `code`.
 #[derive(Debug, Default)]
 pub struct RunStats {
-    /// The pull leg, present for `run` and `pull`.
+    /// The legacy pull leg, present for `run` and `pull` on a legacy key.
     pub pull: Option<PullStats>,
-    /// The memory push leg, present for `run` and `push`.
+    /// The legacy memory push leg, present for `run` and `push` on a legacy key.
     pub push: Option<PushStats>,
-    /// The code-index push, present for `run` and `push`.
+    /// The code-index push, present for `run` and `push` on a legacy key of a
+    /// managed origin.
     pub code: Option<CodePushStats>,
-    /// The hooked-repo refresh that precedes the code push, present for
-    /// `run` and `push` (and for every `--action auto` pass).
+    /// The hooked-repo refresh that precedes the push, present for `run` and
+    /// `push` (and for every `--action auto` pass).
     pub refresh: Option<RefreshStats>,
+    /// Every pass of the drain, folded together.
+    pub exchange: Option<Report>,
+    /// The key's recorded error, when the drain ended on the network — the
+    /// report is still written, then the run fails with it.
+    pub error: Option<String>,
 }
 
 /// Load the credential, open the store, and apply the configured embed model,
@@ -61,90 +75,43 @@ pub fn open_session(paths: &Paths, cfg: &Config) -> Result<Session> {
     Ok(Session { auth, conn })
 }
 
-/// Pull, then push, then push the code index — the default action — under
-/// the sync pass lock.
+/// One manual run of `legs` under the sync pass lock.
 ///
 /// # Errors
-/// Propagates the first leg that fails; a later leg is then not attempted.
-pub fn run_all(
+/// Propagates the lock, the refresh, the drain and the code push; network
+/// failures are reported in the `exchange` leg instead.
+pub fn run(
     paths: &Paths,
     cfg: &Config,
     session: &mut Session,
     allow_secret: Option<&str>,
-    limit: usize,
+    legs: Legs,
 ) -> Result<RunStats> {
     let _pass = hold_pass_lock(paths)?;
-    let pulled = pull::run_pull(paths, cfg, &mut session.conn, &session.auth, limit)?;
-    let mut stats = push_then_code(paths, cfg, session, allow_secret, limit)?;
-    stats.pull = Some(pulled);
+    let conn = &mut session.conn;
+    if let Some(id) = allow_secret {
+        let at = OffsetDateTime::now_utc()
+            .format(&Iso8601::DEFAULT)
+            .map_err(|e| Error::Other(format!("timestamp: {e}")))?;
+        sync_binding::allow_secret(conn, id, &session.auth.workspace_id, "cli_override", &at)?;
+    }
+    let mut stats = RunStats::default();
+    if legs.pushes() {
+        let mut refresh = RefreshStats::default();
+        hooked_refresh::refresh_stale(paths, cfg, conn, None, &mut refresh)?;
+        stats.refresh = Some(refresh);
+    }
+    let drained = drain::drain(paths, cfg, conn, &session.auth, (Mode::Manual, legs))?;
+    stats.exchange = Some(drained.exchange);
+    stats.error = drained.error;
+    if let Some(legacy) = drained.legacy {
+        stats.pull = legacy.pull;
+        stats.push = legacy.push;
+        if legs.pushes() && drained.managed && stats.error.is_none() {
+            stats.code = Some(code::run_code_push(cfg, conn, &session.auth)?);
+        }
+    }
     Ok(stats)
-}
-
-/// Push local changes, then push the code index, under the sync pass lock.
-///
-/// # Errors
-/// Propagates the memory push; the code push then runs only if it succeeded.
-pub fn push_only(
-    paths: &Paths,
-    cfg: &Config,
-    session: &mut Session,
-    allow_secret: Option<&str>,
-    limit: usize,
-) -> Result<RunStats> {
-    let _pass = hold_pass_lock(paths)?;
-    push_then_code(paths, cfg, session, allow_secret, limit)
-}
-
-/// Pull remote changes only.
-///
-/// # Errors
-/// Propagates the cursored pull.
-pub fn pull_only(
-    paths: &Paths,
-    cfg: &Config,
-    session: &mut Session,
-    limit: usize,
-) -> Result<RunStats> {
-    Ok(RunStats {
-        pull: Some(pull::run_pull(
-            paths,
-            cfg,
-            &mut session.conn,
-            &session.auth,
-            limit,
-        )?),
-        ..RunStats::default()
-    })
-}
-
-/// The push half both `run` and `push` share: memories first, then every
-/// stale hooked repo refreshed, then the code index — so the platform never
-/// sees code rows for memories it has not got, and a repo nobody `cd`-ed into
-/// still pushes its latest HEAD.
-fn push_then_code(
-    paths: &Paths,
-    cfg: &Config,
-    session: &mut Session,
-    allow_secret: Option<&str>,
-    limit: usize,
-) -> Result<RunStats> {
-    let pushed = push::run_push(
-        paths,
-        cfg,
-        &mut session.conn,
-        &session.auth,
-        allow_secret,
-        limit,
-    )?;
-    let mut refresh = RefreshStats::default();
-    hooked_refresh::refresh_stale(paths, cfg, &mut session.conn, None, &mut refresh)?;
-    let code = code::run_code_push(cfg, &mut session.conn, &session.auth)?;
-    Ok(RunStats {
-        pull: None,
-        push: Some(pushed),
-        code: Some(code),
-        refresh: Some(refresh),
-    })
 }
 
 #[cfg(test)]

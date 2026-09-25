@@ -141,7 +141,7 @@ pub struct ReplicaRevision {
 #[table(name = "replica_operation")]
 #[index("idx_replica_operation_state", state, created_at)]
 pub struct ReplicaOperation {
-    /// Client-unique operation id (`op-<yyyymmdd>-<8hex>`).
+    /// Client-unique operation id (`op-<yyyymmdd>-<hex>`).
     #[column(primary_key)]
     pub operation_id: Text,
     /// Entity kind.
@@ -184,6 +184,21 @@ pub struct ReplicaOperation {
     /// RFC3339 time the row last changed.
     #[column(not_null)]
     pub updated_at: Text,
+    /// Platform API base this row is stamped with; `NULL` until first sent.
+    pub api_url: Text,
+    /// Detail for the hold (the repository, the rule, the key).
+    pub hold_detail: Text,
+    /// Why a `pending` row is not sent now; `NULL` when it is eligible. One of
+    /// `policy`, `secret`, `skip_repos`, `workspace`, `incompatible`, `order`,
+    /// `upgrade` — enforced by the store's `Hold` enum, since SQLite cannot add
+    /// a `CHECK` to an existing table without rebuilding it.
+    pub hold_reason: Text,
+    /// Upstream epoch `upstream_sequence` belongs to.
+    pub upstream_epoch: Text,
+    /// Canonical repository resolved at first send, carried on every retry.
+    pub wire_repository: Text,
+    /// Workspace this row is stamped with; `NULL` until first sent.
+    pub workspace_id: Text,
 }
 
 /// `replica_receipt`: what this engine answered for an operation it accepted
@@ -213,25 +228,32 @@ pub struct ReplicaReceipt {
     pub accepted_at: Text,
 }
 
-/// `replica_cursor`: how far this machine has applied one workspace's
-/// upstream feed, and under which epoch.
+/// `replica_cursor`: how far this machine has applied one session key's
+/// upstream feed, under which epoch, and which entry sits at that position.
 ///
-/// The workspace comes from the authenticated credential, never from a
-/// request body.
+/// Keyed by `(api_url, workspace_id)`: a credential pointed at another
+/// origin or workspace starts from nothing. The anchor is the
+/// `(sequence, operation_id)` found at the cursor; a different id at the same
+/// sequence means the upstream rewrote its stream under the same epoch.
 #[table(name = "replica_cursor")]
+#[primary_key(api_url, workspace_id)]
 pub struct ReplicaCursor {
-    /// Workspace the cursor belongs to.
-    #[column(primary_key)]
-    pub workspace_id: Text,
-    /// Platform API base the cursor was taken against.
+    /// Platform API base the cursor was taken against, trailing `/` removed.
     #[column(not_null)]
     pub api_url: Text,
+    /// Workspace the cursor belongs to.
+    #[column(not_null)]
+    pub workspace_id: Text,
     /// Upstream stream epoch the cursor is valid under.
     #[column(not_null)]
     pub stream_epoch: Text,
     /// Highest upstream sequence applied here.
     #[column(not_null, default = "0")]
     pub applied_sequence: Integer,
+    /// Sequence of the anchor entry, when one was seen at the cursor.
+    pub anchor_sequence: Integer,
+    /// Operation id of the anchor entry.
+    pub anchor_operation_id: Text,
     /// RFC3339 time of the last advance.
     #[column(not_null)]
     pub updated_at: Text,

@@ -29,6 +29,14 @@ pub struct Swept {
     pub generations: u64,
 }
 
+/// A staged generation still owed upstream is not abandoned: a client (#255)
+/// records its generation `staged` before the push that may take a day of
+/// backoff to deliver it, and sweeping it would leave the outbox naming a
+/// generation that no longer exists.
+const NOT_IN_FLIGHT: &str = "NOT EXISTS (SELECT 1 FROM replica_operation o \
+     WHERE o.entity_kind = 'code_generation' AND o.entity_key = code_generation.repo \
+       AND o.state = 'pending')";
+
 /// Remove every staged part and staged generation older than
 /// [`ABANDONED_AFTER_HOURS`] before `now`.
 ///
@@ -57,13 +65,16 @@ pub fn run(conn: &mut Connection, now: OffsetDateTime) -> Result<Swept> {
             &format!(
                 "DELETE FROM {table} WHERE (repo, generation_id) IN \
                  (SELECT repo, generation_id FROM code_generation \
-                   WHERE state = 'staged' AND created_at < ?1)"
+                   WHERE state = 'staged' AND created_at < ?1 AND {NOT_IN_FLIGHT})"
             ),
             [&cutoff],
         )?;
     }
     let generations = tx.execute(
-        "DELETE FROM code_generation WHERE state = 'staged' AND created_at < ?1",
+        &format!(
+            "DELETE FROM code_generation \
+              WHERE state = 'staged' AND created_at < ?1 AND {NOT_IN_FLIGHT}"
+        ),
         [&cutoff],
     )?;
     tx.commit()?;

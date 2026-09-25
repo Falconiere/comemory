@@ -56,6 +56,18 @@ pub struct SyncConfig {
     pub default_workspace: Option<String>,
     /// Deprecated, parsed and ignored: there is no allowlist cache to expire.
     pub allowlist_ttl: String,
+    /// Per-request budget for every sync call except the inline push (e.g.
+    /// `30s`).
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout: String,
+    /// Time after which a daemon, auto or watch pass starts no new batch and
+    /// reports `more`, so a huge backlog is drained in bounded passes.
+    #[serde(default = "default_pass_budget")]
+    pub pass_budget: String,
+    /// Largest serialized push request; an operation over it crosses through
+    /// staged parts. Lower it behind a proxy with a smaller body limit.
+    #[serde(default = "default_max_request_bytes")]
+    pub max_request_bytes: u64,
 }
 
 /// `[sync]` keys kept only so an existing `config.toml` still loads.
@@ -109,6 +121,9 @@ pub struct PartialSyncConfig {
     repos: Option<BTreeMap<String, String>>,
     default_workspace: Option<String>,
     allowlist_ttl: Option<String>,
+    request_timeout: Option<String>,
+    pass_budget: Option<String>,
+    max_request_bytes: Option<u64>,
 }
 
 /// File-overlay partial for [`EmbedConfig`].
@@ -133,6 +148,9 @@ impl SyncConfig {
             repos: BTreeMap::new(),
             default_workspace: None,
             allowlist_ttl: "1h".into(),
+            request_timeout: default_request_timeout(),
+            pass_budget: default_pass_budget(),
+            max_request_bytes: default_max_request_bytes(),
         }
     }
 
@@ -175,6 +193,15 @@ impl SyncConfig {
         if let Some(v) = partial.allowlist_ttl {
             self.allowlist_ttl = v;
             warn_deprecated("sync.allowlist_ttl");
+        }
+        if let Some(v) = partial.request_timeout {
+            self.request_timeout = v;
+        }
+        if let Some(v) = partial.pass_budget {
+            self.pass_budget = v;
+        }
+        if let Some(v) = partial.max_request_bytes {
+            self.max_request_bytes = v;
         }
     }
 
@@ -251,6 +278,22 @@ const fn default_true() -> bool {
     true
 }
 
+/// serde default for [`SyncConfig::request_timeout`].
+fn default_request_timeout() -> String {
+    "30s".into()
+}
+
+/// serde default for [`SyncConfig::pass_budget`].
+fn default_pass_budget() -> String {
+    "30s".into()
+}
+
+/// serde default for [`SyncConfig::max_request_bytes`]: 4 MiB, under the
+/// engine's 5 MiB envelope and body limits.
+const fn default_max_request_bytes() -> u64 {
+    4 * 1024 * 1024
+}
+
 /// Warn that `key` is set but no longer does anything.
 ///
 /// Fires once per config load — so once per CLI invocation, and once at
@@ -312,6 +355,14 @@ pub fn apply_embed_model(conn: &Connection, embed: &EmbedConfig) -> Result<()> {
         return Ok(());
     }
     crate::store::schema_meta::set_memory_vector_model(conn, &embed.model)
+}
+
+/// Whether `COMEMORY_SYNC_DAEMON=0` tells this process to leave the user's
+/// sync daemon alone — neither install, start nor stop it. Tests and CI set
+/// it so a login or logout never touches the host's own daemon.
+#[must_use]
+pub fn daemon_disabled() -> bool {
+    std::env::var_os("COMEMORY_SYNC_DAEMON").is_some_and(|v| v == "0")
 }
 
 #[cfg(test)]

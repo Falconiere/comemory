@@ -37,6 +37,7 @@ pub fn run(ctx: &mut Ctx<'_>, request: ImportRequest) -> Result<ImportResponse> 
     for operation in &request.operations {
         results.push(apply_one(ctx, &epoch, operation)?);
     }
+    refresh_after(ctx, &results)?;
     let head_sequence = replica_read::head(ctx.conn()?)?;
     Ok(ImportResponse {
         protocol: PROTOCOL.to_string(),
@@ -96,7 +97,23 @@ pub(crate) fn apply_one(
             sequence,
         );
     }
-    materialize::apply(ctx, epoch, operation)
+    materialize::apply(ctx, epoch, operation, materialize::Order::Decided)
+}
+
+/// Refresh the derived graph once for a batch that accepted anything —
+/// after the commits, so a failed refresh cannot roll back an acceptance the
+/// peer has already been told about.
+///
+/// # Errors
+/// Propagates a connection failure; the refresh itself is best-effort.
+pub(crate) fn refresh_after(ctx: &mut Ctx<'_>, results: &[OperationResult]) -> Result<()> {
+    if results
+        .iter()
+        .any(|r| r.disposition == Disposition::Accepted)
+    {
+        let _stale = crate::domains::graph::derived::refresh_derived_best_effort(ctx.conn()?);
+    }
+    Ok(())
 }
 
 /// A replay is answered from its receipt; the same id with different bytes is
@@ -108,7 +125,10 @@ pub(crate) fn apply_one(
 /// applied", and a replay of a refused operation reads back the SAME refusal
 /// rather than turning into a conflict because the refusal was about the claim
 /// disagreeing with the bytes in the first place.
-fn replayed(conn: &Connection, operation: &Operation) -> Result<Option<OperationResult>> {
+pub(crate) fn replayed(
+    conn: &Connection,
+    operation: &Operation,
+) -> Result<Option<OperationResult>> {
     let Some(receipt) = replica_receipt::lookup(conn, &operation.operation_id)? else {
         return Ok(None);
     };

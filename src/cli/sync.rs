@@ -17,8 +17,10 @@ use crate::cli::output::json;
 use crate::cli::sync_auto;
 use crate::cli::sync_render::{emit_daemon_status, emit_run, emit_status, emit_verify};
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::sync::auto::hold_pass_lock;
 use crate::domains::sync::daemon;
-use crate::domains::sync::manual::{self, RUN_LIMIT};
+use crate::domains::sync::drain::session::Legs;
+use crate::domains::sync::manual;
 use crate::domains::sync::verify;
 use crate::prelude::*;
 
@@ -40,7 +42,7 @@ Examples:
 /// Sync mode — replaces four separate bool flags (clippy `struct_excessive_bools`).
 #[derive(Debug, Clone, Copy, Default, ValueEnum)]
 pub enum SyncAction {
-    /// Push then pull (default).
+    /// Pull, then push, until the upstream is drained (default).
     #[default]
     Run,
     /// Push local changes only (`--push-only` alias).
@@ -49,12 +51,13 @@ pub enum SyncAction {
     /// Pull remote changes only (`--pull-only` alias).
     #[value(name = "pull", alias = "pull-only")]
     Pull,
-    /// Compare local/remote manifests and repair differing buckets (AC-9).
+    /// Compare local/remote manifests (per kind on `replica-v1`) and repair
+    /// differing buckets.
     Verify,
-    /// Print sync cursors.
+    /// Print sync cursors and the key's `exchange` state.
     Status,
     /// The unattended pass git hooks and agent hooks fire: index `--path`,
-    /// refresh every stale hooked repo, then pull and push when logged in.
+    /// refresh every stale hooked repo, then drain both ways when logged in.
     /// Needs no login; prints nothing without `--json`; coalesces with a
     /// pass that is already queued.
     Auto,
@@ -186,27 +189,29 @@ fn run_sync(paths: &Paths, a: &Args, json_flag: bool) -> Result<()> {
     let with_session = |act: &dyn Fn(&mut manual::Session) -> Result<()>| {
         act(&mut manual::open_session(paths, &cfg)?)
     };
+    let exchange = |legs: Legs| {
+        with_session(&|s| {
+            let stats = off_runtime(|| manual::run(paths, &cfg, s, allow_secret, legs))?;
+            emit_run(json_flag, &s.auth.workspace_id, &stats)?;
+            // The report is out; a run that ended on the network still fails.
+            stats
+                .error
+                .clone()
+                .map_or(Ok(()), |e| Err(Error::Unavailable(e)))
+        })
+    };
     match a.action {
         SyncAction::Auto => sync_auto::run(paths, &cfg, a.path.as_deref(), json_flag),
-        SyncAction::Status => {
-            with_session(&|s| emit_status(json_flag, &mut s.conn, &s.auth.workspace_id))
-        }
+        SyncAction::Status => with_session(&|s| emit_status(json_flag, &mut s.conn, &s.auth)),
         SyncAction::Verify => with_session(&|s| {
-            let report =
-                off_runtime(|| verify::verify_manifests(paths, &cfg, &mut s.conn, &s.auth))?;
+            let report = off_runtime(|| {
+                let _pass = hold_pass_lock(paths)?;
+                verify::verify(paths, &cfg, &mut s.conn, &s.auth)
+            })?;
             emit_verify(json_flag, &report)
         }),
-        SyncAction::Push => with_session(&|s| {
-            let stats = off_runtime(|| manual::push_only(paths, &cfg, s, allow_secret, RUN_LIMIT))?;
-            emit_run(json_flag, &s.auth.workspace_id, &stats)
-        }),
-        SyncAction::Pull => with_session(&|s| {
-            let stats = off_runtime(|| manual::pull_only(paths, &cfg, s, RUN_LIMIT))?;
-            emit_run(json_flag, &s.auth.workspace_id, &stats)
-        }),
-        SyncAction::Run => with_session(&|s| {
-            let stats = off_runtime(|| manual::run_all(paths, &cfg, s, allow_secret, RUN_LIMIT))?;
-            emit_run(json_flag, &s.auth.workspace_id, &stats)
-        }),
+        SyncAction::Push => exchange(Legs::Push),
+        SyncAction::Pull => exchange(Legs::Pull),
+        SyncAction::Run => exchange(Legs::Both),
     }
 }

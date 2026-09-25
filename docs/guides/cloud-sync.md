@@ -120,8 +120,9 @@ channel (`GET /v1/ws`), and pulls whenever a frame arrives — on connect
 (`hello`) and after anyone writes (`change`).
 
 The socket carries **nudges, never memories**: a frame names memory ids, ops
-and content hashes, and the pull it triggers is the same cursored
-`GET /v1/sync/changes` a manual sync runs, with your real credential. So a
+and content hashes, and the pull it triggers is the same [exchange](#exchange)
+a manual sync runs — pull direction only, pass after pass until the upstream
+is drained — with your real credential. So a
 missed frame costs latency rather than data, a duplicate frame costs one empty
 pull, and a leaked ticket buys an id list rather than a corpus.
 
@@ -285,6 +286,13 @@ Works with the daemon stopped. There is no `--workspace`: the key names its
 own, and it is the only one that key can reach. Switching organization means
 `comemory auth login` again.
 
+A run keeps going until the upstream is drained — there is no per-run cap —
+and prints (or, with `--json`, returns) one `exchange` leg: `pushed`,
+`pulled`, `held`, `settled`, `rejected`, `end`, `more`, `rebootstrapped` and
+`network`. On a `replica-v1` key that leg replaces the `push`, `pull` and
+`code` legs, which are then `null`. A run that ended on the network still
+writes its report, then exits `69` with the recorded error.
+
 ## Config (`config.toml`)
 
 | Knob | Default | Behavior |
@@ -292,6 +300,9 @@ own, and it is the only one that key can reach. Switching organization means
 | `[sync] push_on_save` | `true` | Push the outbox inline after `save` / `delete` |
 | `[sync] push_on_save_timeout` | `"2s"` | Budget for that inline push (must be > 0; use `push_on_save = false` to disable) |
 | `[sync] daemon_interval` | `"5s"` | Sleep between daemon pull+push cycles |
+| `[sync] request_timeout` | `"30s"` | Budget for every sync request except the inline push |
+| `[sync] pass_budget` | `"30s"` | An unattended pass starts no new batch after this and reports `more` |
+| `[sync] max_request_bytes` | `4194304` | Largest push request; one operation over it crosses in staged parts |
 | `[sync] verify_every` | `"7d"` | Hint / daemon interval for `sync --action verify` |
 | `[sync] skip_repos` | `[]` | Repo-label globs to keep local |
 | `[sync] after_save` | `false` | **Deprecated, ignored** — superseded by `push_on_save` |
@@ -300,8 +311,9 @@ own, and it is the only one that key can reach. Switching organization means
 
 Offline or 5xx → the outbox waits and the write still succeeds. Local verbs
 stay green. `comemory sync --action status` reports `pending` — how many local
-writes are still owed to the platform — which is the number to watch after a
-spell offline.
+writes are still owed to the platform — and, in its `exchange` block, why
+each owed or held change is waiting ([below](#exchange)); those are the
+numbers to watch after a spell offline.
 
 ## Upgrading from a device-key install
 
@@ -399,8 +411,11 @@ query successful for `comemory mine`, and is not counted by
 machine the same two settings decide whether an imported run is shown and with
 what. `comemory gc` expires the shared copy of an event when its retention
 window passes, and purging a memory erases the shared copies of the verdicts on
-it; a peer that offers either again is answered, not re-counted. The full
-contract is
+it; a peer that offers either again is answered, not re-counted. Events
+travel with the [exchange](#exchange): each sync first shares any runs
+recorded since the last one, then queues every event journalled here since
+the last pass, so a verdict reaches the workspace on the next sync like a
+memory edit does. The full contract is
 [feedback and activity replication](../designs/2026-09-24-feedback-activity-replication.md).
 
 ## What replicates, and what does not
@@ -437,8 +452,10 @@ the one importing answers semantic search short until it re-embeds. Run
 
 A memory edited on this machine and not yet pushed exists in exactly one
 place: the operation queued for it. A pull carrying a peer's version of that
-same memory is refused (`rejected_stale`) rather than overwriting the local
-edit. Push first, and the two changes order properly.
+same memory is never applied over the local edit: the old protocol answers it
+`rejected_stale`, and a `replica-v1` pull holds it `pending_local` and comes
+back for it once the local edit has gone out. The two changes then order
+properly.
 
 ## An interrupted write
 
@@ -448,3 +465,143 @@ data directory — the memory is mirrored, its operation is journalled, and the
 upload it owes is queued. Running the same command twice changes nothing
 further. A `--read-only` session writes nothing and leaves the recovery for
 the next writable open.
+
+## The exchange: how a sync drains {#exchange}
+
+Every sync — `comemory sync`, a hook's `--action auto`, a daemon cycle, a
+`comemory watch` nudge, the inline push after a save — runs the same
+**exchange** for the key `auth.json` names, `(api_url, workspace)`. It pulls
+first, then alternates bounded pull pages (500 entries) and push batches
+(500 operations, `max_request_bytes`) until the pull reaches the head the
+upstream reported when the pass began and nothing eligible is left to send.
+
+### Which protocol
+
+The first request of a pass asks the upstream for its replica manifest.
+
+| The upstream | The key speaks | `coverage` |
+| --- | --- | --- |
+| serves `replica-v1` and has finished seeding its journal | `replica-v1` | `full` |
+| serves `replica-v1` but is still seeding | the old protocol, this run | `partial`, `coverage_reason: "upstream_not_ready"` |
+| has no replica routes | the old protocol | `partial`, `coverage_reason: "replica_unsupported"` |
+
+The selection is remembered per key and only ever moves from the old
+protocol to `replica-v1` — once, the first time the upstream is ready. A
+revoked credential or a corrupt answer never changes it: a key already on
+`replica-v1` is never silently downgraded. On that first upgrade, memory
+changes the old protocol may already have delivered are held `upgrade` until
+the pull has read up to the upstream's head at the switch; the pull then
+recognizes each one the upstream already holds by its exact content and
+settles it `already_upstream` instead of sending it twice.
+
+The old protocol keeps its request shapes. What the exchange adds to it: no
+2,000-entry cap per run, and a pull that never moves its cursor past an entry
+the import did not apply — an `invalid` entry stalls it (status names the
+entry), while a teammate's secret-bearing or unapproved entry is passed and
+counted as a held position.
+
+### How a pass ends
+
+| `end` | When | `more` |
+| --- | --- | --- |
+| `caught_up` | the pull reached the head the pass began with, nothing eligible left | `true` only if a page reported a higher head |
+| `budget` | an unattended pass spent `pass_budget` | `true` |
+| `stalled` | the pull stopped before an entry it cannot apply (nothing eligible left to send) | `false` |
+| `no_progress` | a full pull-and-push round moved nothing | `false` |
+| `network` | a request failed after its retries within the pass | `false` |
+
+`more: true` runs the next pass at once — a hook's pass keeps going, a daemon
+cycle skips its sleep, `watch` pulls again without a nudge — so one nudge
+drains any backlog. The inline push after a save never waits for a pass: when
+one holds the sync lock it skips, and the running pass sends the new change
+on its next batch.
+
+### What status shows
+
+`comemory sync --action status --json` carries an `exchange` block beside the
+legacy cursors:
+
+- `protocol`, `coverage`, `coverage_reason` — as above.
+- `network` — `ok`, `backoff` (with `retry_at` and `consecutive_failures`),
+  `auth_suspended` or `protocol_error`, and `last_error`.
+- `stream_epoch`, `applied_sequence`, `upstream_head` — the pull cursor and
+  the head the last completed pass saw.
+- `caught_up` — true only when the cursor equals that head, no replay is in
+  progress, nothing eligible is owed, nothing is stalled and the network is
+  `ok`. A different key or a replaced stream never inherits it.
+- `outbox` — `pending` (never attempted), `retryable` (attempted without an
+  answer), `rejected`, and `held` by reason: `policy` (repository not
+  approved), `secret` (a secret rule without an override —
+  `comemory sync --allow-secret <id>` records one), `skip_repos`,
+  `workspace` (made under another key — see below), `incompatible` (a kind
+  the upstream does not read), `order` (behind a held change to the same
+  entity, or a restore whose deletion the upstream has not placed yet) and
+  `upgrade`.
+- `pull` — held positions by reason (`policy`, `pending_local`,
+  `server_withheld`, `secret`, `id_collision`), `stalled_at` and
+  `stall_reason`.
+
+A held change is never sent and never marked delivered; every pass decides
+its hold again, so it goes out on its own once the cause is gone. Held pull
+positions are revisited the same way: an approval restored, a newer policy
+revision, or a local edit that has gone out rewinds the cursor to the
+earliest one, and the replay can never put an older revision over a newer.
+
+### Failures
+
+| The upstream answers | State | Next request |
+| --- | --- | --- |
+| a timeout, a refused connection, `5xx` | `backoff` | after a full-jitter wait up to `min(2^n s, 5 min)`; a person's `comemory sync` retries at once |
+| `429` with `Retry-After` (seconds or a date, capped at an hour) | `backoff` | not before `Retry-After` — for every run, a person's included |
+| `401` / `403` | `auth_suspended` | only once `auth.json` holds a different credential |
+| `409 sync_policy_changed` | — | the policy is reloaded and the pass runs once more, then backs off |
+| `409 epoch_mismatch` / `cursor_ahead`, or the entry at the cursor changed | rebootstrap | at once |
+
+Within a pass a failed request is retried at most twice. `auth_suspended`
+stops network work only: the daemon keeps running, saves keep journalling,
+status keeps counting what is owed, and writing a new credential resumes it
+without a restart.
+
+### Verify, restore and rebootstrap
+
+`comemory sync --action verify` on a `replica-v1` key first drains to the
+head, then compares, for every kind the upstream reads, its 256 bucket
+digests with the same buckets over what this key last exchanged. A kind that
+differs is replayed from the start for that kind alone, then compared again;
+what still differs is reported (`kinds[].differing_buckets`,
+`repaired: false`) beside `held_positions`, never looped on.
+
+An upstream restored from a backup (its head below the cursor) or replaced
+by a new stream (a new epoch) makes the next pass **rebootstrap**: the cursor
+restarts on the stream the upstream now serves, held positions and synced
+positions are dropped, and the stream is replayed keeping only each entity's
+last entry, so an older revision never lands over a newer one. Pending local
+changes stay pending and are sent; nothing local is deleted. A change the
+upstream acknowledged and then lost in the restore is reported by verify, not
+re-sent. The run that finishes the replay reports `rebootstrapped: true`, and
+the key is not `caught_up` until it has.
+
+### Switching workspaces
+
+A change belongs to the key it was made under. `comemory auth logout` — and a
+login to a different workspace — stamps every change still owed with the key
+being left; under any other key those changes are held `workspace` (status:
+`held.workspace`) and go out once you log back in to their own. Editing a
+memory that was pulled from another workspace stamps the edit with that
+workspace too, so it is never sent to the one you are logged in to. A new key
+starts its own cursor and never inherits another key's `caught_up`.
+
+### Old and new servers on one workspace
+
+Machines on the old protocol and machines on `replica-v1` share one
+workspace history: the engine journals every old-protocol import into its
+replica feed and writes every replica acceptance to the old log, and a pulled
+change is recorded as pulled, so it is never pushed back. The platform
+forwarding of the replica routes, with repository policy applied to them, is
+tracked in CodaSignal/comemory.io#183; until it ships, a platform upstream
+negotiates the old protocol with `coverage_reason: "replica_unsupported"`.
+
+An upstream that is a bare `comemory serve`, with no policy authority in
+front of it, answers the policy route `404`. The exchange then runs under the
+policy last recorded for that key; with none recorded it approves nothing, so
+every change is held `policy` rather than sent.

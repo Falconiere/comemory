@@ -80,13 +80,9 @@ fn run_one_cycle(
         return Ok(());
     };
     if last_verify.elapsed() >= verify_every {
-        match verify::verify_manifests(paths, cfg, &mut conn, &auth) {
+        match verify::verify(paths, cfg, &mut conn, &auth) {
             Ok(report) => {
-                tracing::info!(
-                    differing = report.differing_buckets,
-                    repaired = report.repaired,
-                    "sync daemon verify finished"
-                );
+                tracing::info!(?report, "sync daemon verify finished");
                 *last_verify = Instant::now();
             }
             Err(e) => tracing::warn!(error = %e, "sync daemon verify failed"),
@@ -99,7 +95,7 @@ fn run_one_cycle(
 pub fn install_and_start_best_effort(paths: &Paths) {
     // Integration tests set this so login does not touch the host launchd /
     // systemd session while HOME is a tempfile.
-    if std::env::var_os("COMEMORY_SYNC_DAEMON").is_some_and(|v| v == "0") {
+    if crate::config::sync::daemon_disabled() {
         tracing::debug!("sync daemon skipped (COMEMORY_SYNC_DAEMON=0)");
         return;
     }
@@ -117,6 +113,12 @@ pub fn install_and_start_best_effort(paths: &Paths) {
 
 /// Best-effort stop used by `auth logout` (unit left installed).
 pub fn stop_best_effort() {
+    // The same guard as the install: a test's logout must not stop the
+    // host's own daemon.
+    if crate::config::sync::daemon_disabled() {
+        tracing::debug!("sync daemon stop skipped (COMEMORY_SYNC_DAEMON=0)");
+        return;
+    }
     stop();
 }
 

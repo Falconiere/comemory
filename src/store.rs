@@ -167,6 +167,8 @@ pub mod remote_document;
 /// The shared half of document search, and the reads a pulled hit resolves
 /// through.
 pub mod remote_document_view;
+/// `replica_binding` CRUD — what the upstream last held for each exchanged entity.
+pub mod replica_binding;
 /// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
 pub mod replica_cursor;
 /// This database's device id — the origin every shared event carries.
@@ -177,6 +179,10 @@ pub mod replica_journal;
 /// `replica_operation` row CRUD — the durable outbox of local mutations a
 /// peer has not accepted yet.
 pub mod replica_outbox;
+/// The outbox's hold, stamp and wire-field writers and its per-state counts.
+pub mod replica_outbox_hold;
+/// `replica_pull_hold` CRUD — pulled positions passed without applying, and why.
+pub mod replica_pull_hold;
 /// `replica-v1` journal reads: the ordered feed page with the payload each
 /// position named, the head, one entity's revision, and the manifest digests.
 pub mod replica_read;
@@ -185,6 +191,8 @@ pub mod replica_read;
 pub mod replica_receipt;
 /// Retention expiry and purge erasure of shared events' journal copies.
 pub mod replica_redaction;
+/// `replica_replay` CRUD — a compacting replay's scratch rows.
+pub mod replica_replay;
 /// `replica_staged_part` row CRUD — parts of an oversized revision and their
 /// assembly, invisible until activation.
 pub mod replica_staging;
@@ -223,6 +231,10 @@ pub mod schema_core;
 pub mod schema_document_revision;
 /// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod schema_documents;
+/// Declared `replica-v1` exchange-client tables: `sync_exchange`,
+/// `sync_policy_snapshot`, `replica_pull_hold`, `replica_binding`,
+/// `replica_replay`.
+pub mod schema_exchange;
 /// Declared graph tables: `edges`, `code_ref`.
 pub mod schema_graph;
 /// Declared run-history tables: `eval_runs`, `gc_runs`, `index_runs`.
@@ -257,10 +269,14 @@ pub mod sources;
 pub mod stats_counts;
 /// First-push workspace binding + `--allow-secret` overrides.
 pub mod sync_binding;
+/// Per-`(api_url, workspace)` exchange state: protocol, network, resume markers.
+pub mod sync_exchange;
 /// Append-only cloud-sync change journal.
 pub mod sync_log;
 /// The live `content_hash` set behind `GET /sync/manifest`.
 pub mod sync_manifest;
+/// `sync_policy_snapshot` CRUD — the repository policy last loaded for a key.
+pub mod sync_policy_snapshot;
 /// Per-workspace pull/push cursors.
 pub mod sync_state;
 /// Custom FTS5 identifier tokenizer (camelCase/snake_case split + FFI).
