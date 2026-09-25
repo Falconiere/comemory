@@ -6,10 +6,10 @@
     clippy::too_many_lines
 )]
 //! The exchange client (#255), part 8: feedback and activity events (#254)
-//! drain like every other kind (AC-19). A verdict and the runs recorded on
-//! one client reach a peer through the hub and are counted there once; the
-//! echo of a client's own events, and every later pass on either side, count
-//! nothing again.
+//! drain like every other kind (AC-19). A verdict and the scoped runs
+//! recorded on one client reach a peer through the hub and are counted there
+//! once. A client's own events coming back on its pull settle by operation id,
+//! and every later pass on either side counts nothing again.
 //!
 //! Real `comemory serve` hubs, the real CLI binary, real SQLite, real HTTP.
 
@@ -42,17 +42,18 @@ fn scalar(conn: &rusqlite::Connection, sql: &str) -> i64 {
         .unwrap_or_else(|e| panic!("{sql}: {e}"))
 }
 
-/// The event ids this engine shared from its own activity, sorted.
-fn shared_run_ids(client: &Client) -> Vec<String> {
+/// `(command, event_id)` of every run this engine shared from its own
+/// activity, in the order they were recorded.
+fn shared_runs(client: &Client) -> Vec<(String, String)> {
     let conn = client.open();
     let mut statement = conn
         .prepare(
-            "SELECT event_id FROM activity_log \
-             WHERE event_id IS NOT NULL AND device IS NULL ORDER BY event_id",
+            "SELECT command, event_id FROM activity_log \
+             WHERE event_id IS NOT NULL AND device IS NULL ORDER BY id",
         )
         .expect("prepare");
     statement
-        .query_map([], |r| r.get(0))
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .expect("query")
         .collect::<Result<_, _>>()
         .expect("collect")
@@ -112,8 +113,15 @@ fn a_verdict_and_its_runs_reach_the_peer_and_count_once() {
         .query_row("SELECT event_id FROM feedback_events", [], |r| r.get(0))
         .expect("B received the verdict");
     assert_eq!(received, verdict, "the same event, under its own id");
-    let runs = shared_run_ids(&a);
-    assert!(!runs.is_empty(), "A's scoped runs were captured and shared");
+    let runs = shared_runs(&a);
+    let commands: Vec<&str> = runs.iter().map(|(command, _)| command.as_str()).collect();
+    assert_eq!(
+        commands,
+        ["save", "find"],
+        "A's scoped runs were captured; `feedback` names no repository and stays local"
+    );
+    let mut run_ids: Vec<String> = runs.iter().map(|(_, id)| id.clone()).collect();
+    run_ids.sort();
     let received_runs: Vec<String> = {
         let conn = b.open();
         let mut statement = conn
@@ -125,7 +133,7 @@ fn a_verdict_and_its_runs_reach_the_peer_and_count_once() {
             .collect::<Result<_, _>>()
             .expect("collect")
     };
-    assert_eq!(received_runs, runs, "every shared run arrived once");
+    assert_eq!(received_runs, run_ids, "every shared run arrived once");
     let settled_a = counts(&a, &memory);
     let settled_b = counts(&b, &memory);
     assert_eq!(settled_a.0, 1);
@@ -133,8 +141,14 @@ fn a_verdict_and_its_runs_reach_the_peer_and_count_once() {
     assert_eq!(settled_a.3, 0, "every event A owed was accepted");
     assert_eq!((settled_b.0, settled_b.1), (1, 1), "B counted it once too");
     assert_eq!(settled_b.3, 0, "B re-offers nothing it received");
+    assert_eq!(
+        (settled_a.2, settled_b.2),
+        (2, 2),
+        "each side holds the two runs once: A its own, B the copies"
+    );
 
-    // The echo of A's own events, and more passes both ways: a fixed point.
+    // More passes both ways — A's first pull already met its own events and
+    // settled them by operation id — reach a fixed point.
     for _ in 0..2 {
         a.sync();
         b.sync();

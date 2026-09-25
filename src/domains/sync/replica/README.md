@@ -10,7 +10,7 @@ seeding that teaches the journal about memories older than itself.
 [`exchange/`](../exchange/README.md), byte-for-byte unchanged), any SQL (every
 row read or written goes through [`store/`](../../../store/README.md)'s
 `replica_*` modules), HTTP routing and envelopes (`serve/routes/sync_replica.rs`),
-and the client half of push/pull — issues 251–255 switch `comemory sync` over.
+and the client half of push/pull, which is [`drain/`](../drain/README.md) (#255).
 
 The durable contract is
 [docs/designs/2026-09-21-replica-v1-journal.md](../../../../docs/designs/2026-09-21-replica-v1-journal.md).

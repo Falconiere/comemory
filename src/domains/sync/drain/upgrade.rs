@@ -24,7 +24,7 @@ use crate::store::{Connection, sync_state};
 pub fn begin(conn: &Connection, row: &mut ExchangeRow, head: i64, at: &str) -> Result<usize> {
     let delivered = sync_state::get(conn, &row.key.workspace_id)?.is_some_and(|s| s.pushed_seq > 0);
     row.upgrade_through = delivered.then_some(head);
-    adopt::all(conn, |kind| kind == DOCUMENT_ENTITY_KIND, at)
+    adopt::all(conn, DOCUMENT_ENTITY_KIND, at)
 }
 
 #[cfg(test)]

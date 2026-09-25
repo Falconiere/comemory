@@ -142,7 +142,7 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// from a local checkout; v25's pulled document revisions are copied for the
 /// same reason — the file a revision describes may not exist on this machine
 /// at all — and `document_share` with them, being the only record of what a
-/// local document is called upstream; v26's exchange-client state is copied
+/// local document is called upstream; v27's exchange-client state is copied
 /// because it describes an upstream, not anything on this disk.
 #[test]
 fn migration_integrity_derived_live_set_has_exactly_sixty_two_tables() {

@@ -25,7 +25,6 @@ use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::replica_cursor::{self, Cursor};
 use crate::store::sync_exchange::{self, ExchangeRow};
-use crate::utilities::context::Ctx;
 
 /// A step's result: whether it moved anything, or the failure that ends the
 /// pass.
@@ -85,6 +84,8 @@ struct Pass<'a> {
     cursor: Cursor,
     pulls: bool,
     pushes: bool,
+    /// How much of the event backlog this pass adopts before it pushes.
+    reach: adopt::Reach,
     report: Report,
     /// The pull (or replay) stalled this pass; it is not retried until the
     /// next one.
@@ -111,6 +112,7 @@ impl<'a> Pass<'a> {
             cursor,
             pulls: legs.pulls(mode),
             pushes: legs.pushes(),
+            reach: adopt::Reach::of(mode),
             report: Report::default(),
             stalled: false,
             seen_head: manifest.head_sequence,
@@ -158,8 +160,8 @@ impl<'a> Pass<'a> {
         }
         let pull = self.step.pull;
         if self.pushes {
-            let mut ctx = Ctx::borrowed(self.step.paths, self.step.cfg, conn);
-            adopt::events(&mut ctx, self.step.at)?;
+            let step = self.step;
+            adopt::events((step.paths, step.cfg), conn, step.at, self.reach)?;
         }
         if self.pushes && self.pulls {
             code_capture::capture(conn, self.step.cfg, pull.policy)?;

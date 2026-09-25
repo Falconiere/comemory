@@ -232,11 +232,16 @@ every retry carries the same values:
 
 **Events.** `feedback_event` and `activity_event` positions are journalled
 and never queued (#254): the feed position is their durable record. Before
-every push the drain reads local event positions above a `schema_meta` cursor
-(`replica_event_adopted_through`) and enqueues each one whose operation the
-outbox does not already hold, one page per transaction with the cursor that
-covers it. Adoption is idempotent, so a cursor a rebuild resets costs a rescan,
-never a second upload. From there an event is an outbox row like any other.
+every push the drain advances one #254 capture batch (nothing reads a
+client's feed, which is where the engine runs it), then reads local event
+positions of each kind above that kind's `schema_meta` cursor
+(`replica_event_adopted_through:<kind>`) and enqueues each one whose operation
+the outbox does not already hold, one page per transaction with the cursor
+that covers it. The inline push after a save adopts at most one page per kind;
+the cursors carry the rest to the next pass. Adoption is idempotent, and the
+capture batch skips a run that already carries an event id, so a cursor a
+rebuild resets costs a rescan, never a second upload. From there an event is
+an outbox row like any other.
 On the pull side an event this engine already holds is answered `duplicate`
 whatever operation id carries it, and never counted twice.
 
@@ -788,11 +793,12 @@ platform harness with #183.
 - `docs/guides/replication-e2e.md`: case `exchange`.
 - `docs/designs/2026-09-21-replica-v1-journal.md`,
   `2026-09-22-code-generation-replication.md`,
-  `2026-09-23-document-revision-replication.md` and
-  `2026-09-22-memory-mutation-capture.md`: one-line notes where this
+  `2026-09-23-document-revision-replication.md`,
+  `2026-09-22-memory-mutation-capture.md` and
+  `2026-09-24-feedback-activity-replication.md`: short notes where this
   issue changes their stated behavior (operation id on accept, `kind=` pages,
   capabilities, seeding, pending-refusal scope, the pull path's parent check,
-  document enqueue).
+  document enqueue, event adoption).
 - `src/domains/sync/README.md`, new `src/domains/sync/drain/README.md`,
   `src/domains/sync/replica/README.md`, `src/store/README.md`.
 
