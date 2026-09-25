@@ -51,8 +51,11 @@ fn a_pending_local_edit_survives_a_pull_of_the_same_memory() {
     let saved = author.cli(&["save", "--kind", "decision", BODY]);
     let id = saved["id"].as_str().expect("id").to_string();
 
-    // The local engine holds the same memory with its own tags, unpushed.
+    // The local engine holds the same memory with its own tags, unpushed —
+    // and it is a `replica-v1` client of some upstream, the only kind of
+    // engine that owes uploads (#255: a hub owes none and refuses nothing).
     let local = Engine::spawn(&[]);
+    make_replica_client(&local.data_dir());
     local.cli(&["save", "--kind", "decision", BODY]);
     let (status, body) = local.patch(
         &format!("/api/v1/memories/{id}"),
@@ -314,4 +317,14 @@ fn two_engines_holding_the_same_body_with_different_tags_disagree_then_agree() {
         healed, author_buckets,
         "importing the newer revision makes the buckets agree"
     );
+}
+
+/// Record, through the store API a session writes, that this engine selected
+/// `replica-v1` against an upstream.
+fn make_replica_client(data_dir: &std::path::Path) {
+    use comemory::store::sync_exchange::{self, ExchangeKey, ExchangeRow};
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    let mut row = ExchangeRow::fresh(&ExchangeKey::new("http://127.0.0.1:9/api", "ws_m4"));
+    row.protocol = Some("replica-v1".to_string());
+    sync_exchange::save(&conn, &row, "2026-09-24T10:00:00Z").expect("select replica");
 }

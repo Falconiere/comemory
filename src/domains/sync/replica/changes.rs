@@ -45,8 +45,10 @@ pub fn run(
     let conn = ctx.conn()?;
     let head_sequence = replica_read::head(conn)?;
     validate::check_position(since, head_sequence)?;
-    let rows = replica_read::page(conn, since, limit.clamp(MIN_LIMIT, MAX_LIMIT), kind)?;
-    let next_sequence = rows.last().map(|row| row.sequence);
+    // The continuation is the last RAW position scanned, not the last match:
+    // a kind-filtered page with no match still moves the reader forward.
+    let (rows, next_sequence) =
+        replica_read::scan(conn, since, limit.clamp(MIN_LIMIT, MAX_LIMIT), kind)?;
     let entries = rows.into_iter().map(entry).collect::<Result<Vec<_>>>()?;
     Ok(ChangesResponse {
         protocol: PROTOCOL.to_string(),

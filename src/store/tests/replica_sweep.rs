@@ -229,3 +229,38 @@ fn a_superseded_generation_is_not_debris() {
         "history is not debris: only a generation that never activated is"
     );
 }
+
+#[test]
+fn pending_generation_still_owed_upstream_survives_the_sweep() {
+    let (_dir, mut conn) = migrated_db();
+    stage(&conn, &"e".repeat(32), LONG_AGO);
+    // The push that will deliver it is still queued — a client's generation
+    // is staged until the upstream accepts it, however long backoff takes.
+    let tx = conn.transaction().expect("tx");
+    comemory::store::replica_outbox::enqueue(
+        &tx,
+        &comemory::store::replica_journal::NewOperation {
+            operation_id: "op-20260920-owedgeneration000000000000001",
+            entity_kind: "code_generation",
+            entity_key: REPO,
+            op: comemory::store::replica_journal::ReplicaOp::Upsert,
+            payload: None,
+            schema_version: 1,
+            repository: Some(REPO),
+            origin: ReplicaOrigin::Local,
+            at: LONG_AGO,
+        },
+        None,
+    )
+    .expect("owed upload");
+    tx.commit().expect("commit");
+
+    let swept = replica_sweep::run(&mut conn, NOW).expect("sweep");
+
+    assert_eq!(swept.generations, 0, "an owed generation is not abandoned");
+    assert!(
+        code_generation::by_id(&conn, REPO, &"e".repeat(32))
+            .expect("by_id")
+            .is_some()
+    );
+}

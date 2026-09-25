@@ -22,6 +22,7 @@ cases run in the platform repository against the engine commit in
 ```bash
 bash scripts/test-replication-e2e.sh --case coverage
 bash scripts/test-replication-e2e.sh --case teardown
+bash scripts/test-replication-e2e.sh --case exchange
 bash scripts/test-replication-e2e.sh \
   --platform-root /path/to/comemory.io \
   --case baseline
@@ -40,6 +41,7 @@ bash scripts/test-replication-e2e.sh \
 | `missing-runtime` | engine | A binary that cannot print `--version` exits 2 |
 | `contract` | engine | The `replica-v1` journal against real processes: digests over metadata, replay receipts, conflicting bytes, epoch mismatch, envelope caps, staged activation, tombstone ordering, workspace scope, route classes, rebuild identity, and legacy-wire convergence (`--test replica_contract` / `replica_contract_2`) |
 | `events` | engine | Feedback verdicts and activity runs as `replica-v1` events (#254): stable event ids and origin devices, one counter contribution per event through replays, echoes, an induced fault and a SIGKILL mid-envelope, the one-time backfill, retention expiry and purge erasure reaching the journal, tied timestamps kept in acceptance order, and the allowlist / path / secret policy on what text may leave (`--test replica_events` / `replica_events_2` / `replica_events_3`; ACs `V-1`…`V-7`) |
+| `exchange` | engine | The exchange client (#255) against real `comemory serve` hubs behind a real fault proxy (drop, hold, delay, flip, rate-limit): negotiation and a one-way upgrade, a 2,000+ operation backlog drained in one run, held pages then an allowed entry, stalls that replay safely, held states that never starve the rest, `429`/`502`/timeout survival, restored and replaced streams, workspace switches, code generations and documents both ways, and feedback and activity events counted once (`--test replica_exchange` … `replica_exchange_8`) |
 | `baseline` | platform | A saved document slice reaches a second store; two workspaces are provisioned |
 | `fault-ack` | platform | A dropped sync acknowledgement converges to one file on the next sync |
 | `corrupt` | platform | One flipped request byte leaves the receiver empty |

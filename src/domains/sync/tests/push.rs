@@ -12,6 +12,10 @@ use comemory::config::{Config, Paths};
 use comemory::domains::memories::Kind;
 use comemory::domains::memories::save;
 use comemory::domains::sync::AuthFile;
+use comemory::domains::sync::drain::{
+    self,
+    session::{Legs, Mode},
+};
 use comemory::domains::sync::push;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -75,9 +79,24 @@ impl Seeded {
         self.push_result().expect("push")
     }
 
+    /// Drain the push direction the way `comemory sync --action push` does;
+    /// a drain that ended on the network is the error it recorded.
     fn push_result(&mut self) -> crate::errors::Result<push::PushStats> {
         let auth = AuthFile::load(&self.paths).expect("load").expect("auth");
-        push::run_push(&self.paths, &self.cfg, &mut self.conn, &auth, None, 100)
+        let drained = drain::drain(
+            &self.paths,
+            &self.cfg,
+            &mut self.conn,
+            &auth,
+            (Mode::Manual, Legs::Push),
+        )?;
+        if let Some(error) = drained.error {
+            return Err(crate::errors::Error::Unavailable(error));
+        }
+        Ok(drained
+            .legacy
+            .and_then(|l| l.push)
+            .expect("a legacy push leg"))
     }
 }
 

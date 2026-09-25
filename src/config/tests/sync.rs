@@ -7,7 +7,8 @@
 )]
 //! Duration parsing for `[sync]` knobs.
 
-use comemory::config::sync::{SyncConfig, parse_duration};
+use comemory::config::sync::{PartialSyncConfig, SyncConfig, parse_duration};
+use std::time::Duration;
 
 #[test]
 fn parse_compact_durations() {
@@ -98,4 +99,37 @@ fn a_zero_push_budget_is_refused_rather_than_silently_failing_every_push() {
         message.contains("push_on_save = false"),
         "and point at the switch that actually disables it: {message}"
     );
+}
+
+#[test]
+fn request_timeout_defaults_to_thirty_seconds_and_overlays() {
+    let mut cfg = SyncConfig::defaults();
+    assert_eq!(
+        parse_duration(&cfg.request_timeout).expect("default"),
+        Duration::from_secs(30)
+    );
+    let partial: PartialSyncConfig = toml::from_str("request_timeout = \"2s\"").expect("parse");
+    cfg.apply(partial);
+    assert_eq!(
+        parse_duration(&cfg.request_timeout).expect("overlay"),
+        Duration::from_secs(2)
+    );
+}
+
+#[test]
+fn pass_budget_and_max_request_bytes_overlay_from_the_file() {
+    let mut cfg = SyncConfig::defaults();
+    assert_eq!(
+        parse_duration(&cfg.pass_budget).expect("default"),
+        Duration::from_secs(30)
+    );
+    assert_eq!(cfg.max_request_bytes, 4 * 1024 * 1024);
+    let partial: PartialSyncConfig =
+        toml::from_str("pass_budget = \"1s\"\nmax_request_bytes = 262144").expect("parse");
+    cfg.apply(partial);
+    assert_eq!(
+        parse_duration(&cfg.pass_budget).expect("overlay"),
+        Duration::from_secs(1)
+    );
+    assert_eq!(cfg.max_request_bytes, 262_144);
 }

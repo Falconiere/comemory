@@ -43,7 +43,8 @@ pub fn plan(conn: &Connection, repo: &str) -> Result<Option<Planned>> {
     // machine for good the first time a peer's generation became active —
     // its next plan would claim to be the repo's first, and no peer could
     // accept that. Which generation may be UPLOADED is the separate question
-    // `code_generation::active_local` answers.
+    // `drain::code_capture` answers: only one planned here from this
+    // machine's own index, never a pulled one it already holds.
     let parent_id = code_generation::active(conn, repo)?.map(|g| g.generation_id);
     // One derivation, in the payload that also verifies it on the receiving
     // side: the id is the 32-hex prefix of the payload's digest taken with

@@ -150,7 +150,8 @@ fn sql_demands_destructive(sql: &str) -> bool {
 /// 0004 (drops `memory_fts`/`code_fts`, `UPDATE`s `memories`/`code_symbols`),
 /// 0005 (drops `search_stats`), 0006/0008/0013 (each rebuild `edges` via
 /// create-copy-drop-rename), 0017 (`UPDATE`s every `sync_state` cursor),
-/// 0018 (`DELETE`s the scheme-path junk references).
+/// 0018 (`DELETE`s the scheme-path junk references), 0026 (rebuilds
+/// `replica_cursor` via create-copy-drop-rename for its new key).
 #[test]
 fn migration_integrity_destructive_sql_is_classed_destructive() {
     let destructive_keys: BTreeSet<&str> = list::MIGRATIONS
@@ -166,6 +167,7 @@ fn migration_integrity_destructive_sql_is_classed_destructive() {
         "0013_v13_documents",
         "0017_sync_repush",
         "0018_scheme_path_refs",
+        "0027_replica_exchange",
     ]
     .into_iter()
     .collect();

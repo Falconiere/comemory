@@ -125,26 +125,44 @@ pub fn record(conn: &Connection, generation: &Generation, at: &str) -> Result<()
 /// SQLite failures; [`Error::Conflict`] for a stale parent, [`Error::NotFound`]
 /// when the generation was never recorded.
 pub fn activate(tx: &Connection, repo: &str, generation_id: &str, at: &str) -> Result<()> {
-    let Some(target) = by_id(tx, repo, generation_id)? else {
-        return Err(Error::NotFound(format!(
-            "code generation {generation_id} for {repo}"
-        )));
-    };
+    let target = target(tx, repo, generation_id)?;
     let current = active(tx, repo)?;
     let current_id = current.as_ref().map(|g| g.generation_id.as_str());
-    if current_id == Some(generation_id) {
-        return Ok(());
-    }
     if !extends(target.parent_id.as_deref(), generation_id, current_id) {
         return Err(Error::Conflict(format!(
             "code generation {generation_id} was planned against {:?}, but {repo} is at {current_id:?}",
             target.parent_id
         )));
     }
-    if let Some(current) = current.as_ref() {
-        set_state(tx, repo, &current.generation_id, State::Superseded, None)?;
+    activate_following(tx, repo, generation_id, at)
+}
+
+/// Make `generation_id` the repo's active generation in the order an upstream
+/// already chose, whatever this machine had active — a client following a
+/// pulled feed does not re-decide the chain.
+///
+/// # Errors
+/// [`Error::NotFound`] when the generation was never recorded; propagates
+/// SQLite failures.
+pub fn activate_following(
+    tx: &Connection,
+    repo: &str,
+    generation_id: &str,
+    at: &str,
+) -> Result<()> {
+    target(tx, repo, generation_id)?;
+    match active(tx, repo)? {
+        Some(current) if current.generation_id == generation_id => return Ok(()),
+        Some(current) => set_state(tx, repo, &current.generation_id, State::Superseded, None)?,
+        None => {}
     }
     set_state(tx, repo, generation_id, State::Active, Some(at))
+}
+
+/// The recorded generation `generation_id`, or `NotFound`.
+fn target(tx: &Connection, repo: &str, generation_id: &str) -> Result<Generation> {
+    by_id(tx, repo, generation_id)?
+        .ok_or_else(|| Error::NotFound(format!("code generation {generation_id} for {repo}")))
 }
 
 /// Whether a generation with `parent_id` may become `repo`'s active one when
@@ -183,17 +201,6 @@ pub fn active(conn: &Connection, repo: &str) -> Result<Option<Generation>> {
             .filter(col::repo.eq(repo))
             .filter(col::state.eq(State::Active.as_str()))
     })
-}
-
-/// The repo's active generation, but only when this machine built it.
-///
-/// Upload selection reads this: a projection a peer sent is never offered
-/// back, which is how a replication loop is prevented rather than detected.
-///
-/// # Errors
-/// Propagates SQLite failures and an unrecognized stored value.
-pub fn active_local(conn: &Connection, repo: &str) -> Result<Option<Generation>> {
-    Ok(active(conn, repo)?.filter(|g| g.origin == ReplicaOrigin::Local))
 }
 
 /// One generation by id, whatever its state.

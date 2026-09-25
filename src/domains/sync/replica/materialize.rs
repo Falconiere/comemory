@@ -23,7 +23,23 @@ use crate::store::{Connection, memory_purge, memory_row};
 use crate::utilities::canonical_json;
 use crate::utilities::context::Ctx;
 
+/// Who ordered the operation being materialized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Order {
+    /// This engine decided it (the import and activate routes), so every
+    /// ordering rule it owns — a code generation's parent check included —
+    /// has already run or runs here.
+    Decided,
+    /// An upstream already ordered it and this engine follows (a client's
+    /// pull): re-deciding against local state would refuse what the upstream
+    /// accepted.
+    Upstream,
+}
+
 /// Apply one already-decided operation.
+///
+/// The derived-graph refresh is the caller's step, run once per batch: doing
+/// it per operation would make a large pull quadratic.
 ///
 /// # Errors
 /// Propagates markdown and SQLite failures. A failure here leaves no receipt,
@@ -32,13 +48,14 @@ pub(crate) fn apply(
     ctx: &mut Ctx<'_>,
     epoch: &str,
     operation: &Operation,
+    order: Order,
 ) -> Result<OperationResult> {
     let at = memory_row::iso_format(time::OffsetDateTime::now_utc())?;
     // A code generation has no markdown half: its whole state is rows, so it
     // records, writes its projection, activates and journals in one
     // transaction of its own.
     if code_accept::handles(operation) {
-        return code_accept::apply(ctx, epoch, operation, &at);
+        return code_accept::apply(ctx, epoch, operation, &at, order);
     }
     // Nor does a document revision: its text lands in tables only a pull
     // writes, so it has no markdown half and no local row to touch either.
@@ -68,6 +85,8 @@ pub(crate) fn apply(
                 &record.frontmatter.tags,
             )?;
             vector_rule::apply(tx, &record.frontmatter.id, &verdict, &at)?;
+            // Journalled under the id the sender minted, so the sender can
+            // recognize its own write when this feed hands it back.
             Ok(journal::record_write(
                 tx,
                 operation.op,
@@ -75,18 +94,17 @@ pub(crate) fn apply(
                 &record.body,
                 &at,
                 ReplicaOrigin::Sync,
-                None,
+                Some(&operation.operation_id),
             )?
             .sequence)
         }
         Prepared::Removed {
-            existed,
             content_hash,
             repository,
         } => {
-            if *existed {
-                memory_purge::soft_delete(tx, &operation.entity_key, &at)?;
-            }
+            // Unconditional: a replay after a kill between the markdown move
+            // and this commit finds no file, and must still retire the row.
+            memory_purge::soft_delete(tx, &operation.entity_key, &at)?;
             Ok(journal::record_tombstone(
                 tx,
                 &operation.entity_key,
@@ -94,14 +112,11 @@ pub(crate) fn apply(
                 repository.as_deref(),
                 &at,
                 ReplicaOrigin::Sync,
-                None,
+                Some(&operation.operation_id),
             )?
             .sequence)
         }
     })?;
-    // After the commit: a failed refresh must not roll back an acceptance the
-    // peer has already been told about.
-    let _stale = crate::domains::graph::derived::refresh_derived_best_effort(ctx.conn()?);
     Ok(OperationResult {
         operation_id: operation.operation_id.clone(),
         disposition: Disposition::Accepted,
@@ -120,8 +135,6 @@ enum Prepared {
     Written(Box<crate::domains::memories::MemoryRecord>),
     /// The entity this engine removed, or never held.
     Removed {
-        /// Whether a markdown file was actually there to remove.
-        existed: bool,
         /// Content hash the removed record carried; empty when it was absent.
         content_hash: String,
         /// Canonical repository, when the removed record had one.
@@ -148,7 +161,6 @@ fn prepare_markdown(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Prepared
                 Err(e) => return Err(e),
             };
             Ok(Prepared::Removed {
-                existed: removed.is_some(),
                 content_hash: removed
                     .as_ref()
                     .map_or_else(String::new, |r| r.frontmatter.content_hash.clone()),
@@ -208,9 +220,7 @@ fn write_markdown(
                 .frontmatter
                 .relations
                 .clone_from(&payload.relations);
-            // The id is derived from the body, so an upsert under an existing
-            // id always carries the same body — copying the hash and schema
-            // anyway keeps the file from drifting if that ever changes.
+            // Same id, same body; copying hash and schema keeps them in step.
             existing
                 .frontmatter
                 .content_hash
@@ -267,3 +277,7 @@ fn accepted(operation: &Operation, epoch: &str, sequence: i64) -> Receipt {
         reason: None,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/materialize.rs"]
+mod tests;

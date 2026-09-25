@@ -1820,12 +1820,12 @@ Options:
           Operation: `run` (default), `push`, `pull`, `verify`, `status`, or `auto`
 
           Possible values:
-          - run:    Push then pull (default)
+          - run:    Pull, then push, until the upstream is drained (default)
           - push:   Push local changes only (`--push-only` alias)
           - pull:   Pull remote changes only (`--pull-only` alias)
-          - verify: Compare local/remote manifests and repair differing buckets (AC-9)
-          - status: Print sync cursors
-          - auto:   The unattended pass git hooks and agent hooks fire: index `--path`, refresh every stale hooked repo, then pull and push when logged in. Needs no login; prints nothing without `--json`; coalesces with a pass that is already queued
+          - verify: Compare local/remote manifests (per kind on `replica-v1`) and repair differing buckets
+          - status: Print sync cursors and the key's `exchange` state
+          - auto:   The unattended pass git hooks and agent hooks fire: index `--path`, refresh every stale hooked repo, then drain both ways when logged in. Needs no login; prints nothing without `--json`; coalesces with a pass that is already queued
 
           [default: run]
 

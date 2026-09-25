@@ -32,6 +32,7 @@
         "consolidation",
         "doctor",
         "document",
+        "drain",
         "evaluation",
         "exchange",
         "index_code",
@@ -120,7 +121,8 @@
       "domains/graph",
       "domains/maintenance",
       "mcp",
-      "domains/architecture"
+      "domains/architecture",
+      "domains/sync/drain"
     ]
   },
   "fileSize": {

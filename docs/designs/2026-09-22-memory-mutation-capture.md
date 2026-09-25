@@ -135,3 +135,13 @@ crash instant itself cannot be hit deterministically from outside the process,
 so the fixture produces its exact observable state with the real library API
 and lets the real CLI recover from it; that the state is reachable is proven
 by `domains::memories::journal`'s own tests.
+
+## Changed by the exchange client (#255)
+
+"An import cannot overwrite what this machine owes" now applies only on an
+engine that is itself a `replica-v1` client of some upstream (a `sync_exchange`
+row on `replica-v1`): a hub nobody is a client of owes no uploads, and its own
+console and HTTP writes would otherwise freeze every client edit of the same
+memory. A client's own pull never applies a peer's entry over an owed edit
+either — it holds it `pending_local`
+([the exchange client](2026-09-24-replica-exchange-client.md)).

@@ -469,6 +469,7 @@ fn a_generation_that_does_not_own_its_id_is_refused_before_anything_is_written()
 #[test]
 fn a_memory_operation_still_takes_the_memory_path() {
     let mut home = Home::new();
+    home.make_client();
     let id = home.save(support::BODY, &["sync"]);
     let memory = home.payload(&id);
 
@@ -981,8 +982,10 @@ fn a_pulled_generation_is_not_offered_as_this_machines_next_parent() {
          what the repo is at, whoever built it"
     );
     assert_eq!(
-        code_generation::active_local(&home.conn, REPO).expect("active_local"),
-        None,
+        code_generation::active(&home.conn, REPO)
+            .expect("active")
+            .map(|g| g.origin),
+        Some(crate::store::replica_journal::ReplicaOrigin::Sync),
         "but a pulled projection is not itself offered back for upload"
     );
     assert_eq!(
@@ -1188,4 +1191,44 @@ fn a_sweep_leaves_an_accepted_generations_replay_replaying() {
         1,
         "and no second position was earned"
     );
+}
+
+#[test]
+fn follow_upstream_activates_a_generation_whose_parent_is_not_active_here() {
+    use crate::domains::sync::replica::materialize::{self, Order};
+    let mut home = Home::new();
+    let first = payload(None, "head-1", 3);
+    {
+        let mut ctx = home.ctx();
+        accept::run(
+            &mut ctx,
+            envelope(vec![upsert(
+                "op-20260924-follow000000000000000000000001",
+                &first,
+            )]),
+        )
+        .expect("first");
+    }
+    // The upstream ordered a generation whose parent this machine never
+    // activated (it planned on a chain this client only partly pulled). The
+    // pull path follows the upstream's order instead of re-deciding it.
+    let elsewhere = payload(None, "head-elsewhere", 5);
+    let pulled = payload(Some(&elsewhere.generation_id), "head-2", 7);
+    let epoch = home.epoch();
+    let result = {
+        let mut ctx = home.ctx();
+        materialize::apply(
+            &mut ctx,
+            &epoch,
+            &upsert("op-20260924-follow000000000000000000000002", &pulled),
+            Order::Upstream,
+        )
+        .expect("apply in upstream order")
+    };
+
+    assert_eq!(result.disposition, Disposition::Accepted);
+    let active = code_generation::active(&home.conn, REPO)
+        .expect("active")
+        .expect("row");
+    assert_eq!(active.generation_id, pulled.generation_id);
 }

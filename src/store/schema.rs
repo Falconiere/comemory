@@ -14,6 +14,9 @@ use super::schema_document_revision::{
     DocumentShare, RemoteDocument, RemoteDocumentChunk, RemoteDocumentFts, RemoteDocumentLink,
 };
 use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFiles, SourceRoots};
+use super::schema_exchange::{
+    ReplicaBinding, ReplicaPullHold, ReplicaReplay, SyncExchange, SyncPolicySnapshot,
+};
 use super::schema_graph::{CodeRef, Edges};
 use super::schema_history::{ActivityLog, EvalRuns, GcRuns, IndexFailures, IndexRuns};
 use super::schema_learning::{
@@ -74,12 +77,15 @@ pub const DECLARED_TABLES: &[&str] = &[
     "remote_document_chunk",
     "remote_document_fts",
     "remote_document_link",
+    "replica_binding",
     "replica_cursor",
     "replica_device",
     "replica_feed",
     "replica_operation",
     "replica_payload",
+    "replica_pull_hold",
     "replica_receipt",
+    "replica_replay",
     "replica_revision",
     "replica_staged_part",
     "replica_stream",
@@ -90,7 +96,9 @@ pub const DECLARED_TABLES: &[&str] = &[
     "source_files",
     "source_roots",
     "sync_binding",
+    "sync_exchange",
     "sync_log",
+    "sync_policy_snapshot",
     "sync_state",
 ];
 
@@ -139,12 +147,15 @@ pub fn registry() -> SchemaRegistry {
         RemoteDocumentChunk::table_def(),
         RemoteDocumentFts::table_def(),
         RemoteDocumentLink::table_def(),
+        ReplicaBinding::table_def(),
         ReplicaCursor::table_def(),
         ReplicaDevice::table_def(),
         ReplicaFeed::table_def(),
         ReplicaOperation::table_def(),
         ReplicaPayload::table_def(),
+        ReplicaPullHold::table_def(),
         ReplicaReceipt::table_def(),
+        ReplicaReplay::table_def(),
         ReplicaRevision::table_def(),
         ReplicaStagedPart::table_def(),
         ReplicaStream::table_def(),
@@ -155,7 +166,9 @@ pub fn registry() -> SchemaRegistry {
         SourceFiles::table_def(),
         SourceRoots::table_def(),
         SyncBinding::table_def(),
+        SyncExchange::table_def(),
         SyncLog::table_def(),
+        SyncPolicySnapshot::table_def(),
         SyncState::table_def(),
     ])
 }

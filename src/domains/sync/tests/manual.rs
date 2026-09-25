@@ -10,6 +10,7 @@
 
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::{Kind, save};
+use comemory::domains::sync::drain::session::Legs;
 use comemory::domains::sync::manual;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -117,7 +118,7 @@ fn a_full_run_pulls_before_it_pushes_and_always_offers_the_code_index() {
     let (_home, paths, cfg) = seeded(&server, &secret, body);
     let mut session = manual::open_session(&paths, &cfg).expect("session");
 
-    let stats = manual::run_all(&paths, &cfg, &mut session, None, manual::RUN_LIMIT).expect("run");
+    let stats = manual::run(&paths, &cfg, &mut session, None, Legs::Both).expect("run");
 
     // All three legs ran, and the report can tell each apart. The fixture
     // serves no remote changes and nothing here is code-indexed, so the pull
@@ -149,7 +150,7 @@ fn a_pull_only_run_reports_no_push_and_no_code_leg() {
     let (_home, paths, cfg) = seeded(&server, &secret, "a note that stays local this run");
     let mut session = manual::open_session(&paths, &cfg).expect("session");
 
-    let stats = manual::pull_only(&paths, &cfg, &mut session, manual::RUN_LIMIT).expect("pull");
+    let stats = manual::run(&paths, &cfg, &mut session, None, Legs::Pull).expect("pull");
 
     // "Did not run" is distinguishable from "ran and moved nothing": the
     // report's push and code fields are absent rather than zeroed.
@@ -186,7 +187,7 @@ fn a_full_run_refreshes_a_stale_hooked_repo_before_its_code_push() {
     );
     let mut session = manual::open_session(&paths, &cfg).expect("session");
 
-    let stats = manual::run_all(&paths, &cfg, &mut session, None, manual::RUN_LIMIT).expect("run");
+    let stats = manual::run(&paths, &cfg, &mut session, None, Legs::Both).expect("run");
 
     let refresh = stats.refresh.as_ref().expect("run refreshes");
     assert_eq!(

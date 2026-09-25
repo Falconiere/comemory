@@ -26,7 +26,7 @@ use crate::domains::sync::replica::validate_events;
 use crate::prelude::*;
 use crate::store::replica_journal::ReplicaOp;
 use crate::store::replica_read::Redaction;
-use crate::store::{replica_outbox, replica_read};
+use crate::store::{replica_outbox, replica_read, sync_exchange};
 use crate::utilities::canonical_json;
 use crate::utilities::context::Ctx;
 use crate::utilities::digest::sha256_hex;
@@ -87,7 +87,13 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
     // version would overwrite the markdown the pending operation describes.
     // Refusing keeps the local edit intact and makes the peer's write wait
     // for the push that will order the two properly.
-    if replica_outbox::has_pending_for(conn, &operation.entity_kind, &operation.entity_key)? {
+    // Only an engine that is itself a client of an upstream owes uploads; an
+    // engine nobody is a client of (the hub) journals its own console and HTTP
+    // writes too, and refusing on them would freeze every client edit of the
+    // same entity.
+    if sync_exchange::has_replica_upstream(conn)?
+        && replica_outbox::has_pending_for(conn, &operation.entity_kind, &operation.entity_key)?
+    {
         return Ok(Disposition::RejectedStale);
     }
     // An event is immutable and counted once: a second offer of one this
@@ -105,7 +111,7 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
 /// The replicated kinds share every ordering rule below — `order`,
 /// `check_cursor` and `check_position` never look at the kind — so only the
 /// payload's own shape and identity differ.
-fn kind_and_shape(operation: &Operation) -> Option<Disposition> {
+pub(crate) fn kind_and_shape(operation: &Operation) -> Option<Disposition> {
     match operation.entity_kind.as_str() {
         MEMORY_ENTITY_KIND if operation.schema_version == MEMORY_PAYLOAD_VERSION => {
             shape(operation, identity::<MemoryPayloadV1>)

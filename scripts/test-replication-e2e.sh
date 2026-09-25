@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange)
 
 case_name=""
 platform_root=""
@@ -164,6 +164,22 @@ run_events() {
   log_ok "replication" "feedback and activity event suite passed"
 }
 
+# The exchange client (#255): negotiation, a durable backlog drained in one
+# run, a cursor that means durable contiguous handling, held states that never
+# starve the rest, failures and rate limits survived without losing or
+# doubling a change, restored and replaced streams, workspace switches, and
+# code and documents both ways. Real `comemory serve` hubs behind a real
+# fault proxy and the real CLI, in-repo like the contract case.
+run_exchange() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_exchange --test replica_exchange_2 \
+      --test replica_exchange_3 --test replica_exchange_4 --test replica_exchange_5 \
+      --test replica_exchange_6 --test replica_exchange_7 --test replica_exchange_8
+  )
+  log_ok "replication" "exchange client suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -250,5 +266,6 @@ case "$case_name" in
   code) run_code ;;
   documents) run_documents ;;
   events) run_events ;;
+  exchange) run_exchange ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

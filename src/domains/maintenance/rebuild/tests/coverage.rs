@@ -142,14 +142,15 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// from a local checkout; v25's pulled document revisions are copied for the
 /// same reason — the file a revision describes may not exist on this machine
 /// at all — and `document_share` with them, being the only record of what a
-/// local document is called upstream.
+/// local document is called upstream; v26's exchange-client state is copied
+/// because it describes an upstream, not anything on this disk.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_fifty_seven_tables() {
+fn migration_integrity_derived_live_set_has_exactly_sixty_two_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        57,
-        "expected exactly 57 live tables, got {}: {live:?}",
+        62,
+        "expected exactly 62 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -183,6 +184,11 @@ fn migration_integrity_derived_live_set_has_exactly_fifty_seven_tables() {
         "remote_document_fts",
         "document_share",
         "repository_approval",
+        "sync_exchange",
+        "sync_policy_snapshot",
+        "replica_pull_hold",
+        "replica_binding",
+        "replica_replay",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),

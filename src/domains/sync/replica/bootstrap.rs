@@ -12,7 +12,7 @@
 use crate::domains::memories::{MemoryStore, journal};
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
-use crate::store::{memory_row, replica_read, schema_meta, seed_scan};
+use crate::store::{memory_row, replica_outbox, replica_read, schema_meta, seed_scan};
 use crate::utilities::context::Ctx;
 
 /// Memories seeded per call.
@@ -105,6 +105,7 @@ fn seed_one(ctx: &mut Ctx<'_>, id: &str) -> Result<()> {
         Err(e) => return Err(e),
     };
     let at = memory_row::iso_format(record.frontmatter.created)?;
+    let operation_id = journal::mint_operation_id(id, ReplicaOp::Upsert);
     let conn = ctx.conn()?;
     let tx = conn.transaction()?;
     journal::record_write(
@@ -114,8 +115,13 @@ fn seed_one(ctx: &mut Ctx<'_>, id: &str) -> Result<()> {
         &record.body,
         &at,
         ReplicaOrigin::Local,
-        None,
+        Some(&operation_id),
     )?;
+    // Seeding records what this engine already holds; it owes nobody an
+    // upload, and an owed upload makes an engine refuse every import for the
+    // entity. The journal enqueues every local write, so the row goes in the
+    // same transaction that wrote it.
+    replica_outbox::discard(&tx, &operation_id)?;
     tx.commit()?;
     Ok(())
 }

@@ -7,23 +7,20 @@
 //! secret scanner can withhold entries further.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::config::{Config, Paths};
+use crate::config::Paths;
 use crate::domains::memories::MemoryStore;
-use crate::domains::sync::AuthFile;
-use crate::domains::sync::client;
+use crate::domains::sync::drain::transport::{Answer, Transport};
 use crate::domains::sync::exchange::changes::enrich_record;
-use crate::domains::sync::exchange::{
-    ImportEntry, ImportRequest, ImportResponse, ImportStatus, SyncOp,
-};
+use crate::domains::sync::exchange::{ImportEntry, ImportResponse, ImportStatus, SyncOp};
 use crate::domains::sync::redact;
 use crate::domains::sync::repository_policy::RepositoryPolicy;
 use crate::domains::sync::skip_repos::SkipMatcher;
 use crate::prelude::*;
+use crate::store::sync_exchange::ExchangeKey;
 use crate::store::{Connection, memory_repository, sync_binding, sync_log, sync_state};
 
 const MAX_BATCH: usize = 500;
@@ -47,120 +44,76 @@ pub struct PushStats {
     pub last_pushed_seq: i64,
 }
 
-/// Push local-origin log entries above `pushed_seq` to the organization the
-/// key in `auth` is scoped to.
-///
-/// # Errors
-/// Propagates store, markdown and platform failures. An invalid
-/// `[sync] skip_repos` glob is [`Error::Config`].
-pub fn run_push(
-    paths: &Paths,
-    cfg: &Config,
-    conn: &mut Connection,
-    auth: &AuthFile,
-    allow_secret_id: Option<&str>,
-    limit: usize,
-) -> Result<PushStats> {
-    run_push_with_timeout(
-        paths,
-        cfg,
-        conn,
-        auth,
-        allow_secret_id,
-        limit,
-        client::HTTP_TIMEOUT,
-    )
+/// Everything a legacy push batch sends through.
+pub struct Wire<'a> {
+    /// Legacy calls (managed when the origin is).
+    pub transport: &'a Transport,
+    /// The session key.
+    pub key: &'a ExchangeKey,
+    /// The session's policy.
+    pub policy: &'a RepositoryPolicy,
+    /// `[sync] skip_repos`.
+    pub skip: &'a SkipMatcher,
 }
 
-/// Same as [`run_push`] under an explicit per-request timeout.
-///
-/// The inline push-on-save hook runs on a far smaller budget than a manual
-/// sync: a save must return even when the network accepts the connection and
-/// then says nothing.
+/// Push one batch of local-origin log entries above `pushed_seq`; whether
+/// the cursor moved (`false` once the log is drained).
 ///
 /// # Errors
-/// Propagates store, markdown and platform failures. An invalid
-/// `[sync] skip_repos` glob is [`Error::Config`].
-pub fn run_push_with_timeout(
+/// Propagates store and markdown failures, and a batch the upstream refused
+/// under repository policy; the transport failure is the inner `Err`.
+pub fn batch(
     paths: &Paths,
-    cfg: &Config,
     conn: &mut Connection,
-    auth: &AuthFile,
-    allow_secret_id: Option<&str>,
-    limit: usize,
-    timeout: Duration,
-) -> Result<PushStats> {
-    let workspace_id = auth.workspace_id.as_str();
-    if let Some(id) = allow_secret_id {
-        let at = OffsetDateTime::now_utc()
-            .format(&Iso8601::DEFAULT)
-            .map_err(|e| Error::Other(format!("timestamp: {e}")))?;
-        sync_binding::allow_secret(conn, id, workspace_id, "cli_override", &at)?;
-    }
-
-    let policy = RepositoryPolicy::load_with_timeout(conn, auth, timeout)?;
-    sync_state::ensure(conn, workspace_id, &auth.api_url)?;
-    // Older corpora can have live memories never appended to `sync_log`
-    // (push only drains the log). Best-effort backfill before the outbox walk.
-    sync_log::backfill_missing_local(conn)?;
+    wire: &Wire<'_>,
+    stats: &mut PushStats,
+) -> Result<Answer<bool>> {
+    let workspace_id = wire.key.workspace_id.as_str();
+    sync_state::ensure(conn, workspace_id, &wire.key.api_url)?;
     let row = sync_state::get(conn, workspace_id)?
         .ok_or_else(|| Error::Other("sync_state missing after ensure".into()))?;
-    let skip = cfg.sync.skip_matcher()?;
+    let rows = sync_log::local_entries_since(conn, row.pushed_seq, MAX_BATCH)?;
+    let Some(high) = rows.last().map(|r| r.seq) else {
+        return Ok(Ok(false));
+    };
     let store = MemoryStore::new(paths.clone());
-    let mut stats = PushStats::default();
-    let mut since = row.pushed_seq;
-    let cap = limit.min(MAX_BATCH * 4);
-
-    loop {
-        let rows = sync_log::local_entries_since(conn, since, MAX_BATCH)?;
-        if rows.is_empty() {
-            break;
-        }
-        let mut batch: Vec<ImportEntry> = Vec::new();
-        let mut repositories = BTreeMap::new();
-        let mut batch_high_seq = since;
-        for log_row in rows {
-            batch_high_seq = log_row.seq;
-            if let Some((entry, repository)) = build_import_entry(
-                &store,
-                conn,
-                &log_row,
-                &skip,
-                &policy,
-                workspace_id,
-                &mut stats,
-            )? {
-                repositories.insert(entry.id.clone(), repository);
-                batch.push(entry);
-            }
-        }
-        since = batch_high_seq;
-        if batch.is_empty() {
-            if stats.pushed == 0 && since >= row.pushed_seq {
-                sync_state::set_pushed(conn, workspace_id, since, &now_iso()?)?;
-            }
-            continue;
-        }
-        let req = ImportRequest {
-            cursor: row.pulled_seq,
-            entries: batch,
-        };
-        let secret = auth.effective_secret();
-        let resp = client::push_import_with(
-            &auth.api_url,
-            &secret,
-            policy.revision(),
-            &req,
-            &repositories,
-            timeout,
-        )?;
-        apply_response(&resp, batch_high_seq, &mut stats)?;
-        sync_state::set_pushed(conn, workspace_id, stats.last_pushed_seq, &now_iso()?)?;
-        if stats.pushed as usize >= cap {
-            break;
+    let mut entries: Vec<ImportEntry> = Vec::new();
+    let mut repositories = BTreeMap::new();
+    for log_row in rows {
+        if let Some((entry, repository)) = build_import_entry(&store, conn, &log_row, wire, stats)?
+        {
+            repositories.insert(entry.id.clone(), repository);
+            entries.push(entry);
         }
     }
-    Ok(stats)
+    if !entries.is_empty() {
+        let body = WireImportRequest {
+            cursor: row.pulled_seq,
+            entries: &entries,
+            repositories: wire.transport.is_managed().then_some(&repositories),
+        };
+        let sent = wire
+            .transport
+            .retrying(|t| t.post::<ImportResponse, _>("/v1/sync/import", &body));
+        match sent {
+            Ok(response) => apply_response(&response, high, stats)?,
+            Err(failure) => return Ok(Err(failure)),
+        }
+    }
+    stats.last_pushed_seq = high;
+    sync_state::set_pushed(conn, workspace_id, high, &now_iso()?)?;
+    Ok(Ok(true))
+}
+
+/// The import body. The managed wire adds the canonical repository each
+/// memory id is bound to; an unmanaged engine's import denies unknown fields,
+/// so it never sees one.
+#[derive(serde::Serialize)]
+struct WireImportRequest<'a> {
+    cursor: i64,
+    entries: &'a [ImportEntry],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repositories: Option<&'a BTreeMap<String, String>>,
 }
 
 fn apply_response(resp: &ImportResponse, batch_high_seq: i64, stats: &mut PushStats) -> Result<()> {
@@ -199,17 +152,15 @@ fn build_import_entry(
     store: &MemoryStore,
     conn: &Connection,
     log_row: &sync_log::SyncLogRow,
-    skip: &SkipMatcher,
-    policy: &RepositoryPolicy,
-    workspace_id: &str,
+    wire: &Wire<'_>,
     stats: &mut PushStats,
 ) -> Result<Option<(ImportEntry, String)>> {
     let label = memory_repository::label(conn, &log_row.memory_id)?.unwrap_or_default();
-    if skip.is_skipped(&label) {
+    if wire.skip.is_skipped(&label) {
         stats.skipped_config += 1;
         return Ok(None);
     }
-    let Some(repository) = policy.memory_repository(&label).map(str::to_owned) else {
+    let Some(repository) = wire.policy.memory_repository(&label).map(str::to_owned) else {
         stats.blocked_repo += 1;
         return Ok(None);
     };
@@ -227,7 +178,7 @@ fn build_import_entry(
             return Ok(None);
         }
     }
-    sync_binding::bind_first(conn, &log_row.memory_id, workspace_id)?;
+    sync_binding::bind_first(conn, &log_row.memory_id, &wire.key.workspace_id)?;
     let record = match log_row.op {
         SyncOp::Tombstone => None,
         SyncOp::Upsert | SyncOp::Restore => enrich_record(store, conn, &log_row.memory_id)?,

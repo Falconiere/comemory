@@ -39,6 +39,9 @@ pub mod daemon;
 pub mod daemon_templates;
 /// Daemon unit lifecycle: write, load, start, stop, status.
 pub mod daemon_unit;
+/// The `replica-v1` exchange client: negotiation, the push/pull drain, holds,
+/// backoff, replay, verification and workspace keying (#255).
+pub mod drain;
 /// The server side of the protocol: wire models plus the changes, manifest,
 /// import and code-import cores `serve` routes call.
 pub mod exchange;

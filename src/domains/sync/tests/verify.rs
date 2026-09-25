@@ -44,7 +44,11 @@ fn matching_empty_manifests_need_no_repair() {
     seed_auth(&paths, &server.base, &secret);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let report = verify::verify_manifests(&paths, &cfg, &mut conn, &auth).expect("verify");
+    let verify::Verified::Legacy(report) =
+        verify::verify(&paths, &cfg, &mut conn, &auth).expect("verify")
+    else {
+        panic!("the platform fixture serves no replica manifest, so the key speaks legacy");
+    };
     assert_eq!(report.differing_buckets, 0);
     assert!(report.bucket_indices.is_empty());
     assert!(!report.repaired);
@@ -71,7 +75,11 @@ fn divergent_manifest_runs_repair_then_matches() {
     seed_auth(&paths, &server.base, &secret);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let report = verify::verify_manifests(&paths, &cfg, &mut conn, &auth).expect("verify");
+    let verify::Verified::Legacy(report) =
+        verify::verify(&paths, &cfg, &mut conn, &auth).expect("verify")
+    else {
+        panic!("the platform fixture serves no replica manifest, so the key speaks legacy");
+    };
     assert!(report.repaired);
     assert_eq!(report.differing_buckets, 0);
 }

@@ -103,6 +103,7 @@ pub fn activate(ctx: &mut Ctx<'_>, request: ActivateRequest) -> Result<Operation
     };
     let operation = with_payload(request.operation, &bytes)?;
     let result = accept::apply_one(ctx, &epoch, &operation)?;
+    accept::refresh_after(ctx, std::slice::from_ref(&result))?;
     // Answered is finished, whatever the answer was. A refusal records a
     // receipt, and a receipt is keyed on the bytes that arrived, so the same
     // operation id can never accept afterwards: resending it with the part

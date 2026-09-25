@@ -523,7 +523,7 @@ fn a_reembed_that_replaces_every_vector_adds_no_feed_position_and_no_outbox_row(
     assert_eq!(after_seed.len(), 2, "two saves, two positions");
     let outbox_before = {
         let conn = connection::open(paths.db_path()).expect("open db");
-        comemory::store::replica_outbox::pending_count(&conn).expect("count")
+        comemory::store::replica_outbox::count(&conn, "pending").expect("count")
     };
 
     // Two different real embedders, so the second run demonstrably REPLACES
@@ -554,7 +554,7 @@ fn a_reembed_that_replaces_every_vector_adds_no_feed_position_and_no_outbox_row(
     );
     let conn = connection::open(paths.db_path()).expect("open db");
     assert_eq!(
-        comemory::store::replica_outbox::pending_count(&conn).expect("count"),
+        comemory::store::replica_outbox::count(&conn, "pending").expect("count"),
         outbox_before,
         "and nothing new is queued for upload"
     );

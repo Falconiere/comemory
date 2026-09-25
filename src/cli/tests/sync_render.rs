@@ -138,3 +138,174 @@ fn the_status_rows_name_the_rows_that_are_never_offered() {
         ]
     );
 }
+
+/// A real data dir with one saved memory under `repo`, and an org credential
+/// for `(api_url, workspace)`.
+fn exchange_home(
+    api_url: &str,
+    secret: &str,
+    repo: &str,
+) -> (tempfile::TempDir, comemory::config::Paths) {
+    use comemory::domains::memories::{Kind, save};
+
+    let home = tempfile::tempdir().unwrap();
+    let paths = comemory::config::Paths::new(home.path().join("data"));
+    paths.ensure_dirs().unwrap();
+    crate::test_common::auth_fixture::seed_org_auth(&paths, api_url, secret, "ws_render");
+    let mut cfg = comemory::config::Config::defaults();
+    cfg.sync.after_save = false;
+    let mut conn = comemory::store::connection::open(paths.db_path()).unwrap();
+    let mut ctx = comemory::utilities::context::Ctx::borrowed(&paths, &cfg, &mut conn);
+    let request = save::Request {
+        body: format!("a decision recorded under {repo} for the exchange report"),
+        title: None,
+        kind: Kind::Decision,
+        repo: repo.to_string(),
+        tags: Vec::new(),
+        author: String::new(),
+        quality: 3,
+        supersedes: Vec::new(),
+        vector: None,
+        ref_file: Vec::new(),
+        ref_symbol: Vec::new(),
+    };
+    save::run(&mut ctx, request, false, None).unwrap();
+    (home, paths)
+}
+
+/// Approve `repos` for the key through the store API a policy load uses.
+fn approve(paths: &comemory::config::Paths, api_url: &str, repos: &[&str]) {
+    use comemory::store::sync_exchange::ExchangeKey;
+    use comemory::store::sync_policy_snapshot::{self, PolicySnapshot};
+
+    let conn = comemory::store::connection::open(paths.db_path()).unwrap();
+    let snapshot = PolicySnapshot {
+        revision: 1,
+        fingerprint: "rev-1".into(),
+        allowlist: repos.iter().map(|r| (*r).to_string()).collect(),
+        mappings: std::collections::BTreeMap::new(),
+        loaded_at: "2026-09-24T10:00:00Z".into(),
+    };
+    sync_policy_snapshot::save(&conn, &ExchangeKey::new(api_url, "ws_render"), &snapshot).unwrap();
+}
+
+/// Every hold reason and every network state reaches both the `--json` block
+/// and the TTY lines, read from a real store: a held save, a held pull
+/// position and a stall, under each network state in turn.
+#[test]
+fn exchange_status_block_reports_every_state() {
+    use comemory::cli::sync_exchange_render::exchange_status_lines;
+    use comemory::domains::sync::drain::status;
+    use comemory::store::replica_outbox::{self, Scope};
+    use comemory::store::replica_outbox_hold::{self, Change, Hold, Target};
+    use comemory::store::replica_pull_hold::{self, PullHold};
+    use comemory::store::sync_exchange::{self, ExchangeKey, ExchangeRow};
+
+    let api_url = "http://127.0.0.1:9/api";
+    let (_home, paths) = exchange_home(api_url, "cmk_render", "acme/private");
+    let auth = comemory::domains::sync::AuthFile::load(&paths)
+        .unwrap()
+        .unwrap();
+    let conn = comemory::store::connection::open(paths.db_path()).unwrap();
+    let key = ExchangeKey::new(api_url, "ws_render");
+    let held = replica_outbox::read(&conn, Scope::All, 1)
+        .unwrap()
+        .remove(0);
+    let change = Change::Hold(Some((Hold::Policy, "acme/private")));
+    replica_outbox_hold::update(&conn, Target::Operation(&held.operation_id), change, "t").unwrap();
+    let pull_hold = PullHold {
+        from_sequence: 5,
+        to_sequence: 5,
+        reason: "secret".into(),
+        entity_kind: Some("memory".into()),
+        entity_key: Some("m5".into()),
+        repository: None,
+        policy_revision: None,
+    };
+    replica_pull_hold::record(&conn, &key, "epoch-a", &pull_hold, "t").unwrap();
+
+    for network in ["ok", "backoff", "auth_suspended", "protocol_error"] {
+        let mut row = ExchangeRow::fresh(&key);
+        row.protocol = Some("replica-v1".into());
+        row.network_state = network.into();
+        row.stall_sequence = Some(9);
+        row.stall_reason = Some("incompatible_version".into());
+        sync_exchange::save(&conn, &row, "t").unwrap();
+
+        let block = status::status(&conn, &auth).unwrap();
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["network"], network);
+        assert_eq!(json["protocol"], "replica-v1");
+        assert_eq!(json["caught_up"], false, "a stalled key is never caught up");
+        for reason in [
+            "policy",
+            "secret",
+            "skip_repos",
+            "workspace",
+            "incompatible",
+            "order",
+            "upgrade",
+        ] {
+            assert!(
+                json["outbox"]["held"][reason].is_number(),
+                "outbox.held.{reason}: {json}"
+            );
+        }
+        for reason in [
+            "policy",
+            "pending_local",
+            "server_withheld",
+            "secret",
+            "id_collision",
+        ] {
+            assert!(
+                json["pull"]["held"][reason].is_number(),
+                "pull.held.{reason}: {json}"
+            );
+        }
+        assert_eq!(json["outbox"]["held"]["policy"], 1);
+        assert_eq!(json["pull"]["held"]["secret"], 1);
+        assert_eq!(json["pull"]["stalled_at"], 9);
+
+        let lines = exchange_status_lines(&block).join("\n");
+        assert!(lines.contains(&format!("network={network}")), "{lines}");
+        assert!(lines.contains("policy=1"), "{lines}");
+        assert!(lines.contains("secret=1"), "{lines}");
+        assert!(
+            lines.contains("stalled before 9: incompatible_version"),
+            "{lines}"
+        );
+    }
+}
+
+/// On a `replica-v1` key the run report's `exchange` leg stands in for the
+/// legacy `push`, `pull` and `code` legs: a real save drained by a real
+/// manual run against a real in-process engine.
+#[test]
+fn exchange_run_leg_replaces_legacy_legs() {
+    use comemory::cli::sync_render::run_json;
+    use comemory::domains::sync::drain::session::Legs;
+    use comemory::domains::sync::drain::test_support::LiveEngine;
+    use comemory::domains::sync::manual;
+
+    let engine = LiveEngine::start();
+    let (_home, paths) = exchange_home(&engine.api_url, &engine.token(), "falconiere/comemory");
+    approve(&paths, &engine.api_url, &["falconiere/comemory"]);
+    let cfg = comemory::config::Config::defaults();
+    let mut session = manual::open_session(&paths, &cfg).unwrap();
+
+    let stats = manual::run(&paths, &cfg, &mut session, None, Legs::Both).unwrap();
+    let report = run_json("ws_render", &stats);
+
+    for leg in ["push", "pull", "code"] {
+        assert!(report[leg].is_null(), "{leg} is replaced: {report}");
+    }
+    assert_eq!(report["exchange"]["protocol"], "replica-v1", "{report}");
+    assert_eq!(report["exchange"]["pushed"], 1, "{report}");
+    assert_eq!(report["exchange"]["end"], "caught_up", "{report}");
+    assert_eq!(report["exchange"]["network"], "ok", "{report}");
+    assert!(
+        report["refresh"].is_object(),
+        "the refresh still precedes the push"
+    );
+}

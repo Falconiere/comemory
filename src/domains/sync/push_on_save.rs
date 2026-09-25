@@ -15,9 +15,12 @@
 //! 2. **It is bounded.** `[sync] push_on_save_timeout` (2s by default) caps the
 //!    HTTP call, because a captive portal answers the connection and then says
 //!    nothing for as long as you let it.
-//! 3. **It loses nothing.** `sync_log` is the outbox and `run_push` drains it
-//!    from a cursor, so a push that never happened costs latency only: the next
+//! 3. **It loses nothing.** The outbox is durable and the drain sends it in
+//!    order, so a push that never happened costs latency only: the next
 //!    `comemory sync`, `comemory watch`, or daemon cycle sends the same entry.
+//! 4. **It never waits for a pass.** It takes the sync pass lock with `try`
+//!    and skips when a pass holds it; the running pass sends the new
+//!    operation on its next push batch.
 //!
 //! It lives in `sync::` but is called from `cli::` — through
 //! [`crate::cli::off_runtime::off_runtime`] — never from a command core. `domains::memories::save`
@@ -27,45 +30,55 @@
 
 use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
-use crate::domains::sync::push;
+use crate::domains::sync::auto::PASS_LOCK;
+use crate::domains::sync::drain::{
+    self,
+    report::Report,
+    session::{Legs, Mode},
+};
 use crate::prelude::*;
 use crate::store::connection;
-
-/// Entries one inline push may send. A single write adds one `sync_log` row;
-/// the rest of the budget drains whatever earlier writes left behind, which is
-/// what makes a machine that has been offline catch up on its next save.
-const INLINE_LIMIT: usize = 100;
+use crate::utilities::file_lock::FileLock;
 
 /// Push the outbox after a local write. Never fails, never panics, never
-/// blocks longer than `[sync] push_on_save_timeout`.
+/// blocks longer than `[sync] push_on_save_timeout` per request.
 pub fn after_write_best_effort(paths: &Paths, cfg: &Config) {
     if !cfg.sync.push_on_save {
         return;
     }
     match try_push(paths, cfg) {
-        Ok(Some(stats)) => tracing::debug!(
-            pushed = stats.pushed,
-            skipped_config = stats.skipped_config,
-            blocked_secrets = stats.blocked_secrets,
+        Ok(Some(report)) => tracing::debug!(
+            pushed = report.pushed,
+            held = report.held,
+            end = ?report.end,
             "inline push after write"
         ),
-        Ok(None) => tracing::debug!("inline push skipped: not logged in"),
+        Ok(None) => tracing::debug!("inline push skipped: not logged in, or a pass is running"),
         // Deliberately not a warning: being offline is an ordinary state for a
         // laptop, and `comemory sync --action status` reports what is pending.
         Err(e) => tracing::debug!(error = %e, "inline push after write failed"),
     }
 }
 
-/// The fallible half. `Ok(None)` means there was no credential to push with.
-fn try_push(paths: &Paths, cfg: &Config) -> Result<Option<push::PushStats>> {
+/// The fallible half. `Ok(None)` means there was no credential, or a pass
+/// holds the sync lock — that pass sends this write on its next push batch.
+fn try_push(paths: &Paths, cfg: &Config) -> Result<Option<Report>> {
     let Some(auth) = AuthFile::load_usable(paths)? else {
+        return Ok(None);
+    };
+    let Some(_pass) = FileLock::try_acquire(&paths.data_dir().join(PASS_LOCK), "sync")? else {
         return Ok(None);
     };
     let timeout = cfg.sync.push_on_save_timeout_duration()?;
     let mut conn = connection::open(paths.db_path())?;
-    let stats =
-        push::run_push_with_timeout(paths, cfg, &mut conn, &auth, None, INLINE_LIMIT, timeout)?;
-    Ok(Some(stats))
+    let drained = drain::drain(
+        paths,
+        cfg,
+        &mut conn,
+        &auth,
+        (Mode::Inline(timeout), Legs::Push),
+    )?;
+    Ok(Some(drained.exchange))
 }
 
 #[cfg(test)]

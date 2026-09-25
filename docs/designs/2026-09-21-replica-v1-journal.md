@@ -284,3 +284,22 @@ request path, not its lifecycle.
 spawned `comemory serve` processes, a real CLI, real HTTP and the real SQLite
 databases on both sides. `bash scripts/test-replication-e2e.sh --case contract`
 runs them; `scripts/replication/coverage.json` maps `F-1`…`F-8` to that case.
+
+## Changed by the exchange client (#255)
+
+[The exchange client](2026-09-24-replica-exchange-client.md) changed four
+behaviors stated above:
+
+- An accepted memory is journalled under the incoming `operation_id` (it was
+  given a fresh one), so a client recognizes its own operation in the feed.
+  New operation ids carry 128 bits of a SHA-256 digest over the entity, the
+  operation, the clock, the process and a counter, `op-<yyyymmdd>-<32hex>`; existing
+  ids stay valid.
+- `changes?kind=` scans `limit` raw positions and returns the matches, with
+  `next_sequence` naming the last position scanned, so a kind-scoped replay
+  advances across pages the filter emptied.
+- `capabilities` lists `<kind>@<version>` for every payload the engine reads,
+  after `replica-v1`, once seeding completes.
+- Seeding journals pre-journal memories without queueing uploads, and the
+  refusal of an import over an owed upload applies only on an engine that is
+  itself a `replica-v1` client of some upstream.

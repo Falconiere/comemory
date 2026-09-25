@@ -22,7 +22,7 @@ fn a_seeded_engine_advertises_the_protocol_and_reports_its_holdings() {
     let report = manifest::run(&mut ctx).expect("manifest");
 
     assert_eq!(report.protocol, PROTOCOL);
-    assert_eq!(report.capabilities, vec![PROTOCOL.to_string()]);
+    assert_eq!(report.capabilities, manifest::advertised());
     assert_eq!(report.bootstrap.state, "complete");
     assert_eq!(report.head_sequence, 1);
     let memories = report
@@ -139,5 +139,23 @@ fn an_import_whose_vector_was_refused_shows_up_in_the_manifest() {
     assert_eq!(
         report.needs_embedding, 1,
         "the memory replicated correctly and still cannot be found semantically"
+    );
+}
+
+#[test]
+fn kind_capabilities_name_every_payload_this_engine_accepts() {
+    let mut home = Home::new();
+    home.save(BODY, &["sync"]);
+    let mut ctx = home.ctx();
+    let report = manifest::run(&mut ctx).expect("manifest");
+    assert_eq!(
+        report.capabilities,
+        vec![
+            "replica-v1".to_string(),
+            "memory@1".to_string(),
+            "code_generation@1".to_string(),
+            "document_revision@1".to_string(),
+        ],
+        "a client pushes only the kinds an upstream names here"
     );
 }

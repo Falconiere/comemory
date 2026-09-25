@@ -3,8 +3,8 @@
 //! answer to polling and to an installed OS unit.
 //!
 //! The socket carries **nudges**. Every frame — `hello` on connect, `change`
-//! after someone writes — triggers the same cursored [`pull::run_pull`] a
-//! manual sync runs. Nothing is read out of a frame but the fact that one
+//! after someone writes — triggers the same drain a manual sync runs, pull
+//! direction only. Nothing is read out of a frame but the fact that one
 //! arrived, so a missed frame costs latency and a duplicate costs one empty
 //! pull.
 
@@ -15,14 +15,16 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::config::{Config, Paths};
-use crate::domains::sync::{client, pull};
+use crate::domains::sync::auto::hold_pass_lock;
+use crate::domains::sync::client;
+use crate::domains::sync::drain::{
+    self,
+    session::{Legs, Mode},
+};
 use crate::prelude::*;
 use crate::store::connection;
 
 use super::AuthFile;
-
-/// Entries one triggered pull may apply.
-pub const PULL_LIMIT: usize = 2000;
 
 /// Reconnect backoff bounds.
 const BACKOFF_MIN: Duration = Duration::from_secs(1);
@@ -40,7 +42,7 @@ pub enum WatchEvent {
 
 /// Runs a blocking platform call with no async runtime in scope.
 ///
-/// [`client::ws_ticket`] and [`pull::run_pull`] are `reqwest::blocking`, which
+/// [`client::ws_ticket`] and the drain are `reqwest::blocking`, which
 /// builds its own runtime and panics on drop when it finds another already in
 /// scope. The adapter that owns the runtime owns the escape hatch, so the
 /// watch service asks its caller for one rather than importing a delivery
@@ -178,11 +180,13 @@ fn is_nudge(text: &str) -> bool {
     )
 }
 
-/// Run the same cursored pull a manual sync would.
+/// Drain the pull direction under the sync pass lock, pass after pass until
+/// one ends without `more` — one nudge covers any backlog.
 fn pull_now(paths: &Paths, cfg: &Config, auth: &AuthFile) -> Result<u32> {
+    let _pass = hold_pass_lock(paths)?;
     let mut conn = connection::open(paths.db_path())?;
-    let stats = pull::run_pull(paths, cfg, &mut conn, auth, PULL_LIMIT)?;
-    Ok(stats.pulled)
+    let drained = drain::drain(paths, cfg, &mut conn, auth, (Mode::Unattended, Legs::Pull))?;
+    Ok(drained.exchange.pulled + drained.legacy.and_then(|l| l.pull).map_or(0, |p| p.pulled))
 }
 
 #[cfg(test)]

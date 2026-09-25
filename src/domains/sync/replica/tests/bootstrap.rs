@@ -43,7 +43,7 @@ fn a_database_that_predates_the_journal_is_seeded_and_then_advertises() {
 
     assert_eq!(
         report.capabilities,
-        vec!["replica-v1".to_string()],
+        manifest::advertised(),
         "a scan that fits in one batch finishes before the manifest answers"
     );
     assert_eq!(report.bootstrap.state, "complete");
@@ -75,7 +75,7 @@ fn a_scan_longer_than_one_batch_hides_the_capability_until_it_finishes() {
 
     let mut ctx = home.ctx();
     let finished = manifest::run(&mut ctx).expect("manifest");
-    assert_eq!(finished.capabilities, vec!["replica-v1".to_string()]);
+    assert_eq!(finished.capabilities, manifest::advertised());
     assert_eq!(finished.bootstrap.seeded, 201);
     assert_eq!(replica_read::head(&home.conn).expect("head"), 201);
 }
@@ -119,4 +119,30 @@ fn a_fresh_database_completes_seeding_with_nothing_to_do() {
     let progress = bootstrap::advance(&mut ctx).expect("advance");
     assert!(progress.complete());
     assert_eq!(replica_read::head(&home.conn).expect("head"), 0);
+}
+
+#[test]
+fn seed_without_enqueue_leaves_the_seeding_engine_owing_nothing() {
+    let mut home = Home::new();
+    home.save(BODY, &["sync"]);
+    home.save(
+        "A second memory, saved before the journal existed.",
+        &["sync"],
+    );
+    forget_the_journal(&home);
+
+    let mut ctx = home.ctx();
+    bootstrap::advance(&mut ctx).expect("seed");
+
+    assert_eq!(
+        replica_read::head(&home.conn).expect("head"),
+        2,
+        "both were journalled"
+    );
+    assert_eq!(
+        crate::store::replica_outbox::count(&home.conn, "pending").expect("owed"),
+        0,
+        "seeding records what this engine already holds; it owes no upload, and an owed \
+         upload would make it refuse every import for those memories"
+    );
 }

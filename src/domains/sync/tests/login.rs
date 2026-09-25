@@ -78,3 +78,66 @@ fn status_reports_logged_out_without_a_credential_or_an_env_override() {
     );
     assert!(login::status(&paths, None).expect("status").is_none());
 }
+
+#[test]
+fn logout_stamps_pending_rows_with_the_outgoing_key() {
+    use comemory::config::Config;
+    use comemory::domains::memories::{Kind, save};
+    use comemory::store::connection;
+    use comemory::store::replica_outbox::{self, Scope};
+    use comemory::utilities::context::Ctx;
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    let api_url = "http://127.0.0.1:9/api";
+    common::auth_fixture::seed_org_auth(&paths, api_url, "cmk_outgoing", "ws_leaving");
+    let mut cfg = Config::defaults();
+    cfg.sync.after_save = false;
+    let mut conn = connection::open(paths.db_path()).expect("db");
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let request = save::Request {
+        body: "made while logged in to the workspace being left".to_string(),
+        title: None,
+        kind: Kind::Note,
+        repo: "falconiere/comemory".into(),
+        tags: Vec::new(),
+        author: String::new(),
+        quality: 3,
+        supersedes: Vec::new(),
+        vector: None,
+        ref_file: Vec::new(),
+        ref_symbol: Vec::new(),
+    };
+    save::run(&mut ctx, request, false, None).expect("save");
+    drop(ctx);
+
+    login::forget(&paths).expect("forget");
+
+    let rows = replica_outbox::read(&conn, Scope::All, usize::MAX).expect("outbox");
+    assert!(!rows.is_empty(), "the save queued an operation");
+    for row in rows {
+        assert_eq!(row.api_url.as_deref(), Some(api_url), "{row:?}");
+        assert_eq!(row.workspace_id.as_deref(), Some("ws_leaving"), "{row:?}");
+    }
+    assert!(
+        AuthFile::load(&paths).expect("load").is_none(),
+        "the credential is gone"
+    );
+}
+
+#[test]
+fn logout_of_a_machine_with_no_store_creates_none() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    common::auth_fixture::seed_org_auth(&paths, "http://127.0.0.1:9/api", "cmk_x", "ws_x");
+
+    login::forget(&paths).expect("forget");
+
+    assert!(
+        !paths.db_path().exists(),
+        "no store was created to stamp nothing"
+    );
+    assert!(AuthFile::load(&paths).expect("load").is_none());
+}

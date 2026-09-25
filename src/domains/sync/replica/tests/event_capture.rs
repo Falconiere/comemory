@@ -169,5 +169,5 @@ fn the_capability_waits_for_the_backfill() {
     let mut ctx = home.ctx();
     let finished = manifest::run(&mut ctx).expect("manifest");
     assert_eq!(finished.bootstrap.state, "complete");
-    assert_eq!(finished.capabilities, vec!["replica-v1".to_string()]);
+    assert_eq!(finished.capabilities, manifest::advertised());
 }

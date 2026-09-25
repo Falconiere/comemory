@@ -20,6 +20,7 @@
 
 use crate::domains::code::replica_payload::{CODE_ENTITY_KIND, CodeGenerationV1};
 use crate::domains::sync::replica::contract::{Disposition, Operation, OperationResult};
+use crate::domains::sync::replica::materialize::Order;
 use crate::prelude::*;
 use crate::store::code_generation::{self, Generation, State};
 use crate::store::replica_journal::{self, NewOperation, PayloadRef, ReplicaOp, ReplicaOrigin};
@@ -43,6 +44,7 @@ pub(crate) fn apply(
     epoch: &str,
     operation: &Operation,
     at: &str,
+    order: Order,
 ) -> Result<OperationResult> {
     let repo = operation.entity_key.clone();
     let payload = decode(operation)?;
@@ -59,7 +61,11 @@ pub(crate) fn apply(
     // an ANSWER, not a failure: the envelope's other operations still apply,
     // and the receipt is what makes the sender's retry read back the same
     // refusal instead of failing identically forever.
-    if let Some(payload) = payload.as_ref()
+    //
+    // A pull follows the order the upstream already chose, so it skips the
+    // check: re-deciding would refuse what the upstream accepted.
+    if order == Order::Decided
+        && let Some(payload) = payload.as_ref()
         && !code_generation::may_activate(&tx, &repo, &row(&repo, payload)?)?
     {
         let result = refuse(&tx, operation, epoch, at)?;
@@ -70,7 +76,7 @@ pub(crate) fn apply(
     // authoritative generation is empty — the repo still exists, it just
     // holds nothing. It never means the sender lost its checkout.
     let sequence = if let Some(payload) = payload.as_ref() {
-        activate_generation(&tx, &repo, payload, at)?;
+        activate_generation(&tx, &repo, payload, at, order)?;
         journal(
             &tx,
             epoch,
@@ -128,10 +134,16 @@ fn activate_generation(
     repo: &str,
     payload: &CodeGenerationV1,
     at: &str,
+    order: Order,
 ) -> Result<()> {
     code_generation::record(tx, &row(repo, payload)?, at)?;
     remote_code::replace_generation(tx, repo, &payload.generation_id, &payload.projection())?;
-    code_generation::activate(tx, repo, &payload.generation_id, at)
+    match order {
+        Order::Decided => code_generation::activate(tx, repo, &payload.generation_id, at),
+        Order::Upstream => {
+            code_generation::activate_following(tx, repo, &payload.generation_id, at)
+        }
+    }
 }
 
 /// Record the refusal of a stale plan, so the sender's retry reads it back.

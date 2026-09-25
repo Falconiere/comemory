@@ -39,7 +39,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "26";
+pub const CURRENT_VERSION: &str = "27";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -156,6 +156,10 @@ pub const M_V25: &str = include_str!("../../migrations/0025_document_revision.sq
 /// v26: shared feedback and activity events (#254) — `replica_device`, the
 /// event identity and origin columns, and `replica_payload.redaction`.
 pub const M_V26: &str = include_str!("../../migrations/0026_replica_events.sql");
+/// 0027 SQL (the `replica-v1` exchange client's per-key state, the rebuilt
+/// `replica_cursor` and the outbox's hold and stamp columns). Public so tests
+/// can replay historical schema states exactly as an old binary created them.
+pub const M_V27: &str = include_str!("../../migrations/0027_replica_exchange.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply

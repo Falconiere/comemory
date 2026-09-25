@@ -9,9 +9,9 @@
 //! failure aborts the mutation rather than leaving a document that exists
 //! locally but owes no upload.
 //!
-//! Nothing is enqueued on `replica_outbox`. The document push is its own
-//! issue, and a queue entry with no consumer would be a claim this code
-//! cannot keep. The feed position is the durable record; a push reads it.
+//! The revision is also queued on `replica_outbox` in the same transaction,
+//! and the exchange client (#255) pushes it; the feed position stays the
+//! durable record of what this machine made.
 //!
 //! Withholding is not an error. A document whose repository is unapproved,
 //! unlabelled or unrooted is indexed and searchable exactly as before and
@@ -267,20 +267,17 @@ fn links_of(extracted: &ExtractedDocument, chunks: &[ChunkWire]) -> Vec<LinkWire
         .collect()
 }
 
-/// Append the feed row for one mutation.
+/// Append the feed row for one mutation and queue the upload it owes, in the
+/// caller's transaction — a revision journalled here but never queued would be
+/// shared by nobody.
 fn journal(tx: &Connection, new: &NewOperation<'_>) -> Result<i64> {
     let epoch = stream_epoch(tx)?;
-    replica_journal::append(tx, &epoch, new)
+    let sequence = replica_journal::append(tx, &epoch, new)?;
+    crate::store::replica_outbox::enqueue(tx, new, None)?;
+    Ok(sequence)
 }
 
-/// Mint `op-<yyyymmdd>-<8hex>` for one document mutation.
-///
-/// The seed carries the shared id and the operation, so two mutations of one
-/// document on a slow clock cannot collide.
+/// Mint the operation id for one document mutation.
 fn operation_id(shared_id: &str, op: ReplicaOp) -> String {
-    crate::utilities::dated_id::dated_id(
-        "op",
-        &format!("{DOCUMENT_ENTITY_KIND}:{shared_id}:{}", op.as_str()),
-        time::OffsetDateTime::now_utc(),
-    )
+    crate::utilities::operation_id::mint(DOCUMENT_ENTITY_KIND, shared_id, op.as_str())
 }

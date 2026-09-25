@@ -9,7 +9,7 @@ use rusqlite::Connection;
 
 use super::{
     M_BOOTSTRAP, M_V2, M_V3, M_V4, M_V5, M_V6, M_V7, M_V8, M_V9, M_V10, M_V11, M_V12, M_V13, M_V14,
-    M_V15, M_V16, M_V17, M_V18, M_V19, M_V20, M_V21, M_V22, M_V23, M_V24, M_V25, M_V26,
+    M_V15, M_V16, M_V17, M_V18, M_V19, M_V20, M_V21, M_V22, M_V23, M_V24, M_V25, M_V26, M_V27,
     backfill_memory_simhash, mint_replica_epoch, rehash_simhashes,
 };
 use crate::prelude::*;
@@ -242,6 +242,16 @@ pub const MIGRATIONS: &[Migration] = &[
         class: Class::Additive,
         post: None,
         markers: &["0026_replica_events"],
+    },
+    Migration {
+        key: "0027_replica_exchange",
+        sql: M_V27,
+        // Rebuilds `replica_cursor` (create-copy-drop-rename) for its new
+        // key; nothing wrote that table before this migration, but the class
+        // follows the shape, not the contents.
+        class: Class::Destructive,
+        post: None,
+        markers: &["0027_replica_exchange"],
     },
 ];
 
