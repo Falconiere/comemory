@@ -8,6 +8,21 @@
 //!
 //! Unit install/start/stop/status live in [`crate::domains::sync::daemon_unit`].
 
+/// Blocking control-socket client.
+pub mod client;
+/// Control protocol frames.
+pub mod control;
+/// `daemon.token` and the two-way proof.
+pub mod handshake;
+/// Canonical data directory, its id, and the running binary.
+pub mod identity;
+/// The owner-local readiness answer.
+pub mod readiness;
+/// `daemon.json`, the live coordinator's discovery record.
+pub mod runtime_record;
+/// Where the control socket lives, and ownership checks.
+pub mod socket_path;
+
 use std::time::{Duration, Instant};
 
 use crate::config::{Config, Paths};

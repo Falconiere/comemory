@@ -12,6 +12,8 @@
 //! Every SQL string stays in the central `store`. Clap flags, prompts, process
 //! launch and every `writeln!` stay in `cli`; HTTP policy stays in `serve`.
 
+/// The durable logout barrier that hides every credential until a login.
+pub mod auth_barrier;
 /// Load/save the org-scoped `auth.json` credential (v2; a v1 file is refused).
 pub mod auth_file;
 /// `comemory sync --action auto`: the coalesced, cwd-free pass hooks fire.

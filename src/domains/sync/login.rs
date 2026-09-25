@@ -7,7 +7,7 @@
 use crate::domains::sync::cloud::{self, StatusReport};
 use crate::domains::sync::drain::adopt::{self, Reach};
 use crate::domains::sync::drain::{keying, network};
-use crate::domains::sync::{auth_file, daemon};
+use crate::domains::sync::{auth_barrier, auth_file, daemon};
 use crate::prelude::*;
 use crate::store::connection;
 use crate::store::sync_exchange::ExchangeKey;
@@ -81,6 +81,10 @@ pub fn establish(
 /// Propagates a broken `auth.json`, an unresolvable API URL and the probe
 /// itself.
 pub fn status(paths: &Paths, api_url_override: Option<&str>) -> Result<Option<StatusReport>> {
+    // After a logout an inherited `COMEMORY_API_KEY` must not read as a login.
+    if auth_barrier::active(paths) {
+        return Ok(None);
+    }
     let file = AuthFile::load(paths)?;
     let secret = match &file {
         Some(creds) => Some(creds.effective_secret()),
