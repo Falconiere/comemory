@@ -102,8 +102,29 @@ fn load_usable_reports_a_v1_credential_as_absent() {
 }
 
 #[test]
+fn pre_org_credential_with_a_v2_stamp_requires_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths::new(dir.path());
+    fs::write(
+        paths.auth_file(),
+        r#"{"version":2,"secret":"cmk_old","api_url":"https://api.comemory.io","workspace_id":"ws-old"}"#,
+    )
+    .unwrap();
+
+    let error = AuthFile::load(&paths).expect_err("pre-org credential needs a new login");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "credentials at {} carry no organization scope — run `comemory auth login`",
+            paths.auth_file().display()
+        )
+    );
+    assert!(AuthFile::load_usable(&paths).unwrap().is_none());
+}
+
+#[test]
 fn load_usable_still_propagates_a_genuinely_broken_file() {
-    // Only the version gate is softened. Corrupt JSON is still an error, or a
+    // Only known stale credential shapes are softened. Corrupt JSON is still an error, or a
     // silent no-sync would look identical to "not logged in".
     let dir = tempfile::tempdir().unwrap();
     let paths = Paths::new(dir.path());

@@ -25,7 +25,7 @@ mapping; ambiguous, unsupported and unlabelled entries remain local.
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `auto.rs` | `run_auto` / `run_pass` | `comemory sync --action auto`, the pass git hooks and the agent `SessionStart` hook fire from any cwd: index the triggering checkout, refresh every stale hooked repo, then (logged in) drain the key through `drain::drain` until a pass ends without `more`, and — on a legacy key of a managed origin — push moved code. Serialized on `sync.lock`; extra triggers coalesce through the one-slot `sync-auto.queue` |
-| `auth_file.rs` | `AuthFile` | Load/save `$COMEMORY_DATA_DIR/auth.json` v2 (0600 on unix); reject a v1 file. `load_usable` is the read-only probe `setup` detection uses — it never mints, dials, or starts anything |
+| `auth_file.rs` | `AuthFile` | Load/save `$COMEMORY_DATA_DIR/auth.json` v2 (0600 on unix); require a new login for v1 files and v2-stamped files lacking organization identity. `load_usable` reports those stale credentials as absent to `setup` without hiding corrupt JSON; it never mints, dials, or starts anything |
 | `cloud.rs` + [`cloud/`](cloud/README.md) | `login` | API base URL resolution and the RFC 8628 device flow that mints the org key |
 | `login.rs` | `establish` | The three `comemory auth` sequences — login, status probe, logout — with the progress writer injected and no rendering. A logout (`forget`) or a login that changes the key stamps every still-owed change with the key being left |
 
