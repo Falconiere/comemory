@@ -41,6 +41,8 @@ pub mod distill;
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
 pub mod edges;
+/// `comemory erase`: permanently erase one memory or document.
+pub mod erase;
 /// `comemory eval`: score retrieval against a golden set.
 pub mod eval;
 /// `comemory export-dataset`: the reviewed relevance dataset export.
@@ -251,6 +253,10 @@ pub enum Cmd {
     /// retention.
     #[command(after_help = gc::EXAMPLES)]
     Gc,
+    /// Permanently erase one memory or document from every table, journal
+    /// copy and the markdown tree, keeping only the digests that refuse its
+    /// bytes afterwards.
+    Erase(erase::Args),
     /// Install git hooks that index and sync the repo on `post-commit`,
     /// `post-merge`, `post-checkout` and `post-rewrite`.
     InstallHooks(install_hooks::Args),
@@ -352,6 +358,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::RecallStatus(a) => recall_status::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
+        Cmd::Erase(a) => erase::run(a, cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Install(a) => install::run(a, cli.json, cli.data_dir),
         Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,

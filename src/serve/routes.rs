@@ -138,6 +138,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(memories::edit::table_entries());
     entries.extend_from_slice(maint::doctor::table_entries());
     entries.extend_from_slice(maint::gc::table_entries());
+    entries.extend_from_slice(maint::erase::table_entries());
     entries.extend_from_slice(config::table_entries());
     entries.extend_from_slice(graph_nodes::table_entries());
     entries.extend_from_slice(index_runs::table_entries());

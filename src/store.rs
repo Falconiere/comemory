@@ -84,6 +84,9 @@ mod edges_neighbors;
 pub mod edges_retrieval;
 /// f32 ↔ `vec0` BLOB encoding plus the per-table dim guards.
 pub mod embed;
+/// The rows a permanent erase removes, plus `secure_delete`, FTS5
+/// `optimize` and the truncating WAL checkpoint that make it stick (#256).
+pub mod erase_rows;
 /// `eval_runs` row insert + newest-first read — one row per `comemory
 /// eval`/`tune`/`bandit` run.
 pub mod eval_runs;

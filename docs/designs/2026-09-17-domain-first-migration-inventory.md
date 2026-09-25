@@ -419,6 +419,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/distill.rs | comemory::cli::distill; preserve | none | none | delivery::cli | src/cli/distill.rs | retain |
 | src/cli/doctor.rs | comemory::cli::doctor; preserve | none | none | delivery::cli | src/cli/doctor.rs | retain |
 | src/cli/edges.rs | comemory::cli::edges; preserve | none | none | delivery::cli | src/cli/edges.rs | retain |
+| src/cli/erase.rs | comemory::cli::erase; preserve | none | none | delivery::cli | src/cli/erase.rs | retain |
 | src/cli/eval.rs | comemory::cli::eval; preserve | none | none | delivery::cli | src/cli/eval.rs | retain |
 | src/cli/export_dataset.rs | comemory::cli::export_dataset; preserve | none | none | delivery::cli | src/cli/export_dataset.rs | retain |
 | src/cli/feedback.rs | comemory::cli::feedback; preserve | none | none | delivery::cli | src/cli/feedback.rs | retain |
@@ -542,7 +543,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/documents/document/fingerprint.rs | comemory::domains::documents::document::fingerprint; crate-root-alias | src/domains/documents/document/tests/fingerprint.rs | none | domains::documents | src/domains/documents/document/fingerprint.rs | retain |
 | src/domains/documents/document/html.rs | comemory::domains::documents::document::html; crate-root-alias | src/domains/documents/document/tests/html.rs | none | domains::documents | src/domains/documents/document/html.rs | retain |
 | src/domains/documents/document/writer.rs | comemory::domains::documents::document::writer; crate-root-alias | src/domains/documents/document/tests/writer.rs | none | domains::documents | src/domains/documents/document/writer.rs | retain |
-| src/domains/documents/journal.rs | private | none | none | domains::documents | src/domains/documents/journal.rs | retain |
+| src/domains/documents/journal.rs | private | src/domains/documents/tests/journal.rs | none | domains::documents | src/domains/documents/journal.rs | retain |
 | src/domains/documents/index.rs | comemory::domains::documents::index; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/documents/tests/index.rs | none | domains::documents | src/domains/documents/index.rs | retain |
 | src/domains/documents/replica_payload.rs | comemory::domains::documents::replica_payload; preserve | src/domains/documents/tests/replica_payload.rs | none | domains::documents | src/domains/documents/replica_payload.rs | retain |
 | src/domains/documents/share.rs | comemory::domains::documents::share; preserve | src/domains/documents/tests/share.rs | none | domains::documents | src/domains/documents/share.rs | retain |
@@ -640,6 +641,9 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/maintenance/doctor/checks.rs | comemory::domains::maintenance::doctor::checks; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::maintenance | src/domains/maintenance/doctor/checks.rs | retain |
 | src/domains/maintenance/doctor/checks_vector.rs | comemory::domains::maintenance::doctor::checks_vector; preserve | none | none | domains::maintenance | src/domains/maintenance/doctor/checks_vector.rs | retain |
 | src/domains/maintenance/doctor/system.rs | comemory::domains::maintenance::doctor::system; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/maintenance/tests/doctor_system.rs | none | domains::maintenance | src/domains/maintenance/doctor/system.rs | retain |
+| src/domains/maintenance/erase.rs | comemory::domains::maintenance::erase; preserve | src/domains/maintenance/tests/erase.rs; src/domains/maintenance/erase_memory.rs; src/domains/maintenance/erase_document.rs | none | domains::maintenance | src/domains/maintenance/erase.rs | retain |
+| src/domains/maintenance/erase_document.rs | private | none | none | domains::maintenance | src/domains/maintenance/erase_document.rs | retain |
+| src/domains/maintenance/erase_memory.rs | private | none | none | domains::maintenance | src/domains/maintenance/erase_memory.rs | retain |
 | src/domains/maintenance/gc.rs | comemory::domains::maintenance::gc; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/maintenance/tests/gc.rs | none | domains::maintenance | src/domains/maintenance/gc.rs | retain |
 | src/domains/maintenance/gc_policy.rs | comemory::domains::maintenance::gc_policy; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/maintenance/tests/gc_policy.rs | none | domains::maintenance | src/domains/maintenance/gc_policy.rs | retain |
 | src/domains/maintenance/overview.rs | comemory::domains::maintenance::overview; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/maintenance/tests/overview.rs | none | domains::maintenance | src/domains/maintenance/overview.rs | retain |
@@ -862,6 +866,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/routes/maint.rs | comemory::serve::routes::maint; preserve | src/serve/routes/tests/consolidate.rs | none | delivery::serve | src/serve/routes/maint.rs | retain |
 | src/serve/routes/maint/admin.rs | comemory::serve::routes::maint::admin; preserve | none | none | delivery::serve | src/serve/routes/maint/admin.rs | retain |
 | src/serve/routes/maint/doctor.rs | comemory::serve::routes::maint::doctor; preserve | src/serve/routes/tests/maint_doctor.rs | none | delivery::serve | src/serve/routes/maint/doctor.rs | retain |
+| src/serve/routes/maint/erase.rs | comemory::serve::routes::maint::erase; preserve | none | none | delivery::serve | src/serve/routes/maint/erase.rs | retain |
 | src/serve/routes/maint/gc.rs | comemory::serve::routes::maint::gc; preserve | src/serve/routes/tests/maint_gc.rs | none | delivery::serve | src/serve/routes/maint/gc.rs | retain |
 | src/serve/routes/maint/prune.rs | comemory::serve::routes::maint::prune; preserve | src/serve/routes/tests/prune_ids.rs | none | delivery::serve | src/serve/routes/maint/prune.rs | retain |
 | src/serve/routes/memories.rs | comemory::serve::routes::memories; preserve | none | none | delivery::serve | src/serve/routes/memories.rs | retain |
@@ -910,6 +915,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/edges_neighbors.rs | private | none | none | infrastructure::store | src/store/edges_neighbors.rs | retain |
 | src/store/edges_retrieval.rs | comemory::store::edges_retrieval; preserve | src/store/tests/edges_retrieval.rs | none | infrastructure::store | src/store/edges_retrieval.rs | retain |
 | src/store/embed.rs | comemory::store::embed; preserve | src/store/tests/embed.rs | none | infrastructure::store | src/store/embed.rs | retain |
+| src/store/erase_rows.rs | comemory::store::erase_rows; preserve | src/store/tests/erase_rows.rs | none | infrastructure::store | src/store/erase_rows.rs | retain |
 | src/store/eval_runs.rs | comemory::store::eval_runs; preserve | src/store/tests/eval_runs.rs | none | infrastructure::store | src/store/eval_runs.rs | retain |
 | src/store/feedback.rs | comemory::store::feedback; preserve | src/store/tests/feedback.rs | none | infrastructure::store | src/store/feedback.rs | retain |
 | src/store/feedback_share.rs | comemory::store::feedback_share; preserve | src/store/tests/feedback_share.rs | none | infrastructure::store | src/store/feedback_share.rs | retain |

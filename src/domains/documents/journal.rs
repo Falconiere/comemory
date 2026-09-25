@@ -17,6 +17,11 @@
 //! unlabelled or unrooted is indexed and searchable exactly as before and
 //! simply never leaves the machine, so every refusal below returns
 //! `Ok(None)` rather than aborting the index.
+//!
+//! The erased-digest barrier (#256, B-5) is one such refusal: a revision
+//! whose payload digest a permanent erase blanked — an unchanged re-index of
+//! an erased document — is indexed locally, its share recorded blocked
+//! [`ERASED`], and nothing journalled. An edit is new bytes and shares.
 
 use std::path::Path;
 
@@ -32,7 +37,11 @@ use crate::store::document_share::{self, Share};
 use crate::store::replica_journal::{
     self, NewOperation, PayloadRef, ReplicaOp, ReplicaOrigin, stream_epoch,
 };
-use crate::store::{repo_marker, repository_approval};
+use crate::store::replica_read::Redaction;
+use crate::store::{replica_redaction, repo_marker, repository_approval};
+
+/// The `document_share.blocked_reason` of a revision whose bytes were erased.
+pub(crate) const ERASED: &str = "erased";
 
 /// One indexed document's offer to the feed — the writer's transaction hands
 /// this over without the capture having to know anything else about it.
@@ -70,10 +79,11 @@ pub(crate) fn record_revision(tx: &Connection, new: &IndexedRevision<'_>) -> Res
         return Ok(None);
     };
     let revision = revision_of(&name, new);
-    if !claim_name(tx, new.document_id, &name, &revision, new.at) {
+    let (bytes, digest) = revision.canonical()?;
+    let erased = replica_redaction::redaction_of(tx, &digest)? == Some(Redaction::Erased);
+    if !claim_name(tx, new.document_id, &name, &revision, erased, new.at) {
         return Ok(None);
     }
-    let (bytes, digest) = revision.canonical()?;
     let sequence = journal(
         tx,
         &NewOperation {
@@ -99,15 +109,21 @@ pub(crate) fn record_revision(tx: &Connection, new: &IndexedRevision<'_>) -> Res
 /// A name another local document already holds is refused, not merged
 /// (`document_share::record`). The refusal leaves both documents indexed and
 /// neither shared, which is the only safe answer: sharing one of them under a
-/// name the other also computes would overwrite it on every peer.
+/// name the other also computes would overwrite it on every peer. `erased`
+/// blocks it as [`ERASED`] ahead of the secret scan.
 fn claim_name(
     tx: &Connection,
     document_id: &str,
     name: &SharedName,
     revision: &DocumentRevisionV1,
+    erased: bool,
     at: &str,
 ) -> bool {
-    let blocked_reason = share::blocked_reason(revision);
+    let blocked_reason = if erased {
+        Some(ERASED.to_string())
+    } else {
+        share::blocked_reason(revision)
+    };
     let share = Share {
         document_id: document_id.to_string(),
         repo: name.repo.clone(),
@@ -120,7 +136,7 @@ fn claim_name(
         return false;
     }
     if let Some(rule) = &share.blocked_reason {
-        tracing::warn!(document_id, path = %name.path, rule, "document withheld by the secret scan");
+        tracing::warn!(document_id, path = %name.path, rule, "document withheld from sharing");
         return false;
     }
     true
@@ -281,3 +297,7 @@ fn journal(tx: &Connection, new: &NewOperation<'_>) -> Result<i64> {
 fn operation_id(shared_id: &str, op: ReplicaOp) -> String {
     crate::utilities::operation_id::mint(DOCUMENT_ENTITY_KIND, shared_id, op.as_str())
 }
+
+#[cfg(test)]
+#[path = "tests/journal.rs"]
+mod tests;

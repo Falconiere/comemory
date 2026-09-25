@@ -1,17 +1,15 @@
-//! Redaction of shared events' journal copies (#254): retention **expires**
-//! them, a memory purge **erases** them.
+//! Redaction of journal copies: retention **expires** shared events (#254);
+//! a memory purge **erases** the verdicts on it; a permanent erase (#256)
+//! erases an entity's own payloads and the shared runs naming it.
 //!
-//! Both blank `replica_payload.bytes` and keep the row, so the digest — and
-//! with it the feed position, the revision and every receipt — survives as
-//! the metadata a retry or a repair is deduplicated by. What differs is the
-//! answer a later offer of the same event reads: `payload_expired` or
-//! `payload_erased` ([`Redaction`]).
+//! Every arm blanks `replica_payload.bytes` and keeps the row: the digest,
+//! feed position, revision and receipts survive as the barrier a later offer
+//! reads — `payload_expired` or `payload_erased` ([`Redaction`]).
 //!
-//! Hand SQL: both statements select their digests through `IN` subqueries
-//! across the feed, the revisions and the two event tables, which the
-//! declared builders do not express; tracked in `docs/guides/runtime-orm.md`.
+//! Hand SQL: `IN` subqueries across the feed, revisions, outbox and event
+//! tables; tracked in `docs/guides/runtime-orm.md`.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params_from_iter};
 
 use super::replica_read::Redaction;
 use crate::prelude::*;
@@ -33,6 +31,14 @@ pub enum Reach<'a> {
     /// expired one is upgraded — the purge is the stronger claim a replay must
     /// read.
     VerdictsOn(&'a str),
+    /// Permanent erase of one entity `(kind, key)`: every payload its own feed
+    /// rows, its revision and its outbox rows name. Erased, upgrading expiry.
+    Entity(&'a str, &'a str),
+    /// Permanent erase of a memory id: every shared run whose `activity_log`
+    /// summary names it (`$.id`), and every held run payload whose summary
+    /// does — a run evicted locally still has its journal copy. Erased,
+    /// upgrading expiry.
+    RunsNaming(&'a str),
 }
 
 /// The digests [`Reach::PastRetention`] selects: `?3` the cutoff, `?4` and `?5`
@@ -57,12 +63,49 @@ const VERDICTS_ON: &str = "
                SELECT event_id FROM feedback_events
                 WHERE memory_id = ?3 AND target_kind = ?5 AND event_id IS NOT NULL)";
 
+/// The digests [`Reach::Entity`] selects: `?3` the kind, `?4` the key.
+const ENTITY: &str = "
+        SELECT payload_digest FROM replica_feed
+         WHERE entity_kind = ?3 AND entity_key = ?4 AND payload_digest IS NOT NULL
+        UNION
+        SELECT payload_digest FROM replica_revision
+         WHERE entity_kind = ?3 AND entity_key = ?4 AND payload_digest IS NOT NULL
+        UNION
+        SELECT payload_digest FROM replica_operation
+         WHERE entity_kind = ?3 AND entity_key = ?4 AND payload_digest IS NOT NULL";
+
+/// The digests [`Reach::RunsNaming`] selects: `?3` the memory id, `?4` the
+/// activity kind. Each `json_extract` sits behind a `json_valid` in a `CASE`,
+/// the one form SQLite guarantees to short-circuit, so a malformed summary is
+/// skipped rather than failing the statement.
+const RUNS_NAMING: &str = "
+        SELECT payload_digest FROM replica_revision
+         WHERE entity_kind = ?4 AND payload_digest IS NOT NULL AND entity_key IN (
+               SELECT event_id FROM activity_log
+                WHERE event_id IS NOT NULL
+                  AND CASE WHEN json_valid(summary)
+                           THEN json_extract(summary, '$.id') = ?3 ELSE 0 END)
+        UNION
+        SELECT digest FROM replica_payload
+         WHERE entity_kind = ?4 AND bytes IS NOT NULL
+           AND CASE WHEN json_valid(bytes)
+                    THEN json_extract(bytes, '$.summary.id') = ?3 ELSE 0 END";
+
+/// The guard every erasing arm shares: a copy not yet redacted, or one only
+/// expired — an erasure is the stronger claim a replay must read.
+fn erasable() -> String {
+    format!(
+        "redacted_at IS NULL OR redaction = '{}'",
+        Redaction::Expired.as_str()
+    )
+}
+
 /// A digest a pending outbox operation still owes upstream is exempt from
 /// retention: blanking it here would push a `NULL` payload the next time
-/// that operation sends. Erase (`VerdictsOn`) carries no such exemption — it
-/// withdraws the pending operation itself before reaching redaction (#256,
-/// B-5), so nothing pending ever names an erased digest by the time this
-/// runs.
+/// that operation sends. The erasing arms carry no such exemption: a
+/// permanent erase withdraws the entity's pending upserts and restores
+/// itself before reaching redaction (#256, B-5), and the only pending
+/// operation it leaves — the tombstone — names no payload.
 const NOT_OWED: &str = "digest NOT IN (\
      SELECT payload_digest FROM replica_operation \
       WHERE state = 'pending' AND payload_digest IS NOT NULL)";
@@ -75,21 +118,25 @@ const NOT_OWED: &str = "digest NOT IN (\
 /// # Errors
 /// Propagates SQLite failures.
 pub fn redact(conn: &Connection, reach: Reach<'_>, at: &str) -> Result<Vec<String>> {
-    let (redaction, guard, selected, keys) = match reach {
+    let (redaction, guard, selected, keys): (_, _, _, Vec<&str>) = match reach {
         Reach::PastRetention(cutoff) => (
             Redaction::Expired,
             format!("redacted_at IS NULL AND {NOT_OWED}"),
             PAST_RETENTION,
-            [cutoff, FEEDBACK_EVENT, ACTIVITY_EVENT],
+            vec![cutoff, FEEDBACK_EVENT, ACTIVITY_EVENT],
         ),
         Reach::VerdictsOn(memory_id) => (
             Redaction::Erased,
-            format!(
-                "redacted_at IS NULL OR redaction = '{}'",
-                Redaction::Expired.as_str()
-            ),
+            erasable(),
             VERDICTS_ON,
-            [memory_id, FEEDBACK_EVENT, target::MEMORY],
+            vec![memory_id, FEEDBACK_EVENT, target::MEMORY],
+        ),
+        Reach::Entity(kind, key) => (Redaction::Erased, erasable(), ENTITY, vec![kind, key]),
+        Reach::RunsNaming(memory_id) => (
+            Redaction::Erased,
+            erasable(),
+            RUNS_NAMING,
+            vec![memory_id, ACTIVITY_EVENT],
         ),
     };
     let mut statement = conn.prepare(&format!(
@@ -98,11 +145,9 @@ pub fn redact(conn: &Connection, reach: Reach<'_>, at: &str) -> Result<Vec<Strin
           WHERE ({guard}) AND digest IN ({selected})
           RETURNING digest"
     ))?;
+    let bound = [at, redaction.as_str()].into_iter().chain(keys);
     let digests = statement
-        .query_map(
-            params![at, redaction.as_str(), keys[0], keys[1], keys[2]],
-            |r| r.get(0),
-        )?
+        .query_map(params_from_iter(bound), |r| r.get(0))?
         .collect::<rusqlite::Result<Vec<String>>>()?;
     Ok(digests)
 }

@@ -17,6 +17,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `doctor.rs` | `table_entries` | `GET /doctor/system` (facts, never runs the embed command), `POST /doctor/rebuild` (alias of the rebuild job), job-backed `POST /doctor/reembed` |
 | `gc.rs` | `table_entries` | `GET\|PUT /gc/policy` and the confirm-gated, job-backed `POST /gc/run` |
+| `erase.rs` | `table_entries` | `POST /erase` — permanently erase one memory or document (`maintenance::erase`): read-only gate, write permit, then `"confirm": true` through `split_confirm`; `404 not_found` for an entity never held |
 | `admin.rs` | `table_entries` | `POST /mine`, `POST /hooks/install`, and the job-backed `POST /rebuild` with its shared-connection swap |
 | `prune.rs` | `table_entries` | `GET\|POST /prune` and `POST /gc`, plus `split_confirm` — the raw-body confirm-field extractor every confirm-gated route with a real `Request` type reuses; also mounts `GET /prune/candidates` (an alias onto the same handler) and owns `split_dry_run`, the HTTP-only `dry_run` inverse of `apply` on `POST /prune` |
 

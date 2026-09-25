@@ -68,6 +68,7 @@ Commands:
   rebuild         Drop `comemory.db` and repopulate it from the markdown source of truth
   recall-status   Report tracked recalls awaiting a verdict, verdicts and saves since a bound
   gc              Purge old `memories/.trash/` entries and learning telemetry past retention
+  erase           Permanently erase one memory or document from every table, journal copy and the markdown tree, keeping only the digests that refuse its bytes afterwards
   install-hooks   Install git hooks that index and sync the repo on `post-commit`, `post-merge`, `post-checkout` and `post-rewrite`
   install         Install bundled skills and hooks for Claude Code or Codex
   upgrade         Move this binary to the newest release (or a pinned one)
@@ -1669,6 +1670,31 @@ Examples:
 
   # JSON output for CI/automation
   comemory gc --json
+```
+
+---
+
+## comemory erase
+
+```
+Permanently erase one memory or document from every table, journal copy and the markdown tree, keeping only the digests that refuse its bytes afterwards
+
+Usage: comemory erase [OPTIONS] <--memory <ID>|--document <SHARED_ID>>
+
+Options:
+      --json                  Emit machine-readable JSON instead of a human TTY view
+      --memory <ID>           Memory id to erase
+      --data-dir <DATA_DIR>   Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --document <SHARED_ID>  Shared id of a document to erase — one this engine shares, or a pulled copy
+      --confirm               Confirm the erase. It cannot be undone; without this flag nothing is erased
+  -h, --help                  Print help
+
+Examples:
+  # Permanently erase one memory, everywhere this engine holds its text
+  comemory erase --memory a1b2c3d4 --confirm
+
+  # Erase a document (local or pulled) by its shared id, as JSON
+  comemory erase --document 0f3c9a1e5b7d4c2a8e6f1b3d5a7c9e0f --confirm --json
 ```
 
 ---

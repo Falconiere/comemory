@@ -115,6 +115,19 @@ pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
         // Dropping `tx` without a commit rolls it back: nothing was written.
         return Ok(false);
     }
+    let at = super::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
+    purge_rows(&tx, id, &at)?;
+    tx.commit()?;
+    Ok(true)
+}
+
+/// Every row keyed by memory `id` besides its `memories` row, in the
+/// caller's transaction: tags, FTS, vector, code refs, feedback counters and
+/// verdicts, edges; candidate passages redacted and the journal copies of the
+/// verdicts on it erased. Shared by [`purge_memory`] and a permanent erase
+/// (`super::erase_rows`), so the two cannot disagree on what a memory owns.
+/// Returns the verdict digests erased.
+pub(crate) fn purge_rows(tx: &Connection, id: &str, at: &str) -> Result<Vec<String>> {
     // Explicit cleanup also works when a caller disabled foreign-key cascades.
     for query in [
         MemoryTags::delete().filter(memory_tags::memory_id.eq(id)),
@@ -123,29 +136,28 @@ pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
         CodeRef::delete().filter(code_ref::memory_id.eq(id)),
         Feedback::delete().filter(feedback::memory_id.eq(id)),
     ] {
-        orm::execute(&tx, query.to_sql())?;
+        orm::execute(tx, query.to_sql())?;
     }
-    edges::delete_touching(&tx, "memory", id)?;
+    edges::delete_touching(tx, "memory", id)?;
     // Redaction, not deletion — see the module doc. In the same transaction,
     // so a purge can never leave the body behind on a partial failure.
-    super::candidate_observations::redact_memory(&tx, id)?;
+    super::candidate_observations::redact_memory(tx, id)?;
     // A shared verdict on this memory leaves a journal copy that a replay
     // would otherwise restore (#254): erase those copies before the rows that
     // name their event ids are gone.
-    let at = super::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
-    super::replica_redaction::redact(&tx, super::replica_redaction::Reach::VerdictsOn(id), &at)?;
+    let digests =
+        super::replica_redaction::redact(tx, super::replica_redaction::Reach::VerdictsOn(id), at)?;
     // `feedback_events.memory_id` also carries text-encoded code-symbol
     // rowids under `target_kind = 'code'`; an 8-digit rowid is a valid
     // memory-id shape, so the kind filter is what keeps code telemetry out.
     orm::execute(
-        &tx,
+        tx,
         FeedbackEvents::delete()
             .filter(feedback_events::memory_id.eq(id))
             .filter(feedback_events::target_kind.eq(crate::utilities::telemetry::target::MEMORY))
             .to_sql(),
     )?;
-    tx.commit()?;
-    Ok(true)
+    Ok(digests)
 }
 
 /// Ids of the soft-deleted memories whose `deleted_at` is older than

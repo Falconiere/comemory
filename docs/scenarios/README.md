@@ -112,6 +112,7 @@ Each journey has an HTTP twin over a real `comemory serve`, sharing
 | `rebuild` | [rebuild.md](rebuild.md) |
 | `recall-status` | [recall-status.md](recall-status.md) |
 | `gc` | [gc.md](gc.md) |
+| `erase` | [erase.md](erase.md) |
 | `serve` | [serve.md](serve.md) |
 | `mcp` | [mcp.md](mcp.md) |
 | `completions` | [completions.md](completions.md) |

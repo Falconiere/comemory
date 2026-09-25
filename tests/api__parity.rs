@@ -130,6 +130,12 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     // `comemory completions --install` mutates per-user shell files and has
     // no HTTP counterpart; the API only emits one requested script.
     ("completions", "install"),
+    // `comemory erase --confirm` is the CLI spelling of the confirm gate
+    // `POST /api/v1/erase` reads as the HTTP-only `"confirm": true` body
+    // field, which `split_confirm` strips before `maintenance::erase::Request`
+    // is deserialized — the same transport-level gate every confirm-gated
+    // route keeps out of its core's `Request`.
+    ("erase", "confirm"),
 ];
 
 /// Whether `(command, arg_id)` is a documented exclusion (see
@@ -185,6 +191,7 @@ probe_fn!(probe_consolidate, maintenance::consolidate::Request);
 probe_fn!(probe_context, retrieval::context::Request);
 probe_fn!(probe_doctor, maintenance::doctor::Request);
 probe_fn!(probe_edges, comemory::domains::graph::edges::Request);
+probe_fn!(probe_erase, maintenance::erase::Request);
 probe_fn!(probe_eval, comemory::domains::learning::eval::Request);
 probe_fn!(
     probe_feedback,
@@ -242,6 +249,7 @@ const PROBES: &[(&str, ProbeFn)] = &[
     ("context", probe_context),
     ("doctor", probe_doctor),
     ("edges", probe_edges),
+    ("erase", probe_erase),
     ("eval", probe_eval),
     ("feedback", probe_feedback),
     ("gc", probe_gc),
