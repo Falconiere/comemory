@@ -28,7 +28,7 @@ jobs:
   # skipped there. The thin `test` job below still reports the required
   # check name green; a skipped job alone would leave the PR merge-blocked.
   test-suite:
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-plz-')
+    if: github.event_name != 'pull_request' || (github.head_ref != '' && !startsWith(github.head_ref, 'release-plz-'))
     runs-on: ubuntu-22.04
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
@@ -198,10 +198,12 @@ jobs:
 
   # Required-check facade. Branch protection requires the check name `test`.
   # When `test-suite` is skipped (release-plz PR) or succeeds, this job is
-  # green; when the suite fails or is cancelled mid-run, this job fails too.
+  # green; when the suite fails or is cancelled, this job fails too.
+  # `always()` (not `!cancelled()`): a cancelled suite must still turn the
+  # required `test` check red rather than leaving it missing.
   test:
     needs: test-suite
-    if: always() && !cancelled()
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Propagate suite result
