@@ -612,6 +612,11 @@ isolates them; a name filter does).
 
 ## Quality Gates
 
+CI runs these gates on ready-for-review PRs targeting `main` (and on later
+commits to those PRs). Draft PRs wait for `ready_for_review`. Pushes to `main`
+and release tags do not rerun the quality suite; release tags still perform
+release-specific preflight and artifact checks.
+
 `bash scripts/check-all.sh` is the umbrella gate. It runs, in order:
 
 ```
@@ -769,7 +774,7 @@ consolidation — recorded here so nobody assumes guardrails absorbed it:
 | `npm`/`bun`/`pip`/`uv` blocked (Rust project) | Nothing. Convention only. |
 | `rm -rf`, `git reset --hard`, `git checkout .`, `chmod -R 777` blocked | The harness's own confirmation on destructive commands. |
 | `git push --force` blocked | Nothing — and note the old rule also caught `--force-with-lease`, the *safe* variant, so a rebased branch had no sanctioned way to publish. |
-| `--no-verify` / `--no-gpg-sign` blocked | `lefthook.yml` still runs on commit/push, and CI re-runs `scripts/check-all.sh` regardless — a local bypass cannot land. |
+| `--no-verify` / `--no-gpg-sign` blocked | `lefthook.yml` still runs on commit/push, and CI runs `scripts/check-all.sh` on ready PRs targeting `main` — a local bypass cannot land. |
 | Direct `rustfmt` / `cargo clippy` blocked outside `scripts/` | Nothing. `scripts/fmt-check.sh` and `scripts/lint-check.sh` remain the canonical invocations. |
 | `protected-files.sh` (build artifacts, `scripts/guardrails/**`) | Convention only — `scripts/guardrails/` is still copied verbatim from the kit and must not be hand-edited; `guardrails.config.json` and `scripts/guardrails/patterns/rust/` remain the sanctioned knobs. |
 | `auto-format.sh` re-ran `rustfmt` on touched files | Deliberately gone. It invoked `rustfmt` without the project's edition, so it reordered imports into a form `scripts/fmt-check.sh` then rejected — it manufactured the drift it existed to prevent. |
@@ -778,7 +783,7 @@ consolidation — recorded here so nobody assumes guardrails absorbed it:
 
 The load-bearing gates were never in this layer: `lefthook.yml` runs `fmt`,
 `guardrails` and `typos` pre-commit and `check_all` pre-push, and CI runs
-`scripts/check-all.sh` on every PR. Those are unchanged.
+`scripts/check-all.sh` on ready PRs targeting `main`.
 
 User-facing docs live under `docs/`, organized in Diátaxis tiers and indexed by
 `docs/README.md`: the `docs/getting-started.md` tutorial, the task-oriented

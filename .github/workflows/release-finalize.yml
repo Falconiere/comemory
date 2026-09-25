@@ -63,11 +63,11 @@ permissions:
 
 concurrency:
   # Under workflow_call `github.ref_name` is the CALLER's ref. release.yml
-  # triggers only on `pull_request` and on a version tag push (no
+  # triggers only on ready `pull_request` to main and on a version tag push (no
   # workflow_dispatch), and on a pull_request `pr-run-mode = "plan"` stops
   # before `announce`, so the only run that reaches this workflow is a tag
   # push — where ref_name IS the tag. A branch ref therefore cannot produce two
-  # tags sharing one group. If release.yml ever gains a branch trigger, this
+  # tags sharing one group. If release.yml ever gains a branch push trigger, this
   # needs the tag threaded through as a `with:` input instead, because
   # concurrency is evaluated before any step can resolve it.
   group: release-finalize-${{ inputs.tag || github.ref_name }}

@@ -22,12 +22,14 @@ name: release-image
 # catches the failure this workflow could actually introduce; re-running unit
 # tests would not.
 #
-# PRs touching the image inputs build without pushing (catches Dockerfile rot);
+# Ready PRs to main touching the image inputs build without pushing (catches Dockerfile rot);
 # workflow_dispatch does the same on demand.
 on:
   push:
     tags: ['v*']
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, ready_for_review, reopened]
     paths:
       - Dockerfile
       - .dockerignore
@@ -58,6 +60,7 @@ jobs:
   # One leg per arch, compiled natively, pushed by digest only — tags are
   # applied by `manifest` once both legs exist.
   build:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     strategy:
       fail-fast: true
       matrix:
