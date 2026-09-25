@@ -30,6 +30,7 @@
         "ast",
         "cloud",
         "consolidation",
+        "daemon",
         "doctor",
         "document",
         "drain",
@@ -122,7 +123,8 @@
       "domains/maintenance",
       "mcp",
       "domains/architecture",
-      "domains/sync/drain"
+      "domains/sync/drain",
+      "domains/sync/daemon"
     ]
   },
   "fileSize": {

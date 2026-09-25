@@ -149,7 +149,7 @@ fn is_pending(migration: &list::Migration, applied: &BTreeSet<String>) -> bool {
 }
 
 /// True when `schema_meta` exists as a table.
-fn schema_meta_exists(conn: &Connection) -> Result<bool> {
+pub(crate) fn schema_meta_exists(conn: &Connection) -> Result<bool> {
     table_exists(conn, "schema_meta")
 }
 
