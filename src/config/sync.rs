@@ -357,6 +357,14 @@ pub fn apply_embed_model(conn: &Connection, embed: &EmbedConfig) -> Result<()> {
     crate::store::schema_meta::set_memory_vector_model(conn, &embed.model)
 }
 
+/// Whether `COMEMORY_SYNC_DAEMON=0` tells this process to leave the user's
+/// sync daemon alone — neither install, start nor stop it. Tests and CI set
+/// it so a login or logout never touches the host's own daemon.
+#[must_use]
+pub fn daemon_disabled() -> bool {
+    std::env::var_os("COMEMORY_SYNC_DAEMON").is_some_and(|v| v == "0")
+}
+
 #[cfg(test)]
 #[path = "tests/sync.rs"]
 mod tests;

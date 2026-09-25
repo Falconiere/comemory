@@ -91,8 +91,10 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
     // engine nobody is a client of (the hub) journals its own console and HTTP
     // writes too, and refusing on them would freeze every client edit of the
     // same entity.
-    if sync_exchange::has_replica_upstream(conn)?
-        && replica_outbox::has_pending_for(conn, &operation.entity_kind, &operation.entity_key)?
+    // The per-entity check first: the upstream lookup then runs only for the
+    // rare operation that has an upload owed.
+    if replica_outbox::has_pending_for(conn, &operation.entity_kind, &operation.entity_key)?
+        && sync_exchange::has_replica_upstream(conn)?
     {
         return Ok(Disposition::RejectedStale);
     }

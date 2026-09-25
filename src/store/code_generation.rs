@@ -144,7 +144,7 @@ pub fn activate(tx: &Connection, repo: &str, generation_id: &str, at: &str) -> R
 /// # Errors
 /// [`Error::NotFound`] when the generation was never recorded; propagates
 /// SQLite failures.
-pub fn activate_following(
+pub(crate) fn activate_following(
     tx: &Connection,
     repo: &str,
     generation_id: &str,
