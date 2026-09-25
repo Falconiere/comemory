@@ -67,7 +67,7 @@ fn dirs_home() -> Result<PathBuf> {
 }
 
 /// Run a supervisor CLI and warn on spawn/non-zero exit (best-effort path).
-fn run_supervisor(program: &str, args: &[&str]) {
+pub(crate) fn run_supervisor(program: &str, args: &[&str]) {
     match Command::new(program).args(args).status() {
         Ok(status) if status.success() => {}
         Ok(status) => tracing::warn!(
@@ -97,7 +97,10 @@ pub fn install(paths: &Paths) -> Result<PathBuf> {
         if let Some(parent) = plist.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&plist, render_launch_agent_plist(&exe, data_dir))?;
+        fs::write(
+            &plist,
+            render_launch_agent_plist(DAEMON_LABEL, &exe, data_dir),
+        )?;
         Ok(plist)
     }
     #[cfg(target_os = "linux")]
@@ -289,7 +292,7 @@ fn systemd_running() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn users_uid() -> Result<u32> {
+pub(crate) fn users_uid() -> Result<u32> {
     let out = Command::new("id")
         .arg("-u")
         .output()

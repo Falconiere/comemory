@@ -62,7 +62,7 @@ pub async fn tick(paths: Paths, state: Arc<State>, queue: Arc<Queue>, reload: Ar
         match worker::load_config(&paths).and_then(|c| c.sync.daemon_interval_duration()) {
             Ok(configured) => interval = configured.max(MIN_INTERVAL),
             Err(e) => {
-                tracing::warn!(error = %e, "sync daemon kept its interval: config unreadable")
+                tracing::warn!(error = %e, "sync daemon kept its interval: config unreadable");
             }
         }
         state.set_interval(interval.as_secs());

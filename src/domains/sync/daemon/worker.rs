@@ -178,7 +178,7 @@ fn run(paths: &Paths, checkouts: &[PathBuf], summary: &mut PassSummary) -> Resul
         match hooked_refresh::resolve_checkout(path) {
             Some(checkout) => resolved.push(checkout),
             None => {
-                refresh.record_failure(&path.display().to_string(), "not inside a git work tree")
+                refresh.record_failure(&path.display().to_string(), "not inside a git work tree");
             }
         }
     }

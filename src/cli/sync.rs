@@ -1,24 +1,23 @@
 //! `comemory sync` — push/pull against the platform. CLI-only.
 //!
-//! Nested `daemon {install,uninstall,start,stop,status,run}` owns continuous
-//! auto-sync. Flat `--action` still drives a one-shot manual sync. `run` and
-//! `push` push the code index after the memories (`domains::sync::code`); rendering
+//! Nested `daemon {ensure,status,restart,repair,stop,uninstall,run}`
+//! ([`crate::cli::sync_daemon`]) owns the required resident coordinator.
+//! Flat `--action` still drives a one-shot manual sync. `run` and `push`
+//! push the code index after the memories (`domains::sync::code`); rendering
 //! lives in `cli::sync_render`. `--action auto` (what git and agent hooks fire)
 //! is dispatched to `cli::sync_auto` before any login is required.
 
-use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
-use crate::cli::output::json;
 use crate::cli::sync_auto;
-use crate::cli::sync_render::{emit_daemon_status, emit_run, emit_status, emit_verify};
+use crate::cli::sync_daemon::{self, DaemonCmd};
+use crate::cli::sync_render::{emit_run, emit_status, emit_verify};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::sync::auto::hold_pass_lock;
-use crate::domains::sync::daemon;
 use crate::domains::sync::drain::session::Legs;
 use crate::domains::sync::manual;
 use crate::domains::sync::verify;
@@ -33,8 +32,9 @@ Examples:
   comemory sync --allow-secret deadbeef
   comemory sync --action auto --path /path/to/repo
   comemory sync daemon status
-  comemory sync daemon install
-  comemory sync daemon start
+  comemory sync daemon ensure
+  comemory sync daemon restart
+  comemory sync daemon repair
   comemory sync daemon stop
   comemory sync daemon uninstall
   comemory sync daemon run";
@@ -73,26 +73,9 @@ pub enum SyncCmd {
 /// `comemory sync daemon` args.
 #[derive(ClapArgs, Debug)]
 pub struct DaemonArgs {
-    /// install / uninstall / start / stop / status / run.
+    /// ensure / status / restart / repair / stop / uninstall / run.
     #[command(subcommand)]
     pub cmd: DaemonCmd,
-}
-
-/// Nested daemon actions.
-#[derive(Subcommand, Debug)]
-pub enum DaemonCmd {
-    /// Write the LaunchAgent / systemd user unit.
-    Install,
-    /// Remove the unit and stop it.
-    Uninstall,
-    /// Start (or kickstart) the installed unit.
-    Start,
-    /// Stop the daemon; leave the unit installed.
-    Stop,
-    /// Report installed / running.
-    Status,
-    /// Foreground loop (what the supervisor runs).
-    Run,
 }
 
 /// Arguments to `comemory sync`.
@@ -119,11 +102,7 @@ pub struct Args {
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     if let Some(SyncCmd::Daemon(d)) = a.cmd {
-        if matches!(d.cmd, DaemonCmd::Run) {
-            // Foreground: the supervisor's entry; it returns once stopped.
-            return daemon::run_foreground(&paths).await;
-        }
-        return run_daemon(&paths, d.cmd, json_flag);
+        return sync_daemon::run(&paths, d.cmd, json_flag).await;
     }
     if a.path.is_some() && !matches!(a.action, SyncAction::Auto) {
         return Err(Error::Usage(
@@ -131,57 +110,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         ));
     }
     run_sync(&paths, &a, json_flag)
-}
-
-fn run_daemon(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
-    match cmd {
-        DaemonCmd::Install => {
-            let path = daemon::install(paths)?;
-            if json_flag {
-                return json::write(&serde_json::json!({
-                    "installed": true,
-                    "unit_path": path.display().to_string(),
-                }));
-            }
-            let mut out = std::io::stdout().lock();
-            writeln!(out, "installed {}", path.display())?;
-            Ok(())
-        }
-        DaemonCmd::Uninstall => {
-            daemon::uninstall()?;
-            if json_flag {
-                return json::write(&serde_json::json!({ "uninstalled": true }));
-            }
-            let mut out = std::io::stdout().lock();
-            writeln!(out, "uninstalled sync daemon")?;
-            Ok(())
-        }
-        DaemonCmd::Start => {
-            daemon::start()?;
-            if json_flag {
-                return json::write(&serde_json::json!({ "started": true }));
-            }
-            let mut out = std::io::stdout().lock();
-            writeln!(out, "started sync daemon")?;
-            Ok(())
-        }
-        DaemonCmd::Stop => {
-            daemon::stop();
-            if json_flag {
-                return json::write(&serde_json::json!({ "stopped": true }));
-            }
-            let mut out = std::io::stdout().lock();
-            writeln!(out, "stopped sync daemon")?;
-            Ok(())
-        }
-        DaemonCmd::Status => {
-            let st = daemon::status()?;
-            emit_daemon_status(json_flag, &st)
-        }
-        DaemonCmd::Run => Err(Error::Other(
-            "`sync daemon run` is dispatched before this match".into(),
-        )),
-    }
 }
 
 /// Run one `--action`. `auto` needs no credential, so it runs before any

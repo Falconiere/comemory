@@ -87,19 +87,24 @@ pub fn nonce() -> Result<String> {
     random_hex(16)
 }
 
-/// What the server sends over the client's nonce.
-#[must_use]
-pub fn server_proof(token: &str, client_nonce: &str) -> String {
-    proof("comemory-daemon-server", client_nonce, token)
+/// Which side of the handshake a proof is for — each hashes a different
+/// label into the digest, so a server's answer can never be replayed as a
+/// client's request or vice versa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// The server's proof, sent over the client's nonce.
+    Server,
+    /// The client's proof, sent over the server's nonce.
+    Client,
 }
 
-/// What the client sends over the server's nonce.
+/// `side`'s proof over `nonce`, bound to `token`.
 #[must_use]
-pub fn client_proof(token: &str, server_nonce: &str) -> String {
-    proof("comemory-daemon-client", server_nonce, token)
-}
-
-fn proof(label: &str, nonce: &str, token: &str) -> String {
+pub fn proof(side: Side, nonce: &str, token: &str) -> String {
+    let label = match side {
+        Side::Server => "comemory-daemon-server",
+        Side::Client => "comemory-daemon-client",
+    };
     sha256_hex(format!("{label}\0{nonce}\0{token}").as_bytes())
 }
 

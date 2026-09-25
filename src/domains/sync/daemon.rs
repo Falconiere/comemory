@@ -12,6 +12,8 @@ pub mod client;
 pub mod control;
 /// The foreground coordinator: lock, bind, tasks, signals.
 pub mod coordinator;
+/// `ensure`/`restart`/`repair`/preflight over one data directory.
+pub mod ensure;
 /// `daemon.token` and the two-way proof.
 pub mod handshake;
 /// Canonical data directory, its id, and the running binary.
@@ -24,8 +26,14 @@ pub mod runtime_record;
 pub mod server;
 /// Where the control socket lives, and ownership checks.
 pub mod socket_path;
+/// `Kind::Process` supervision: this build starts its own detached child.
+pub mod spawn;
 /// Shared coordinator state and events.
 pub mod state;
+/// `comemory sync daemon status`'s live probe report.
+pub mod status_view;
+/// Which OS supervisor keeps a data directory's coordinator running.
+pub mod supervisor;
 /// Socket binding, the reconciliation ticker and the guard.
 pub mod watchdog;
 /// The coalescing pass worker.

@@ -44,15 +44,14 @@ pub async fn run(paths: &Paths) -> Result<()> {
     std::fs::create_dir_all(paths.data_dir())?;
     let canonical = identity::canonical_data_dir(paths)?;
     let paths = Paths::new(&canonical);
-    let _lock =
-        FileLock::try_acquire(&canonical.join(DAEMON_LOCK), "daemon")?.ok_or_else(|| {
-            let owner = runtime_record::read(&paths)
-                .map_or_else(String::new, |r| format!(" (pid {})", r.pid));
-            Error::Conflict(format!(
-                "the sync daemon is already running for {}{owner}",
-                canonical.display()
-            ))
-        })?;
+    let lock = FileLock::try_acquire(&canonical.join(DAEMON_LOCK), "daemon")?.ok_or_else(|| {
+        let owner =
+            runtime_record::read(&paths).map_or_else(String::new, |r| format!(" (pid {})", r.pid));
+        Error::Conflict(format!(
+            "the sync daemon is already running for {}{owner}",
+            canonical.display()
+        ))
+    })?;
     let socket = socket_path::plan(&canonical)?;
     let listener = watchdog::bind(&socket)?;
     let state = State::new(initial_readiness(&paths, &canonical, &socket)?);
@@ -69,12 +68,21 @@ pub async fn run(paths: &Paths) -> Result<()> {
         &tasks.gen_tx,
     )
     .await?;
-    shutdown(&paths, &socket, &me, &state, tasks).await
+    shutdown(&state, tasks).await;
+    // Release `daemon.lock` before the socket and record disappear: a
+    // replacement spawned the instant this instance looks stopped must
+    // never race this instance for the lock (D2/D13).
+    drop(lock);
+    watchdog::unbind(&socket, &me.instance, &paths);
+    runtime_record::remove_if_ours(&paths, &me.instance)?;
+    tracing::info!("sync daemon stopped");
+    Ok(())
 }
 
 /// Every background handle a running coordinator holds.
 struct Tasks {
     worker: std::thread::JoinHandle<()>,
+    queue: Arc<Queue>,
     shutdown: Arc<Notify>,
     reload: Arc<Notify>,
     gen_tx: generation::Sender<u64>,
@@ -118,24 +126,21 @@ fn spawn_tasks(
     ));
     Ok(Tasks {
         worker,
+        queue,
         shutdown,
         reload,
         gen_tx,
     })
 }
 
-/// Stop taking new work, let the running pass reach its boundary, then clean
-/// up what this instance owns.
-async fn shutdown(
-    paths: &Paths,
-    socket: &Path,
-    me: &Readiness,
-    state: &State,
-    tasks: Tasks,
-) -> Result<()> {
+/// Stop taking new work and wait for the running pass to reach its
+/// boundary. The caller releases `daemon.lock` and cleans up the socket and
+/// record afterward, in that order (D2/D13).
+async fn shutdown(state: &State, tasks: Tasks) {
     tracing::info!("sync daemon stopping");
     state.set_stopping();
     stop::request_shutdown();
+    tasks.queue.stop();
     let _ = tasks.gen_tx.send(channel::STOP);
     let deadline = Instant::now() + STOP_GRACE;
     while !tasks.worker.is_finished() && Instant::now() < deadline {
@@ -145,10 +150,6 @@ async fn shutdown(
         worker_finished = tasks.worker.is_finished(),
         "sync daemon stop grace elapsed"
     );
-    watchdog::unbind(socket, &me.instance, paths);
-    runtime_record::remove_if_ours(paths, &me.instance)?;
-    tracing::info!("sync daemon stopped");
-    Ok(())
 }
 
 /// Serve reloads until a stop arrives.

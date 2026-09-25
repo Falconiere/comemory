@@ -110,6 +110,8 @@ pub mod stats;
 pub mod sync;
 /// `comemory sync --action auto`: the hook-fired pass and its `--json`.
 pub mod sync_auto;
+/// `comemory sync daemon`: the required resident coordinator's lifecycle.
+pub mod sync_daemon;
 /// Rendering of the `exchange` state for `comemory sync`.
 pub mod sync_exchange_render;
 /// Rendering for `comemory sync` (TTY + `--json` shapes).

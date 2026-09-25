@@ -98,7 +98,13 @@ impl DaemonHome {
 
     /// The CLI with this home's environment.
     pub fn command(&self) -> Command {
-        let mut cmd = Command::new(cargo_bin("comemory"));
+        self.command_with_binary(&cargo_bin("comemory"))
+    }
+
+    /// Like [`Self::command`], running `bin` instead of the binary under
+    /// test — a copy at another path, to prove identity-based replacement.
+    pub fn command_with_binary(&self, bin: &Path) -> Command {
+        let mut cmd = Command::new(bin);
         cmd.env("COMEMORY_DATA_DIR", &self.data)
             .env("HOME", self.home_dir())
             .env("TMPDIR", self.root.path().join("t"))
@@ -116,7 +122,16 @@ impl DaemonHome {
 
     /// Run `comemory <args>`: `(exit code, stdout, stderr)`.
     pub fn run(&self, args: &[&str]) -> (i32, String, String) {
-        let out = self.command().args(args).output().expect("run comemory");
+        self.run_with_env(args, &[])
+    }
+
+    /// Like [`Self::run`], with extra environment variables set.
+    pub fn run_with_env(&self, args: &[&str], env: &[(&str, &str)]) -> (i32, String, String) {
+        let mut cmd = self.command();
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let out = cmd.args(args).output().expect("run comemory");
         (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -126,17 +141,31 @@ impl DaemonHome {
 
     /// Run `comemory --json <args>`, asserting success, and parse stdout.
     pub fn json(&self, args: &[&str]) -> Value {
+        self.json_with_env(args, &[])
+    }
+
+    /// Like [`Self::json`], with extra environment variables set. A command
+    /// this asserts success on may legitimately exit nonzero (`ensure` when
+    /// it cannot reach readiness); callers that expect that parse `run`'s
+    /// stdout themselves instead.
+    pub fn json_with_env(&self, args: &[&str], env: &[(&str, &str)]) -> Value {
         let mut full = vec!["--json"];
         full.extend_from_slice(args);
-        let (code, stdout, stderr) = self.run(&full);
+        let (code, stdout, stderr) = self.run_with_env(&full, env);
         assert_eq!(code, 0, "comemory {args:?} failed: {stderr}\n{stdout}");
         serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("{e}: {stdout}"))
     }
 
     /// A foreground `comemory sync daemon run`, stderr to `<root>/fg-<n>.log`.
     pub fn spawn_foreground(&self, env: &[(&str, &str)]) -> Foreground {
+        self.spawn_foreground_with_binary(&cargo_bin("comemory"), env)
+    }
+
+    /// Like [`Self::spawn_foreground`], running `bin` instead of the binary
+    /// under test.
+    pub fn spawn_foreground_with_binary(&self, bin: &Path, env: &[(&str, &str)]) -> Foreground {
         let log = self.root.path().join(format!("fg-{}.log", rand_suffix()));
-        let mut cmd = self.command();
+        let mut cmd = self.command_with_binary(bin);
         cmd.env_remove("COMEMORY_DAEMON_SUPERVISOR");
         for (k, v) in env {
             cmd.env(k, v);

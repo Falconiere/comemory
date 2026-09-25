@@ -216,3 +216,159 @@ fn sigterm_exits_zero_and_removes_the_socket_and_record() {
     );
     assert!(matches!(home.probe(), Probe::NotRunning(_)));
 }
+
+// ---------------------------------------------------------------------------
+// `ensure`: idempotent, race-safe, and replaces a coordinator from another
+// binary while preflight keeps it (AC-2, D13).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ensure_is_idempotent() {
+    let home = DaemonHome::new();
+    let first = home.json(&["sync", "daemon", "ensure"]);
+    assert_eq!(first["ready"], true, "{first}");
+    assert_eq!(first["action"], "started", "{first}");
+    let instance = first["daemon"]["instance"].as_str().unwrap().to_string();
+
+    let second = home.json(&["sync", "daemon", "ensure"]);
+    assert_eq!(second["action"], "none", "{second}");
+    assert_eq!(
+        second["daemon"]["instance"], instance,
+        "the same instance keeps answering"
+    );
+    assert_eq!(home.coordinator_pids().len(), 1);
+}
+
+#[test]
+fn eight_concurrent_ensures_agree_on_one_instance_and_one_process() {
+    let home = std::sync::Arc::new(DaemonHome::new());
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let home = std::sync::Arc::clone(&home);
+            std::thread::spawn(move || home.json(&["sync", "daemon", "ensure"]))
+        })
+        .collect();
+    let outcomes: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    for outcome in &outcomes {
+        assert_eq!(outcome["ready"], true, "{outcome}");
+    }
+    let instances: std::collections::BTreeSet<_> = outcomes
+        .iter()
+        .map(|o| o["daemon"]["instance"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        instances.len(),
+        1,
+        "every ensure agrees on one instance: {outcomes:?}"
+    );
+    assert_eq!(home.coordinator_pids().len(), 1);
+}
+
+/// A real second copy of the binary under test, so a coordinator started
+/// from it has a different `binary` path (and, once the copy is edited,
+/// possibly a different reported version — the path alone is enough to
+/// prove D13's identity check).
+fn copied_binary(root: &std::path::Path) -> std::path::PathBuf {
+    let original = assert_cmd::cargo::cargo_bin("comemory");
+    let copy = root.join("comemory-copy");
+    std::fs::copy(&original, &copy).expect("copy binary");
+    let mut perms = std::fs::metadata(&copy).expect("meta").permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    std::fs::set_permissions(&copy, perms).expect("chmod +x");
+    // The coordinator canonicalizes its own path (resolving /tmp -> /private/tmp
+    // on macOS); compare against the same canonical form.
+    std::fs::canonicalize(&copy).expect("canonicalize copy")
+}
+
+#[test]
+fn ensure_replaces_a_coordinator_started_from_a_copied_binary() {
+    let home = DaemonHome::new();
+    let copy = copied_binary(home.root());
+    let mut from_copy = home.spawn_foreground_with_binary(&copy, &[]);
+    let original = home.wait_for(READY, |r| r.binary == copy);
+    assert_eq!(original.binary, copy);
+
+    let replaced = home.json(&["sync", "daemon", "ensure"]);
+    assert_eq!(replaced["ready"], true, "{replaced}");
+    assert_eq!(replaced["action"], "replaced", "{replaced}");
+    let bin = assert_cmd::cargo::cargo_bin("comemory");
+    let canonical_bin = std::fs::canonicalize(&bin).unwrap();
+    assert_eq!(
+        replaced["daemon"]["binary"],
+        canonical_bin.display().to_string()
+    );
+    assert_ne!(replaced["daemon"]["instance"], original.instance.as_str());
+    assert!(
+        from_copy.wait_exit(READY).is_some(),
+        "the copy's coordinator is gone"
+    );
+}
+
+#[test]
+fn preflight_keeps_a_coordinator_from_a_copied_binary_whose_file_still_exists() {
+    let home = DaemonHome::new();
+    let copy = copied_binary(home.root());
+    let _from_copy = home.spawn_foreground_with_binary(&copy, &[]);
+    let original = home.wait_for(READY, |r| r.binary == copy);
+
+    // An ordinary command (list) only preflights; it must not replace a
+    // healthy coordinator merely because its binary differs from this one.
+    let _ = home.json(&["list"]);
+    let after = home.wait_ready(Duration::from_secs(2));
+    assert_eq!(
+        after.instance, original.instance,
+        "preflight kept the copy's coordinator"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Supervisor fallback and status states (AC-11).
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+#[test]
+fn a_read_only_launchagents_directory_falls_back_to_process_supervision() {
+    let home = DaemonHome::new();
+    let agents = home.home_dir().join("Library/LaunchAgents");
+    std::fs::create_dir_all(&agents).unwrap();
+    let mut perms = std::fs::metadata(&agents).unwrap().permissions();
+    perms.set_mode(0o500);
+    std::fs::set_permissions(&agents, perms).unwrap();
+
+    let result = home.json_with_env(
+        &["sync", "daemon", "ensure"],
+        &[("COMEMORY_DAEMON_SUPERVISOR", "launchd")],
+    );
+    assert_eq!(result["ready"], true, "{result}");
+    assert_eq!(result["supervisor"], "process", "{result}");
+    assert!(
+        !result["notes"].as_array().unwrap().is_empty(),
+        "a note names the fallback: {result}"
+    );
+
+    let mut writable = std::fs::metadata(&agents).unwrap().permissions();
+    writable.set_mode(0o700);
+    std::fs::set_permissions(&agents, writable).unwrap();
+}
+
+#[test]
+fn status_reports_not_running_disabled_and_stale() {
+    let home = DaemonHome::new();
+    let not_running = home.json(&["sync", "daemon", "status"]);
+    assert_eq!(not_running["state"], "not_running", "{not_running}");
+
+    let disabled = home.json_with_env(
+        &["sync", "daemon", "status"],
+        &[("COMEMORY_SYNC_DAEMON", "0")],
+    );
+    assert_eq!(disabled["state"], "disabled", "{disabled}");
+
+    // A token on disk (as a prior coordinator would leave) plus a listener
+    // that never answers: the client's handshake times out, which is
+    // `stale`, not `not_running`.
+    comemory::domains::sync::daemon::handshake::load_or_create(&home.paths()).unwrap();
+    let _listener =
+        std::os::unix::net::UnixListener::bind(home.canonical().join("daemon.sock")).unwrap();
+    let stale = home.json(&["sync", "daemon", "status"]);
+    assert_eq!(stale["state"], "stale", "{stale}");
+}

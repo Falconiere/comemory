@@ -16,8 +16,11 @@ use comemory::domains::sync::daemon::{
 
 #[test]
 fn launch_agent_plist_names_label_and_run_args() {
-    let body =
-        render_launch_agent_plist(Path::new("/usr/local/bin/comemory"), Path::new("/tmp/cm"));
+    let body = render_launch_agent_plist(
+        DAEMON_LABEL,
+        Path::new("/usr/local/bin/comemory"),
+        Path::new("/tmp/cm"),
+    );
     assert!(body.contains(DAEMON_LABEL));
     assert!(body.contains("/usr/local/bin/comemory"));
     assert!(body.contains("<string>sync</string>"));
@@ -34,7 +37,9 @@ fn systemd_unit_names_service_and_exec() {
         Path::new("/usr/bin/comemory"),
         Path::new("/home/u/.comemory"),
     );
-    assert!(body.contains("ExecStart=/usr/bin/comemory sync daemon run"));
+    assert!(
+        body.contains("ExecStart=/usr/bin/comemory --data-dir /home/u/.comemory sync daemon run")
+    );
     assert!(body.contains("COMEMORY_DATA_DIR=/home/u/.comemory"));
     assert!(body.contains("WantedBy=default.target"));
     assert_eq!(SYSTEMD_UNIT, "comemory-sync.service");
