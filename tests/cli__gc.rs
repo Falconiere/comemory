@@ -256,6 +256,10 @@ fn gc_tty_summary_reports_all_three_counts() {
         stdout.contains("1 feedback event"),
         "TTY summary must report evicted feedback events: {stdout:?}"
     );
+    assert!(
+        stdout.contains("0 abandoned staged rows"),
+        "TTY summary must report the staged sweep: {stdout:?}"
+    );
 }
 
 #[test]

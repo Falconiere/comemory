@@ -191,3 +191,43 @@ fn exchange_state_survives_the_preservation_copy() {
         Some("falconiere/comemory")
     );
 }
+
+#[test]
+fn every_gc_runs_column_survives_the_preservation_copy() {
+    let old_dir = TempDir::new().expect("old tempdir");
+    let old_path = old_dir.path().join("comemory.db");
+    {
+        let old = connection::open(&old_path).expect("old db");
+        comemory::store::gc_runs::insert(
+            &old,
+            &comemory::store::gc_runs::NewGcRun {
+                id: "0123456789abcdef",
+                at: "2026-09-25T10:00:00Z",
+                removed: 1,
+                log_rows: 2,
+                event_rows: 3,
+                bytes_freed: 4,
+                activity_rows: 5,
+                staged_rows: 6,
+            },
+        )
+        .expect("insert run");
+    }
+
+    let new_dir = TempDir::new().expect("new tempdir");
+    let mut conn = connection::open(new_dir.path().join("comemory.db")).expect("new db");
+    copy_preserved_tables_from_old(&mut conn, &old_path).expect("copy");
+
+    let copied: (i64, i64) = conn
+        .query_row(
+            "SELECT activity_rows, staged_rows FROM gc_runs WHERE id = '0123456789abcdef'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("copied run");
+    assert_eq!(
+        copied,
+        (5, 6),
+        "a rebuild keeps every counter a sweep recorded"
+    );
+}

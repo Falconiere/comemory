@@ -30,6 +30,8 @@ pub struct NewGcRun<'a> {
     pub bytes_freed: u64,
     /// `activity_log` rows evicted.
     pub activity_rows: u64,
+    /// Abandoned staged parts and staged generations swept.
+    pub staged_rows: u64,
 }
 
 /// Insert one `gc_runs` row for a completed sweep. A single `INSERT` with no
@@ -45,6 +47,7 @@ pub fn insert(conn: &Connection, run: &NewGcRun<'_>) -> Result<()> {
             .set(&col::event_rows, clamp(run.event_rows))
             .set(&col::bytes_freed, clamp(run.bytes_freed))
             .set(&col::activity_rows, clamp(run.activity_rows))
+            .set(&col::staged_rows, clamp(run.staged_rows))
             .to_sql(),
     )?;
     Ok(())
@@ -73,6 +76,8 @@ pub struct GcRunRow {
     pub event_rows: u64,
     /// Bytes reclaimed from the trash directory.
     pub bytes_freed: u64,
+    /// Abandoned staged parts and staged generations that run swept.
+    pub staged_rows: u64,
 }
 
 /// The most recent `gc_runs` row, or `None` when `gc` has never run.
@@ -95,6 +100,7 @@ pub fn newest(conn: &Connection) -> Result<Option<GcRunRow>> {
                 &col::log_rows,
                 &col::event_rows,
                 &col::bytes_freed,
+                &col::staged_rows,
             ])
             .order_by(col::at.desc())
             .order_by(toolu_orm::core::expr::OrderBy::alias_desc("rowid"))
@@ -108,6 +114,7 @@ pub fn newest(conn: &Connection) -> Result<Option<GcRunRow>> {
                 log_rows: to_count(r.get(3)?),
                 event_rows: to_count(r.get(4)?),
                 bytes_freed: to_count(r.get(5)?),
+                staged_rows: to_count(r.get(6)?),
             })
         },
     )

@@ -168,6 +168,12 @@
       "name": "0028_historical_document_revision.sql",
       "hash": "sha256:8685a58f30c6ed9969b7d0390684031f1ffec4f78fec08832f0d4a85aa0bc2a5",
       "created_at": 1790347956
+    },
+    {
+      "idx": 28,
+      "name": "0029_replica_recovery.sql",
+      "hash": "sha256:d8f58dd8b998272a37b648de971be17fa6a43c237ec75c9673360cc59b8ae970",
+      "created_at": 1790352191
     }
   ]
 }

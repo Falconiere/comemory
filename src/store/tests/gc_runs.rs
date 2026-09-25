@@ -24,6 +24,7 @@ fn insert_writes_a_readable_row() {
             event_rows: 12,
             bytes_freed: 4096,
             activity_rows: 0,
+            staged_rows: 0,
         },
     )
     .expect("insert gc_runs row");
@@ -67,6 +68,7 @@ fn newest_returns_the_most_recent_row() {
             event_rows: 17,
             bytes_freed: 2048,
             activity_rows: 0,
+            staged_rows: 3,
         },
     )
     .expect("insert newer");
@@ -80,6 +82,7 @@ fn newest_returns_the_most_recent_row() {
             event_rows: 3,
             bytes_freed: 4,
             activity_rows: 0,
+            staged_rows: 0,
         },
     )
     .expect("insert older");
@@ -97,6 +100,7 @@ fn newest_returns_the_most_recent_row() {
             log_rows: 70,
             event_rows: 17,
             bytes_freed: 2048,
+            staged_rows: 3,
         }
     );
 }

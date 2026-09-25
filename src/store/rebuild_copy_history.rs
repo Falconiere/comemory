@@ -37,12 +37,16 @@ pub(crate) fn copy_history_tables(conn: &Connection) -> Result<()> {
         ))?;
     }
     if old_table_exists(conn, "gc_runs")? {
-        conn.execute_batch(
+        // v21 added `activity_rows` and v29 `staged_rows`; an older source
+        // reads as "evicted nothing", each column's own default.
+        let activity = column_or_zero(conn, "gc_runs", "activity_rows")?;
+        let staged = column_or_zero(conn, "gc_runs", "staged_rows")?;
+        conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.gc_runs(\
-                 id, at, removed, log_rows, event_rows, bytes_freed) \
-             SELECT id, at, removed, log_rows, event_rows, bytes_freed \
-             FROM old.gc_runs;",
-        )?;
+                 id, at, removed, log_rows, event_rows, bytes_freed, activity_rows, staged_rows) \
+             SELECT id, at, removed, log_rows, event_rows, bytes_freed, {activity}, {staged} \
+             FROM old.gc_runs;"
+        ))?;
     }
     if old_table_exists(conn, "index_runs")? {
         conn.execute_batch(
@@ -207,6 +211,16 @@ fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
          SELECT {selected} FROM old.{table}{scope};"
     ))?;
     Ok(())
+}
+
+/// `column` when the attached `old` table has it, else the literal `0` its
+/// migration defaults to.
+fn column_or_zero(conn: &Connection, table: &str, column: &'static str) -> Result<&'static str> {
+    Ok(if old_column_exists(conn, table, column)? {
+        column
+    } else {
+        "0"
+    })
 }
 
 #[cfg(test)]
