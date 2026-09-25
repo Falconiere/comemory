@@ -968,6 +968,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/replica_journal.rs | comemory::store::replica_journal; preserve | src/store/tests/replica_journal.rs | none | infrastructure::store | src/store/replica_journal.rs | retain |
 | src/store/replica_device.rs | comemory::store::replica_device; preserve | src/store/tests/replica_device.rs | none | infrastructure::store | src/store/replica_device.rs | retain |
 | src/store/replica_redaction.rs | comemory::store::replica_redaction; preserve | src/store/tests/replica_redaction.rs | none | infrastructure::store | src/store/replica_redaction.rs | retain |
+| src/store/replica_redaction_copies.rs | comemory::store::replica_redaction_copies; preserve | src/store/tests/replica_redaction_copies.rs | none | infrastructure::store | src/store/replica_redaction_copies.rs | retain |
 | src/store/replica_read.rs | comemory::store::replica_read; preserve | src/store/tests/replica_read.rs | none | infrastructure::store | src/store/replica_read.rs | retain |
 | src/store/replica_receipt.rs | comemory::store::replica_receipt; preserve | src/store/tests/replica_receipt.rs | none | infrastructure::store | src/store/replica_receipt.rs | retain |
 | src/store/replica_outbox.rs | comemory::store::replica_outbox; preserve | src/store/tests/replica_outbox.rs | none | infrastructure::store | src/store/replica_outbox.rs | retain |

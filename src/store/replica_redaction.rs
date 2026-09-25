@@ -57,16 +57,28 @@ const VERDICTS_ON: &str = "
                SELECT event_id FROM feedback_events
                 WHERE memory_id = ?3 AND target_kind = ?5 AND event_id IS NOT NULL)";
 
+/// A digest a pending outbox operation still owes upstream is exempt from
+/// retention: blanking it here would push a `NULL` payload the next time
+/// that operation sends. Erase (`VerdictsOn`) carries no such exemption — it
+/// withdraws the pending operation itself before reaching redaction (#256,
+/// B-5), so nothing pending ever names an erased digest by the time this
+/// runs.
+const NOT_OWED: &str = "digest NOT IN (\
+     SELECT payload_digest FROM replica_operation \
+      WHERE state = 'pending' AND payload_digest IS NOT NULL)";
+
 /// Blank the bytes of every journal copy `reach` selects, in one statement
-/// however many events it names, and stamp why. Returns the payloads redacted.
+/// however many events it names, and stamp why. Returns the digests redacted
+/// — callers reach beyond `replica_payload` with them, e.g. a killed
+/// replay's [`super::replica_redaction_copies`] scratch copy.
 ///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn redact(conn: &Connection, reach: Reach<'_>, at: &str) -> Result<u64> {
+pub fn redact(conn: &Connection, reach: Reach<'_>, at: &str) -> Result<Vec<String>> {
     let (redaction, guard, selected, keys) = match reach {
         Reach::PastRetention(cutoff) => (
             Redaction::Expired,
-            "redacted_at IS NULL".to_string(),
+            format!("redacted_at IS NULL AND {NOT_OWED}"),
             PAST_RETENTION,
             [cutoff, FEEDBACK_EVENT, ACTIVITY_EVENT],
         ),
@@ -80,15 +92,19 @@ pub fn redact(conn: &Connection, reach: Reach<'_>, at: &str) -> Result<u64> {
             [memory_id, FEEDBACK_EVENT, target::MEMORY],
         ),
     };
-    let redacted = conn.execute(
-        &format!(
-            "UPDATE replica_payload
-                SET bytes = NULL, redacted_at = COALESCE(redacted_at, ?1), redaction = ?2
-              WHERE ({guard}) AND digest IN ({selected})"
-        ),
-        params![at, redaction.as_str(), keys[0], keys[1], keys[2]],
-    )?;
-    Ok(u64::try_from(redacted).unwrap_or(0))
+    let mut statement = conn.prepare(&format!(
+        "UPDATE replica_payload
+            SET bytes = NULL, redacted_at = COALESCE(redacted_at, ?1), redaction = ?2
+          WHERE ({guard}) AND digest IN ({selected})
+          RETURNING digest"
+    ))?;
+    let digests = statement
+        .query_map(
+            params![at, redaction.as_str(), keys[0], keys[1], keys[2]],
+            |r| r.get(0),
+        )?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(digests)
 }
 
 /// Whether — and why — the bytes behind `digest` are gone: `None` for a

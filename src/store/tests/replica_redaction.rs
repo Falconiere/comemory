@@ -81,7 +81,7 @@ fn an_event_whose_row_is_about_to_be_evicted_expires_and_a_newer_one_does_not() 
         replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
             .expect("expire");
 
-    assert_eq!(expired, 1);
+    assert_eq!(expired.len(), 1);
     assert_eq!(
         comemory::store::replica_redaction::redaction_of(&conn, &old).expect("old"),
         Some(Redaction::Expired)
@@ -141,7 +141,7 @@ fn erasure_outranks_expiry_and_expiry_never_relabels_an_erasure() {
     let first =
         replica_redaction::redact(&conn, replica_redaction::Reach::VerdictsOn("a1b2c3d4"), NOW)
             .expect("erase");
-    assert_eq!(first, 1, "only the purged memory's verdict");
+    assert_eq!(first.len(), 1, "only the purged memory's verdict");
     replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
         .expect("expire");
     assert_eq!(
@@ -153,11 +153,58 @@ fn erasure_outranks_expiry_and_expiry_never_relabels_an_erasure() {
     let upgraded =
         replica_redaction::redact(&conn, replica_redaction::Reach::VerdictsOn("e5f6a7b8"), NOW)
             .expect("erase");
-    assert_eq!(upgraded, 1);
+    assert_eq!(upgraded.len(), 1);
     assert_eq!(
         comemory::store::replica_redaction::redaction_of(&conn, &expired).expect("expired"),
         Some(Redaction::Erased),
         "a purge is the stronger claim"
+    );
+}
+
+#[test]
+fn a_digest_a_pending_outbox_operation_owes_is_exempt_from_retention() {
+    let (_dir, conn) = migrated_db();
+    let owed = journal_event(&conn, "feedback_event", "ev-owed", NOW);
+    let unowed = journal_event(&conn, "feedback_event", "ev-unowed", NOW);
+    verdict_row(&conn, "ev-owed", "2026-01-01T00:00:00Z");
+    verdict_row(&conn, "ev-unowed", "2026-01-01T00:00:00Z");
+    comemory::store::replica_outbox::enqueue(
+        &conn,
+        &NewOperation {
+            operation_id: "op-owed",
+            entity_kind: "feedback_event",
+            entity_key: "ev-owed",
+            op: ReplicaOp::Upsert,
+            payload: Some(PayloadRef {
+                digest: &owed,
+                bytes: "unused: only the digest is read back",
+            }),
+            schema_version: 1,
+            repository: Some("Falconiere/comemory"),
+            origin: ReplicaOrigin::Local,
+            at: NOW,
+        },
+        None,
+    )
+    .expect("enqueue owed push");
+
+    let expired =
+        replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
+            .expect("expire");
+
+    assert_eq!(
+        expired,
+        vec![unowed.clone()],
+        "only the unowed digest expires"
+    );
+    assert_eq!(
+        comemory::store::replica_redaction::redaction_of(&conn, &owed).expect("owed"),
+        None,
+        "the outbox still has to send this digest's real bytes"
+    );
+    assert_eq!(
+        comemory::store::replica_redaction::redaction_of(&conn, &unowed).expect("unowed"),
+        Some(Redaction::Expired)
     );
 }
 

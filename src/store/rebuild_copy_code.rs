@@ -38,31 +38,36 @@ fn copy_if_present(conn: &Connection, table: &str, sql: &str) -> Result<()> {
     Ok(())
 }
 
+/// A staged generation's outbox still owes it: dropping it would lose the
+/// payload the next push has to send (#256).
+const OWED_UPLOAD: &str = "EXISTS (SELECT 1 FROM old.replica_operation \
+     WHERE entity_kind = 'code_generation' AND state = 'pending' \
+       AND entity_key = old.code_generation.repo)";
+
 /// Copy the code generations and the pulled projections they activate.
 ///
 /// A generation a peer accepted cannot be re-derived from a local checkout —
 /// dropping it would have the machine re-offer positions the peer already
 /// holds a receipt for. A `staged` row is normally left behind — an upload
 /// that never activated published nothing, so a peer re-stages it — UNLESS a
-/// `pending` outbox operation still names it (#256): that generation is an
-/// owed upload, and dropping it would lose the outgoing payload the push
-/// still has to send. The three projection tables follow the generations
-/// that survived either branch, so a rebuild never leaves a projection whose
-/// generation is gone.
+/// `pending` outbox operation still names it ([`OWED_UPLOAD`]): that
+/// generation is an owed upload, and dropping it would lose the outgoing
+/// payload the push still has to send. The three projection tables follow
+/// whichever generations survived either branch, so a rebuild never leaves a
+/// projection whose generation is gone.
 fn copy_code_generations(conn: &Connection) -> Result<()> {
     copy_if_present(
         conn,
         "code_generation",
-        "INSERT OR IGNORE INTO main.code_generation(\
-             repo, generation_id, parent_id, head, mined_commit, origin, state, \
-             file_count, manifest_digest, created_at, activated_at) \
-         SELECT repo, generation_id, parent_id, head, mined_commit, origin, state, \
-             file_count, manifest_digest, created_at, activated_at \
-         FROM old.code_generation \
-         WHERE state <> 'staged' OR EXISTS (\
-             SELECT 1 FROM old.replica_operation \
-              WHERE entity_kind = 'code_generation' AND state = 'pending' \
-                AND entity_key = old.code_generation.repo);",
+        &format!(
+            "INSERT OR IGNORE INTO main.code_generation(\
+                 repo, generation_id, parent_id, head, mined_commit, origin, state, \
+                 file_count, manifest_digest, created_at, activated_at) \
+             SELECT repo, generation_id, parent_id, head, mined_commit, origin, state, \
+                 file_count, manifest_digest, created_at, activated_at \
+             FROM old.code_generation \
+             WHERE state <> 'staged' OR {OWED_UPLOAD};"
+        ),
     )?;
     for (table, columns) in PROJECTION {
         copy_if_present(
@@ -93,19 +98,25 @@ const PROJECTION: &[(&str, &str)] = &[
 ];
 
 /// Copy the `code_symbols` rows and the `indexed_files` cursors.
+///
+/// `old_column_exists` returns `false`, not an error, for a table `old`
+/// lacks, so the two probes below need no `old_table_exists` guard of their
+/// own — [`copy_if_present`] already carries one.
 fn copy_code_index_tables(conn: &Connection) -> Result<()> {
-    if old_table_exists(conn, "code_symbols")? {
-        let (count_expr, last_expr) = if old_column_exists(conn, "code_symbols", "access_count")? {
-            ("access_count", "COALESCE(last_accessed, indexed_at)")
-        } else {
-            ("0", "indexed_at")
-        };
-        let (rank_expr, parent_expr) = if old_column_exists(conn, "code_symbols", "rank_score")? {
-            ("rank_score", "parent_id")
-        } else {
-            ("0.0", "NULL")
-        };
-        conn.execute_batch(&format!(
+    let (count_expr, last_expr) = if old_column_exists(conn, "code_symbols", "access_count")? {
+        ("access_count", "COALESCE(last_accessed, indexed_at)")
+    } else {
+        ("0", "indexed_at")
+    };
+    let (rank_expr, parent_expr) = if old_column_exists(conn, "code_symbols", "rank_score")? {
+        ("rank_score", "parent_id")
+    } else {
+        ("0.0", "NULL")
+    };
+    copy_if_present(
+        conn,
+        "code_symbols",
+        &format!(
             "INSERT OR IGNORE INTO main.code_symbols(\
                  id, repo, path, blob_oid, symbol, kind, lang, line_start, line_end, \
                  snippet, simhash, indexed_at, access_count, last_accessed, \
@@ -114,8 +125,8 @@ fn copy_code_index_tables(conn: &Connection) -> Result<()> {
                  snippet, simhash, indexed_at, {count_expr}, {last_expr}, \
                  {rank_expr}, {parent_expr} \
              FROM old.code_symbols;"
-        ))?;
-    }
+        ),
+    )?;
     copy_if_present(
         conn,
         "indexed_files",

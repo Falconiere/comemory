@@ -194,6 +194,9 @@ pub mod replica_read;
 pub mod replica_receipt;
 /// Retention expiry and purge erasure of shared events' journal copies.
 pub mod replica_redaction;
+/// Redaction reach beyond `replica_payload`: a killed replay's scratch copy
+/// of the same bytes.
+pub mod replica_redaction_copies;
 /// `replica_replay` CRUD — a compacting replay's scratch rows.
 pub mod replica_replay;
 /// `replica_staged_part` row CRUD — parts of an oversized revision and their

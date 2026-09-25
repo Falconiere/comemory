@@ -17,28 +17,24 @@ use crate::prelude::*;
 
 /// Delete every `retrieval_log` / `feedback_events` row whose `at` is
 /// strictly before `cutoff` (exclusive — a row exactly AT `cutoff` survives
-/// this sweep and is evicted only once a later run's cutoff passes it).
-/// Returns `(retrieval_log rows deleted, feedback_events rows deleted)`.
-///
-/// `cutoff` must already be rendered in the same fixed-width ISO-8601 UTC
-/// format both tables' `at` columns are written in
-/// (`memory_row::iso_format`), so the plain string `<` compares
-/// chronologically — see `maintenance::gc::sweep_learning`'s doc for the format
-/// note this preserves.
+/// until a later run's cutoff passes it). Returns `(retrieval_log rows
+/// deleted, feedback_events rows deleted)`. `cutoff` must already be
+/// rendered in `memory_row::iso_format`'s fixed-width ISO-8601 UTC, so plain
+/// string `<` compares chronologically.
 ///
 /// Before either delete, the journal copies of every shared event past the
-/// same cutoff are expired (#254) — the `feedback_events` rows about to go
-/// here and the `activity_log` rows `maintenance::gc` evicts right after —
-/// in the same transaction, so a shared event's detail never outlives its
-/// retention in the journal while its dedupe metadata stays.
+/// same cutoff are expired (#254) and their replay-scratch copies cleared
+/// with them (#256), except a digest a pending outbox operation still owes —
+/// all in the same transaction.
 pub fn evict_before(conn: &Connection, cutoff: &str) -> Result<(u64, u64)> {
     let at = super::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
     let tx = conn.unchecked_transaction()?;
-    super::replica_redaction::redact(
+    let expired = super::replica_redaction::redact(
         &tx,
         super::replica_redaction::Reach::PastRetention(cutoff),
         &at,
     )?;
+    super::replica_redaction_copies::clear_replay_of(&tx, &expired)?;
     let logs = tx.execute("DELETE FROM retrieval_log WHERE at < ?1", [cutoff])?;
     let events = tx.execute("DELETE FROM feedback_events WHERE at < ?1", [cutoff])?;
     tx.commit()?;
