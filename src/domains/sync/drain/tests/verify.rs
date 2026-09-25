@@ -35,7 +35,16 @@ fn a_matching_key_verifies_clean_and_a_lost_binding_is_repaired() {
 
     let clean = verified(verify::verify(&paths, &cfg, &mut home.conn, &auth).expect("verify"));
     let kinds: Vec<&str> = clean.kinds.iter().map(|k| k.kind.as_str()).collect();
-    assert_eq!(kinds, ["memory", "code_generation", "document_revision"]);
+    assert_eq!(
+        kinds,
+        [
+            "memory",
+            "code_generation",
+            "document_revision",
+            "feedback_event",
+            "activity_event"
+        ]
+    );
     assert!(
         clean
             .kinds

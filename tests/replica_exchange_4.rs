@@ -89,13 +89,15 @@ fn op_ids_for_kind(client: &Client, entity_kind: &str) -> Vec<String> {
         .expect("collect")
 }
 
-/// Every currently held (still-pending, `hold_reason` set) operation id.
+/// Every currently held (still-pending, `hold_reason` set) operation id of
+/// the kinds this suite writes — not the activity events its runs queue.
 fn held_op_ids(client: &Client) -> Vec<String> {
     let conn = client.open();
     let mut statement = conn
         .prepare(
             "SELECT operation_id FROM replica_operation \
              WHERE state = 'pending' AND hold_reason IS NOT NULL \
+             AND entity_kind NOT IN ('feedback_event', 'activity_event') \
              ORDER BY created_at, rowid",
         )
         .expect("prepare");
@@ -413,7 +415,10 @@ fn held_states_do_not_starve_eligible_repos() {
     let status = a.exchange_status();
     assert_eq!(status["outbox"]["held"]["policy"], 1, "m_private: {status}");
     assert_eq!(status["outbox"]["held"]["secret"], 1, "{status}");
-    assert_eq!(status["outbox"]["held"]["skip_repos"], 1, "{status}");
+    assert_eq!(
+        status["outbox"]["held"]["skip_repos"], 2,
+        "m_skip and the run that saved it: {status}"
+    );
     assert_eq!(
         status["outbox"]["held"]["incompatible"],
         doc_ops.len(),
@@ -511,7 +516,10 @@ fn held_states_do_not_starve_eligible_repos() {
     );
     let _ = a.cli_raw(&["sync"], &[]);
     let status = a.exchange_status();
-    assert_eq!(status["outbox"]["retryable"], 1, "{status}");
+    assert_eq!(
+        status["outbox"]["retryable"], 2,
+        "m_late and the run that saved it, both in the lost batch: {status}"
+    );
     let m_late_op = op_for_entity(&a, "memory", &m_late);
     assert_eq!(state_of(&a, &m_late_op), Some("pending".to_string()));
 

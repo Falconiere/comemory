@@ -7,11 +7,12 @@
 )]
 //! Event adoption over a real database: a run recorded here is captured and
 //! queued exactly once, an imported event never is, a cursor a rebuild loses
-//! costs a rescan, never a second outbox row, and the inline push adopts one
-//! page per kind, leaving the rest to the next pass.
+//! costs a rescan, never a second outbox row, and the inline push captures
+//! one batch and adopts one page per kind, leaving the rest to the next pass.
 
 use crate::domains::sync::drain::adopt::{self, Reach};
 use crate::domains::sync::replica::test_support::{BODY, Home, approve};
+use crate::store::activity::{self, NewActivityRow};
 use crate::store::replica_journal::{
     self, LocalEvent, NewOperation, PayloadRef, ReplicaOp, ReplicaOrigin,
 };
@@ -149,4 +150,41 @@ fn an_inline_pass_adopts_one_page_per_kind_and_the_next_pass_the_rest() {
     assert_eq!(next, 1, "the cursor carried the rest to the next pass");
     assert_eq!(after, 0);
     assert_eq!(queued_events(&home).len(), 501);
+}
+
+/// Record `count` scoped `save` runs the way the CLI records one.
+fn record_runs(home: &Home, count: usize) {
+    for _ in 0..count {
+        activity::insert(
+            &home.conn,
+            &NewActivityRow {
+                at: "2026-09-24T10:00:00Z",
+                command: "save",
+                source: "cli",
+                actor: None,
+                repo: Some("Falconiere/comemory"),
+                duration_ms: 4,
+                ok: true,
+                error_code: None,
+                summary: Some(r#"{"id":"a1b2c3d4","kind":"decision","tags":0,"supersedes":0}"#),
+                device: None,
+                event_id: None,
+            },
+        )
+        .expect("run");
+    }
+}
+
+#[test]
+fn a_full_pass_captures_every_run_and_the_inline_push_one_batch() {
+    let mut home = Home::new();
+    approve(&home.conn, "Falconiere/comemory");
+    record_runs(&home, 450);
+
+    let inline = events(&mut home, "2026-09-24T10:00:00Z", Reach::OnePage);
+    let full = events(&mut home, "2026-09-24T10:00:01Z", Reach::All);
+
+    assert_eq!(inline, 200, "one capture batch inline");
+    assert_eq!(full, 250, "a full pass captures the rest of the backlog");
+    assert_eq!(queued_events(&home).len(), 450);
 }

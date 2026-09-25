@@ -34,8 +34,13 @@ fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() 
     let srv = DeviceAuthServer::start_default();
 
     let mut progress = Vec::new();
-    let established =
-        login::establish(&paths, Some(&srv.base), false, &mut progress).expect("establish");
+    let established = login::establish(
+        (&paths, &comemory::config::Config::defaults()),
+        Some(&srv.base),
+        false,
+        &mut progress,
+    )
+    .expect("establish");
 
     // The credential the platform minted is on disk, reloadable, and scoped to
     // the organization the mint named.
@@ -95,6 +100,14 @@ fn logout_stamps_pending_rows_with_the_outgoing_key() {
     let mut cfg = Config::defaults();
     cfg.sync.after_save = false;
     let mut conn = connection::open(paths.db_path()).expect("db");
+    // Approved, so the save's run is shareable: it is journalled and queued
+    // only when something adopts it, which the logout itself must do.
+    let approved = (
+        "falconiere/comemory".to_string(),
+        "falconiere/comemory".to_string(),
+    );
+    comemory::store::repository_approval::replace_all(&conn, &[approved], "2026-09-24T10:00:00Z")
+        .expect("approve");
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let request = save::Request {
         body: "made while logged in to the workspace being left".to_string(),
@@ -112,10 +125,15 @@ fn logout_stamps_pending_rows_with_the_outgoing_key() {
     save::run(&mut ctx, request, false, None).expect("save");
     drop(ctx);
 
-    login::forget(&paths).expect("forget");
+    login::forget(&paths, &cfg).expect("forget");
 
     let rows = replica_outbox::read(&conn, Scope::All, usize::MAX).expect("outbox");
-    assert!(!rows.is_empty(), "the save queued an operation");
+    let kinds: Vec<&str> = rows.iter().map(|r| r.entity_kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        ["memory", "activity_event"],
+        "the save and its run, adopted before the stamp"
+    );
     for row in rows {
         assert_eq!(row.api_url.as_deref(), Some(api_url), "{row:?}");
         assert_eq!(row.workspace_id.as_deref(), Some("ws_leaving"), "{row:?}");
@@ -133,7 +151,7 @@ fn logout_of_a_machine_with_no_store_creates_none() {
     paths.ensure_dirs().expect("dirs");
     common::auth_fixture::seed_org_auth(&paths, "http://127.0.0.1:9/api", "cmk_x", "ws_x");
 
-    login::forget(&paths).expect("forget");
+    login::forget(&paths, &comemory::config::Config::defaults()).expect("forget");
 
     assert!(
         !paths.db_path().exists(),

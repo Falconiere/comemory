@@ -13,7 +13,7 @@ under, push, pull, holds, replay, verification and workspace keying. Design:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `adopt.rs` | `events` | Queue local feed positions the outbox never saw: events before every push, pre-outbox documents at the upgrade |
+| `adopt.rs` | `events` | Queue local feed positions the outbox never saw: captured events before every push and before a logout's stamp, pre-outbox documents at the upgrade |
 | `anchor.rs` | `check` | Whether the upstream still holds, at the cursor's position, the entry the cursor was left on |
 | `backoff.rs` | `after_failures` | Full-jitter delays: between in-pass retries and across passes |
 | `code_capture.rs` | `capture` | Capture each approved repository's current code index as a generation to upload; activate one on acceptance |

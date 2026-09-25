@@ -232,13 +232,15 @@ every retry carries the same values:
 
 **Events.** `feedback_event` and `activity_event` positions are journalled
 and never queued (#254): the feed position is their durable record. Before
-every push the drain advances one #254 capture batch (nothing reads a
-client's feed, which is where the engine runs it), then reads local event
+every push the drain runs #254's capture — until it is caught up on a full
+pass, one batch on the inline push (nothing reads a client's feed, which is
+where the engine runs it) — then reads local event
 positions of each kind above that kind's `schema_meta` cursor
 (`replica_event_adopted_through:<kind>`) and enqueues each one whose operation
 the outbox does not already hold, one page per transaction with the cursor
 that covers it. The inline push after a save adopts at most one page per kind;
-the cursors carry the rest to the next pass. Adoption is idempotent, and the
+the cursors carry the rest to the next pass. Logout and a switching login run
+the same capture and adoption before they stamp (§ Keying). Adoption is idempotent, and the
 capture batch skips a run that already carries an event id, so a cursor a
 rebuild resets costs a rescan, never a second upload. From there an event is
 an outbox row like any other.
@@ -451,6 +453,11 @@ client; #256 owns minting a new epoch on restore.
   last-used key differs from its own (a credential replaced by hand) stamps the
   unstamped rows created before the last session under that key ended. A
   stamped row is sent only to its key; under any other it is held `workspace`.
+  A feedback or activity event enters the outbox when a pass adopts it, so
+  logout and a switching login capture and adopt events before they stamp.
+  With a credential replaced by hand, an event not yet adopted when the
+  credential changed belongs to the key whose pass adopts it, like any row
+  made after the old key's last session ended.
 - **Entities belong to the key they came from.** `replica_binding` is keyed by
   `(api_url, workspace_id, entity_kind, entity_key)`. A local edit of an entity
   bound only to other keys is stamped with the most recently bound one and held

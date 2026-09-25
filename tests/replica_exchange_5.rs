@@ -297,7 +297,10 @@ fn revocation_during_request_holds() {
         "the revoked repo's entry is held, not applied: {ids:?}"
     );
     let exchange = b.exchange_status();
-    assert_eq!(exchange["pull"]["held"]["policy"], 1, "{exchange}");
+    assert_eq!(
+        exchange["pull"]["held"]["policy"], 2,
+        "wp and the run that saved it: {exchange}"
+    );
 
     // Push side: nothing for the revoked repo goes out while it stays revoked.
     b.save("owed under a repo that is currently revoked", PRIVATE);

@@ -161,7 +161,9 @@ fn held_pages_then_allowed_entry() {
         ids.len()
     );
     let status = reader.exchange_status();
-    assert_eq!(status["pull"]["held"]["policy"], 1500, "{status}");
+    // The 1,500 memories, and the 1,500 runs that saved them, which the
+    // writer's sync shared under the same repository.
+    assert_eq!(status["pull"]["held"]["policy"], 3000, "{status}");
     assert_eq!(status["applied_sequence"], hub.head(), "{status}");
     assert_eq!(status["caught_up"], true, "{status}");
 
@@ -222,9 +224,12 @@ fn failed_import_stalls_then_replays_safely() {
     let status = reader.exchange_status();
     assert_eq!(status["pull"]["stalled_at"], seq_m6, "{status}");
     assert!(!status["pull"]["stall_reason"].is_null(), "{status}");
+    // Every entry below m6 applied — m5 and the runs the writer shared
+    // around it — so the cursor names the position right before the stall.
+    assert!(seq_m5 < seq_m6);
     assert_eq!(
         applied_sequence(&reader),
-        seq_m5,
+        seq_m6 - 1,
         "the cursor names the last applied entry"
     );
     assert_eq!(run["exchange"]["end"], "stalled", "{run}");

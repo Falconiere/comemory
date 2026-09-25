@@ -334,12 +334,15 @@ impl Client {
         Engine::spawn_at(&self.data, &[])
     }
 
-    /// `(operation_id, state, hold_reason)` for every outbox row, oldest first.
+    /// `(operation_id, state, hold_reason)` for every outbox row of the kinds
+    /// a test writes, oldest first. The activity event every scoped CLI run
+    /// also queues is left out: suite 8 is where events are counted.
     pub fn outbox(&self) -> Vec<(String, String, Option<String>)> {
         let conn = self.open();
         let mut statement = conn
             .prepare(
                 "SELECT operation_id, state, hold_reason FROM replica_operation \
+                 WHERE entity_kind NOT IN ('feedback_event', 'activity_event') \
                  ORDER BY created_at, rowid",
             )
             .expect("prepare");

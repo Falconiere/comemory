@@ -15,8 +15,8 @@ use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
 use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::domains::sync::daemon;
-use crate::domains::sync::login;
+use crate::domains::sync::initial::InitialSyncStats;
+use crate::domains::sync::{AuthFile, daemon, login};
 use crate::prelude::*;
 use clap::{Args as ClapArgs, Subcommand};
 use owo_colors::OwoColorize;
@@ -85,7 +85,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
 fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
     let mut progress = std::io::stderr().lock();
-    let established = login::establish(paths, a.api_url.as_deref(), a.daemon, &mut progress)?;
+    let cfg = load_config(paths)?;
+    let established =
+        login::establish((paths, &cfg), a.api_url.as_deref(), a.daemon, &mut progress)?;
     drop(progress);
     let creds = &established.credentials;
     let daemon_json = DaemonLoginJson {
@@ -94,7 +96,6 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
     };
 
     // Best-effort: credential is already on disk; sync counts belong in the report.
-    let cfg = load_config(paths)?;
     let synced =
         off_runtime(|| crate::domains::sync::initial::run_initial_sync(paths, &cfg, creds));
     if let Err(e) = &synced {
@@ -115,6 +116,17 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
             initial_sync: initial_sync_json(&synced),
         });
     }
+    write_login_text(paths, a.daemon, creds, &synced)
+}
+
+/// The human-readable login report: who is logged in, where the
+/// credential lives, the daemon, and the first sync's outcome.
+fn write_login_text(
+    paths: &Paths,
+    daemon_requested: bool,
+    creds: &AuthFile,
+    synced: &Result<InitialSyncStats>,
+) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(
         out,
@@ -129,7 +141,7 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
         creds.api_url,
         paths.auth_file().display()
     )?;
-    if a.daemon {
+    if daemon_requested {
         if let Ok(st) = daemon::status() {
             writeln!(out, "  daemon: {}", st.detail)?;
         }
@@ -139,7 +151,7 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
             "  daemon: not installed (saves push inline; `comemory watch` for live pulls)"
         )?;
     }
-    match &synced {
+    match synced {
         Ok(stats) => {
             writeln!(
                 out,
@@ -168,5 +180,5 @@ fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
 }
 
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
-    write_logout(json_flag, login::logout(paths)?)
+    write_logout(json_flag, login::logout(paths, &load_config(paths)?)?)
 }

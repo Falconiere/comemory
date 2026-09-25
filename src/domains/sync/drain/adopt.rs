@@ -2,7 +2,7 @@
 //! #253 journalled before the outbox existed (once, at the upgrade), and the
 //! feedback and activity events #254 journals but never queues (before every
 //! push, from one cursor per kind). Nothing reads a client's feed, which is
-//! where #254 captures runs, so the drain advances one capture batch first.
+//! where #254 captures runs, so the drain runs that capture first.
 //! Reads are filtered by kind, and adoption skips any operation already
 //! queued, so a cursor a rebuild resets costs a rescan, never a second upload.
 
@@ -27,13 +27,15 @@ const EVENT_KINDS: [&str; 2] = [FEEDBACK_ENTITY_KIND, ACTIVITY_ENTITY_KIND];
 /// adoption read for that kind.
 pub const EVENTS_THROUGH: &str = "replica_event_adopted_through";
 
-/// How much of the event backlog one pass may adopt.
+/// How much of the event backlog one pass may capture and adopt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reach {
-    /// Everything above the cursors.
+    /// Everything: capture until caught up, adopt everything above the
+    /// cursors.
     All,
-    /// One page per kind: the inline push after a save must not scan a
-    /// backlog; the cursors carry the rest to the next pass.
+    /// One capture batch and one page per kind: the inline push after a save
+    /// must not work through a backlog; the cursors carry the rest to the
+    /// next pass.
     OnePage,
 }
 
@@ -49,10 +51,10 @@ impl Reach {
     }
 }
 
-/// Advance one capture batch, then queue the local events journalled since
-/// the last pass, as far as `reach` allows; returns how many were queued.
-/// Each page commits with the cursor that covers it, so an interrupted pass
-/// resumes where it stopped.
+/// Capture, then queue the local events journalled since the last pass, as
+/// far as `reach` allows; returns how many were queued. Each capture batch
+/// and each page commits with the cursor that covers it, so an interrupted
+/// pass resumes where it stopped.
 ///
 /// # Errors
 /// Propagates SQLite failures from adoption. A capture that fails rolls its
@@ -64,7 +66,7 @@ pub fn events(
     at: &str,
     reach: Reach,
 ) -> Result<usize> {
-    if let Err(e) = event_capture::advance(&mut Ctx::borrowed(paths, cfg, conn)) {
+    if let Err(e) = capture(&mut Ctx::borrowed(paths, cfg, conn), reach) {
         tracing::warn!(error = %e, "event capture deferred to the next pass");
     }
     let mut adopted = 0;
@@ -72,6 +74,19 @@ pub fn events(
         adopted += from_cursor(conn, kind, at, reach)?;
     }
     Ok(adopted)
+}
+
+/// Run #254's capture: one batch, or — with [`Reach::All`] — batches until
+/// the run cursor stops moving and the verdict backfill is complete.
+fn capture(ctx: &mut Ctx<'_>, reach: Reach) -> Result<()> {
+    loop {
+        let before = schema_meta::get(ctx.conn()?, event_capture::ACTIVITY_THROUGH)?;
+        let backfill = event_capture::advance(ctx)?;
+        let after = schema_meta::get(ctx.conn()?, event_capture::ACTIVITY_THROUGH)?;
+        if reach == Reach::OnePage || (backfill.complete() && after == before) {
+            return Ok(());
+        }
+    }
 }
 
 /// Queue `kind`'s positions above its cursor, one transaction per page.

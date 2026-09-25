@@ -155,6 +155,8 @@ fn kind_capabilities_name_every_payload_this_engine_accepts() {
             "memory@1".to_string(),
             "code_generation@1".to_string(),
             "document_revision@1".to_string(),
+            "feedback_event@1".to_string(),
+            "activity_event@1".to_string(),
         ],
         "a client pushes only the kinds an upstream names here"
     );
