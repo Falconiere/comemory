@@ -13,7 +13,9 @@ use crate::domains::memories::{Frontmatter, MemoryStore, journal};
 use crate::prelude::*;
 use crate::store::connection::write_transaction;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
-use crate::store::{memory_row, replica_outbox, replica_read, schema_meta, seed_scan};
+use crate::store::{
+    memory_row, replica_outbox, replica_read, schema_meta, seed_scan, sync_exchange,
+};
 use crate::utilities::context::Ctx;
 
 /// Memories seeded per call.
@@ -154,11 +156,15 @@ fn commit(ctx: &mut Ctx<'_>, loaded: &LoadedSeed) -> Result<()> {
         ReplicaOrigin::Local,
         Some(&loaded.operation_id),
     )?;
-    // Seeding records what this engine already holds; it owes nobody an
-    // upload, and an owed upload makes an engine refuse every import for the
-    // entity. The journal enqueues every local write, so the row goes in the
-    // same transaction that wrote it.
-    replica_outbox::discard(&tx, &loaded.operation_id)?;
+    // A hub owes nobody an upload for what it already holds, and an owed
+    // upload makes an engine refuse every import for the entity — so a
+    // non-client discards the row the journal just enqueued. A replica
+    // client keeps it: it is exactly what #256's client-side adoption also
+    // enqueues for a seed made before this engine ever logged in, and
+    // discarding it here would mean the seed is never sent at all.
+    if !sync_exchange::has_replica_upstream(&tx)? {
+        replica_outbox::discard(&tx, &loaded.operation_id)?;
+    }
     tx.commit()?;
     Ok(())
 }

@@ -152,7 +152,7 @@ pub fn legacy_binary_opens(data_dir: &Path) -> bool {
 }
 
 /// One retained `feedback_events` row for `memory_id` under `query_id`, if
-/// journalled.
+/// journalled — the local shape, where `query_id` is unprefixed.
 pub fn feedback_event_row(
     data_dir: &Path,
     memory_id: &str,
@@ -162,6 +162,20 @@ pub fn feedback_event_row(
     conn.query_row(
         "SELECT verdict, event_id FROM feedback_events WHERE memory_id = ?1 AND query_id = ?2",
         [memory_id, query_id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .ok()
+}
+
+/// One `feedback_events` row by its stable replica `event_id` — the
+/// cross-machine join key: the accepting side stores `query_id` as
+/// `"<origin device>:<origin query_id>"` (`feedback_share::journal_retained`),
+/// so a peer's row is never found by the bare query_id a sharer minted.
+pub fn feedback_event_by_event_id(data_dir: &Path, event_id: &str) -> Option<(String, String)> {
+    let conn = open(data_dir);
+    conn.query_row(
+        "SELECT verdict, memory_id FROM feedback_events WHERE event_id = ?1",
+        [event_id],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )
     .ok()

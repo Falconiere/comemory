@@ -7,6 +7,8 @@
 
 /// Queueing local feed positions the outbox never saw.
 pub mod adopt;
+/// Adopting local-origin memory seed positions the outbox never saw.
+pub mod adopt_seeds;
 /// Whether the upstream still holds the entry the cursor was left on.
 pub mod anchor;
 /// Full-jitter delays between attempts.

@@ -722,6 +722,8 @@ to 266 as the MCP transport added three architecture tools.
 | `src/store/activity_rollups.rs:43-61` function `rollups` | `src/store/activity_rollups.rs:90-104` function `sample_durations` | 85.14% | the aggregate and the sample it draws from: different columns, different ordering, different decode |
 | `src/store/activity_rollups.rs:64-76` function `distinct_commands` | `src/store/activity_rollups.rs:90-104` function `sample_durations` | 86.81% | two projections over the same filtered window; the shared half is already `activity::apply_filter` |
 | `src/serve/routes/activity_stream.rs:151-172` function `stream` | `src/serve/routes/activity_stream.rs:200-212` function `emit` | 87.34% | short route adapters: the unfold step and the event it yields, one owning the loop and the other the encoding |
+| `src/domains/sync/drain/adopt_seeds.rs` function `advance` | `src/domains/sync/drain/adopt_seeds.rs` function `page` | 85.34% | the cursor-persisting loop and the one-page worker it calls; the same split `adopt.rs`'s `from_cursor`/`page` uses, just shorter, so the two short bodies read closer together than that pair's do |
+| `src/store/replica_outbox.rs` function `has_pending_for` | `src/store/replica_outbox.rs` function `has_any_for` | high | both are one-line callers of the shared `count_for` helper, differing only in the `Option<&str>` state filter they pass — the shared logic is already extracted; a tool comparing two near-identical call expressions cannot see that |
 
 ## Continuing the cleanup
 

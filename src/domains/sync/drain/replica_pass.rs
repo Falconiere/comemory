@@ -12,19 +12,30 @@ use std::time::{Duration, Instant};
 use crate::config::{Config, Paths};
 use crate::domains::sync::drain::anchor::{self, Check};
 use crate::domains::sync::drain::pull::{self, Pull, Step};
-use crate::domains::sync::drain::push::{self, Push, Unanswered};
-use crate::domains::sync::drain::push_hold::{self, Context};
+use crate::domains::sync::drain::push::Unanswered;
 use crate::domains::sync::drain::replay::{self, Replayed};
 use crate::domains::sync::drain::report::{End, Report};
 use crate::domains::sync::drain::session::{self, Legs, Mode, Session};
 use crate::domains::sync::drain::transport::Failure;
-use crate::domains::sync::drain::{adopt, code_capture, holds, network, rebootstrap, stop};
-use crate::domains::sync::replica::contract::CursorRef;
+use crate::domains::sync::drain::{
+    adopt, adopt_seeds, code_capture, holds, network, rebootstrap, stop,
+};
 use crate::domains::sync::replica::contract_views::ManifestResponse;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::replica_cursor::{self, Cursor};
 use crate::store::sync_exchange::{self, ExchangeRow};
+
+/// `push`, factored out to keep this file under the 300-code-line ceiling —
+/// a flat sibling file via `#[path]`, since `domains/sync/drain/` allows no
+/// new subfolder (the same constraint `src/store/README.md` documents for
+/// `store/`).
+#[path = "replica_pass_push.rs"]
+mod push_step;
+
+/// [`Pass::seed_local`] — same reasoning as [`push_step`], its own file.
+#[path = "replica_pass_seed.rs"]
+mod seed_step;
 
 /// A step's result: whether it moved anything, or the failure that ends the
 /// pass.
@@ -161,7 +172,16 @@ impl<'a> Pass<'a> {
         let pull = self.step.pull;
         if self.pushes {
             let step = self.step;
+            self.seed_local(conn)?;
             adopt::events((step.paths, step.cfg), conn, step.at, self.reach)?;
+            // Only once the ordinary pull has already caught this key up —
+            // adopting a large seed backlog must never compete with it for
+            // the pass's budget.
+            if self.row.replay_state.is_none()
+                && self.cursor.applied_sequence >= self.manifest.head_sequence
+            {
+                adopt_seeds::advance(conn, pull.key, step.at)?;
+            }
         }
         if self.pushes && self.pulls {
             code_capture::capture(conn, self.step.cfg, pull.policy)?;
@@ -192,7 +212,9 @@ impl<'a> Pass<'a> {
         self.report.rebootstrapped = true;
         Ok(())
     }
+}
 
+impl Pass<'_> {
     /// Alternate pull and push until an end; `Some(failure)` ends it on the
     /// network.
     fn iterate(
@@ -302,53 +324,5 @@ impl<'a> Pass<'a> {
         self.row.stall_sequence = Some(sequence);
         self.row.stall_reason = Some(reason);
         self.stalled = true;
-    }
-
-    /// Re-decide holds, then send one batch; whether anything was sent.
-    fn push(&mut self, conn: &Connection) -> Result<Moved> {
-        if !self.pushes {
-            return Ok(Ok(false));
-        }
-        let (pull, cfg, at) = (self.step.pull, self.step.cfg, self.step.at);
-        let skip = cfg.sync.skip_matcher()?;
-        let capabilities = push_hold::capabilities(self.manifest);
-        let upgrading = self
-            .row
-            .upgrade_through
-            .filter(|through| self.cursor.applied_sequence < *through)
-            .and(self.row.selected_at.as_deref());
-        let ctx = Context {
-            key: pull.key,
-            policy: pull.policy,
-            skip: &skip,
-            capabilities: &capabilities,
-            upgrading_since: upgrading,
-        };
-        self.report.held = u32::try_from(push_hold::classify(conn, &ctx, at)?).unwrap_or(u32::MAX);
-        let cursor = (!self.cursor.stream_epoch.is_empty()).then(|| CursorRef {
-            stream_epoch: self.cursor.stream_epoch.clone(),
-            sequence: self.cursor.applied_sequence,
-        });
-        let push = Push {
-            key: pull.key,
-            transport: pull.transport,
-            policy: pull.policy,
-            cursor,
-            max_bytes: usize::try_from(cfg.sync.max_request_bytes).unwrap_or(usize::MAX),
-            epoch: Some(&self.manifest.stream_epoch),
-            resting: self.unanswered.resting(),
-        };
-        let pushed = push::batch(conn, &push, at)?;
-        self.unanswered.note(&pushed.unanswered);
-        self.report.pushed += pushed.accepted;
-        self.report.rejected += pushed.rejected;
-        match pushed.failure {
-            Some(failure) if failure.replaced_stream() => {
-                self.rebootstrap(conn)?;
-                Ok(Ok(true))
-            }
-            Some(failure) => Ok(Err(failure)),
-            None => Ok(Ok(pushed.sent > 0)),
-        }
     }
 }

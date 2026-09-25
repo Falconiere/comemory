@@ -180,3 +180,27 @@ fn a_save_between_load_and_commit_wins() {
         "the revision carries the retag's payload, not the stale one the seed loaded"
     );
 }
+
+#[test]
+fn a_client_keeps_the_outbox_row_a_non_client_would_discard() {
+    let mut home = Home::new();
+    let id = home.save(BODY, &["sync"]);
+    forget_the_journal(&home);
+    home.make_client();
+
+    let mut ctx = home.ctx();
+    bootstrap::advance(&mut ctx).expect("seed");
+
+    let rows = crate::store::replica_outbox::read(
+        &home.conn,
+        crate::store::replica_outbox::Scope::Entity("memory", &id),
+        1,
+    )
+    .expect("read");
+    assert_eq!(
+        rows.len(),
+        1,
+        "a replica client owes this upload; seeding must not discard it"
+    );
+    assert_eq!(rows[0].state, "pending");
+}

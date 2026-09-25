@@ -814,7 +814,10 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/drain/rebootstrap.rs | comemory::domains::sync::drain::rebootstrap; preserve | src/domains/sync/drain/tests/rebootstrap.rs | none | domains::sync | src/domains/sync/drain/rebootstrap.rs | retain |
 | src/domains/sync/drain/replay_apply.rs | comemory::domains::sync::drain::replay_apply; preserve | src/domains/sync/drain/tests/replay_apply.rs | none | domains::sync | src/domains/sync/drain/replay_apply.rs | retain |
 | src/domains/sync/drain/replay_scan.rs | comemory::domains::sync::drain::replay_scan; preserve | src/domains/sync/drain/tests/replay_scan.rs | none | domains::sync | src/domains/sync/drain/replay_scan.rs | retain |
-| src/domains/sync/drain/replica_pass.rs | comemory::domains::sync::drain::replica_pass; preserve | none | none | domains::sync | src/domains/sync/drain/replica_pass.rs | retain |
+| src/domains/sync/drain/replica_pass.rs | comemory::domains::sync::drain::replica_pass; preserve | src/domains/sync/drain/replica_pass_push.rs; src/domains/sync/drain/replica_pass_seed.rs | none | domains::sync | src/domains/sync/drain/replica_pass.rs | retain |
+| src/domains/sync/drain/replica_pass_push.rs | private | none | none | domains::sync | src/domains/sync/drain/replica_pass_push.rs | retain |
+| src/domains/sync/drain/replica_pass_seed.rs | private | none | none | domains::sync | src/domains/sync/drain/replica_pass_seed.rs | retain |
+| src/domains/sync/drain/adopt_seeds.rs | comemory::domains::sync::drain::adopt_seeds; preserve | src/domains/sync/drain/tests/adopt_seeds.rs | none | domains::sync | src/domains/sync/drain/adopt_seeds.rs | retain |
 | src/domains/sync/drain/report.rs | comemory::domains::sync::drain::report; preserve | none | none | domains::sync | src/domains/sync/drain/report.rs | retain |
 | src/domains/sync/drain/status.rs | comemory::domains::sync::drain::status; preserve | src/domains/sync/drain/tests/status.rs | none | domains::sync | src/domains/sync/drain/status.rs | retain |
 | src/domains/sync/drain/verify.rs | comemory::domains::sync::drain::verify; preserve | src/domains/sync/drain/tests/verify.rs | none | domains::sync | src/domains/sync/drain/verify.rs | retain |
