@@ -153,11 +153,17 @@ fails `review` when the report carries a `high` or `critical` finding. `review`
 is a required status check on `main`, so the red blocks the merge.
 
 Nothing `needs:` the gate. `test`, `plan` and every build job run
-unconditionally and in parallel with the review, so a red review still leaves
-you the test results — and a skipped or failed gate can no longer cascade into
-an empty release, which is how v0.18.0 and v0.18.1 shipped with no binaries.
+in parallel with the review, so a red review still leaves you the test
+results — and a skipped or failed gate can no longer cascade into an empty
+release, which is how v0.18.0 and v0.18.1 shipped with no binaries.
 Rerunning the review re-evaluates its own check, so a verdict cannot go stale
 behind a rerun either.
+
+The one exception: a **release-plz PR** (`release-plz-*` head) skips the
+heavy `test-suite` job in `test.yml`. Those PRs only bump version +
+CHANGELOG; the suite already ran on the commits being released. The thin
+`test` job still reports the required check name green — a skipped job
+alone would leave the PR merge-blocked.
 
 `medium`, `low` and `nit` findings do **not** block. The review is advisory by
 construction — `code-review.yml` pins `FAIL_ON: none`, whose own gate is
@@ -170,7 +176,8 @@ provably below the bar.
 
 Required checks on `main` are `test`, `review`, `plan`, `gitleaks`,
 `Opengrep OSS` and `merge-gate`. If a check is renamed, add the new name in
-branch protection or the gate silently stops blocking.
+branch protection or the gate silently stops blocking. The required name is
+still `test` (the thin propagator), not `test-suite`.
 
 ### Auto-merge
 

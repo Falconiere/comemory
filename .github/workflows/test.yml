@@ -22,7 +22,13 @@ jobs:
   # check on a high-or-critical finding and branch protection blocks the
   # merge; this suite is deterministic and runs regardless, so its result is
   # available even when the review is red.
-  test:
+  #
+  # release-plz PRs (`release-plz-*` heads) only bump version + CHANGELOG —
+  # the suite already ran on the commits being released — so this job is
+  # skipped there. The thin `test` job below still reports the required
+  # check name green; a skipped job alone would leave the PR merge-blocked.
+  test-suite:
+    if: github.event_name != 'pull_request' || (github.head_ref != '' && !startsWith(github.head_ref, 'release-plz-'))
     runs-on: ubuntu-22.04
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
@@ -189,3 +195,23 @@ jobs:
             echo "::error::missing-runtime exited $code, expected 2"
             exit 1
           fi
+
+  # Required-check facade. Branch protection requires the check name `test`.
+  # When `test-suite` is skipped (release-plz PR) or succeeds, this job is
+  # green; when the suite fails or is cancelled, this job fails too.
+  # `always()` (not `!cancelled()`): a cancelled suite must still turn the
+  # required `test` check red rather than leaving it missing.
+  test:
+    needs: test-suite
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Propagate suite result
+        run: |
+          case "${{ needs.test-suite.result }}" in
+            success|skipped) exit 0 ;;
+            *)
+              echo "::error::test-suite ended as ${{ needs.test-suite.result }}"
+              exit 1
+              ;;
+          esac
