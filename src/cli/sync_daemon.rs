@@ -83,15 +83,11 @@ fn stop(paths: &Paths, json_flag: bool) -> Result<()> {
             std::time::Duration::from_secs(15),
         );
     }
-    if json_flag {
-        return json::write(&serde_json::json!({ "stopped": true }));
-    }
-    let mut out = std::io::stdout().lock();
-    writeln!(
-        out,
-        "stopped (the next comemory command restarts a required daemon)"
-    )?;
-    Ok(())
+    report(
+        json_flag,
+        "stopped",
+        "stopped (the next comemory command restarts a required daemon)",
+    )
 }
 
 fn uninstall(paths: &Paths, json_flag: bool) -> Result<()> {
@@ -102,14 +98,19 @@ fn uninstall(paths: &Paths, json_flag: bool) -> Result<()> {
         let unit = supervisor::plan(&canonical, kind)?;
         supervisor::remove(kind, &unit);
     }
+    report(
+        json_flag,
+        "uninstalled",
+        "uninstalled this data directory's service definition (the next comemory command reinstalls it)",
+    )
+}
+
+/// `{"<key>": true}` under `--json`, else one TTY line.
+fn report(json_flag: bool, key: &str, message: &str) -> Result<()> {
     if json_flag {
-        return json::write(&serde_json::json!({ "uninstalled": true }));
+        return json::write(&serde_json::json!({ key: true }));
     }
-    let mut out = std::io::stdout().lock();
-    writeln!(
-        out,
-        "uninstalled this data directory's service definition (the next comemory command reinstalls it)"
-    )?;
+    writeln!(std::io::stdout().lock(), "{message}")?;
     Ok(())
 }
 

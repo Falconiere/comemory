@@ -11,6 +11,9 @@ QWICK_HOME=$(mktemp -d)
 trap 'rm -rf "$QWICK_HOME"' EXIT
 
 export COMEMORY_DATA_DIR="$QWICK_HOME/.comemory"
+# This smoke tests the command cores, not the required daemon (#257); the
+# hermetic switch keeps it from spawning one for a throwaway home.
+export COMEMORY_SYNC_DAEMON=0
 cd "$PROJECT_ROOT"
 cargo build --release --quiet
 BIN="$PROJECT_ROOT/target/release/comemory"
