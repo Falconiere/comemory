@@ -152,6 +152,12 @@ The `review` check is the gate, and **branch protection** is what enforces it.
 fails `review` when the report carries a `high` or `critical` finding. `review`
 is a required status check on `main`, so the red blocks the merge.
 
+CI quality gates run on PRs targeting `main` once they are ready for review,
+and again when those PRs receive new commits. Draft PRs wait for the
+`ready_for_review` event. Merging does not rerun the suite on `main`, and a
+release tag does not rerun `check-all.sh`; tag builds still run release
+preflight and artifact verification.
+
 Nothing `needs:` the gate. `test`, `plan` and every build job run
 in parallel with the review, so a red review still leaves you the test
 results — and a skipped or failed gate can no longer cascade into an empty

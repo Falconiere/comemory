@@ -40,15 +40,15 @@ permissions:
 # will be marked as a prerelease.
 on:
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, ready_for_review, reopened]
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 # Hand-maintained (re-apply on a future `cargo dist init`). Supersede an
-# in-flight PR run when the branch moves — the `plan` job runs the whole
-# check-all gate, so a stale one is minutes of spend on a commit nobody is
-# looking at. NEVER cancels a tag run: that one publishes artifacts, and
-# half a release is worse than a slow one.
+# in-flight PR plan when the branch moves. NEVER cancel a tag run: that one
+# publishes artifacts, and half a release is worse than a slow one.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -56,6 +56,7 @@ concurrency:
 jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
@@ -69,43 +70,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-          # Full history + tags: this job runs scripts/check-all.sh, whose
-          # migration-check gate compares each migrations/*.sql against the
-          # first release tag containing it. checkout defaults to depth 1 with
-          # tags off, and the gate fails loudly on zero tags by design, so
-          # without this the release build breaks.
           fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: "1.95"
-          components: rustfmt, clippy
-      # NOTE: the four steps below are hand-maintained, like the `validate`
-      # step further down (the rest of the file is dist-generated). On a
-      # future `cargo dist init`, re-apply this block.
-      #
-      # They run on tag pushes only. On a pull_request the Test workflow runs
-      # the identical scripts/check-all.sh over the identical commit, so this
-      # copy was pure double spend: 629s of a 10m job whose own work (`dist
-      # plan`) takes 2s. A tag push does not trigger Test, so on that ref this
-      # is the only gate and it stays.
-      - name: Cache cargo build
-        if: ${{ !github.event.pull_request }}
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Install cargo tools
-        if: ${{ !github.event.pull_request }}
-        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
-        with:
-          tool: typos-cli@1.32.0
-      # ast-grep is not in taiki-e/install-action's supported-tools manifest
-      # (TOOLS.md), so it is installed directly, exactly as test.yml does —
-      # scripts/guardrails-check.sh exits 3 without it on PATH.
-      - name: Install ast-grep
-        if: ${{ !github.event.pull_request }}
-        run: cargo install ast-grep --locked
-      - name: Run check-all gate
-        if: ${{ !github.event.pull_request }}
-        run: bash scripts/check-all.sh
       # NOTE: this `validate` step is hand-maintained (the rest of the file is
       # dist-generated). On a future `cargo dist init`, re-apply this block.
       - name: Validate release preflight

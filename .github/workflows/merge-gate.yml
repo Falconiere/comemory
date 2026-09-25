@@ -30,6 +30,7 @@ concurrency:
 
 jobs:
   merge-gate:
+    if: ${{ github.event.pull_request.base.ref == 'main' && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
