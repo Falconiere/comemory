@@ -112,7 +112,13 @@ fn pre_org_credential_with_a_v2_stamp_requires_login() {
     .unwrap();
 
     let error = AuthFile::load(&paths).expect_err("pre-org credential needs a new login");
-    assert!(error.to_string().contains("comemory auth login"));
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "credentials at {} carry no organization scope — run `comemory auth login`",
+            paths.auth_file().display()
+        )
+    );
     assert!(AuthFile::load_usable(&paths).unwrap().is_none());
 }
 

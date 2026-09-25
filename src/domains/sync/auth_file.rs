@@ -63,8 +63,8 @@ fn read_if_present(path: &std::path::Path) -> Result<Option<String>> {
     Ok(Some(fs::read_to_string(path)?))
 }
 
-/// The error for a credential this build cannot read, or `None` when the
-/// version matches.
+/// The error for a credential this build cannot read, or `None` when its
+/// version and organization identity are usable.
 ///
 /// The version and org fields are probed before the strict parse because old
 /// files can carry a v2 stamp yet lack org scope. Parsing them directly would
