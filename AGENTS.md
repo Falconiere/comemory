@@ -477,10 +477,11 @@ schema-migration snapshot `rebuild` shares its mechanism with.
 - Match `.github/workflows/test.yml`'s Rust 1.95 toolchain when running the
   quality gates (`RUSTUP_TOOLCHAIN=1.95.0 bash scripts/check-all.sh`); Clippy
   lint inventories differ between compiler versions.
-- The test profile uses `opt-level = 1` for the real indexing/replication
-  workloads, retaining debug assertions and overflow checks. Nextest starts
-  the four large-backlog exchange tests first so they overlap the shorter
-  tests instead of extending the end of the run.
+- Linux CI places coverage-run temporary fixtures on an isolated 2 GiB `tmpfs`
+  mount to avoid block-device contention from thousands of SQLite commits.
+  These remain real files and databases across process restarts. Nextest starts
+  the four large-backlog exchange tests first; test counts and assertions stay
+  unchanged, and the normal debug test profile retains its runtime checks.
 - **Test code never lives in a production file.** No `#[cfg(test)] mod tests { ... }`
   body in any `src/` file, ever.
 
