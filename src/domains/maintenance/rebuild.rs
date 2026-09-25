@@ -59,9 +59,11 @@ use serde::Deserialize;
 use crate::domains::documents::source::mirror;
 use crate::domains::documents::source::registry::Registry;
 use crate::domains::memories::MemoryStore;
+use crate::domains::sync::replica::bootstrap;
 use crate::prelude::*;
 use crate::store::connection;
 use crate::store::migrate::backup;
+use crate::store::{Connection, schema_meta, seed_scan};
 use crate::utilities::context::Ctx;
 
 /// The live-table allowlist pair plus the thin delegate into
@@ -284,6 +286,7 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     if old_db.exists() {
         copy::copy_preserved_tables_from_old(&mut conn, old_db)?;
     }
+    reset_seeding_if_unjournalled(&conn)?;
 
     // Derived artifacts last: the replay supplies the memory→memory
     // relations and the copy above restores the mined code-graph edges, so
@@ -303,6 +306,23 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     Ok(())
 }
 
+/// Reset the memory bootstrap scan to the beginning when the copy left a
+/// live memory with no `replica_revision` row (#256) — a `schema_meta`
+/// cursor the copy could not carry (a database this old, or a markdown file
+/// placed in `memories/` by hand) would otherwise report `complete` and
+/// withhold no capability, even though the journal is not actually whole.
+fn reset_seeding_if_unjournalled(conn: &Connection) -> Result<()> {
+    if seed_scan::unjournalled_live_memory_count(conn)? == 0 {
+        return Ok(());
+    }
+    schema_meta::upsert(conn, bootstrap::STATE_KEY, "pending")?;
+    schema_meta::upsert(conn, bootstrap::THROUGH_KEY, "")?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/rebuild.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "tests/rebuild_2.rs"]
+mod tests_2;

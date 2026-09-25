@@ -175,3 +175,47 @@ fn a_fresh_data_dir_completes_with_nothing_to_seed() {
     let progress = seed_documents::advance(&mut ctx).expect("advance");
     assert!(progress.complete());
 }
+
+#[test]
+fn a_file_larger_than_the_sniff_window_is_seeded_without_panicking() {
+    let mut home = Home::new();
+    let root = TempDir::new().expect("tempdir");
+    // classify()'s contract requires its content_head bounded to SNIFF_WINDOW
+    // (8192 bytes); a document this large regressed that (#256).
+    let large = "# Large\n\n".to_string() + &"word ".repeat(4000);
+    let path = root.path().join("notes.md");
+    fs::write(&path, &large).expect("write large fixture");
+    sources::upsert(
+        &home.conn,
+        SourceRootUpsert {
+            id: SOURCE_ID,
+            canonical_path: &root.path().to_string_lossy(),
+            kind: "dir",
+            repo: Some(LABEL),
+            created_at: "2026-09-25T10:00:00Z",
+            updated_at: "2026-09-25T10:00:00Z",
+        },
+    )
+    .expect("seed source_roots row");
+    let candidate = crate::domains::documents::source::discover::Candidate {
+        relative_path: "notes.md".into(),
+        absolute_path: path,
+        classification: crate::domains::documents::source::classify::Classification::Document(
+            crate::domains::documents::document::DocumentFormat::Markdown,
+        ),
+    };
+    writer::update_file(
+        &mut home.conn,
+        SOURCE_ID,
+        Some(LABEL),
+        &candidate,
+        root.path(),
+        1 << 20,
+    )
+    .expect("index");
+    approve(&home, &root);
+
+    let mut ctx = home.ctx();
+    let progress = seed_documents::advance(&mut ctx).expect("advance did not panic");
+    assert!(progress.complete());
+}

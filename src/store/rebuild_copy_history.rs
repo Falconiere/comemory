@@ -59,6 +59,23 @@ pub(crate) fn copy_history_tables(conn: &Connection) -> Result<()> {
         )?;
     }
     copy_sync_tables(conn)?;
+    copy_replica_progress(conn)
+}
+
+/// Copy every `replica_`-prefixed `schema_meta` key: the bootstrap, trash,
+/// document, event-capture, feedback-backfill and seed-adoption cursors,
+/// and the restore state (#256). Without this a rebuild resets every
+/// seeding walk to the beginning even though `replica_feed` is already
+/// whole — a correct but wasteful full rescan `maintenance::rebuild`'s own
+/// unjournalled-memory check backstops if the rescan is genuinely needed.
+fn copy_replica_progress(conn: &Connection) -> Result<()> {
+    if !old_table_exists(conn, "schema_meta")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO main.schema_meta(key, value) \
+         SELECT key, value FROM old.schema_meta WHERE key LIKE 'replica\\_%' ESCAPE '\\';",
+    )?;
     Ok(())
 }
 

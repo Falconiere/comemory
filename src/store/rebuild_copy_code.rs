@@ -42,10 +42,13 @@ fn copy_if_present(conn: &Connection, table: &str, sql: &str) -> Result<()> {
 ///
 /// A generation a peer accepted cannot be re-derived from a local checkout —
 /// dropping it would have the machine re-offer positions the peer already
-/// holds a receipt for. `staged` rows are the exception and are left behind:
-/// an upload that never activated published nothing, so a peer re-stages it.
-/// The three projection tables follow the generations that survived that
-/// filter, so a rebuild never leaves a projection whose generation is gone.
+/// holds a receipt for. A `staged` row is normally left behind — an upload
+/// that never activated published nothing, so a peer re-stages it — UNLESS a
+/// `pending` outbox operation still names it (#256): that generation is an
+/// owed upload, and dropping it would lose the outgoing payload the push
+/// still has to send. The three projection tables follow the generations
+/// that survived either branch, so a rebuild never leaves a projection whose
+/// generation is gone.
 fn copy_code_generations(conn: &Connection) -> Result<()> {
     copy_if_present(
         conn,
@@ -55,7 +58,11 @@ fn copy_code_generations(conn: &Connection) -> Result<()> {
              file_count, manifest_digest, created_at, activated_at) \
          SELECT repo, generation_id, parent_id, head, mined_commit, origin, state, \
              file_count, manifest_digest, created_at, activated_at \
-         FROM old.code_generation WHERE state <> 'staged';",
+         FROM old.code_generation \
+         WHERE state <> 'staged' OR EXISTS (\
+             SELECT 1 FROM old.replica_operation \
+              WHERE entity_kind = 'code_generation' AND state = 'pending' \
+                AND entity_key = old.code_generation.repo);",
     )?;
     for (table, columns) in PROJECTION {
         copy_if_present(
@@ -206,3 +213,7 @@ fn copy_code_virtual_tables(conn: &Connection) -> Result<()> {
          SELECT symbol_id, embedding FROM old.code_vec;",
     )
 }
+
+#[cfg(test)]
+#[path = "tests/rebuild_copy_code.rs"]
+mod tests;

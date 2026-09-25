@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::domains::documents::document::extract;
 use crate::domains::documents::journal::{self, IndexedRevision};
-use crate::domains::documents::source::classify::{Classification, classify};
+use crate::domains::documents::source::classify::{Classification, SNIFF_WINDOW, classify};
 use crate::domains::sync::replica::bootstrap::{Progress, STATE_COMPLETE};
 use crate::prelude::*;
 use crate::store::connection::write_transaction;
@@ -110,7 +110,8 @@ fn seed_one(ctx: &mut Ctx<'_>, candidate: &seed_scan::UnsharedDocument) -> Resul
     if hash != candidate.revision_hash {
         return Ok(());
     }
-    let Classification::Document(format) = classify(&path, &bytes) else {
+    let head = &bytes[..bytes.len().min(SNIFF_WINDOW)];
+    let Classification::Document(format) = classify(&path, head) else {
         return Ok(());
     };
     let file_stem = path

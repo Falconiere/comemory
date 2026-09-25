@@ -231,3 +231,52 @@ fn every_gc_runs_column_survives_the_preservation_copy() {
         "a rebuild keeps every counter a sweep recorded"
     );
 }
+
+#[test]
+fn every_replica_progress_key_survives_the_preservation_copy() {
+    let old_dir = TempDir::new().expect("old tempdir");
+    let old_path = old_dir.path().join("comemory.db");
+    {
+        let old = connection::open(&old_path).expect("old db");
+        for (key, value) in [
+            ("replica_bootstrap_state", "complete"),
+            ("replica_bootstrap_through", "ffffffff"),
+            ("replica_seed_trash_state", "seeding"),
+            ("replica_seed_trash_through", "0001-a.md"),
+            ("replica_seed_documents_state", "complete"),
+            ("replica_seed_documents_policy", "3:2026-09-25T10:00:00Z"),
+            ("replica_activity_capture_through", "42"),
+            ("replica_feedback_backfill_state", "complete"),
+            ("replica_restore_state", "erasure_unknown"),
+        ] {
+            old.execute(
+                "INSERT INTO schema_meta(key, value) VALUES (?1, ?2)",
+                rusqlite::params![key, value],
+            )
+            .expect("seed schema_meta key");
+        }
+    }
+
+    let new_dir = TempDir::new().expect("new tempdir");
+    let mut conn = connection::open(new_dir.path().join("comemory.db")).expect("new db");
+    copy_preserved_tables_from_old(&mut conn, &old_path).expect("copy");
+
+    for (key, expected) in [
+        ("replica_bootstrap_state", "complete"),
+        ("replica_bootstrap_through", "ffffffff"),
+        ("replica_seed_trash_state", "seeding"),
+        ("replica_seed_trash_through", "0001-a.md"),
+        ("replica_seed_documents_state", "complete"),
+        ("replica_seed_documents_policy", "3:2026-09-25T10:00:00Z"),
+        ("replica_activity_capture_through", "42"),
+        ("replica_feedback_backfill_state", "complete"),
+        ("replica_restore_state", "erasure_unknown"),
+    ] {
+        let value: String = conn
+            .query_row("SELECT value FROM schema_meta WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .unwrap_or_else(|_| panic!("{key} survived the copy"));
+        assert_eq!(value, expected, "{key}");
+    }
+}

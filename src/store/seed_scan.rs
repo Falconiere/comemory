@@ -75,6 +75,25 @@ pub fn unshared_documents_after(
     Ok(rows)
 }
 
+/// How many live memories have no `replica_revision` row — a rebuild copy
+/// that did not carry the journal for one, or a markdown file placed in
+/// `memories/` by hand. A rebuild resets the memory bootstrap scan when this
+/// is not zero, so the manifest withholds capabilities until it is seeded
+/// once.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn unjournalled_live_memory_count(conn: &Connection) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM memories m WHERE m.deleted_at IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM replica_revision r \
+                             WHERE r.entity_kind = 'memory' AND r.entity_key = m.id)",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(Into::into)
+}
+
 /// `limit` as SQLite's `i64`, or a descriptive error for a batch size that
 /// cannot be represented.
 fn seed_limit(limit: usize) -> Result<i64> {

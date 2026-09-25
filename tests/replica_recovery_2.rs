@@ -150,3 +150,163 @@ fn a_legacy_client_uploads_its_history_once() {
         "a second sync on the client adds nothing to the hub"
     );
 }
+
+// ---------------------------------------------------------------------------
+// B-2: a rebuild keeps every replica table whole for a client that holds
+// BOTH pulled caches (a peer's code generation and document) AND its own
+// owed uploads, and the pending upload still goes out afterward.
+// ---------------------------------------------------------------------------
+
+const CODE_SMALL: usize = 12;
+
+/// Every replica-relevant row count this test compares before and after a
+/// rebuild, keyed by table name.
+fn replica_row_counts(conn: &rusqlite::Connection) -> Vec<(&'static str, i64)> {
+    const TABLES: &[&str] = &[
+        "replica_feed",
+        "replica_revision",
+        "replica_operation",
+        "replica_receipt",
+        "replica_cursor",
+        "replica_binding",
+        "sync_exchange",
+        "code_generation",
+        "remote_code_file",
+        "remote_document",
+        "remote_document_chunk",
+    ];
+    TABLES
+        .iter()
+        .map(|t| {
+            let n: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {t}"), [], |r| r.get(0))
+                .unwrap_or_else(|e| panic!("count {t}: {e}"));
+            (*t, n)
+        })
+        .collect()
+}
+
+#[test]
+fn rebuild_keeps_replica_state_and_pulled_caches() {
+    let hub = exchange_support::Hub::start();
+    let sharer = exchange_support::Client::new();
+    sharer.login(&hub);
+    sharer.approve(
+        &hub.api_url(),
+        exchange_support::WORKSPACE,
+        &[exchange_support::REPO],
+        1,
+    );
+    let holder = exchange_support::Client::new();
+    holder.login(&hub);
+    holder.approve(
+        &hub.api_url(),
+        exchange_support::WORKSPACE,
+        &[exchange_support::REPO],
+        1,
+    );
+
+    // The sharer builds and shares a small real code generation and a real
+    // document, then syncs them to the hub.
+    let workdir = tempfile::tempdir().expect("workdir");
+    let repo_path = replica_support::pinned_repo(workdir.path(), CODE_SMALL);
+    replica_support::git(
+        &repo_path,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/Falconiere/comemory.git",
+        ],
+    );
+    sharer.cli(&[
+        "index-code",
+        "--repo",
+        exchange_support::REPO,
+        "--path",
+        repo_path.to_str().expect("utf8 path"),
+    ]);
+    let docs_root = replica_support::docs_tree(workdir.path(), "pinned-repo");
+    let guides_dir = docs_root.join("docs/guides");
+    sharer.cli(&[
+        "index",
+        guides_dir.to_str().expect("utf8 path"),
+        "--repo",
+        exchange_support::REPO,
+    ]);
+    sharer.sync();
+
+    // The holder pulls both, then — with the inline push disabled so the
+    // edit stays a real pending outbox row — makes a local edit of its own.
+    holder.sync();
+    std::fs::write(
+        holder.data_dir().join("config.toml"),
+        "[sync]
+push_on_save = false
+",
+    )
+    .expect("disable inline push");
+    let memory_id = holder.save(
+        "an edit this client owes the hub, still pending when the rebuild runs",
+        exchange_support::REPO,
+    );
+
+    let before = {
+        let conn =
+            comemory::store::connection::open(holder.data_dir().join("comemory.db")).expect("open");
+        assert!(
+            comemory::store::code_generation::active(&conn, exchange_support::REPO)
+                .expect("active")
+                .is_some(),
+            "the holder pulled the sharer's code generation"
+        );
+        assert!(
+            comemory::store::remote_document_view::shared_document(
+                &conn,
+                exchange_support::REPO,
+                &comemory::domains::documents::share::shared_id(
+                    exchange_support::REPO,
+                    "docs/guides/http-api.md",
+                ),
+            )
+            .expect("shared_document")
+            .is_some(),
+            "the holder pulled the sharer's document"
+        );
+        assert_eq!(
+            comemory::store::replica_outbox::count(&conn, "pending").expect("count"),
+            1,
+            "the local edit is a real pending outbox row"
+        );
+        replica_row_counts(&conn)
+    };
+
+    let (code, _out, err) = replica_support::cli_raw(&holder.data_dir(), &["rebuild"]);
+    assert_eq!(code, 0, "rebuild: {err}");
+
+    let after = {
+        let conn =
+            comemory::store::connection::open(holder.data_dir().join("comemory.db")).expect("open");
+        replica_row_counts(&conn)
+    };
+    assert_eq!(
+        before, after,
+        "a rebuild must carry every replica row a client held, whole"
+    );
+
+    // The pending upload still reaches the hub afterward.
+    holder.sync();
+    let hub_conn =
+        comemory::store::connection::open(hub.data_dir().join("comemory.db")).expect("open hub db");
+    let hub_has_it: bool = hub_conn
+        .query_row(
+            "SELECT COUNT(*) FROM replica_feed WHERE entity_key = ?1",
+            [&memory_id],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .expect("query hub feed");
+    assert!(
+        hub_has_it,
+        "the pending edit rebuild preserved still uploaded"
+    );
+}
