@@ -2,6 +2,7 @@ name: Code Review
 
 on:
   pull_request:
+    branches: [main]
     types: [opened, synchronize, ready_for_review, reopened]
 
 permissions:
@@ -16,6 +17,7 @@ concurrency:
 
 jobs:
   review:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -109,7 +111,7 @@ jobs:
   # superseded by a newer push must not.
   merge-gate:
     needs: review
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

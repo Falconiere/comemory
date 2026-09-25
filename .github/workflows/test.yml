@@ -2,17 +2,13 @@ name: Test
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+    branches: [main]
+    types: [opened, synchronize, ready_for_review, reopened]
 
 permissions:
   contents: read
 
-# One live run per ref. Pushing three times in a row used to leave three
-# full suites running against commits already superseded; now only the
-# newest survives. `main` is included deliberately — the last push wins
-# there too, and nothing downstream reads an intermediate run.
+# One live run per PR. New commits supersede runs against older commits.
 concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
@@ -28,7 +24,7 @@ jobs:
   # skipped there. The thin `test` job below still reports the required
   # check name green; a skipped job alone would leave the PR merge-blocked.
   test-suite:
-    if: github.event_name != 'pull_request' || (github.head_ref != '' && !startsWith(github.head_ref, 'release-plz-'))
+    if: ${{ !github.event.pull_request.draft && !startsWith(github.head_ref, 'release-plz-') }}
     runs-on: ubuntu-22.04
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
@@ -203,7 +199,7 @@ jobs:
   # required `test` check red rather than leaving it missing.
   test:
     needs: test-suite
-    if: always()
+    if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
       - name: Propagate suite result
