@@ -42,6 +42,11 @@ pub struct PushStats {
     pub rejected_repo: u32,
     /// Highest local seq included in a successful batch.
     pub last_pushed_seq: i64,
+    /// Highest local seq this run has read past: batches sent, and batches
+    /// that offered nothing. The next batch reads above it, so a run moves on
+    /// even where the stored cursor does not.
+    #[serde(skip)]
+    pub scanned_seq: i64,
 }
 
 /// Everything a legacy push batch sends through.
@@ -72,7 +77,8 @@ pub fn batch(
     sync_state::ensure(conn, workspace_id, &wire.key.api_url)?;
     let row = sync_state::get(conn, workspace_id)?
         .ok_or_else(|| Error::Other("sync_state missing after ensure".into()))?;
-    let rows = sync_log::local_entries_since(conn, row.pushed_seq, MAX_BATCH)?;
+    let since = row.pushed_seq.max(stats.scanned_seq);
+    let rows = sync_log::local_entries_since(conn, since, MAX_BATCH)?;
     let Some(high) = rows.last().map(|r| r.seq) else {
         return Ok(Ok(false));
     };
@@ -86,22 +92,21 @@ pub fn batch(
             entries.push(entry);
         }
     }
-    if !entries.is_empty() {
-        let body = WireImportRequest {
-            cursor: row.pulled_seq,
-            entries: &entries,
-            repositories: wire.transport.is_managed().then_some(&repositories),
-        };
-        let sent = wire
-            .transport
-            .retrying(|t| t.post::<ImportResponse, _>("/v1/sync/import", &body));
-        match sent {
-            Ok(response) => apply_response(&response, high, stats)?,
-            Err(failure) => return Ok(Err(failure)),
+    if entries.is_empty() {
+        // The legacy rule: a batch that offers nothing moves the stored
+        // cursor only while nothing has been pushed this run, so withheld
+        // rows after a push are read again by the next run.
+        stats.scanned_seq = high;
+        if stats.pushed == 0 {
+            sync_state::set_pushed(conn, workspace_id, high, &now_iso()?)?;
         }
+        return Ok(Ok(true));
     }
-    stats.last_pushed_seq = high;
-    sync_state::set_pushed(conn, workspace_id, high, &now_iso()?)?;
+    if let Err(failure) = send(wire, row.pulled_seq, (&entries, &repositories), high, stats)? {
+        return Ok(Err(failure));
+    }
+    stats.scanned_seq = high;
+    sync_state::set_pushed(conn, workspace_id, stats.last_pushed_seq, &now_iso()?)?;
     Ok(Ok(true))
 }
 
@@ -114,6 +119,32 @@ struct WireImportRequest<'a> {
     entries: &'a [ImportEntry],
     #[serde(skip_serializing_if = "Option::is_none")]
     repositories: Option<&'a BTreeMap<String, String>>,
+}
+
+/// Send one batch's entries and fold the answer into `stats`; the transport
+/// failure is the inner `Err`.
+fn send(
+    wire: &Wire<'_>,
+    pulled_seq: i64,
+    (entries, repositories): (&[ImportEntry], &BTreeMap<String, String>),
+    high: i64,
+    stats: &mut PushStats,
+) -> Result<Answer<()>> {
+    let body = WireImportRequest {
+        cursor: pulled_seq,
+        entries,
+        repositories: wire.transport.is_managed().then_some(repositories),
+    };
+    match wire
+        .transport
+        .retrying(|t| t.post::<ImportResponse, _>("/v1/sync/import", &body))
+    {
+        Ok(response) => {
+            apply_response(&response, high, stats)?;
+            Ok(Ok(()))
+        }
+        Err(failure) => Ok(Err(failure)),
+    }
 }
 
 fn apply_response(resp: &ImportResponse, batch_high_seq: i64, stats: &mut PushStats) -> Result<()> {
