@@ -11,12 +11,10 @@ STEP="regen-cli-docs"
 
 OUT="${1:-$PROJECT_ROOT/docs/cli-reference.md}"
 
-log_info "$STEP" "building dev binary"
-# Help output needs no release optimization or LTO. Share the dev artifacts
-# with the check-all gates and eval-check instead of building another profile.
-run_cargo build --locked --quiet
+log_info "$STEP" "building release-quick binary"
+run_cargo build --profile release-quick --locked --quiet
 
-BIN="$PROJECT_ROOT/target/debug/comemory"
+BIN="$PROJECT_ROOT/target/release-quick/comemory"
 [[ -x "$BIN" ]] || die "$STEP" "expected binary at $BIN"
 
 # Discover visible canonical names from clap's command rows. A fixed list can

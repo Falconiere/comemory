@@ -83,10 +83,12 @@ fi
 [[ -f "$golden" ]]     || die "eval-check" "missing golden file: $golden"
 
 # The binary is not on PATH in a fresh checkout/CI; build and use the artifact
-# directly. This gate scores retrieval quality, not speed; share the dev
-# profile with cli-docs-check instead of paying for release optimization/LTO.
-run_cargo build --locked --quiet
-bin="$PROJECT_ROOT/target/debug/comemory"
+# directly. release-quick, not release: this gate scores retrieval quality, so
+# it needs a correct binary and not a fat-LTO/codegen-units=1 one, and
+# cli-docs-check (inside check-all) already builds that same profile — so in a
+# CI run the two share artifacts instead of linking the workspace twice.
+run_cargo build --profile release-quick --locked --quiet
+bin="$PROJECT_ROOT/target/release-quick/comemory"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
