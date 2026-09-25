@@ -76,17 +76,29 @@ pub fn events(
     Ok(adopted)
 }
 
+/// Capture batches one full pass runs at most (each up to 200 runs and 200
+/// verdicts): a backlog deeper than that, or runs recorded as fast as they
+/// are captured, carry on in the next pass instead of holding this one.
+const MAX_CAPTURE_BATCHES: usize = 1_000;
+
 /// Run #254's capture: one batch, or — with [`Reach::All`] — batches until
-/// the run cursor stops moving and the verdict backfill is complete.
+/// the run cursor stops moving and the verdict backfill is complete, within
+/// [`MAX_CAPTURE_BATCHES`].
 fn capture(ctx: &mut Ctx<'_>, reach: Reach) -> Result<()> {
-    loop {
+    let batches = if reach == Reach::OnePage {
+        1
+    } else {
+        MAX_CAPTURE_BATCHES
+    };
+    for _ in 0..batches {
         let before = schema_meta::get(ctx.conn()?, event_capture::ACTIVITY_THROUGH)?;
         let backfill = event_capture::advance(ctx)?;
         let after = schema_meta::get(ctx.conn()?, event_capture::ACTIVITY_THROUGH)?;
-        if reach == Reach::OnePage || (backfill.complete() && after == before) {
-            return Ok(());
+        if backfill.complete() && after == before {
+            break;
         }
     }
+    Ok(())
 }
 
 /// Queue `kind`'s positions above its cursor, one transaction per page.

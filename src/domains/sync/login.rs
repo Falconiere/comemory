@@ -111,7 +111,7 @@ pub fn status(paths: &Paths, api_url_override: Option<&str>) -> Result<Option<St
 /// rotates it.
 ///
 /// # Errors
-/// Propagates a failure to remove `auth.json`.
+/// As [`forget`]: a store failure leaves the credential in place.
 pub fn logout(paths: &Paths, cfg: &Config) -> Result<bool> {
     // Stop while credentials still exist so a failing stop does not leave the
     // daemon racing against a deleted auth.json mid-clear.
@@ -126,7 +126,10 @@ pub fn logout(paths: &Paths, cfg: &Config) -> Result<bool> {
 /// send them — then remove `auth.json`.
 ///
 /// # Errors
-/// Propagates the store and the credential removal.
+/// Propagates the store — queueing or stamping what the outgoing key owes —
+/// before the credential is touched, so a failure leaves it in place and no
+/// run made under it can reach another workspace; retrying once the store is
+/// writable finishes the logout. Then propagates the credential removal.
 pub fn forget(paths: &Paths, cfg: &Config) -> Result<()> {
     if let Some(leaving) = outgoing(paths) {
         stamp_outgoing((paths, cfg), &leaving)?;
