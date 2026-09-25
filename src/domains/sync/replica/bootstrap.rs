@@ -9,8 +9,9 @@
 //! `replica-v1` is not advertised until the state reaches `complete`, so a
 //! peer never treats a half-seeded feed as the whole history.
 
-use crate::domains::memories::{MemoryStore, journal};
+use crate::domains::memories::{Frontmatter, MemoryStore, journal};
 use crate::prelude::*;
+use crate::store::connection::write_transaction;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::store::{memory_row, replica_outbox, replica_read, schema_meta, seed_scan};
 use crate::utilities::context::Ctx;
@@ -88,40 +89,76 @@ pub fn advance(ctx: &mut Ctx<'_>) -> Result<Progress> {
     )
 }
 
+/// One memory read off disk, not yet checked against a race.
+struct LoadedSeed {
+    id: String,
+    operation_id: String,
+    frontmatter: Frontmatter,
+    body: String,
+    at: String,
+}
+
 /// Journal one pre-existing memory as a local upsert, unless it already has a
-/// revision.
+/// revision. Split into [`load`] and [`commit`] — with no write lock held
+/// between them — so a save that lands in that window wins outright and this
+/// seed backs off, instead of silently overwriting it with the older text.
 fn seed_one(ctx: &mut Ctx<'_>, id: &str) -> Result<()> {
+    let Some(loaded) = load(ctx, id)? else {
+        return Ok(());
+    };
+    commit(ctx, &loaded)
+}
+
+/// Read `id`'s markdown, unless it already has a revision — the peek is
+/// advisory (racy by construction); [`commit`] re-checks under the write lock.
+fn load(ctx: &mut Ctx<'_>, id: &str) -> Result<Option<LoadedSeed>> {
     {
         let conn = ctx.conn()?;
         if replica_read::revision(conn, "memory", id)?.is_some() {
-            return Ok(());
+            return Ok(None);
         }
     }
     let record = match MemoryStore::new(ctx.paths.clone()).load(id) {
         Ok(record) => record,
         // A row whose markdown is gone is a repair job for `doctor`, not a
         // reason to stall seeding for every other memory.
-        Err(Error::NotFound(_)) => return Ok(()),
+        Err(Error::NotFound(_)) => return Ok(None),
         Err(e) => return Err(e),
     };
     let at = memory_row::iso_format(record.frontmatter.created)?;
     let operation_id = journal::mint_operation_id(id, ReplicaOp::Upsert);
+    Ok(Some(LoadedSeed {
+        id: id.to_string(),
+        operation_id,
+        frontmatter: record.frontmatter,
+        body: record.body,
+        at,
+    }))
+}
+
+/// Journal `loaded` inside a write-locked transaction that re-checks the
+/// revision first, so a save that committed since [`load`] ran is never
+/// overwritten by the older text this walk read.
+fn commit(ctx: &mut Ctx<'_>, loaded: &LoadedSeed) -> Result<()> {
     let conn = ctx.conn()?;
-    let tx = conn.transaction()?;
+    let tx = write_transaction(conn)?;
+    if replica_read::revision(&tx, "memory", &loaded.id)?.is_some() {
+        return Ok(());
+    }
     journal::record_write(
         &tx,
         ReplicaOp::Upsert,
-        &record.frontmatter,
-        &record.body,
-        &at,
+        &loaded.frontmatter,
+        &loaded.body,
+        &loaded.at,
         ReplicaOrigin::Local,
-        Some(&operation_id),
+        Some(&loaded.operation_id),
     )?;
     // Seeding records what this engine already holds; it owes nobody an
     // upload, and an owed upload makes an engine refuse every import for the
     // entity. The journal enqueues every local write, so the row goes in the
     // same transaction that wrote it.
-    replica_outbox::discard(&tx, &operation_id)?;
+    replica_outbox::discard(&tx, &loaded.operation_id)?;
     tx.commit()?;
     Ok(())
 }

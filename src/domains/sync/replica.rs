@@ -42,6 +42,10 @@ pub mod manifest;
 pub mod materialize;
 /// Apply one entry pulled from an upstream, in the upstream's order.
 pub mod pulled;
+/// Journal seeding for documents indexed before the journal existed.
+pub mod seed_documents;
+/// Journal seeding for memories trashed before the journal existed.
+pub mod seed_trash;
 /// Staged parts of an oversized revision and their activation.
 pub mod staging;
 /// The acceptance decision, made before any state moves.

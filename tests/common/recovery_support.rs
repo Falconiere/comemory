@@ -193,6 +193,21 @@ pub fn feed_entities(data_dir: &Path) -> Vec<(String, String)> {
         .expect("collect")
 }
 
+/// Every `(entity_kind, entity_key, op)` the replica feed holds, in
+/// acceptance order — distinguishes an upsert from a tombstone, which
+/// [`feed_entities`] cannot.
+pub fn feed_entities_with_op(data_dir: &Path) -> Vec<(String, String, String)> {
+    let conn = open(data_dir);
+    let mut statement = conn
+        .prepare("SELECT entity_kind, entity_key, op FROM replica_feed ORDER BY sequence")
+        .expect("prepare");
+    statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect")
+}
+
 /// Whether the journal already holds a revision for `(kind, key)` — the same
 /// idempotency check the seeding walks make.
 pub fn has_revision(data_dir: &Path, kind: &str, key: &str) -> bool {
@@ -220,12 +235,15 @@ pub fn open(data_dir: &Path) -> Connection {
 pub fn pre_migration_snapshots(data_dir: &Path) -> Vec<PathBuf> {
     std::fs::read_dir(data_dir)
         .expect("read data dir")
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("comemory.db.pre-v") && n.ends_with(".bak"))
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                n.starts_with("comemory.db.pre-v")
+                    && std::path::Path::new(n)
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("bak"))
+            })
         })
         .collect()
 }

@@ -88,24 +88,49 @@ fn legacy_database_upgrades_and_seeds_once() {
     // advertises them.
     recovery_support::wait_for_capabilities(&hub);
 
-    // One upsert per live memory, none seeded twice.
-    let entities = recovery_support::feed_entities(&data_dir);
-    let memory_keys: Vec<&str> = entities
+    // One upsert per live memory, one tombstone per trashed memory, none
+    // seeded twice.
+    let entities = recovery_support::feed_entities_with_op(&data_dir);
+    let memory: Vec<&(String, String, String)> = entities
         .iter()
-        .filter(|(kind, _)| kind == "memory")
-        .map(|(_, key)| key.as_str())
+        .filter(|(kind, ..)| kind == "memory")
         .collect();
     let expected_live = MEMORY_COUNT - TRASHED_COUNT;
+    let upserts: Vec<&str> = memory
+        .iter()
+        .filter(|(_, _, op)| op == "upsert")
+        .map(|(_, key, _)| key.as_str())
+        .collect();
+    let tombstones: Vec<&str> = memory
+        .iter()
+        .filter(|(_, _, op)| op == "tombstone")
+        .map(|(_, key, _)| key.as_str())
+        .collect();
     assert_eq!(
-        memory_keys.len(),
+        upserts.len(),
         expected_live,
         "one feed position per live memory"
     );
-    let unique: HashSet<&str> = memory_keys.iter().copied().collect();
     assert_eq!(
-        unique.len(),
+        tombstones.len(),
+        TRASHED_COUNT,
+        "one tombstone per trashed memory"
+    );
+    let unique_upserts: HashSet<&str> = upserts.iter().copied().collect();
+    assert_eq!(
+        unique_upserts.len(),
         expected_live,
         "every live memory seeded exactly once"
+    );
+    let unique_tombstones: HashSet<&str> = tombstones.iter().copied().collect();
+    assert_eq!(
+        unique_tombstones.len(),
+        TRASHED_COUNT,
+        "every trashed memory tombstoned exactly once"
+    );
+    assert!(
+        unique_upserts.is_disjoint(&unique_tombstones),
+        "a live id and a trashed id are never the same memory"
     );
 
     // One position per retained verdict and run.

@@ -63,6 +63,18 @@ pub fn len(conn: &Connection) -> Result<i64> {
     Ok(count)
 }
 
+/// A cheap fingerprint of the map: its size and the latest `updated_at` a
+/// [`replace_all`] call stamped, so a caller can tell the map changed.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn fingerprint(conn: &Connection) -> Result<String> {
+    let mut statement =
+        conn.prepare("SELECT COUNT(*), COALESCE(MAX(updated_at), '') FROM repository_approval")?;
+    let (count, newest): (i64, String) = statement.query_row([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(format!("{count}:{newest}"))
+}
+
 /// The canonical repository `label` resolves to, or `None` when it is not
 /// approved — which is also the answer before any policy has been loaded.
 ///
