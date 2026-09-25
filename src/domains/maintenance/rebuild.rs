@@ -1,7 +1,7 @@
 //! `maintenance::rebuild::{Request, run}` — the shared middle of `comemory rebuild`
-//! / `POST /api/v1/rebuild` (job): atomically replace the SQLite mirror,
-//! preserving the code index, by rebuilding from the on-disk markdown files.
-//! Moved out of `cli::rebuild::run` (Binding Rule 1).
+//! / `POST /api/v1/rebuild` (job): replace the SQLite mirror's content in
+//! place, preserving the code index, by rebuilding from the on-disk markdown
+//! files. Moved out of `cli::rebuild::run` (Binding Rule 1).
 //!
 //! Markdown remains the source of truth in v0.2; `comemory.db` is a
 //! rebuildable derived cache. When the DB drifts (schema change, corruption,
@@ -9,21 +9,26 @@
 //! frontmatter, and reinserts the `memories` + `memory_tags` + `memory_fts`
 //! rows along with the graph edges harvested from the body.
 //!
-//! ## Conn-free by construction
+//! ## Staged, then replaced in place
 //!
-//! [`run`] never calls [`Ctx::conn`]: it opens its **own** standalone
-//! connection on `comemory.db.rebuild.tmp` via
-//! [`crate::store::connection::open`] and renames that file over the live
-//! path. Over HTTP that matters twice — the job never contends for the
-//! server's shared connection, and the server must swap its shared
-//! connection afterwards (`serve::AppState::swap_conn`, spec §3 "Rebuild
-//! connection swap") or keep reading the unlinked pre-rebuild inode.
+//! [`stage`] builds the new DB at `comemory.db.rebuild.tmp` on its own
+//! connection, so a crash or parse error mid-rebuild leaves `comemory.db`
+//! intact. [`Staged::replace_into`] then copies it INTO a connection already
+//! open on the live file through SQLite's online backup API
+//! ([`crate::store::replace_in_place`], #256) — one write transaction, no
+//! rename. Every connection open on `comemory.db` (the server's shared one,
+//! an MCP session's) reads the rebuilt content on its next query, and no
+//! `-wal`/`-shm` sidecar is removed from under it. [`run`] replaces through a
+//! connection of its own; the HTTP job replaces through the server's shared
+//! connection, so it needs no reopen and no swap.
 //!
-//! ## Atomic swap
+//! ## Writers paused
 //!
-//! The new DB is built at `comemory.db.rebuild.tmp` so a crash or parse
-//! error mid-rebuild leaves the original `comemory.db` intact. On success,
-//! `fs::rename` replaces the live DB in one atomic filesystem operation.
+//! [`stage`] takes `memory-save.lock` before reading anything and the
+//! [`Staged`] value holds it until the replace is done, so no markdown writer
+//! can land between the markdown walk and the copy. It waits `[sync]
+//! pause_wait` for a current holder, then fails [`Error::Busy`] having
+//! changed nothing — as does a save waiting on a rebuild.
 //!
 //! ## Code index + learning-state preservation
 //!
@@ -32,8 +37,8 @@
 //! edges plus their `repo_marker` cursors, the five learning-loop tables,
 //! and the document-domain tables (`source_files`, `documents`,
 //! `document_chunks`, `document_fts`) — is copied from the old DB via
-//! `ATTACH DATABASE` before the swap by [`crate::store::rebuild_copy`] and
-//! its siblings. Markdown cannot rebuild any of it, so dropping it would
+//! `ATTACH DATABASE` before the replace by [`crate::store::rebuild_copy`]
+//! and its siblings. Markdown cannot rebuild any of it, so dropping it would
 //! force a full re-index and silently reset the feedback rerank priors. See
 //! [`copy`] for the live-table allowlist. The fifth v13 table,
 //! `source_roots`, is reconciled fresh from `sources.toml`
@@ -44,9 +49,9 @@
 //! embedder through `comemory save` / `ingest-code`. The lexical path
 //! (`memory_fts`) is fully restored.
 //!
-//! ## Pre-swap snapshot
+//! ## Pre-replace snapshot
 //!
-//! Immediately before [`swap_into_place`] replaces the live `comemory.db`,
+//! Before [`Staged::replace_into`] overwrites the live content,
 //! [`snapshot_before_swap`] `VACUUM INTO`s it to
 //! [`crate::config::paths::Paths::rebuild_backup`] — the exact operation
 //! that once discarded a full release's document index with no recovery
@@ -56,14 +61,16 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::config::Config;
+use crate::config::paths::Paths;
 use crate::domains::documents::source::mirror;
 use crate::domains::documents::source::registry::Registry;
-use crate::domains::memories::MemoryStore;
+use crate::domains::memories::{MemoryStore, SaveGuard, save_lock};
 use crate::domains::sync::replica::bootstrap;
 use crate::prelude::*;
 use crate::store::connection;
 use crate::store::migrate::backup;
-use crate::store::{Connection, schema_meta, seed_scan};
+use crate::store::{Connection, replace_in_place, schema_meta, seed_scan};
 use crate::utilities::context::Ctx;
 
 /// The live-table allowlist pair plus the thin delegate into
@@ -79,80 +86,88 @@ pub mod copy;
 #[serde(deny_unknown_fields)]
 pub struct Request {}
 
-/// Atomically rebuild the memory layer of `comemory.db` from markdown files,
-/// preserving any existing code index tables.
+/// Rebuild the memory layer of `comemory.db` from markdown files, preserving
+/// any existing code index tables: [`stage`] the new DB, then replace the
+/// live content in place through a connection this call opens on it.
 ///
-/// 1. Build a fresh DB at `comemory.db.rebuild.tmp` (schema migrations run
-///    normally on the temp path via `connection::open`).
-/// 2. Walk `memories/` and insert every `memories` + `memory_tags` +
-///    `memory_fts` + edges row into the temp DB.
-/// 3. If the original `comemory.db` exists, `ATTACH` it and copy
-///    `code_symbols`, `code_vec`, `code_fts`, and `indexed_files` rows into
-///    the new DB so the code index survives the rebuild, plus the mined
-///    code-graph edges + `repo_marker` cursors and the five learning tables
-///    (`feedback`, `code_feedback`, `feedback_events`, `retrieval_log`,
-///    `query_expansions`) so feedback counters and mined expansions do too.
-/// 4. Snapshot the still-live `comemory.db` to
-///    [`crate::config::paths::Paths::rebuild_backup`] (see
-///    [`snapshot_before_swap`]).
-/// 5. Close the temp connection then `fs::rename` it over the live path
-///    (atomic on POSIX; on Windows this may fail if the DB is held open by
-///    another process).
-/// 6. Remove stale WAL/SHM sidecars from the original path so the next open
-///    starts clean.
-///
-/// On any error the original DB is left untouched and the tmp file is
-/// removed. Emits nothing on success — the HTTP job's `result` is `null`,
-/// matching the CLI's silent success.
+/// Never calls [`Ctx::conn`]: the destination is a plain connection with no
+/// migration, since its content is about to be replaced wholesale. On any
+/// error the live DB is left untouched and the tmp file is removed. Emits
+/// nothing on success — the HTTP job's `result` is `null`, matching the
+/// CLI's silent success.
 pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<()> {
-    let paths = ctx.paths;
-    paths.ensure_dirs()?;
+    let pause_wait = ctx.cfg.sync.pause_wait_duration()?;
+    let staged = stage(ctx.paths, ctx.cfg)?;
+    let mut live = replace_in_place::open_destination(&ctx.paths.db_path(), pause_wait)?;
+    staged.replace_into(&mut live)
+}
 
+/// A rebuilt database staged beside the live one, holding `memory-save.lock`
+/// until [`Staged::replace_into`] installs it. Dropping it — installed or
+/// not — removes the tmp file and its sidecars, then releases the lock.
+pub struct Staged {
+    tmp_path: PathBuf,
+    _guard: SaveGuard,
+}
+
+impl Staged {
+    /// Replace `live`'s content with the staged database in place, through a
+    /// connection already open on `comemory.db` — the server passes its
+    /// shared one, so its next request reads the rebuilt content.
+    ///
+    /// # Errors
+    /// [`Error::Busy`] when another connection holds the write lock past
+    /// `live`'s busy timeout; the live content is then unchanged.
+    pub fn replace_into(self, live: &mut Connection) -> Result<()> {
+        replace_in_place::replace_in_place(live, &self.tmp_path)
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        remove_db_and_sidecars(&self.tmp_path);
+    }
+}
+
+/// Pause markdown writers, build the new DB at `comemory.db.rebuild.tmp`
+/// from markdown plus the preserved tables, and snapshot the still-live
+/// `comemory.db` to [`crate::config::paths::Paths::rebuild_backup`].
+///
+/// # Errors
+/// [`Error::Busy`] when `memory-save.lock` is still held after `[sync]
+/// pause_wait` — before anything is read or written. Any build or snapshot
+/// failure removes the tmp file and leaves the live DB untouched.
+pub fn stage(paths: &Paths, cfg: &Config) -> Result<Staged> {
+    paths.ensure_dirs()?;
+    let guard = save_lock::acquire_within(paths, cfg.sync.pause_wait_duration()?)?;
     let db = paths.db_path();
     let tmp_path = {
         let mut p = db.clone().into_os_string();
         p.push(".rebuild.tmp");
         PathBuf::from(p)
     };
-
-    // Best-effort cleanup of any leftover tmp + its WAL/SHM sidecars from a
-    // previous crashed run. SQLite leaves `*-wal` / `*-shm` next to the main
-    // file after a `PRAGMA journal_mode = WAL` open even on a clean close,
-    // so the tmp path needs its sidecars removed alongside the main file or
-    // the next rebuild reuses stale WALs.
+    // Clear a tmp (and the `-wal`/`-shm` SQLite leaves beside it) from a
+    // previous crashed run before reusing the path.
     remove_db_and_sidecars(&tmp_path);
-
-    // Both failure sources — building the new DB, and (only once that
-    // succeeded) snapshotting the still-live one before the swap — must
-    // reach the SAME cleanup arm below. Chaining them with `and_then` keeps
-    // that true structurally: neither can early-return past the match and
-    // leave the tmp DB behind, the way a bare `?` inside the `Ok` arm once
-    // did.
-    let prepared = build_new_db(&db, &tmp_path, paths).and_then(|()| {
-        if db.exists() {
-            snapshot_before_swap(&db, paths)?;
-        }
-        Ok(())
-    });
-
-    match prepared {
-        Ok(()) => swap_into_place(&tmp_path, &db),
-        Err(e) => {
-            // Remove the partial tmp + sidecars so the caller can retry cleanly.
-            remove_db_and_sidecars(&tmp_path);
-            Err(e)
-        }
+    // From here every early return drops `staged`, which removes the tmp.
+    let staged = Staged {
+        tmp_path,
+        _guard: guard,
+    };
+    build_new_db(&db, &staged.tmp_path, paths)?;
+    if db.exists() {
+        snapshot_before_swap(&db, paths)?;
     }
+    Ok(staged)
 }
 
 /// Snapshot the live `comemory.db` at `db` to
-/// [`crate::config::paths::Paths::rebuild_backup`] before [`swap_into_place`]
-/// replaces it — the very operation that once silently discarded a full
-/// release's document index. Uses [`backup::snapshot_path`], not
-/// [`backup::snapshot`]: by this point [`build_new_db`] has already dropped
-/// its connection, so nothing holds `db` open, and opening it via
-/// `connection::open` would run preflight and the whole migration chain on
-/// a database about to be deleted.
+/// [`crate::config::paths::Paths::rebuild_backup`] before
+/// [`Staged::replace_into`] overwrites its content — the very operation that
+/// once silently discarded a full release's document index. Uses
+/// [`backup::snapshot_path`], which opens a plain connection of its own:
+/// opening `db` via `connection::open` would run preflight and the whole
+/// migration chain on a database whose content is about to be replaced.
 ///
 /// `rebuild_backup()` is a single fixed path, unlike the migration backups'
 /// per-version names, so a second rebuild would otherwise either fail
@@ -167,7 +182,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<()> {
 /// destination path, since the bare underlying error (an `io::Error` or a
 /// generic SQLite failure) does not otherwise name what it was trying to
 /// write.
-fn snapshot_before_swap(db: &Path, paths: &crate::config::paths::Paths) -> Result<()> {
+fn snapshot_before_swap(db: &Path, paths: &Paths) -> Result<()> {
     let dest = paths.rebuild_backup();
     snapshot_before_swap_inner(db, &dest).map_err(|e| {
         Error::Other(format!(
@@ -205,54 +220,29 @@ fn staging_dest(dest: &Path) -> PathBuf {
     PathBuf::from(p)
 }
 
-/// Atomic swap: rename the freshly built tmp DB over the live path, then
-/// remove stale WAL/SHM sidecars next to both (so the next open of
-/// `comemory.db` starts clean and the just-renamed tmp connection's
-/// `comemory.db.rebuild.tmp-wal` / `-shm` don't linger).
-///
-/// The rename result is matched rather than `?`-propagated so a failure
-/// (cross-device, permission, the live DB held open exclusively on Windows)
-/// still removes the tmp DB and lets the caller retry cleanly.
-fn swap_into_place(tmp_path: &Path, db: &Path) -> Result<()> {
-    match std::fs::rename(tmp_path, db) {
-        Ok(()) => {
-            remove_sidecars(db);
-            remove_sidecars(tmp_path);
-            Ok(())
-        }
-        Err(e) => {
-            remove_db_and_sidecars(tmp_path);
-            Err(Error::Io(e))
-        }
-    }
-}
-
-/// Remove `path` plus its SQLite WAL/SHM sidecars if present. Best-effort:
-/// each removal is independent so a missing file does not abort the loop.
+/// Remove the tmp DB at `path` plus its SQLite `-wal`/`-shm` sidecars. Each
+/// removal is independent; a missing file is the normal case, and any other
+/// failure is logged rather than returned — this runs from [`Staged`]'s
+/// `Drop`, where there is no caller to hand it to, and the next rebuild
+/// clears the path again before reusing it.
 fn remove_db_and_sidecars(path: &Path) {
-    if path.exists() {
-        let _ = std::fs::remove_file(path);
-    }
-    remove_sidecars(path);
-}
-
-/// Remove `path-wal` and `path-shm` if present. Best-effort.
-fn remove_sidecars(path: &Path) {
-    for suffix in ["-wal", "-shm"] {
-        let mut sidecar = path.to_path_buf().into_os_string();
-        sidecar.push(suffix);
-        let sidecar = PathBuf::from(sidecar);
-        if sidecar.exists() {
-            let _ = std::fs::remove_file(&sidecar);
+    for suffix in ["", "-wal", "-shm"] {
+        let mut target = path.as_os_str().to_os_string();
+        target.push(suffix);
+        let target = PathBuf::from(target);
+        if let Err(e) = std::fs::remove_file(&target)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(path = %target.display(), error = %e, "could not remove a rebuild tmp file");
         }
     }
 }
 
 /// Build the fresh DB at `tmp_path`, populate it from markdown, reconcile
 /// `source_roots` from `sources.toml`, then copy the code index +
-/// document-domain tables from `old_db` if it exists. Extracted so the
-/// error path in [`run`] can clean up the tmp file unconditionally.
-fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Paths) -> Result<()> {
+/// document-domain tables from `old_db` if it exists. [`stage`] owns the
+/// cleanup: an error here drops its [`Staged`], which removes the tmp.
+fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
     let mut conn = connection::open(tmp_path)?;
     let tx = conn.transaction()?;
 
@@ -280,7 +270,7 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
 
     // Copy the code index + learning + document-domain tables from the old
     // DB if it exists. A copy failure aborts the whole rebuild (tmp
-    // removed, live DB never renamed over): learning state must not be
+    // removed, live DB never replaced): learning state must not be
     // silently dropped, and the operator can retry once the source DB is
     // readable again.
     if old_db.exists() {
@@ -301,7 +291,7 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     // they have a response with somewhere to put it.
     let _stale = crate::domains::graph::derived::refresh_derived_best_effort(&mut conn);
 
-    // Close the connection before rename by dropping it here.
+    // Close the connection so the replace reads a checkpointed file.
     drop(conn);
     Ok(())
 }

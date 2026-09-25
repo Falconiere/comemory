@@ -9,8 +9,9 @@ preservation copy. Split out because the donor CLI file already sat near the
 300-line ceiling.
 
 **What does NOT belong here:** the command's entry point, `Request` /
-`Response` shape, and the swap itself (including the pre-swap snapshot),
-which stay in `src/domains/maintenance/rebuild.rs`. The per-table `ATTACH`
+`Response` shape, and the staging and in-place replace (including the
+pre-replace snapshot), which stay in `src/domains/maintenance/rebuild.rs`; the
+backup-API page copy itself lives in `src/store/replace_in_place.rs`. The per-table `ATTACH`
 copy SQL itself
 lives in `src/store/rebuild_copy*.rs` (store-chokepoint move) — see
 `src/store/README.md`.

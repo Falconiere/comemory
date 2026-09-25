@@ -47,7 +47,7 @@ One row per file, named after its primary item. Command cores take a plain
 | `gc_policy.rs` | `get` | `GET\|PUT /api/v1/gc/policy` — the retention windows and the last gc run |
 | `overview.rs` | `run` | `GET /api/v1/overview`, `GET /api/v1/overview/eval-series` — the console landing aggregate, composed from the cores that own each fact |
 | `prune.rs` | `run` | `comemory prune` / `GET\|POST /api/v1/prune` — the dry-run candidate report (GET forces `apply=false`), and the confirmed apply that soft-deletes only the listed ids |
-| `rebuild.rs` + [`rebuild/`](rebuild/README.md) | `run` | `comemory rebuild` / `POST /api/v1/rebuild` — build a fresh mirror beside the live file, preserve what markdown cannot reconstruct, snapshot the pre-rebuild database, then swap atomically |
+| `rebuild.rs` + [`rebuild/`](rebuild/README.md) | `run` | `comemory rebuild` / `POST /api/v1/rebuild` — build a fresh mirror beside the live file, preserve what markdown cannot reconstruct, snapshot the pre-rebuild database, then replace the live content in place through SQLite's backup API while `memory-save.lock` pauses markdown writers |
 | `reembed.rs` | `run` | `POST /api/v1/doctor/reembed` — re-vectorize memories and code through the configured embed command, with the shared progress/log/cancel sink and a dimension guard |
 | `retention.rs` + [`retention/`](retention/README.md) | `detect` | Stale-memory and ghost-reference detection: orphaned trash, low-value memories, ghost `references_symbol` anchors. Read-only and side-effect free by construction |
 | `retention_report.rs` | `Report` | The owned value `prune::run` returns for both delivery surfaces |
@@ -62,7 +62,7 @@ When you add a file here, add its row above so the index stays current. No
 
 Mirror tests for the command cores live in `tests/` beside them; each
 algorithm folder keeps its own `tests/`. Real old and new SQLite files, real
-markdown corpora, real git repositories and the real backup/swap sequence —
+markdown corpora, real git repositories and the real backup/replace sequence —
 no mock stands in for a database. The full `comemory rebuild` journey over a
 real indexed document corpus is the crate-root `tests/cli__rebuild_3.rs`, and
 the upgrade end-to-end path (a loopback stand-in for GitHub Releases, the real

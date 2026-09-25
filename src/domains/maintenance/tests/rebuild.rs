@@ -7,8 +7,9 @@
 )]
 //! Mirror test for `src/domains/maintenance/rebuild.rs`. `maintenance::rebuild::run` is called
 //! directly (no CLI process) against real temp data-dirs seeded by real
-//! `comemory save` runs: the markdown replay, the atomic swap's sidecar
-//! cleanup, and the leave-the-live-DB-alone error path. The preservation
+//! `comemory save` runs: the markdown replay, the tmp DB's cleanup, the
+//! in-place replace a connection already open reads without reopening, the
+//! `memory-save.lock` pause, and the leave-the-live-DB-alone error path. The preservation
 //! copy is covered in `tests/api__rebuild__copy.rs`; the CLI's own
 //! byte-compat coverage stays in `tests/cli__rebuild.rs` /
 //! `tests/cli__rebuild_2.rs`, and the HTTP job route in
@@ -195,9 +196,9 @@ fn run_on_a_fresh_data_dir_with_no_memories_builds_an_empty_mirror() {
 /// (there is no markdown left to replay it from). Without this the row would
 /// land in BOTH databases via the replay, and the assertions below would
 /// pass even if the snapshot ran AFTER the swap instead of before it —
-/// mutation-tested by moving the `snapshot_before_swap` call to after
-/// `swap_into_place` in `src/domains/maintenance/rebuild.rs::run`, which turns the
-/// `n_in_live` assertion red.
+/// mutation-tested by moving the `snapshot_before_swap` call to after the
+/// replace (`Staged::replace_into` in `src/domains/maintenance/rebuild.rs::run`),
+/// which turns the `n_in_live` assertion red.
 #[test]
 fn run_snapshots_the_pre_rebuild_db_before_the_swap() {
     let home = tempdir().expect("tempdir");
@@ -617,5 +618,150 @@ fn every_share_mapping_a_rebuild_keeps_still_names_a_document() {
         ),
         0,
         "no mapping is left naming a document that does not exist"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #256 B-3: a rebuild replaces the live database's content in place rather
+// than renaming a new file over it, so every connection already open on it —
+// a server's, an MCP session's — reads the rebuilt content on its next query,
+// and no sidecar such a connection still uses is removed. It excludes
+// markdown writers through `memory-save.lock`, waiting `[sync] pause_wait`.
+// ---------------------------------------------------------------------------
+
+/// `path` with `suffix` (`-wal`, `-shm`) appended.
+fn sidecar_of(path: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    let mut p = path.as_os_str().to_os_string();
+    p.push(suffix);
+    std::path::PathBuf::from(p)
+}
+
+/// The live database file's inode — unchanged only if nothing was renamed
+/// over it.
+fn live_inode(home: &TempDir) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(home.path().join("comemory.db"))
+        .expect("stat the live db")
+        .ino()
+}
+
+/// The single memory markdown file whose content holds `needle`.
+fn markdown_file_containing(home: &TempDir, needle: &str) -> std::path::PathBuf {
+    let mut matches: Vec<std::path::PathBuf> = std::fs::read_dir(home.path().join("memories"))
+        .expect("read memories dir")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
+        .filter(|p| {
+            std::fs::read_to_string(p)
+                .expect("read markdown")
+                .contains(needle)
+        })
+        .collect();
+    assert_eq!(matches.len(), 1, "one markdown file holds {needle:?}");
+    matches.remove(0)
+}
+
+#[test]
+fn a_connection_open_before_the_rebuild_reads_the_rebuilt_content_without_reopening() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "kept across the rebuild"]);
+    run_save(&home, &["--kind", "note", "dropped by the rebuild"]);
+    // The connection a server or an MCP session holds for its whole life.
+    let held = open_db_with_vec(&home);
+    assert_eq!(count(&held, "SELECT count(*) FROM memories"), 2);
+    // With its markdown gone, the rebuilt content genuinely differs.
+    std::fs::remove_file(markdown_file_containing(&home, "dropped by the rebuild"))
+        .expect("remove one memory's markdown");
+    let inode = live_inode(&home);
+
+    run_rebuild_api(&home).expect("rebuild");
+
+    assert_eq!(
+        count(&held, "SELECT count(*) FROM memories"),
+        1,
+        "a connection opened before the rebuild reads the rebuilt content on its \
+         next query, without reopening"
+    );
+    assert_eq!(
+        live_inode(&home),
+        inode,
+        "the content was replaced inside the same file, not renamed over it"
+    );
+}
+
+#[test]
+fn a_rebuild_removes_no_sidecar_a_live_connection_still_uses() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "a memory the rebuild replays"]);
+    let held = open_db_with_vec(&home);
+    let live = home.path().join("comemory.db");
+    for suffix in ["-wal", "-shm"] {
+        assert!(
+            sidecar_of(&live, suffix).exists(),
+            "fixture: an open WAL connection holds {suffix}"
+        );
+    }
+
+    run_rebuild_api(&home).expect("rebuild");
+
+    for suffix in ["-wal", "-shm"] {
+        assert!(
+            sidecar_of(&live, suffix).exists(),
+            "the rebuild must not remove the live {suffix} an open connection still uses"
+        );
+    }
+    assert_eq!(
+        count(&held, "SELECT count(*) FROM memories"),
+        1,
+        "and that connection keeps working"
+    );
+}
+
+#[test]
+fn a_rebuild_waits_pause_wait_for_a_held_save_lock_then_fails_busy_and_changes_nothing() {
+    let home = tempdir().expect("tempdir");
+    run_save(
+        &home,
+        &[
+            "--kind",
+            "note",
+            "a memory a blocked rebuild must not touch",
+        ],
+    );
+    let before = count(&open_db(&home), "SELECT count(*) FROM memories");
+    let inode = live_inode(&home);
+    let paths = Paths::new(home.path());
+    let mut cfg = Config::defaults();
+    // Whole seconds: `[sync]` durations take an `s`/`m`/`h`/`d` unit, so
+    // `300ms` would read as 300 minutes.
+    cfg.sync.pause_wait = "1s".to_string();
+    // Another writer — a save in any process — holds the lock throughout.
+    let _held = comemory::domains::memories::save_lock::acquire_within(
+        &paths,
+        std::time::Duration::from_secs(1),
+    )
+    .expect("hold memory-save.lock");
+
+    let started = std::time::Instant::now();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let err = maintenance::rebuild::run(&mut ctx, maintenance::rebuild::Request {})
+        .expect_err("a rebuild that cannot pause the writers must not run");
+
+    assert!(
+        matches!(err, comemory::errors::Error::Busy(_)),
+        "fails busy, got: {err}"
+    );
+    assert!(
+        started.elapsed() >= std::time::Duration::from_secs(1),
+        "it waited the configured pause_wait first"
+    );
+    assert!(!home.path().join("comemory.db.rebuild.tmp").exists());
+    assert!(!home.path().join("comemory.db.pre-rebuild.bak").exists());
+    assert_eq!(live_inode(&home), inode);
+    assert_eq!(
+        count(&open_db(&home), "SELECT count(*) FROM memories"),
+        before,
+        "nothing changed"
     );
 }

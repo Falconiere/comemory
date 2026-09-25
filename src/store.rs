@@ -170,6 +170,9 @@ pub mod remote_document;
 /// The shared half of document search, and the reads a pulled hit resolves
 /// through.
 pub mod remote_document_view;
+/// Replace a live database's content in place through SQLite's online
+/// backup API — how a rebuild installs its new mirror without a rename.
+pub mod replace_in_place;
 /// `replica_binding` CRUD — what the upstream last held for each exchanged entity.
 pub mod replica_binding;
 /// `replica_cursor` row CRUD — per-workspace upstream position and epoch.

@@ -68,8 +68,10 @@ rmcp = { version = "3.4", default-features = false, features = ["server", "trans
 # The `libsqlite3-sys` FEATURE selects rusqlite's native FFI backend (rusqlite
 # 0.40 made that backend optional so a wasm one can be chosen instead), and
 # `bundled` only applies through it. The `libsqlite3-sys` VERSION line above
-# tracks the series rusqlite 0.40 pins (0.38).
-rusqlite = { version = "0.40", features = ["libsqlite3-sys", "bundled", "load_extension", "vtab", "blob"] }
+# tracks the series rusqlite 0.40 pins (0.38). `backup` exposes SQLite's online
+# backup API, which `store::replace_in_place` uses to rebuild the live database
+# in place instead of renaming a file over it (#256).
+rusqlite = { version = "0.40", features = ["libsqlite3-sys", "bundled", "load_extension", "vtab", "blob", "backup"] }
 # JSON-schema derive for the MCP tool parameter types; rmcp 3.4 requires schemars ^1.
 schemars = "1"
 serde = { version = "1", features = ["derive"] }

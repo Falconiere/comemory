@@ -986,6 +986,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/replica_replay.rs | comemory::store::replica_replay; preserve | src/store/tests/replica_replay.rs | none | infrastructure::store | src/store/replica_replay.rs | retain |
 | src/store/replica_outbox_hold.rs | comemory::store::replica_outbox_hold; preserve | src/store/tests/replica_outbox_hold.rs | none | infrastructure::store | src/store/replica_outbox_hold.rs | retain |
 | src/store/replica_staging.rs | comemory::store::replica_staging; preserve | src/store/tests/replica_staging.rs | none | infrastructure::store | src/store/replica_staging.rs | retain |
+| src/store/replace_in_place.rs | comemory::store::replace_in_place; preserve | src/store/tests/replace_in_place.rs | none | infrastructure::store | src/store/replace_in_place.rs | retain |
 | src/store/memory_intent.rs | comemory::store::memory_intent; preserve | src/store/tests/memory_intent.rs | none | infrastructure::store | src/store/memory_intent.rs | retain |
 | src/store/needs_embedding.rs | comemory::store::needs_embedding; preserve | src/store/tests/needs_embedding.rs | none | infrastructure::store | src/store/needs_embedding.rs | retain |
 | src/store/readiness.rs | comemory::store::readiness; preserve | src/store/tests/readiness.rs | none | infrastructure::store | src/store/readiness.rs | retain |

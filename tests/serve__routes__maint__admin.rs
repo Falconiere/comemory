@@ -9,8 +9,8 @@
 //! and `POST /api/v1/rebuild` (`src/serve/routes/maint/admin.rs`) against a
 //! real bound server: the confirm gate (`mine` carries none per the route
 //! table), `--repo` containment to an allowed root, the read-only 405, the
-//! read-only-outranks-confirm ordering (AC-19), and AC-16's cross-process
-//! rebuild-connection-swap assertion.
+//! read-only-outranks-confirm ordering (AC-19), and AC-11's in-place rebuild:
+//! the server's own connection reads the rebuilt content with no swap.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -385,23 +385,79 @@ fn list_ids_from_a_fresh_cli_process(home: &TempDir) -> Vec<String> {
         .collect()
 }
 
-/// AC-16 — the discriminating rebuild-connection-swap assertion.
+/// Every memory id the RUNNING server's own `GET /api/v1/memories` reports —
+/// read through the long-lived shared connection it opened at startup.
+fn list_ids_from_the_server(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    token: &str,
+) -> Vec<String> {
+    let res = client
+        .get(format!("{base}/api/v1/memories"))
+        .header("X-Comemory-Token", token)
+        .send()
+        .expect("list memories");
+    assert_eq!(res.status().as_u16(), 200);
+    let body: serde_json::Value = res.json().expect("json");
+    body["data"]["items"]
+        .as_array()
+        .expect("items array")
+        .iter()
+        .map(|i| i["id"].as_str().expect("id").to_string())
+        .collect()
+}
+
+/// The id of the one memory whose markdown holds `needle`, after removing
+/// that markdown file — so a rebuild genuinely drops the memory. Memory files
+/// are named `<id>-<slug>.md`.
+fn remove_markdown_of(home: &TempDir, needle: &str) -> String {
+    let dir = home.path().join(".comemory").join("memories");
+    let mut matches: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("read memories dir")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
+        .filter(|p| {
+            std::fs::read_to_string(p)
+                .expect("read markdown")
+                .contains(needle)
+        })
+        .collect();
+    assert_eq!(matches.len(), 1, "one markdown file holds {needle:?}");
+    let path = matches.remove(0);
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .expect("utf8 name");
+    let id = name.split('-').next().expect("id prefix").to_string();
+    std::fs::remove_file(&path).expect("remove the markdown");
+    id
+}
+
+/// AC-11 (the server half) — a rebuild replaces the database's content in
+/// place, so the server's long-lived shared connection reads the rebuilt
+/// content on its very next request with no connection swap, and its later
+/// writes land in the file the live path names.
 ///
-/// `rebuild` renames a freshly built DB over `comemory.db`, unlinking the
-/// inode the server's long-lived shared connection still holds open. Without
-/// `AppState::swap_conn`, the HTTP save below would land in that dead inode:
-/// the save itself would still report success and a same-server search would
-/// still find it, so only a **cross-process** read discriminates. The fresh
-/// `comemory list --json` process opens the live path by name and therefore
-/// sees the post-rebuild inode — it can only report the new id if the server
-/// swapped its connection.
+/// One memory's markdown is removed before the rebuild, so the rebuilt content
+/// genuinely differs from what the server read before it: a server still on a
+/// pre-rebuild copy — the unlinked inode a rename would have left it reading —
+/// keeps listing that memory. The fresh `comemory list --json` process after
+/// the HTTP save is the cross-process half: it can only report the new id if
+/// the server wrote into the live file.
 #[test]
-fn v1_rebuild_swaps_the_shared_connection_so_a_fresh_cli_sees_later_saves_ac16() {
+fn v1_rebuild_replaces_the_content_in_place_so_the_server_reads_it_without_a_swap_ac11() {
     let home = TempDir::new().expect("home");
     save_memory(&home, "pre-rebuild memory one about postgres pooling");
     save_memory(&home, "pre-rebuild memory two about axum routing");
     let (base, token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
+    assert_eq!(
+        list_ids_from_the_server(&client, &base, &token).len(),
+        2,
+        "the server has read the pre-rebuild content"
+    );
+    let dropped_id = remove_markdown_of(&home, "axum routing");
 
     let post = post_rebuild(
         &client,
@@ -428,15 +484,22 @@ fn v1_rebuild_swaps_the_shared_connection_so_a_fresh_cli_sees_later_saves_ac16()
         "rebuild emits nothing on success, got {job}"
     );
 
-    // Save AFTER the rebuild, through the same still-running server — this
-    // is the write that lands in the dead inode when the swap is missing.
+    let served = list_ids_from_the_server(&client, &base, &token);
+    assert!(
+        !served.contains(&dropped_id),
+        "the server's next request must read the rebuilt content, where {dropped_id} \
+         no longer exists; got {served:?} — the server is still reading a pre-rebuild copy"
+    );
+    assert_eq!(served.len(), 1, "only the memory whose markdown survived");
+
+    // Save AFTER the rebuild, through the same still-running server.
     let new_id = save_over_http(&client, &base, &token);
 
     let ids = list_ids_from_a_fresh_cli_process(&home);
     assert!(
         ids.contains(&new_id),
         "a fresh CLI process must see the post-rebuild save {new_id}; \
-         got {ids:?} — the server is still writing to the unlinked pre-rebuild inode"
+         got {ids:?} — the server is writing somewhere other than the live file"
     );
-    assert_eq!(ids.len(), 3, "two pre-rebuild memories plus the new one");
+    assert_eq!(ids.len(), 2, "the surviving memory plus the new one");
 }
