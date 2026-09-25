@@ -84,14 +84,6 @@ pub fn call<T: DeserializeOwned>(paths: &Paths, op: &Op, bound: Duration) -> Res
     link.call(op, deadline)
 }
 
-/// Readiness of a verified coordinator.
-///
-/// # Errors
-/// As [`call`].
-pub fn status(paths: &Paths, bound: Duration) -> Result<Readiness> {
-    call(paths, &Op::Status {}, bound)
-}
-
 /// Queue a wake.
 ///
 /// # Errors
@@ -106,14 +98,6 @@ pub fn wake(paths: &Paths, wake: Wake, bound: Duration) -> Result<()> {
 /// As [`call`].
 pub fn catch_up(paths: &Paths, bound: Duration) -> Result<PassSummary> {
     call(paths, &Op::CatchUp {}, bound)
-}
-
-/// Ask the coordinator to re-read credentials and config.
-///
-/// # Errors
-/// As [`call`].
-pub fn reload(paths: &Paths, bound: Duration) -> Result<Readiness> {
-    call(paths, &Op::Reload {}, bound)
 }
 
 /// Ask the coordinator to stop gracefully.
@@ -231,7 +215,7 @@ impl Link {
                 answer.hello
             )));
         }
-        let expected = handshake::server_proof(&link.token, &nonce);
+        let expected = handshake::proof(handshake::Side::Server, &nonce, &link.token);
         if !answer
             .proof
             .as_deref()
@@ -245,7 +229,7 @@ impl Link {
 
     fn send(&mut self, op: &Op, deadline: Instant) -> Result<()> {
         let request = Request {
-            proof: handshake::client_proof(&self.token, &self.server_nonce),
+            proof: handshake::proof(handshake::Side::Client, &self.server_nonce, &self.token),
             op: op.clone(),
         };
         self.write(&request, deadline)

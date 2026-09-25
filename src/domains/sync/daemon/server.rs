@@ -90,11 +90,18 @@ async fn greet(
     let answer = Hello {
         hello: PROTOCOL,
         nonce: nonce.clone(),
-        proof: Some(handshake::server_proof(token, &hello.nonce)),
+        proof: Some(handshake::proof(
+            handshake::Side::Server,
+            &hello.nonce,
+            token,
+        )),
     };
     write_frame(write, &answer).await?;
     let request: Request = read_frame(reader).await?;
-    if !handshake::matches(&handshake::client_proof(token, &nonce), &request.proof) {
+    if !handshake::matches(
+        &handshake::proof(handshake::Side::Client, &nonce, token),
+        &request.proof,
+    ) {
         return Err(Error::Forbidden(
             "control client failed the identity proof".into(),
         ));

@@ -92,25 +92,8 @@ fn code_status_rows(conn: &Connection) -> Result<Vec<CodeStatusRow>> {
     Ok(rows)
 }
 
-pub(crate) fn emit_daemon_status(json_flag: bool, st: &DaemonStatus) -> Result<()> {
-    if json_flag {
-        json::write(st)?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "platform: {}", st.platform)?;
-        if let Some(path) = &st.unit_path {
-            writeln!(out, "unit: {path}")?;
-        }
-        writeln!(out, "installed: {}", st.installed)?;
-        writeln!(out, "running: {}", st.running)?;
-        writeln!(out, "detail: {}", st.detail)?;
-        if let Some(warn) = st.inactive_warning() {
-            writeln!(out, "warning: {warn}")?;
-        }
-    }
-    Ok(())
-}
-
+/// `comemory sync --action status`: cursors, code rows, the `exchange` block
+/// and the (deprecated single-daemon) `daemon` line.
 pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, auth: &AuthFile) -> Result<()> {
     let workspace = auth.workspace_id.as_str();
     let row = sync_state::get(conn, workspace)?;
@@ -186,6 +169,7 @@ fn daemon_status() -> DaemonStatus {
     })
 }
 
+/// `comemory sync --action verify`'s report.
 pub(crate) fn emit_verify(json_flag: bool, verified: &Verified) -> Result<()> {
     if json_flag {
         return json::write(verified);

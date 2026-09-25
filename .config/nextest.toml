@@ -36,5 +36,5 @@ filter = 'binary_id(~replica_daemon) or binary_id(~replica_exchange)'
 test-group = 'daemon'
 
 [[profile.default.overrides]]
-filter = 'test(/^(config::env::tests|store::migrate::backup::tests|store::migrate::preflight::tests|domains::sync::cloud::api_url::tests)/)'
+filter = 'test(/^(config::env::tests|store::migrate::backup::tests|store::migrate::preflight::tests|domains::sync::cloud::api_url::tests|domains::sync::daemon::supervisor::tests)/)'
 test-group = 'env-mutating'

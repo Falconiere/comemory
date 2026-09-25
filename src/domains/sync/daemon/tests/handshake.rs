@@ -11,7 +11,7 @@ use std::os::unix::fs::PermissionsExt as _;
 
 use comemory::config::paths::Paths;
 use comemory::domains::sync::daemon::handshake::{
-    client_proof, load, load_or_create, matches, server_proof, token_path,
+    Side, load, load_or_create, matches, proof, token_path,
 };
 
 fn home() -> (tempfile::TempDir, Paths) {
@@ -61,19 +61,19 @@ fn a_malformed_token_is_refused_with_the_fix() {
 fn proofs_bind_the_side_the_nonce_and_the_token() {
     let token = "a".repeat(64);
     let other = "b".repeat(64);
-    let server = server_proof(&token, "n1");
+    let server = proof(Side::Server, "n1", &token);
     assert_eq!(server.len(), 64);
-    assert!(matches(&server, &server_proof(&token, "n1")));
+    assert!(matches(&server, &proof(Side::Server, "n1", &token)));
     assert!(
-        !matches(&server, &client_proof(&token, "n1")),
+        !matches(&server, &proof(Side::Client, "n1", &token)),
         "sides differ"
     );
     assert!(
-        !matches(&server, &server_proof(&token, "n2")),
+        !matches(&server, &proof(Side::Server, "n2", &token)),
         "nonces differ"
     );
     assert!(
-        !matches(&server, &server_proof(&other, "n1")),
+        !matches(&server, &proof(Side::Server, "n1", &other)),
         "tokens differ"
     );
     assert!(!matches(&server, &server[..63]), "lengths differ");

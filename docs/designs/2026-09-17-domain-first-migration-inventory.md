@@ -465,6 +465,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/stats.rs | comemory::cli::stats; preserve | none | none | delivery::cli | src/cli/stats.rs | retain |
 | src/cli/sync.rs | comemory::cli::sync; preserve | none | none | delivery::cli | src/cli/sync.rs | retain |
 | src/cli/sync_auto.rs | comemory::cli::sync_auto; preserve | none | none | delivery::cli | src/cli/sync_auto.rs | retain |
+| src/cli/sync_daemon.rs | comemory::cli::sync_daemon; preserve | src/cli/tests/sync_daemon.rs | none | delivery::cli | src/cli/sync_daemon.rs | retain |
 | src/cli/sync_exchange_render.rs | comemory::cli::sync_exchange_render; preserve | none | none | delivery::cli | src/cli/sync_exchange_render.rs | retain |
 | src/cli/sync_render.rs | comemory::cli::sync_render; preserve | src/cli/tests/sync_render.rs | none | delivery::cli | src/cli/sync_render.rs | retain |
 | src/cli/tune.rs | comemory::cli::tune; preserve | none | none | delivery::cli | src/cli/tune.rs | retain |
@@ -728,13 +729,17 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/daemon/client.rs | comemory::domains::sync::daemon::client; preserve | src/domains/sync/daemon/tests/client.rs | none | domains::sync | src/domains/sync/daemon/client.rs | retain |
 | src/domains/sync/daemon/control.rs | comemory::domains::sync::daemon::control; preserve | none | none | domains::sync | src/domains/sync/daemon/control.rs | retain |
 | src/domains/sync/daemon/coordinator.rs | comemory::domains::sync::daemon::coordinator; preserve | none | none | domains::sync | src/domains/sync/daemon/coordinator.rs | retain |
+| src/domains/sync/daemon/ensure.rs | comemory::domains::sync::daemon::ensure; preserve | src/domains/sync/daemon/tests/ensure.rs | none | domains::sync | src/domains/sync/daemon/ensure.rs | retain |
 | src/domains/sync/daemon/handshake.rs | comemory::domains::sync::daemon::handshake; preserve | src/domains/sync/daemon/tests/handshake.rs | none | domains::sync | src/domains/sync/daemon/handshake.rs | retain |
 | src/domains/sync/daemon/identity.rs | comemory::domains::sync::daemon::identity; preserve | src/domains/sync/daemon/tests/identity.rs | none | domains::sync | src/domains/sync/daemon/identity.rs | retain |
 | src/domains/sync/daemon/readiness.rs | comemory::domains::sync::daemon::readiness; preserve | none | none | domains::sync | src/domains/sync/daemon/readiness.rs | retain |
 | src/domains/sync/daemon/runtime_record.rs | comemory::domains::sync::daemon::runtime_record; preserve | src/domains/sync/daemon/tests/runtime_record.rs | none | domains::sync | src/domains/sync/daemon/runtime_record.rs | retain |
 | src/domains/sync/daemon/server.rs | comemory::domains::sync::daemon::server; preserve | none | none | domains::sync | src/domains/sync/daemon/server.rs | retain |
 | src/domains/sync/daemon/socket_path.rs | comemory::domains::sync::daemon::socket_path; preserve | src/domains/sync/daemon/tests/socket_path.rs | none | domains::sync | src/domains/sync/daemon/socket_path.rs | retain |
+| src/domains/sync/daemon/spawn.rs | comemory::domains::sync::daemon::spawn; preserve | src/domains/sync/daemon/tests/spawn.rs | none | domains::sync | src/domains/sync/daemon/spawn.rs | retain |
 | src/domains/sync/daemon/state.rs | comemory::domains::sync::daemon::state; preserve | none | none | domains::sync | src/domains/sync/daemon/state.rs | retain |
+| src/domains/sync/daemon/status_view.rs | comemory::domains::sync::daemon::status_view; preserve | src/domains/sync/daemon/tests/status_view.rs | none | domains::sync | src/domains/sync/daemon/status_view.rs | retain |
+| src/domains/sync/daemon/supervisor.rs | comemory::domains::sync::daemon::supervisor; preserve | src/domains/sync/daemon/tests/supervisor.rs | none | domains::sync | src/domains/sync/daemon/supervisor.rs | retain |
 | src/domains/sync/daemon/watchdog.rs | comemory::domains::sync::daemon::watchdog; preserve | none | none | domains::sync | src/domains/sync/daemon/watchdog.rs | retain |
 | src/domains/sync/daemon/worker.rs | comemory::domains::sync::daemon::worker; preserve | none | none | domains::sync | src/domains/sync/daemon/worker.rs | retain |
 | src/domains/sync/daemon_templates.rs | comemory::domains::sync::daemon_templates; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_templates.rs | retain |

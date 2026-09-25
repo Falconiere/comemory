@@ -182,14 +182,18 @@ fn answering(h: &Home, answer_for: PathBuf) -> std::thread::JoinHandle<()> {
             &Hello {
                 hello: 1,
                 nonce: "servernonce".into(),
-                proof: Some(handshake::server_proof(&token, &hello.nonce)),
+                proof: Some(handshake::proof(
+                    handshake::Side::Server,
+                    &hello.nonce,
+                    &token,
+                )),
             },
         );
         line.clear();
         reader.read_line(&mut line).unwrap();
         let request: Request = serde_json::from_str(&line).unwrap();
         assert!(handshake::matches(
-            &handshake::client_proof(&token, "servernonce"),
+            &handshake::proof(handshake::Side::Client, "servernonce", &token),
             &request.proof
         ));
         send(
