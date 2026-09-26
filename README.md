@@ -6,8 +6,8 @@
 
 Capture the *why* behind your code as markdown, link it to the *what* in your
 source, and get it back through hybrid search that actually understands
-identifiers, decay, and your git graph. **100% local. No API keys. No daemon.
-No in-process LLM.**
+identifiers, decay, and your git graph. **100% local. No API keys. No
+in-process LLM.**
 
 [![Release](https://img.shields.io/github/v/release/Falconiere/comemory?style=flat-square&color=blue)](https://github.com/Falconiere/comemory/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
@@ -498,6 +498,13 @@ comemory auth logout                 # delete local auth.json (no remote revoke)
 Mints a **workspace-bound** `cmk_` (not a sync device key). Credentials live at
 `$COMEMORY_DATA_DIR/auth.json` (mode `0600`). `COMEMORY_API_KEY` overrides the
 file secret for scripting/CI.
+
+Once logged in, a small resident coordinator (`comemory sync daemon`, one per
+data directory) keeps that data directory synced — every ordinary command
+verifies and repairs it first, so there is nothing to install by hand.
+`comemory sync daemon status` reports it; `comemory sync daemon stop`
+stops it until the next command brings it back. See
+[docs/guides/cloud-sync.md](docs/guides/cloud-sync.md#sync-daemon).
 
 Every repo with comemory's git hooks (`comemory install-hooks --repo <path>`)
 then syncs itself: each commit, merge, checkout or rebase in any hooked repo,

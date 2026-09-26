@@ -82,6 +82,26 @@ docker run --rm --user "$(id -u):$(id -g)" \
 A named volume (the first example) avoids the problem entirely and is the
 better default.
 
+### Cloud sync's required daemon
+
+Cloud-sync commands (`auth login`, `sync`, a `save` that cannot push inline,
+`watch`) ensure a small resident coordinator first (#257) — the image has no
+launchd or systemd, so it always falls back to `COMEMORY_DAEMON_SUPERVISOR=process`,
+a plain detached child. That child's lifetime is bounded by the *container's*:
+a one-shot `docker run --rm … save …` ensures, runs, and exits with the
+container, coordinator included — there is nothing left resident afterward for
+the next `docker run` to reuse. Each invocation pays a fresh (fast) `ensure`
+in exchange. For a workload that benefits from the coordinator persisting
+across commands, run one long-lived container and `docker exec` into it
+instead of one `docker run` per command:
+
+```bash
+docker run -d --name comemory -v comemory-data:/data \
+  --entrypoint sleep ghcr.io/falconiere/comemory infinity
+docker exec comemory comemory auth login --api-url https://api.comemory.io
+docker exec comemory comemory save --repo acme/backend "a decision"
+```
+
 ### Vectors
 
 The image ships no embedder — `comemory` is BYO-vector by design, and that does

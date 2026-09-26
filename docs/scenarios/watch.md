@@ -1,18 +1,30 @@
 # `comemory watch`
 
-Hold the workspace change channel open and pull whenever it says something
-changed. This is the pull direction's answer to the question push answered by
-moving into `save`: how a second machine sees a change without polling and
-without an installed OS unit.
+Follow the organization's changes and pull whenever something changed. This is
+the pull direction's answer to the question push answered by moving into
+`save`: how a second machine sees a change without polling.
 
-The socket carries **nudges**, never memories. Every frame — `hello` on
-connect, `change` after anyone writes — triggers the same cursored pull a
-manual `comemory sync --action pull` would run, so a missed frame costs
-latency and a duplicate frame costs one empty pull. A refused or dropped
-socket is not an error: the command reconnects with jittered backoff (1s → 30s)
-until interrupted.
+With the required resident coordinator running (#257, the ordinary case),
+`watch` attaches to *that* coordinator instead of holding its own platform
+connection: `--once` subscribes, asks for one `catch_up`, reports `pulled`,
+and exits — a subscription or catch-up that never completes fails with exit
+69, not a retry. Without `--once` it reports one `pulled` event per
+`pass_finished` the coordinator emits (its own ticks, hook wakes, and channel
+nudges all count), re-attaching with the same jittered backoff below if the
+subscription drops — a coordinator restart included.
 
-**Runnable tests:** `tests/cli__watch.rs`, `src/domains/sync/tests/watch.rs`
+Only under the `COMEMORY_SYNC_DAEMON=0` harness switch, where no coordinator
+exists to attach to, does `watch` hold the platform's workspace channel
+itself, as it always did: the socket carries **nudges**, never memories.
+Every frame — `hello` on connect, `change` after anyone writes — triggers the
+same cursored pull a manual `comemory sync --action pull` would run, so a
+missed frame costs latency and a duplicate frame costs one empty pull. A
+refused or dropped socket is not an error: it reconnects with jittered
+backoff (1s → 30s) until interrupted.
+
+**Runnable tests:** `tests/cli__watch.rs` (the harness-switch fallback path),
+`tests/replica_daemon_4.rs` (attached to a real coordinator),
+`src/domains/sync/tests/watch.rs`
 
 **HTTP:** none — `transport: "cli-only"`. It talks to the platform's
 `POST /v1/ws/ticket` and `GET /v1/ws`, and holding a socket open until

@@ -64,6 +64,7 @@ One line per file, named after its primary item:
 | `needs_embedding.rs` | `record` | `memory_needs_embedding` row CRUD — the memories whose text is stored but whose imported vector was refused, with the reason `doctor` reports and `reembed` drains |
 | `orm.rs` | `execute` | Store-private execution of generated statements; cached preparation, owned reads, native SQLite errors and caller-owned transactions |
 | `migrate.rs` | `CURRENT_VERSION` | Versioned, idempotent schema migrations plus `schema_meta`; loops over the `MIGRATIONS` slice declared in `migrate/list.rs` |
+| `readiness.rs` | `StoreReadiness` / `probe` | A read-only classification of `comemory.db` — `Absent` / `Ready` / `MigrationPending` / `TooNew` — from `schema_meta`'s marker count alone, no connection open; the required sync daemon (#257) probes it once per pass before touching the database |
 | `schema.rs` | `registry` | The declared schema: `registry()` assembles the `#[table]` / `#[fts5_table]` / `#[vec0_table]` structs from the `schema_*.rs` siblings into a toolu-orm `SchemaRegistry` (what `examples/migrations.rs` diffs into the next `migrations/*.sql`), plus `DECLARED_TABLES`; the colocated fidelity test proves the registry identical to the database the frozen chain builds |
 | `schema_core.rs` | `SchemaMeta` | Declared `schema_meta` + `edge_fts` |
 | `schema_code.rs` | `CodeSymbols` | Declared `code_symbols`, `code_fts`, `code_vec`, `indexed_files`, `repo_marker` |

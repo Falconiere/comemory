@@ -4,8 +4,9 @@
 holding the same memories and code index — the org-scoped credential and the
 device login that mints it, the wire protocol's client *and* server halves,
 push / pull / verify / first-sync, the code-index push, the secret scan and
-skip filter that decide what may leave, the workspace channel, the opt-in
-daemon, and the Git synchronization of the data directory itself.
+skip filter that decide what may leave, the workspace channel, the required
+resident sync coordinator (#257 — see [`daemon/README.md`](daemon/README.md)),
+and the Git synchronization of the data directory itself.
 
 **What does NOT belong here:** delivery or storage. Clap flags, prompts,
 process launch and every rendered line stay in [`cli/`](../../cli/README.md)
@@ -64,10 +65,10 @@ mapping; ambiguous, unsupported and unlabelled entries remain local.
 | `redact.rs` | `scan` | Curated secret scan (`rules.toml`) before enqueueing a push |
 | `rules.toml` | — | Compile-time rule patterns (AWS, GitHub/GitLab/Slack tokens, JWT, PEM, …), loaded by `redact.rs` through `include_str!` |
 | `skip_repos.rs` | `SkipMatcher` | Normalize a repo label and apply the operator's additional `[sync] skip_repos` withholding globs |
-| `watch.rs` | `follow` | Hold the workspace channel and drain the pull direction on every nudge (under `sync.lock`, until a pass ends without `more`), with full-jitter reconnect. Emits `WatchEvent`s to a caller-supplied callback and takes the blocking-I/O escape hatch as an `OffRuntime`, so it renders nothing and names no delivery module |
-| `daemon.rs` | `run_foreground` | Periodic loop the OS supervisor keeps alive — each cycle is `auto::run_pass` under `sync.lock`, plus a verify when due — opt-in (`auth login --daemon`) since a save pushes itself and hooks fire passes |
-| `daemon_unit.rs` | `install` / `status` | launchd / systemd --user unit lifecycle |
-| `daemon_templates.rs` | plist / unit text | Rendered unit bodies |
+| `watch.rs` | `follow` / `channel_loop` | The raw platform-channel follower: mint a ticket, hold the socket, drain the pull direction on every nudge (under `sync.lock`, until a pass ends without `more`), full-jitter reconnect. `channel_loop`/`Frame` is the reusable core both `cli::watch`'s harness-switch fallback and the coordinator's own `daemon::channel` build on; `follow` is `cli::watch`'s thin wrapper over it |
+| `daemon.rs` + [`daemon/`](daemon/README.md) | `run_foreground` | The required resident coordinator (#257): one per canonical data directory, verified and repaired by every ordinary command's preflight. `daemon.rs` is the module-declaration root; see `daemon/README.md` for the control protocol, lifecycle and supervisor pieces |
+| `daemon_unit.rs` | `run_supervisor` / `users_uid` | The `launchctl`/`systemctl` shell-out helpers `daemon::supervisor` shares — the pre-#257 single-unit lifecycle this module used to own is gone |
+| `daemon_templates.rs` | plist / unit text | Per-directory plist/unit bodies, one per [`daemon::identity`](daemon/README.md)'s canonical id |
 
 ### A different kind of sync
 
