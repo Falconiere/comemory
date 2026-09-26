@@ -28,7 +28,11 @@ pub enum DaemonCmd {
     /// a verified current coordinator already runs.
     Repair,
     /// Foreground coordinator — the supervisor's entry point.
-    Run,
+    Run {
+        /// Create a session before starting the process-supervised coordinator.
+        #[arg(long, hide = true)]
+        detach_session: bool,
+    },
     /// Gracefully stop the coordinator; the next ordinary command restarts it.
     Stop,
     /// Stop and remove this data directory's service definition; the next
@@ -45,10 +49,14 @@ pub enum DaemonCmd {
 /// Dispatch a `sync daemon` subcommand. `run` is foreground and async; every
 /// other verb does its blocking work off the runtime.
 pub async fn run(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
-    if matches!(cmd, DaemonCmd::Run) {
-        return crate::domains::sync::daemon::run_foreground(paths).await;
+    let DaemonCmd::Run { detach_session } = cmd else {
+        return off_runtime(|| dispatch(paths, cmd, json_flag));
+    };
+    if detach_session {
+        nix::unistd::setsid()
+            .map_err(|error| Error::Other(format!("detach daemon session: {error}")))?;
     }
-    off_runtime(|| dispatch(paths, cmd, json_flag))
+    crate::domains::sync::daemon::run_foreground(paths).await
 }
 
 fn dispatch(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
@@ -63,13 +71,22 @@ fn dispatch(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
         DaemonCmd::Status => emit_status(json_flag, status_view::view(paths)?),
         DaemonCmd::Stop => stop(paths, json_flag),
         DaemonCmd::Uninstall => uninstall(paths, json_flag),
-        DaemonCmd::Run => Err(Error::Other(
+        DaemonCmd::Run { .. } => Err(Error::Other(
             "`sync daemon run` is dispatched before this match".into(),
         )),
     }
 }
 
 fn stop(paths: &Paths, json_flag: bool) -> Result<()> {
+    stop_coordinator(paths);
+    report(
+        json_flag,
+        "stopped",
+        "stopped (the next comemory command restarts a required daemon)",
+    )
+}
+
+fn stop_coordinator(paths: &Paths) {
     let running = matches!(
         crate::domains::sync::daemon::client::probe(
             paths,
@@ -83,15 +100,10 @@ fn stop(paths: &Paths, json_flag: bool) -> Result<()> {
             std::time::Duration::from_secs(15),
         );
     }
-    report(
-        json_flag,
-        "stopped",
-        "stopped (the next comemory command restarts a required daemon)",
-    )
 }
 
 fn uninstall(paths: &Paths, json_flag: bool) -> Result<()> {
-    stop(paths, false)?;
+    stop_coordinator(paths);
     let kind = supervisor::detect()?;
     let canonical = crate::domains::sync::daemon::identity::canonical_data_dir(paths)?;
     if kind != supervisor::Kind::Process && kind != supervisor::Kind::External {

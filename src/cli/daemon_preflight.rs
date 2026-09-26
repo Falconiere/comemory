@@ -42,16 +42,8 @@ fn classify(cmd: &Cmd) -> Classification {
         Cmd::Serve(_) | Cmd::Completions(_) | Cmd::Upgrade(_) | Cmd::Doctor(_) => {
             Classification::Exempt
         }
-        Cmd::Auth(a) => match &a.cmd {
-            AuthCmd::Status(_) => Classification::Exempt,
-            AuthCmd::Logout => Classification::BestEffort,
-            AuthCmd::Login(_) => Classification::Required,
-        },
-        Cmd::Sync(a) => match &a.cmd {
-            Some(SyncCmd::Daemon(_)) => Classification::Exempt,
-            None if matches!(a.action, SyncAction::Status) => Classification::Exempt,
-            _ => Classification::Required,
-        },
+        Cmd::Auth(a) => classify_auth(&a.cmd),
+        Cmd::Sync(a) => classify_sync(a),
         Cmd::Architecture(_)
         | Cmd::Save(_)
         | Cmd::Search(_)
@@ -95,6 +87,22 @@ fn classify(cmd: &Cmd) -> Classification {
     }
 }
 
+fn classify_auth(cmd: &AuthCmd) -> Classification {
+    match cmd {
+        AuthCmd::Status(_) => Classification::Exempt,
+        AuthCmd::Logout => Classification::BestEffort,
+        AuthCmd::Login(_) => Classification::Required,
+    }
+}
+
+fn classify_sync(args: &crate::cli::sync::Args) -> Classification {
+    match &args.cmd {
+        Some(SyncCmd::Daemon(_)) => Classification::Exempt,
+        None if matches!(args.action, SyncAction::Status) => Classification::Exempt,
+        _ => Classification::Required,
+    }
+}
+
 /// How long the probe alone may take before preflight gives up and repairs.
 const PROBE_BOUND: Duration = Duration::from_secs(2);
 
@@ -114,12 +122,24 @@ pub fn run(data_dir: Option<&Path>, cmd: &Cmd) -> Result<()> {
         return Ok(());
     }
     let paths = Paths::new(resolve_data_dir(data_dir.map(Path::to_path_buf)));
-    load_config(&paths)?; // fail fast on a broken config.toml, same as the command itself would
+    if classification == Classification::Required {
+        // Fail fast on a broken config.toml, same as the command itself
+        // would — but never for BestEffort (D11): a broken config must not
+        // block `auth logout` from still removing the credential.
+        load_config(&paths)?;
+    }
     let quick = quick_probe(&paths);
     if quick {
         return Ok(());
     }
-    let ensured = ensure::ensure(&paths, Intent::Preflight)?;
+    let ensured = match ensure::ensure(&paths, Intent::Preflight) {
+        Ok(ensured) => ensured,
+        Err(error) if classification == Classification::BestEffort => {
+            tracing::warn!(%error, "sync daemon preflight failed; continuing logout");
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
     if ensured.ready || classification == Classification::BestEffort {
         return Ok(());
     }

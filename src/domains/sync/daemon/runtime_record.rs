@@ -2,8 +2,8 @@
 //!
 //! Discovery only. A client reads it to find a socket that moved to the
 //! private runtime directory; identity always comes from the handshake, and
-//! a pid in here is signalled only after `ensure` checks it names a live
-//! `comemory` process.
+//! a pid in here never authorizes a signal: it may have been reused by an
+//! unrelated process after the recorded coordinator exited.
 
 use std::io::Write as _;
 use std::path::PathBuf;

@@ -133,7 +133,7 @@ impl Pass<'_> {
                 return Ok(None);
             }
             if let Some(end) = stop::boundary(self.paths, started, budget) {
-                report.more = end == End::Budget;
+                report.more = matches!(end, End::Budget | End::Cancelled);
                 report.end = end;
                 return Ok(None);
             }

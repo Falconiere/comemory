@@ -30,17 +30,17 @@ published target is.
 | --- | --- | --- |
 | `state.rs` | `State` / `auth_view` | Shared readiness snapshot behind a mutex, plus the broadcast event channel every subscriber reads from |
 | `worker.rs` | `Queue` / `pass` | The coalescing pass worker thread: every wake since the last pass is one pass (`auto::run_pass` under `sync.lock`), plus a verify when `[sync] verify_every` is due |
-| `channel.rs` | `spawn` | The workspace-channel thread: follows only while a usable, non-suspended credential stands, restarts on reload/login/logout, and turns a `hello`/`change` nudge into `queue.wake(Trigger::Channel, …)` |
+| `channel.rs` | `spawn` | The workspace-channel thread: probes the store read-only and follows only once it is ready and a usable, non-suspended credential stands; restarts on reload/login/logout and turns a `hello`/`change` nudge into `queue.wake(Trigger::Channel, …)` |
 | `server.rs` | `Ctx` / `serve` | The control server: accept, greet, authenticate, dispatch one `Op` per connection (or hold a subscription open) |
 | `coordinator.rs` | `run` | The foreground entry point (`comemory sync daemon run`): acquire `daemon.lock`, bind the socket, spawn the worker/channel/watchdog tasks, and run until SIGTERM or the data directory disappears |
 | `watchdog.rs` | `bind` / `guard` / `tick` | Bind over a leftover socket, the reconciliation ticker (re-reads `daemon_interval` every cycle), and the guard that re-binds a removed socket within one tick and stops the coordinator when its data directory is gone |
-| `spawn.rs` | `spawn` | `Kind::Process` supervision: detach a fresh coordinator itself, stdio to `logs/sync-daemon.{out,err}.log`, for hosts with no usable launchd/systemd |
+| `spawn.rs` | `spawn` | `Kind::Process` supervision: starts a fresh coordinator with the hidden run-only `--detach-session` flag, which safely calls `setsid` before coordinator initialization; stdio goes to `logs/sync-daemon.{out,err}.log` for hosts with no usable launchd/systemd |
 
 ### Lifecycle and CLI-facing
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `ensure.rs` | `ensure` / `Intent` | Verify (and, unless a read-only preflight already found one healthy, repair) the coordinator for a data directory. `daemon-ensure.lock` serializes concurrent repairs to one; a courtesy `signal_stale_pid` cleans up an orphaned `daemon.json` pid before starting fresh |
+| `ensure.rs` | `ensure` / `Intent` | Verify (and, unless a read-only preflight already found one healthy, repair) the coordinator for a data directory. `daemon-ensure.lock` serializes concurrent repairs to one; shutdown requires an authenticated control connection, never an unverified PID from stale metadata |
 | `status_view.rs` | `view` / `StatusView` | `comemory sync daemon status`'s live probe report — starts nothing, never calls `ensure` |
 | `supervisor.rs` | `Kind` / `detect` / `activate` | Which OS backend keeps a directory's coordinator running (`launchd` / `systemd` / `process` / `external`) and its per-directory unit lifecycle; `remove_legacy` retires the pre-#257 single, un-id'd unit |
 

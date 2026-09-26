@@ -2,7 +2,6 @@
 //! a detached child, for hosts with no usable launchd/systemd.
 
 use std::fs;
-use std::os::unix::process::CommandExt as _;
 use std::process::{Command, Stdio};
 
 use crate::config::Paths;
@@ -25,11 +24,10 @@ pub fn spawn(paths: &Paths) -> Result<()> {
     command
         .arg("--data-dir")
         .arg(&canonical)
-        .args(["sync", "daemon", "run"])
+        .args(["sync", "daemon", "run", "--detach-session"])
         .stdin(Stdio::null())
         .stdout(stdout)
-        .stderr(stderr)
-        .process_group(0);
+        .stderr(stderr);
     let _child = command.spawn()?;
     Ok(())
 }
