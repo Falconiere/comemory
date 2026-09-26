@@ -15,10 +15,44 @@ mod daemon_support;
 use std::time::Duration;
 
 use daemon_support::DaemonHome;
+use nix::unistd::{Pid, getsid};
 
 use comemory::domains::sync::daemon::client::Probe;
 
 const READY: Duration = Duration::from_secs(30);
+
+#[test]
+fn uninstall_emits_one_json_document_and_stops_the_coordinator() {
+    let home = DaemonHome::new();
+    home.json(&["sync", "daemon", "ensure"]);
+    home.wait_ready(READY);
+    assert_eq!(
+        home.json(&["sync", "daemon", "uninstall"]),
+        serde_json::json!({"uninstalled": true})
+    );
+    let deadline = std::time::Instant::now() + READY;
+    while !matches!(home.probe(), Probe::NotRunning(_)) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "coordinator still running"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn process_supervised_coordinator_owns_a_detached_session() {
+    let home = DaemonHome::new();
+    home.json(&["sync", "daemon", "ensure"]);
+    let ready = home.wait_ready(READY);
+    let process = Pid::from_raw(ready.pid.try_into().unwrap());
+    let session_id = getsid(Some(process)).unwrap();
+    assert_eq!(
+        session_id.as_raw(),
+        process.as_raw(),
+        "the process-supervised coordinator must own its terminal-detached session"
+    );
+}
 
 #[test]
 fn sixteen_parallel_commands_self_heal_a_sigkilled_coordinator_into_one() {

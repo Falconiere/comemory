@@ -22,7 +22,6 @@ pub(crate) fn run_supervisor(program: &str, args: &[&str]) {
 }
 
 /// This user's numeric uid, via `id -u`; refuses uid 0 (the root GUI domain).
-#[cfg(target_os = "macos")]
 pub(crate) fn users_uid() -> Result<u32> {
     let out = Command::new("id")
         .arg("-u")

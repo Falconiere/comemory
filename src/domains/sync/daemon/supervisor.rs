@@ -108,24 +108,28 @@ pub struct Unit {
 /// `$HOME` is unset.
 pub fn plan(canonical: &Path, kind: Kind) -> Result<Unit> {
     let id = data_dir_id(canonical, UNIT_ID_LEN);
-    match kind {
-        Kind::Launchd => {
-            let name = format!("io.comemory.sync.{id}");
-            let path = home()?
-                .join("Library/LaunchAgents")
-                .join(format!("{name}.plist"));
-            Ok(Unit { name, path })
+    let name = match kind {
+        Kind::Launchd => format!("io.comemory.sync.{id}"),
+        Kind::Systemd => format!("comemory-sync-{id}.service"),
+        Kind::Process | Kind::External | Kind::Unsupported => {
+            return Ok(Unit {
+                name: id,
+                path: PathBuf::new(),
+            });
         }
-        Kind::Systemd => {
-            let name = format!("comemory-sync-{id}.service");
-            let path = home()?.join(".config/systemd/user").join(&name);
-            Ok(Unit { name, path })
-        }
-        Kind::Process | Kind::External | Kind::Unsupported => Ok(Unit {
-            name: id,
-            path: PathBuf::new(),
-        }),
-    }
+    };
+    named_unit(kind, name)
+}
+
+fn named_unit(kind: Kind, name: String) -> Result<Unit> {
+    let root = home()?;
+    let path = if kind == Kind::Launchd {
+        root.join("Library/LaunchAgents")
+            .join(format!("{name}.plist"))
+    } else {
+        root.join(".config/systemd/user").join(&name)
+    };
+    Ok(Unit { name, path })
 }
 
 fn home() -> Result<PathBuf> {
@@ -144,50 +148,66 @@ fn home() -> Result<PathBuf> {
 /// could not be invoked ([`Kind::External`] never gets here: `ensure`
 /// verifies only).
 pub fn activate(kind: Kind, unit: &Unit, exe: &Path, canonical: &Path) -> Result<()> {
-    match kind {
-        Kind::Launchd => {
-            if let Some(parent) = unit.path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(
-                &unit.path,
-                render_launch_agent_plist(&unit.name, exe, canonical),
-            )?;
-            let uid = users_uid()?;
-            let domain = format!("gui/{uid}");
-            let status = Command::new("launchctl")
-                .args(["bootstrap", &domain, &unit.path.display().to_string()])
-                .status()
-                .map_err(|e| Error::Other(format!("launchctl bootstrap: {e}")))?;
-            if !status.success() {
-                run_supervisor(
-                    "launchctl",
-                    &["kickstart", "-k", &format!("{domain}/{}", unit.name)],
-                );
-            }
-            Ok(())
-        }
-        Kind::Systemd => {
-            if let Some(parent) = unit.path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(&unit.path, render_systemd_unit(exe, canonical))?;
-            run_supervisor("systemctl", &["--user", "daemon-reload"]);
-            let status = Command::new("systemctl")
-                .args(["--user", "start", &unit.name])
-                .status()
-                .map_err(|e| Error::Other(format!("systemctl start: {e}")))?;
-            if status.success() {
-                Ok(())
-            } else {
-                Err(Error::Other(format!(
-                    "systemctl --user start {} failed",
-                    unit.name
-                )))
-            }
-        }
-        Kind::Process | Kind::External | Kind::Unsupported => Ok(()),
+    let content = match kind {
+        Kind::Launchd => render_launch_agent_plist(&unit.name, exe, canonical),
+        Kind::Systemd => render_systemd_unit(exe, canonical),
+        Kind::Process | Kind::External | Kind::Unsupported => return Ok(()),
+    };
+    if let Some(parent) = unit.path.parent() {
+        fs::create_dir_all(parent)?;
     }
+    fs::write(&unit.path, content)?;
+    if kind == Kind::Launchd {
+        activate_launchd(unit)
+    } else {
+        run_supervisor("systemctl", &["--user", "daemon-reload"]);
+        let status = Command::new("systemctl")
+            .args(["--user", "start", &unit.name])
+            .status()
+            .map_err(|e| Error::Other(format!("systemctl start: {e}")))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Error::Other(format!(
+                "systemctl --user start {} failed",
+                unit.name
+            )))
+        }
+    }
+}
+
+fn activate_launchd(unit: &Unit) -> Result<()> {
+    let uid = users_uid()?;
+    let domain = format!("gui/{uid}");
+    if !bootstrap_launchd(unit, &domain)? {
+        // An already-loaded label retains its old plist. Unload that exact
+        // job before bootstrapping the rewritten definition.
+        let status = Command::new("launchctl")
+            .args(["bootout", &format!("{domain}/{}", unit.name)])
+            .status()
+            .map_err(|e| Error::Other(format!("launchctl bootout: {e}")))?;
+        if !status.success() {
+            return Err(Error::Other(format!(
+                "launchctl bootout {} failed",
+                unit.name
+            )));
+        }
+        if !bootstrap_launchd(unit, &domain)? {
+            return Err(Error::Other(format!(
+                "launchctl bootstrap {} failed",
+                unit.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn bootstrap_launchd(unit: &Unit, domain: &str) -> Result<bool> {
+    Command::new("launchctl")
+        .args(["bootstrap", domain, &unit.path.display().to_string()])
+        .status()
+        .map(|status| status.success())
+        .map_err(|e| Error::Other(format!("launchctl bootstrap: {e}")))
 }
 
 /// Stop the unit without removing it; best-effort.
@@ -233,38 +253,12 @@ pub fn remove_legacy(kind: Kind) {
 
 /// The pre-#257 un-id'd unit's name and path, when `kind` has one.
 fn legacy_unit(kind: Kind) -> Option<Unit> {
-    match kind {
-        Kind::Launchd => home().ok().map(|home| Unit {
-            name: LEGACY_LAUNCHD_LABEL.into(),
-            path: home
-                .join("Library/LaunchAgents")
-                .join(format!("{LEGACY_LAUNCHD_LABEL}.plist")),
-        }),
-        Kind::Systemd => home().ok().map(|home| Unit {
-            name: LEGACY_SYSTEMD_UNIT.into(),
-            path: home.join(".config/systemd/user").join(LEGACY_SYSTEMD_UNIT),
-        }),
-        Kind::Process | Kind::External | Kind::Unsupported => None,
-    }
-}
-
-/// A stray coordinator record naming a live process whose executable is
-/// still `comemory`, signalled only after that check.
-///
-/// # Errors
-/// The process table cannot be consulted.
-pub fn signal_stale_pid(pid: u32) -> Result<()> {
-    let exe = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output()
-        .map_err(|e| Error::Other(format!("ps -p {pid}: {e}")))?;
-    let name = String::from_utf8_lossy(&exe.stdout);
-    if name.trim().contains("comemory") {
-        let _ = Command::new("kill")
-            .args(["-TERM", &pid.to_string()])
-            .status();
-    }
-    Ok(())
+    let name = match kind {
+        Kind::Launchd => LEGACY_LAUNCHD_LABEL,
+        Kind::Systemd => LEGACY_SYSTEMD_UNIT,
+        Kind::Process | Kind::External | Kind::Unsupported => return None,
+    };
+    named_unit(kind, name.into()).ok()
 }
 
 #[cfg(test)]

@@ -61,6 +61,8 @@ export HOME="$QWICK_HOME/daemon-home"
 mkdir -p "$HOME"
 export COMEMORY_DAEMON_SUPERVISOR=process
 unset COMEMORY_SYNC_DAEMON
+# Stop the isolated coordinator even when a later smoke assertion fails.
+trap '"$BIN" sync daemon stop --json >/dev/null 2>&1 || true; rm -rf "$QWICK_HOME"' EXIT
 
 "$BIN" sync daemon ensure --json | grep -q '"ready":true' \
   || die "e2e" "sync daemon ensure failed"

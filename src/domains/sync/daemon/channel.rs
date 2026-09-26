@@ -18,6 +18,7 @@ use crate::domains::sync::drain::network;
 use crate::domains::sync::watch::{self, Frame, OffRuntime};
 use crate::prelude::*;
 use crate::store::connection;
+use crate::store::readiness::{self, StoreReadiness};
 use crate::store::sync_exchange::{self, ExchangeKey};
 use crate::utilities::digest::sha256_hex;
 
@@ -63,7 +64,7 @@ pub fn spawn(
 /// gates on — a channel follower must not hammer the ticket endpoint for a
 /// credential the platform already told us is invalid.
 fn suspended(paths: &Paths, auth: &AuthFile) -> bool {
-    let Ok(conn) = connection::open(paths.db_path()) else {
+    let Ok(conn) = connection::open_read_only(paths.db_path()) else {
         return false;
     };
     let key = ExchangeKey::new(&auth.api_url, &auth.workspace_id);
@@ -85,7 +86,12 @@ async fn follow(paths: &Paths, state: &State, queue: &Queue, mut control: signal
             return;
         }
         let usable = AuthFile::load_usable(paths).ok().flatten();
-        let followable = usable.filter(|auth| !suspended(paths, auth));
+        let followable = usable.filter(|auth| {
+            matches!(
+                readiness::probe(&paths.db_path()),
+                Ok(StoreReadiness::Ready)
+            ) && !suspended(paths, auth)
+        });
         let Some(auth) = followable else {
             state.set_channel(ChannelState::Off);
             tokio::select! {

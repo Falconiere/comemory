@@ -193,8 +193,7 @@ fn a_symlink_into_a_different_directory_coordinator_is_rejected_and_repaired() {
 
 /// AC-6: `daemon.json` naming a still-live process that is not `comemory`
 /// (a stale record recycled onto an unrelated pid, say) must not be killed
-/// by repair's courtesy cleanup — only a pid whose own reported command is
-/// literally `comemory` is ever signaled.
+/// during repair: stale metadata alone never authorizes signaling a pid.
 #[test]
 fn a_daemon_json_naming_a_live_non_comemory_pid_survives_repair() {
     let home = DaemonHome::new();
@@ -221,64 +220,25 @@ fn a_daemon_json_naming_a_live_non_comemory_pid_survives_repair() {
     let _ = bystander.wait();
 }
 
-/// [`comemory::domains::sync::daemon::supervisor::signal_stale_pid`] itself:
-/// it signals a pid only when that pid's own reported command is literally
-/// `comemory` — checked directly here since nothing in the ordinary
-/// `ensure` path can produce a *genuine* stale `comemory` process to prove
-/// the positive case against.
+/// Stale metadata is not proof of ownership: a live coordinator for another
+/// data directory must survive repair even though its executable is comemory.
 #[test]
-fn signal_stale_pid_ends_a_process_actually_named_comemory_but_spares_anything_else() {
-    // Neither macOS nor Linux `ps -o comm=` reflects an `exec -a` argv[0]
-    // rename — both report the executable's own file name. A real "process
-    // actually named comemory" therefore needs a copy of the real binary
-    // under that exact file name, running something that blocks.
-    let root = tempfile::tempdir().unwrap();
-    let copy = root.path().join("comemory");
-    std::fs::copy(assert_cmd::cargo::cargo_bin("comemory"), &copy).unwrap();
-    let mut perms = std::fs::metadata(&copy).unwrap().permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
-    std::fs::set_permissions(&copy, perms).unwrap();
-    let mut impostor = Command::new(&copy)
-        .args(["serve", "--port", "0"])
-        .env("COMEMORY_DATA_DIR", root.path().join("data"))
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    let impostor_pid = impostor.id();
-    // Give it a moment to actually bind and settle into serving.
-    std::thread::sleep(Duration::from_millis(300));
-    comemory::domains::sync::daemon::supervisor::signal_stale_pid(impostor_pid).unwrap();
-    // `impostor` is our own child: an unreaped zombie still answers `kill
-    // -0` (what `daemon_support::alive` checks) as if it were running, so
-    // this polls `try_wait` instead, which actually reaps it.
-    let deadline = Instant::now() + Duration::from_secs(2);
-    let mut exited = false;
-    while Instant::now() < deadline {
-        if impostor.try_wait().unwrap().is_some() {
-            exited = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    if !exited {
-        // Clean up regardless of the assertion below, so a failure here
-        // never leaves a real `comemory serve` running in the background.
-        let _ = impostor.kill();
-    }
-    let _ = impostor.wait();
-    assert!(exited, "a process actually named comemory must be signaled");
+fn a_stale_record_naming_another_directory_coordinator_survives_repair() {
+    let a = DaemonHome::new();
+    let b = DaemonHome::new();
+    let mut foreground = a.spawn_foreground(&[]);
+    let before = a.wait_ready(READY);
+    let record = runtime_record::read(&a.paths()).unwrap();
+    runtime_record::write(&b.paths(), &record).unwrap();
 
-    let mut innocent = Command::new("sleep").arg("300").spawn().unwrap();
-    let innocent_pid = innocent.id();
-    comemory::domains::sync::daemon::supervisor::signal_stale_pid(innocent_pid).unwrap();
-    std::thread::sleep(Duration::from_millis(200));
+    let ensured = b.json(&["sync", "daemon", "ensure"]);
+    let survived = foreground.child.try_wait().unwrap().is_none();
     assert!(
-        innocent.try_wait().unwrap().is_none(),
-        "anything not named comemory must survive"
+        survived,
+        "repair must not signal a pid from unverified metadata"
     );
-    let _ = innocent.kill();
-    let _ = innocent.wait();
+    assert_eq!(ensured["ready"], true, "{ensured}");
+    assert_eq!(a.wait_ready(READY).instance, before.instance);
 }
 
 /// AC-6: the socket file disappearing while the coordinator keeps running

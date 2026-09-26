@@ -216,7 +216,7 @@ impl<'a> Pass<'a> {
                 return Ok(None);
             }
             if let Some(end) = stop::boundary(self.step.paths, started, budget) {
-                self.report.more = end == End::Budget;
+                self.report.more = matches!(end, End::Budget | End::Cancelled);
                 self.report.end = end;
                 return Ok(None);
             }

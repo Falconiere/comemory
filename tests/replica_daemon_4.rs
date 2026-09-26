@@ -152,6 +152,7 @@ fn logout_barrier_blocks_every_credential_read_and_leaves_the_coordinator_runnin
     let started = home.wait_ready(Duration::from_secs(15));
     auth_fixture::seed_org_auth(&home.paths(), "http://127.0.0.1:9/api", "cmk_x", "ws_x");
 
+    std::fs::write(home.data_dir().join("config.toml"), "[broken").unwrap();
     let logout = home.json(&["auth", "logout"]);
     assert_eq!(logout["logged_out"], true, "{logout}");
     assert_eq!(
@@ -389,4 +390,17 @@ fn manual_sync_concurrent_with_coordinator_passes_drains_the_outbox_with_no_dupl
         status["pushed_seq"], status["head_seq"],
         "every local write reached the upstream exactly once, none twice: {status}"
     );
+}
+
+#[test]
+fn logout_removes_credentials_with_broken_config_and_failed_preflight() {
+    let home = DaemonHome::new().env("COMEMORY_DAEMON_SUPERVISOR", "invalid");
+    auth_fixture::seed_org_auth(&home.paths(), "http://127.0.0.1:9/api", "cmk_x", "ws_x");
+    std::fs::write(home.data_dir().join("config.toml"), "[broken").unwrap();
+
+    let logout = home.json(&["auth", "logout"]);
+    assert_eq!(logout["logged_out"], true);
+    assert!(home.data_dir().join("auth.disabled").exists());
+    assert!(!home.data_dir().join("auth.json").exists());
+    assert!(home.coordinator_pids().is_empty());
 }

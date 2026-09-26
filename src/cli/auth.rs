@@ -180,5 +180,9 @@ fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
 }
 
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
-    write_logout(json_flag, &login::logout(paths, &load_config(paths)?)?)
+    let cfg = load_config(paths).unwrap_or_else(|error| {
+        tracing::warn!(%error, "logout: unreadable config; using defaults");
+        crate::config::Config::defaults()
+    });
+    write_logout(json_flag, &login::logout(paths, &cfg)?)
 }

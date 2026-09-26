@@ -24,6 +24,45 @@ use comemory::domains::sync::daemon::readiness::{AuthState, ChannelState, StoreS
 
 const READY: Duration = Duration::from_secs(30);
 
+#[test]
+fn authenticated_startup_leaves_absent_and_pending_databases_untouched() {
+    for pending in [false, true] {
+        let home = DaemonHome::new();
+        if pending {
+            let conn = rusqlite::Connection::open(home.paths().db_path()).unwrap();
+            conn.execute_batch("CREATE TABLE sentinel(value TEXT);")
+                .unwrap();
+        }
+        write_auth(&home, "cmk_no_migration");
+        home.json(&["sync", "daemon", "ensure"]);
+        home.wait_ready(READY);
+        std::thread::sleep(Duration::from_millis(300));
+        let ready = home.wait_ready(READY);
+        assert_eq!(ready.auth.state, AuthState::Authenticated);
+        assert_eq!(ready.sync.channel, ChannelState::Off);
+        assert_eq!(
+            ready.store,
+            if pending {
+                StoreState::MigrationPending
+            } else {
+                StoreState::Absent
+            }
+        );
+        assert_eq!(home.paths().db_path().exists(), pending);
+        if pending {
+            let conn = rusqlite::Connection::open(home.paths().db_path()).unwrap();
+            let tables: Vec<String> = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(tables, ["sentinel"]);
+        }
+    }
+}
+
 /// `auth.json` exactly as a login leaves it, naming nothing reachable.
 fn write_auth(home: &DaemonHome, secret: &str) {
     let auth = serde_json::json!({

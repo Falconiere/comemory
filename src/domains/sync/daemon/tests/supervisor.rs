@@ -87,3 +87,25 @@ fn no_override_picks_this_hosts_native_backend() {
     #[cfg(target_os = "linux")]
     assert!(matches!(kind.as_str(), "systemd" | "process"));
 }
+
+/// An invalid XML character makes the real launchd reject bootstrap; the
+/// unregistered label also makes the real bootout fail.
+#[cfg(target_os = "macos")]
+#[test]
+fn launchd_activation_reports_failure_when_bootstrap_and_bootout_fail() {
+    use comemory::domains::sync::daemon::supervisor::{Unit, activate};
+
+    let (dir, canonical) = canonical();
+    let unit = Unit {
+        name: format!("io.comemory.test.{}\u{1}", dir.path().display()),
+        path: dir.path().join("invalid.plist"),
+    };
+    let error = activate(
+        Kind::Launchd,
+        &unit,
+        std::path::Path::new("/usr/bin/true"),
+        &canonical,
+    )
+    .expect_err("failed bootstrap and bootout must permit process fallback");
+    assert!(error.to_string().contains("launchctl bootout"), "{error}");
+}
