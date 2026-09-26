@@ -3,10 +3,22 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**288 near-duplicate function/method pairs at threshold 0.85**, measured with
+**289 near-duplicate function/method pairs at threshold 0.85**, measured with
 **`similarity-rs 0.5.0`** over the 621 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number rose from 288 (#257, `watch` attaches to the coordinator).**
+`cli::watch::{follow_coordinator, attach_once}` pair: `follow_coordinator` is
+the retry loop (attempt count, full-jitter backoff, `once` short-circuits on
+both `Ok`/`Err`) around one attempt; `attach_once` is that one attempt
+(subscribe, report `Connected`, then either one `catch_up` or an event-read
+loop). Splitting `attach_once` further — a bare `once`/`forever` function
+pair with no shared retry wrapper — was tried and made this *worse*, not
+better: the resulting three short functions (each opening with "subscribe,
+report `Connected`, then …") scored two pairs against each other instead of
+one, since `similarity-rs` compares shape, not the caller's actual retry
+semantics. Kept as the two-function form.
 
 **Why this number rose from 287 (#257, hook and save wakes).**
 `cli::sync_auto::{run, run_in_process}` pair: both end with "build a JSON

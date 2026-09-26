@@ -7,9 +7,10 @@
 )]
 //! The required resident daemon (#257), part 4: lifecycle and introspection
 //! commands run no preflight at all (A-7), a required-preflight command
-//! against an empty data directory never creates the corpus (D9/A-7), and
+//! against an empty data directory never creates the corpus (D9/A-7),
 //! `auth login`/`auth logout` (S8) drive the same coordinator through
-//! `reload` rather than the pre-#257 opt-in install.
+//! `reload` rather than the pre-#257 opt-in install, and `comemory watch`
+//! (S9) attaches to it too.
 
 #[path = "common/auth_fixture.rs"]
 mod auth_fixture;
@@ -19,8 +20,10 @@ mod daemon_support;
 mod device_auth_server;
 #[path = "common/release_server.rs"]
 mod release_server;
+#[path = "common/sync_platform_server.rs"]
+mod sync_platform_server;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use comemory::domains::sync::daemon::client;
 use comemory::domains::sync::daemon::control::Op;
@@ -29,6 +32,7 @@ use daemon_support::DaemonHome;
 use device_auth_server::DeviceAuthServer;
 use release_server::ReleaseServer;
 use serde_json::Value;
+use sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 
 /// No `daemon.lock`, `daemon.sock` or `daemon.json` exists for `home`.
 fn no_coordinator_artifacts(home: &DaemonHome) {
@@ -213,5 +217,176 @@ fn compat_the_deprecated_daemon_flag_changes_nothing_and_login_still_reaches_the
     assert_eq!(
         status["daemon"]["auth"]["state"], "authenticated",
         "the coordinator picked up the credential without a second command: {status}"
+    );
+}
+
+/// A memory only the fixture's org holds, queued for `GET /v1/sync/changes`
+/// — the same fixture shape `cli__watch.rs` uses, seeded *after* login so
+/// `catch_up` is what pulls it, not `auth login`'s own initial sync.
+fn queue_a_change(srv: &SyncPlatformServer, body: &str) -> String {
+    use sha2::{Digest as _, Sha256};
+    let id = comemory::memory::id::memory_id(body);
+    let content_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(body.trim_end().as_bytes());
+        hasher.finalize().iter().fold(String::new(), |mut acc, b| {
+            use std::fmt::Write as _;
+            let _ = write!(acc, "{b:02x}");
+            acc
+        })
+    };
+    srv.update(|st| {
+        st.consume_changes = true;
+        st.head_seq += 1;
+        st.changes = serde_json::json!([{
+            "seq": st.head_seq,
+            "op": "upsert",
+            "id": id,
+            "content_hash": content_hash,
+            "at": "2026-09-26T00:00:00Z",
+            "author": "someone-else",
+            "record": {
+                "frontmatter": {
+                    "id": id,
+                    "kind": "decision",
+                    "repo": "",
+                    "created": "2026-09-26T00:00:00Z",
+                    "tags": [],
+                    "quality": 3,
+                    "schema": 1,
+                    "content_hash": content_hash,
+                },
+                "body": body,
+            }
+        }]);
+    });
+    id
+}
+
+/// AC-9: `watch --once --json` attached to the coordinator prints
+/// `connected` then `pulled`, and the announced memory exists locally
+/// afterward. The workspace channel this coordinator also runs greets with
+/// its own `hello` nudge on every (re)connect (A-5), which can itself pull
+/// the change before `catch_up` gets to it — a real, desirable race (a
+/// nudge should not wait on `watch`), not a bug this test fights: the
+/// durable, deterministic claim is the file landing, not which of the two
+/// mechanisms happened to move it this run.
+#[test]
+fn watch_once_attached_to_the_coordinator_pulls_a_memory_the_client_lacks() {
+    if !device_auth_server::tooling_present() {
+        return;
+    }
+    let srv = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = DaemonHome::new();
+    // Long past this test's lifetime: cuts noise from the plain 5s
+    // reconciliation tick, leaving only the channel's own nudge (unavoidable
+    // — see above) as a second possible source of the pull.
+    std::fs::write(
+        home.data_dir().join("config.toml"),
+        "[sync]\ndaemon_interval = \"1h\"\n",
+    )
+    .expect("config.toml");
+    let (code, _, stderr) = home.run(&["auth", "login", "--api-url", &srv.base]);
+    assert_eq!(code, 0, "{stderr}");
+    home.wait_ready(Duration::from_secs(15));
+
+    // Queued after login's own initial sync (and reload pass) drained
+    // anything that was there before.
+    let id = queue_a_change(&srv, "a decision pushed from the other laptop");
+
+    let (code, stdout, stderr) = home.run(&["--json", "watch", "--once"]);
+    assert_eq!(code, 0, "{stderr}");
+    let events: Vec<Value> = stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).expect("json line"))
+        .collect();
+    assert_eq!(
+        events.first().and_then(|e| e["event"].as_str()),
+        Some("connected"),
+        "got {events:?}"
+    );
+    assert_eq!(
+        events.get(1).and_then(|e| e["event"].as_str()),
+        Some("pulled"),
+        "got {events:?}"
+    );
+
+    let memories = std::fs::read_dir(home.data_dir().join("memories"))
+        .expect("memories dir")
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    assert!(
+        memories
+            .iter()
+            .any(|name| name.starts_with(&format!("{id}-"))),
+        "the announced memory must be on disk after watch --once: {memories:?}"
+    );
+}
+
+/// AC-9: a manual `comemory sync` concurrent with the coordinator's own
+/// passes leaves every local write forwarded exactly once — the outbox
+/// empties and the pushed cursor lands exactly on the local log's head,
+/// never ahead (a duplicate accepted twice) or short of it (one dropped).
+#[test]
+fn manual_sync_concurrent_with_coordinator_passes_drains_the_outbox_with_no_duplicate_or_lost_send()
+{
+    if !device_auth_server::tooling_present() {
+        return;
+    }
+    let srv = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = DaemonHome::new();
+    // Every save stays local until a manual `sync` or the coordinator's own
+    // tick forwards it — otherwise push-on-save would drain the outbox
+    // before the race below has anything to race over.
+    std::fs::write(
+        home.data_dir().join("config.toml"),
+        "[sync]\npush_on_save = false\n",
+    )
+    .expect("config.toml");
+    let (code, _, stderr) = home.run(&["auth", "login", "--api-url", &srv.base]);
+    assert_eq!(code, 0, "{stderr}");
+    let started = home.wait_ready(Duration::from_secs(15));
+    assert_eq!(started.sync.interval_secs, 5);
+
+    for i in 0..10 {
+        let (code, _, stderr) = home.run(&[
+            "save",
+            "--repo",
+            "acme/backend",
+            &format!("concurrent write {i}"),
+        ]);
+        assert_eq!(code, 0, "{stderr}");
+    }
+
+    // Several manual `sync` calls race the coordinator's own interval tick,
+    // already running against the same database and the same upstream.
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                let (code, _, stderr) = home.run(&["sync"]);
+                assert!(code == 0 || code == 69, "sync errored ({code}): {stderr}");
+            });
+        }
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let status = home.json(&["sync", "--action", "status"]);
+        if status["pending"].as_i64() == Some(0) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the outbox never drained: {status}"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let status = home.json(&["sync", "--action", "status"]);
+    assert_eq!(status["pending"], 0, "{status}");
+    assert_eq!(
+        status["pushed_seq"], status["head_seq"],
+        "every local write reached the upstream exactly once, none twice: {status}"
     );
 }
