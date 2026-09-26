@@ -28,25 +28,41 @@
 //! drop inside the tokio runtime, and where a server pushing its tenants'
 //! memories outward would be wrong anyway.
 
+use std::time::Duration;
+
 use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::auto::PASS_LOCK;
+use crate::domains::sync::daemon::client;
+use crate::domains::sync::daemon::control::Wake;
+use crate::domains::sync::daemon::readiness::Trigger;
 use crate::domains::sync::drain::{
     self,
-    report::Report,
+    report::{End, Report},
     session::{Legs, Mode},
 };
 use crate::prelude::*;
 use crate::store::connection;
 use crate::utilities::file_lock::FileLock;
 
+/// How long the best-effort wake may take; well under a save's own budget.
+const WAKE_BOUND: Duration = Duration::from_millis(200);
+
 /// Push the outbox after a local write. Never fails, never panics, never
 /// blocks longer than `[sync] push_on_save_timeout` per request.
+///
+/// When `[sync] push_on_save` is off, or the inline attempt did not fully
+/// drain the outbox (disabled, skipped, failed, or `more` left), a
+/// best-effort wake asks the resident coordinator to finish the job at once
+/// rather than waiting for its next reconciliation tick — the same
+/// coordinator every ordinary command's preflight already keeps healthy.
 pub fn after_write_best_effort(paths: &Paths, cfg: &Config) {
-    if !cfg.sync.push_on_save {
-        return;
-    }
-    match try_push(paths, cfg) {
+    let outcome = if cfg.sync.push_on_save {
+        try_push(paths, cfg)
+    } else {
+        Ok(None)
+    };
+    match &outcome {
         Ok(Some(report)) => tracing::debug!(
             pushed = report.pushed,
             held = report.held,
@@ -58,6 +74,22 @@ pub fn after_write_best_effort(paths: &Paths, cfg: &Config) {
         // laptop, and `comemory sync --action status` reports what is pending.
         Err(e) => tracing::debug!(error = %e, "inline push after write failed"),
     }
+    if !fully_drained(&outcome) {
+        let _ = client::wake(
+            paths,
+            Wake {
+                checkout: None,
+                reason: Trigger::Save,
+            },
+            WAKE_BOUND,
+        );
+    }
+}
+
+/// Whether the inline attempt already emptied the outbox, so no wake is
+/// worth sending.
+fn fully_drained(outcome: &Result<Option<Report>>) -> bool {
+    matches!(outcome, Ok(Some(report)) if report.end == End::CaughtUp)
 }
 
 /// The fallible half. `Ok(None)` means there was no credential, or a pass
