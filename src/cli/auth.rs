@@ -16,7 +16,7 @@ use crate::cli::off_runtime::off_runtime;
 use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::sync::initial::InitialSyncStats;
-use crate::domains::sync::{AuthFile, daemon, login};
+use crate::domains::sync::login::{self, Established};
 use crate::prelude::*;
 use clap::{Args as ClapArgs, Subcommand};
 use owo_colors::OwoColorize;
@@ -55,13 +55,11 @@ pub struct LoginArgs {
     /// Platform API base URL (overrides `COMEMORY_API` / default).
     #[arg(long, value_name = "URL")]
     pub api_url: Option<String>,
-    /// Also install and start the user-level sync daemon.
-    ///
-    /// Off by default since the 2026-09-14 sync design: a save pushes inline
-    /// and `comemory watch` covers the pull direction, so a resident process
-    /// is for headless hosts rather than the common case. Replaces the old
-    /// `--no-daemon`, which opted out of an install that no longer happens.
-    #[arg(long, default_value_t = false)]
+    /// Deprecated, no-op: the sync daemon (#257) is always ensured by
+    /// preflight now, so there is nothing left to opt into. Kept parseable
+    /// (with a warning) rather than refused, unlike the removed
+    /// `--no-daemon`, so a script that already passes it keeps working.
+    #[arg(long, hide = true, default_value_t = false)]
     pub daemon: bool,
 }
 
@@ -84,15 +82,21 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 }
 
 fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
+    if a.daemon {
+        writeln!(
+            std::io::stderr().lock(),
+            "warning: --daemon is deprecated and has no effect — the sync daemon is always ensured"
+        )?;
+    }
     let mut progress = std::io::stderr().lock();
     let cfg = load_config(paths)?;
-    let established =
-        login::establish((paths, &cfg), a.api_url.as_deref(), a.daemon, &mut progress)?;
+    let established = login::establish((paths, &cfg), a.api_url.as_deref(), &mut progress)?;
     drop(progress);
     let creds = &established.credentials;
     let daemon_json = DaemonLoginJson {
-        skipped: established.daemon_skipped,
         running: established.daemon_running,
+        skipped: false,
+        instance: established.daemon_instance.clone(),
     };
 
     // Best-effort: credential is already on disk; sync counts belong in the report.
@@ -116,17 +120,17 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
             initial_sync: initial_sync_json(&synced),
         });
     }
-    write_login_text(paths, a.daemon, creds, &synced)
+    write_login_text(paths, &established, &synced)
 }
 
 /// The human-readable login report: who is logged in, where the
 /// credential lives, the daemon, and the first sync's outcome.
 fn write_login_text(
     paths: &Paths,
-    daemon_requested: bool,
-    creds: &AuthFile,
+    established: &Established,
     synced: &Result<InitialSyncStats>,
 ) -> Result<()> {
+    let creds = &established.credentials;
     let mut out = std::io::stdout().lock();
     writeln!(
         out,
@@ -141,16 +145,12 @@ fn write_login_text(
         creds.api_url,
         paths.auth_file().display()
     )?;
-    if daemon_requested {
-        if let Ok(st) = daemon::status() {
-            writeln!(out, "  daemon: {}", st.detail)?;
-        }
-    } else {
-        writeln!(
-            out,
-            "  daemon: not installed (saves push inline; `comemory watch` for live pulls)"
-        )?;
-    }
+    writeln!(
+        out,
+        "  daemon: running={} instance={}",
+        established.daemon_running,
+        established.daemon_instance.as_deref().unwrap_or("-")
+    )?;
     match synced {
         Ok(stats) => {
             writeln!(
@@ -174,11 +174,11 @@ fn write_login_text(
 
 fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
     match login::status(paths, a.api_url.as_deref())? {
-        Some(report) => emit_status(json_flag, &report),
-        None => emit_logged_out(json_flag),
+        Some(report) => emit_status(json_flag, paths, &report),
+        None => emit_logged_out(json_flag, paths),
     }
 }
 
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
-    write_logout(json_flag, login::logout(paths, &load_config(paths)?)?)
+    write_logout(json_flag, &login::logout(paths, &load_config(paths)?)?)
 }

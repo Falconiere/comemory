@@ -133,7 +133,9 @@ fn run_sync(paths: &Paths, a: &Args, json_flag: bool) -> Result<()> {
     };
     match a.action {
         SyncAction::Auto => sync_auto::run(paths, &cfg, a.path.as_deref(), json_flag),
-        SyncAction::Status => with_session(&|s| emit_status(json_flag, &mut s.conn, &s.auth)),
+        SyncAction::Status => {
+            with_session(&|s| emit_status(json_flag, paths, &mut s.conn, &s.auth))
+        }
         SyncAction::Verify => with_session(&|s| {
             let report = off_runtime(|| {
                 let _pass = hold_pass_lock(paths)?;

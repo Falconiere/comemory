@@ -7,9 +7,10 @@ use std::io::Write as _;
 
 use crate::cli::output::json;
 use crate::cli::sync_exchange_render::{exchange_run_line, exchange_status_lines};
+use crate::config::Paths;
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::code::{self, CodePushStats, NotARepository};
-use crate::domains::sync::daemon::{self, DaemonStatus};
+use crate::domains::sync::daemon::status_view;
 use crate::domains::sync::drain::status;
 use crate::domains::sync::initial::InitialSyncStats;
 use crate::domains::sync::manual::RunStats;
@@ -93,8 +94,13 @@ fn code_status_rows(conn: &Connection) -> Result<Vec<CodeStatusRow>> {
 }
 
 /// `comemory sync --action status`: cursors, code rows, the `exchange` block
-/// and the (deprecated single-daemon) `daemon` line.
-pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, auth: &AuthFile) -> Result<()> {
+/// and the coordinator's own [`status_view`].
+pub(crate) fn emit_status(
+    json_flag: bool,
+    paths: &Paths,
+    conn: &mut Connection,
+    auth: &AuthFile,
+) -> Result<()> {
     let workspace = auth.workspace_id.as_str();
     let row = sync_state::get(conn, workspace)?;
     let head = sync_log::head_seq(conn)?;
@@ -104,7 +110,7 @@ pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, auth: &AuthFil
     let pending = sync_log::pending_local(conn, pushed)?;
     let code = code_status_rows(conn)?;
     let exchange = status::status(conn, auth)?;
-    let daemon = daemon_status();
+    let daemon = daemon_status(paths);
     if json_flag {
         return json::write(&serde_json::json!({
             "workspace": workspace,
@@ -124,18 +130,10 @@ pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, auth: &AuthFil
         format!("pulled_seq: {pulled}"),
         format!("head_seq: {head}"),
         format!("pending: {pending}"),
-        format!(
-            "daemon: installed={} running={} ({})",
-            daemon.installed, daemon.running, daemon.detail
-        ),
+        format!("daemon: {}", daemon.detail),
     ];
     lines.extend(code.iter().map(code_status_line));
     lines.extend(exchange_status_lines(&exchange));
-    lines.extend(
-        daemon
-            .inactive_warning()
-            .map(|warn| format!("warning: {warn}")),
-    );
     let mut out = std::io::stdout().lock();
     for line in lines {
         writeln!(out, "{line}")?;
@@ -158,14 +156,15 @@ fn code_status_line(row: &CodeStatusRow) -> String {
     )
 }
 
-/// The daemon's status, or an honest "unavailable" when the probe fails.
-fn daemon_status() -> DaemonStatus {
-    daemon::status().unwrap_or_else(|_| DaemonStatus {
-        platform: "unknown",
-        unit_path: None,
-        installed: false,
-        running: false,
-        detail: "daemon status unavailable".into(),
+/// The coordinator's status, or an honest "unavailable" when the probe
+/// itself fails (an unrecognized `COMEMORY_DAEMON_SUPERVISOR` override).
+fn daemon_status(paths: &Paths) -> status_view::StatusView {
+    status_view::view(paths).unwrap_or_else(|e| status_view::StatusView {
+        state: status_view::State::Unsupported,
+        detail: format!("daemon status unavailable: {e}"),
+        version_matches: None,
+        supervisor: "unknown",
+        daemon: None,
     })
 }
 

@@ -300,6 +300,15 @@ fn doctor_reports_at_least_ten_healthy_checks_on_a_real_corpus() {
         checks.len()
     );
     for c in checks {
+        // "sync daemon" is the one check this suite's `bin()` never makes
+        // "ok": it reports the coordinator's own state (D12), and this
+        // process inherits `.cargo/config.toml`'s `COMEMORY_SYNC_DAEMON=0`
+        // default, which reads as `warn` by design — see
+        // `sync_daemon_check_warns_disabled_and_reports_ok_once_verified`
+        // for its "ok" coverage.
+        if c["name"] == "sync daemon" {
+            continue;
+        }
         assert_eq!(
             c["status"].as_str(),
             Some("ok"),
@@ -421,4 +430,41 @@ fn doctor_repo_roots_warns_when_a_root_no_longer_exists() {
         find_check(&v, "repo roots")["status"].as_str(),
         Some("warn")
     );
+}
+
+/// D12: `doctor` never runs `ensure` (the daemon check is introspection
+/// only). `COMEMORY_SYNC_DAEMON=0` reads as `warn`; a real, process-backed
+/// coordinator this test starts itself reads as `ok`.
+#[test]
+fn sync_daemon_check_warns_disabled_and_reports_ok_once_verified() {
+    let disabled = TempDir::new().expect("tempdir");
+    let mut cmd = bin(&disabled);
+    cmd.env("COMEMORY_SYNC_DAEMON", "0");
+    let assertion = cmd.args(["--json", "doctor"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8");
+    let report: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(find_check(&report, "sync daemon")["status"], "warn");
+
+    // A real coordinator this test ensures itself — `process` supervision
+    // and a private `HOME`, never the developer's own launchd/systemd.
+    let verified = TempDir::new().expect("tempdir");
+    let daemon_env = |c: &mut Command| {
+        c.env("COMEMORY_DAEMON_SUPERVISOR", "process")
+            .env("HOME", verified.path())
+            .env_remove("COMEMORY_SYNC_DAEMON");
+    };
+    let mut ensure = bin(&verified);
+    daemon_env(&mut ensure);
+    ensure.args(["sync", "daemon", "ensure"]).assert().success();
+
+    let mut cmd2 = bin(&verified);
+    daemon_env(&mut cmd2);
+    let assertion2 = cmd2.args(["--json", "doctor"]).assert().success();
+    let stdout2 = String::from_utf8(assertion2.get_output().stdout.clone()).expect("utf8");
+    let report2: serde_json::Value = serde_json::from_str(stdout2.trim()).expect("json");
+    assert_eq!(find_check(&report2, "sync daemon")["status"], "ok");
+
+    let mut stop = bin(&verified);
+    daemon_env(&mut stop);
+    let _ = stop.args(["sync", "daemon", "stop"]).output();
 }

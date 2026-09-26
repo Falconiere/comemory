@@ -24,7 +24,7 @@ fn http_tools() -> bool {
 }
 
 #[test]
-fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() {
+fn establish_persists_the_minted_credential_and_reports_no_coordinator_under_the_harness_switch() {
     if !http_tools() {
         return;
     }
@@ -33,11 +33,14 @@ fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() 
     paths.ensure_dirs().expect("ensure_dirs");
     let srv = DeviceAuthServer::start_default();
 
+    // `.cargo/config.toml` defaults `COMEMORY_SYNC_DAEMON=0` for every test
+    // binary, so `establish`'s best-effort reload/probe is a no-op here —
+    // it never itself starts a coordinator (that is preflight's job for
+    // `auth login`, exercised for real in `tests/replica_daemon_4.rs`).
     let mut progress = Vec::new();
     let established = login::establish(
         (&paths, &comemory::config::Config::defaults()),
         Some(&srv.base),
-        false,
         &mut progress,
     )
     .expect("establish");
@@ -51,9 +54,8 @@ fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() 
     assert_eq!(stored.workspace_id, srv.config.workspace_id);
     assert_eq!(stored.api_url, srv.base);
 
-    // Opt-in daemon: nothing was attempted, so there is nothing to report.
-    assert!(established.daemon_skipped);
-    assert_eq!(established.daemon_running, None);
+    assert!(!established.daemon_running);
+    assert_eq!(established.daemon_instance, None);
 
     // The device-code prompt must reach the writer it was handed rather than a
     // stream the domain chose — and it must be the prompt, not just any bytes.
