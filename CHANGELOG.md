@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.2] - 2026-09-26
+
+### Changed
+
+- reduce test-suite turnaround ([#302](https://github.com/Falconiere/comemory/pull/302))
+
 ## [0.49.1] - 2026-09-25
 
 ### Fixed
