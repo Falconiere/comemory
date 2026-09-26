@@ -119,7 +119,9 @@ async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -
 /// The job stages the new DB without the shared connection, then holds it
 /// only as the page copy's destination, so the server's next request reads
 /// the rebuilt content with no reopen or swap (#256). A failure leaves the
-/// live DB untouched; `result` is `null` on success. `pub(crate)` so `maint::doctor`'s `POST /doctor/rebuild` alias can
+/// live DB untouched; `result` is `null` on success.
+///
+/// `pub(crate)` so `maint::doctor`'s `POST /doctor/rebuild` alias can
 /// delegate to this exact handler instead of restating the gates and the
 /// job (console-api spec §8: "alias + adapt, never duplicate").
 pub(crate) async fn rebuild(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
