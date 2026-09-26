@@ -43,7 +43,11 @@ fn hooked_repo(home: &DaemonHome) -> std::path::PathBuf {
             .status()
             .unwrap();
     }
-    let (code, stdout, stderr) = home.run(&["install-hooks", "--repo", repo.to_str().unwrap()]);
+    let hook_path = home.hook_path();
+    let (code, stdout, stderr) = home.run_with_env(
+        &["install-hooks", "--repo", repo.to_str().unwrap()],
+        &[("PATH", hook_path.to_str().unwrap())],
+    );
     assert_eq!(code, 0, "{stdout} {stderr}");
     repo
 }
@@ -57,7 +61,8 @@ fn commit(home: &DaemonHome, repo: &std::path::Path, file: &str, body: &str, mes
         .current_dir(repo)
         .status()
         .unwrap();
-    let status = Command::new("git")
+    let status = home
+        .command_with_binary(std::path::Path::new("git"))
         .args(["commit", "-m", message])
         .current_dir(repo)
         .env("PATH", home.hook_path())
@@ -69,8 +74,11 @@ fn commit(home: &DaemonHome, repo: &std::path::Path, file: &str, body: &str, mes
 #[test]
 fn a_real_commits_hook_wakes_the_coordinator_which_indexes_the_checkout() {
     let home = DaemonHome::new();
+    // The coordinator only indexes a corpus initialized by a writable caller.
+    drop(comemory::store::connection::open(home.paths().db_path()).unwrap());
     let repo = hooked_repo(&home);
     commit(&home, &repo, "src/a.ts", "export const a = 1;\n", "first");
+    let head = comemory::domains::code::git_utils::current_head(&repo).unwrap();
 
     let ready = home.wait_ready(READY);
     assert_eq!(ready.sync.interval_secs, 5);
@@ -80,7 +88,10 @@ fn a_real_commits_hook_wakes_the_coordinator_which_indexes_the_checkout() {
     loop {
         let repos = home.json(&["repos"]);
         let rows = repos["repos"].as_array().cloned().unwrap_or_default();
-        if rows.iter().any(|r| r["repo"] == "repo") {
+        if rows
+            .iter()
+            .any(|r| r["repo"] == "repo" && r["last_head"] == head)
+        {
             break;
         }
         assert!(

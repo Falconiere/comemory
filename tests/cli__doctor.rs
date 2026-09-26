@@ -466,5 +466,25 @@ fn sync_daemon_check_warns_disabled_and_reports_ok_once_verified() {
 
     let mut stop = bin(&verified);
     daemon_env(&mut stop);
-    let _ = stop.args(["sync", "daemon", "stop"]).output();
+    stop.args(["sync", "daemon", "stop"]).assert().success();
+    let paths = comemory::config::Paths::new(verified.path().join(".comemory"));
+    assert_daemon_stopped(&paths);
+}
+
+fn assert_daemon_stopped(paths: &comemory::config::Paths) {
+    use comemory::domains::sync::daemon::client::{Probe, probe};
+    use std::time::{Duration, Instant};
+
+    // Shutdown acknowledges before the coordinator's bounded cleanup finishes.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if matches!(
+            probe(paths, Duration::from_millis(200)),
+            Probe::NotRunning(_)
+        ) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "daemon did not finish stopping");
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }

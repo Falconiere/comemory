@@ -729,7 +729,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/daemon/channel.rs | comemory::domains::sync::daemon::channel; preserve | none | none | domains::sync | src/domains/sync/daemon/channel.rs | retain |
 | src/domains/sync/daemon/client.rs | comemory::domains::sync::daemon::client; preserve | src/domains/sync/daemon/tests/client.rs | none | domains::sync | src/domains/sync/daemon/client.rs | retain |
 | src/domains/sync/daemon/control.rs | comemory::domains::sync::daemon::control; preserve | none | none | domains::sync | src/domains/sync/daemon/control.rs | retain |
-| src/domains/sync/daemon/coordinator.rs | comemory::domains::sync::daemon::coordinator; preserve | none | none | domains::sync | src/domains/sync/daemon/coordinator.rs | retain |
+| src/domains/sync/daemon/coordinator.rs | comemory::domains::sync::daemon::coordinator; preserve | src/domains/sync/daemon/tests/coordinator.rs | none | domains::sync | src/domains/sync/daemon/coordinator.rs | retain |
 | src/domains/sync/daemon/ensure.rs | comemory::domains::sync::daemon::ensure; preserve | src/domains/sync/daemon/tests/ensure.rs | none | domains::sync | src/domains/sync/daemon/ensure.rs | retain |
 | src/domains/sync/daemon/handshake.rs | comemory::domains::sync::daemon::handshake; preserve | src/domains/sync/daemon/tests/handshake.rs | none | domains::sync | src/domains/sync/daemon/handshake.rs | retain |
 | src/domains/sync/daemon/identity.rs | comemory::domains::sync::daemon::identity; preserve | src/domains/sync/daemon/tests/identity.rs | none | domains::sync | src/domains/sync/daemon/identity.rs | retain |

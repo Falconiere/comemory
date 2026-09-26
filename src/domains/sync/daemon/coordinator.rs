@@ -6,7 +6,7 @@
 //! before it reads a credential or touches the network. Then it runs the
 //! pass worker, the channel thread, the reconciliation ticker and the
 //! watchdog until SIGTERM, SIGINT, a `shutdown` op or its data directory
-//! disappearing; SIGHUP reloads.
+//! disappearing, or an unexpected background-thread exit; SIGHUP reloads.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -39,7 +39,8 @@ const STOP_GRACE: Duration = Duration::from_secs(15);
 ///
 /// # Errors
 /// [`Error::Conflict`] when another coordinator holds `daemon.lock`; any
-/// failure to lock, bind or record before it starts answering.
+/// failure to lock, bind or record before it starts answering; or
+/// [`Error::Unavailable`] when a background thread exits unexpectedly.
 pub async fn run(paths: &Paths) -> Result<()> {
     std::fs::create_dir_all(paths.data_dir())?;
     let canonical = identity::canonical_data_dir(paths)?;
@@ -60,14 +61,7 @@ pub async fn run(paths: &Paths) -> Result<()> {
     tracing::info!(pid = me.pid, socket = %socket.display(), "sync daemon answering");
 
     let tasks = spawn_tasks(&paths, &canonical, &socket, &state, listener)?;
-    wait_for_stop(
-        &paths,
-        &state,
-        &tasks.shutdown,
-        &tasks.reload,
-        &tasks.gen_tx,
-    )
-    .await?;
+    let outcome = wait_for_stop(&paths, &state, &tasks).await;
     shutdown(&state, tasks).await;
     // Release `daemon.lock` before the socket and record disappear: a
     // replacement spawned the instant this instance looks stopped must
@@ -76,12 +70,13 @@ pub async fn run(paths: &Paths) -> Result<()> {
     watchdog::unbind(&socket, &me.instance, &paths);
     runtime_record::remove_if_ours(&paths, &me.instance)?;
     tracing::info!("sync daemon stopped");
-    Ok(())
+    outcome
 }
 
 /// Every background handle a running coordinator holds.
 struct Tasks {
     worker: std::thread::JoinHandle<()>,
+    channel: std::thread::JoinHandle<()>,
     queue: Arc<Queue>,
     shutdown: Arc<Notify>,
     reload: Arc<Notify>,
@@ -100,7 +95,7 @@ fn spawn_tasks(
     let queue = Queue::new();
     let (gen_tx, gen_rx) = generation::channel(0_u64);
     let worker = worker::spawn(paths.clone(), Arc::clone(state), Arc::clone(&queue))?;
-    let _channel = channel::spawn(paths.clone(), Arc::clone(state), Arc::clone(&queue), gen_rx)?;
+    let channel = channel::spawn(paths.clone(), Arc::clone(state), Arc::clone(&queue), gen_rx)?;
     let (shutdown, reload) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
     let (rebind_tx, rebind_rx) = mpsc::channel(1);
     let ctx = Arc::new(Ctx {
@@ -126,6 +121,7 @@ fn spawn_tasks(
     ));
     Ok(Tasks {
         worker,
+        channel,
         queue,
         shutdown,
         reload,
@@ -143,33 +139,46 @@ async fn shutdown(state: &State, tasks: Tasks) {
     tasks.queue.stop();
     let _ = tasks.gen_tx.send(channel::STOP);
     let deadline = Instant::now() + STOP_GRACE;
-    while !tasks.worker.is_finished() && Instant::now() < deadline {
+    while (!tasks.worker.is_finished() || !tasks.channel.is_finished()) && Instant::now() < deadline
+    {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     tracing::debug!(
         worker_finished = tasks.worker.is_finished(),
+        channel_finished = tasks.channel.is_finished(),
         "sync daemon stop grace elapsed"
     );
+    join_finished(tasks.worker, "pass worker");
+    join_finished(tasks.channel, "workspace channel");
 }
 
-/// Serve reloads until a stop arrives.
-async fn wait_for_stop(
-    paths: &Paths,
-    state: &State,
-    shutdown: &Notify,
-    reload: &Notify,
-    generation: &generation::Sender<u64>,
-) -> Result<()> {
+/// Join only completed threads, preserving the shutdown deadline.
+fn join_finished(thread: std::thread::JoinHandle<()>, name: &str) {
+    if thread.is_finished() && thread.join().is_err() {
+        tracing::error!(thread = name, "sync daemon background thread panicked");
+    }
+}
+
+/// Serve reloads until a stop or an unexpected background-thread exit.
+async fn wait_for_stop(paths: &Paths, state: &State, tasks: &Tasks) -> Result<()> {
     let mut term = signal(SignalKind::terminate())?;
     let mut int = signal(SignalKind::interrupt())?;
     let mut hup = signal(SignalKind::hangup())?;
+    let mut health = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
-            () = shutdown.notified() => return Ok(()),
+            () = tasks.shutdown.notified() => return Ok(()),
             _ = term.recv() => return Ok(()),
             _ = int.recv() => return Ok(()),
-            _ = hup.recv() => apply_reload(paths, state, generation),
-            () = reload.notified() => apply_reload(paths, state, generation),
+            _ = hup.recv() => apply_reload(paths, state, &tasks.gen_tx),
+            () = tasks.reload.notified() => apply_reload(paths, state, &tasks.gen_tx),
+            _ = health.tick() => {
+                for (name, thread) in [("pass worker", &tasks.worker), ("workspace channel", &tasks.channel)] {
+                    if thread.is_finished() {
+                        return Err(Error::Unavailable(format!("sync daemon {name} exited unexpectedly")));
+                    }
+                }
+            }
         }
     }
 }
@@ -216,3 +225,7 @@ fn record_of(r: &Readiness) -> runtime_record::RuntimeRecord {
         supervisor: r.supervisor.clone(),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/coordinator.rs"]
+mod tests;
