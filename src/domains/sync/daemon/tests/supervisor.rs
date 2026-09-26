@@ -88,24 +88,29 @@ fn no_override_picks_this_hosts_native_backend() {
     assert!(matches!(kind.as_str(), "systemd" | "process"));
 }
 
-/// An invalid XML character makes the real launchd reject bootstrap; the
-/// unregistered label also makes the real bootout fail.
+/// A nonexistent GUI domain makes the real launchd reject both bootstrap
+/// and bootout, without installing a job in the developer's session.
 #[cfg(target_os = "macos")]
 #[test]
 fn launchd_activation_reports_failure_when_bootstrap_and_bootout_fail() {
-    use comemory::domains::sync::daemon::supervisor::{Unit, activate};
+    use comemory::domains::sync::daemon::supervisor::Unit;
+    use comemory::domains::sync::daemon_templates::render_launch_agent_plist;
 
     let (dir, canonical) = canonical();
     let unit = Unit {
-        name: format!("io.comemory.test.{}\u{1}", dir.path().display()),
-        path: dir.path().join("invalid.plist"),
+        name: "io.comemory.test.unavailable-domain".into(),
+        path: dir.path().join("unavailable-domain.plist"),
     };
-    let error = activate(
-        Kind::Launchd,
-        &unit,
-        std::path::Path::new("/usr/bin/true"),
-        &canonical,
+    std::fs::write(
+        &unit.path,
+        render_launch_agent_plist(
+            &unit.name,
+            std::path::Path::new("/usr/bin/true"),
+            &canonical,
+        ),
     )
-    .expect_err("failed bootstrap and bootout must permit process fallback");
+    .unwrap();
+    let error = super::bootstrap_or_replace(&unit, "gui/4294967295")
+        .expect_err("failed bootstrap and bootout must permit process fallback");
     assert!(error.to_string().contains("launchctl bootout"), "{error}");
 }

@@ -179,7 +179,11 @@ pub fn activate(kind: Kind, unit: &Unit, exe: &Path, canonical: &Path) -> Result
 fn activate_launchd(unit: &Unit) -> Result<()> {
     let uid = users_uid()?;
     let domain = format!("gui/{uid}");
-    if !bootstrap_launchd(unit, &domain)? {
+    bootstrap_or_replace(unit, &domain)
+}
+
+fn bootstrap_or_replace(unit: &Unit, domain: &str) -> Result<()> {
+    if !bootstrap_launchd(unit, domain)? {
         // An already-loaded label retains its old plist. Unload that exact
         // job before bootstrapping the rewritten definition.
         let status = Command::new("launchctl")
@@ -192,7 +196,7 @@ fn activate_launchd(unit: &Unit) -> Result<()> {
                 unit.name
             )));
         }
-        if !bootstrap_launchd(unit, &domain)? {
+        if !bootstrap_launchd(unit, domain)? {
             return Err(Error::Other(format!(
                 "launchctl bootstrap {} failed",
                 unit.name
