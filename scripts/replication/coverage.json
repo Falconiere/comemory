@@ -223,6 +223,24 @@
     ],
     "I-9": [
       "install"
+    ],
+    "B-1": [
+      "recovery"
+    ],
+    "B-2": [
+      "recovery"
+    ],
+    "B-4": [
+      "recovery"
+    ],
+    "B-5": [
+      "recovery"
+    ],
+    "B-6": [
+      "recovery"
+    ],
+    "B-7": [
+      "recovery"
     ]
   }
 }
