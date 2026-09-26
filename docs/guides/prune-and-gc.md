@@ -205,10 +205,21 @@ A verdict or activity run that was shared with other machines also has a copy
 in the replication journal. The same sweep **expires** that copy — its bytes
 are blanked and `changes` reports it as `payload_state: "expired"` — while the
 position, the digest and the receipts stay, so a peer that offers the event
-again is answered `payload_expired` rather than counted a second time. Purging
+again is answered `payload_expired` rather than counted a second time. A
+payload a pending outbox operation still owes upstream is exempt from that
+expiry — this machine hasn't delivered it yet, so `gc` keeps its bytes and it
+uploads and counts once the next sync reaches a peer. Purging
 a memory **erases** the shared copies of the verdicts on it the same way, and
 a replay of one is answered `payload_erased`. See
 [feedback and activity replication](../designs/2026-09-24-feedback-activity-replication.md).
+
+The same `gc` run sweeps abandoned uploads: `replica_staged_part` rows of an
+upload whose last part never arrived, and `code_generation` rows still
+`staged`, both older than 24 hours. Neither ever published anything, so
+neither is state a peer has seen — except a staged generation a `pending`
+outbox operation still names, which survives (it is an owed upload, not
+abandoned). `--json` reports the count as `staged_rows`, and `gc_runs` keeps
+it in the run history.
 
 Aggregated `feedback` counters and mined `query_expansions` **never expire** —
 `gc` keeps them no matter how old, so your learned ranking signal survives the
@@ -218,10 +229,40 @@ re-save, which should not inherit the verdicts of a memory you deliberately
 deleted). `retrieval_log` rows are never touched by a purge — a row is one
 query, and `returned_ids` is a list, not a key.
 
+## Permanently erase a memory or document
+
+`comemory delete` and `gc`'s purge are both recoverable — a deleted memory
+sits in `.trash/` until `gc` reaps it, and even after that a peer that still
+holds it can restore it. `comemory erase` is different: it is the one
+explicit, permanent removal, and it is not restorable from a peer afterward.
+
+```bash
+comemory erase --memory <id> --confirm
+comemory erase --document <shared-id> --confirm
+```
+
+Erase removes the entity's markdown, its mirror row and every derived row
+(tags, full text, vector, code references, edges, feedback counters and
+verdicts), blanks the bytes of every journal copy naming it, and withdraws
+any upload still pending for it. What it leaves, deliberately: the entity's
+feed position, its revision and its receipts (so a peer's next read answers
+`payload_erased` rather than nothing at all), and the pre-existing rollback
+snapshots already on disk (`comemory.db.pre-v*.bak`,
+`comemory.db.pre-rebuild.bak`, `comemory.db.pre-restore.bak`,
+`memories.pre-restore/`, any `comemory backup create` directory) — erase
+names the ones it found in its report (`snapshots_with_prior_state`) rather
+than deleting them itself; that stays your call.
+
+The barrier is the erased **digest**, not the id: new content saved or
+indexed under the same id afterward is a new revision and replicates
+normally. An id an engine never held is `404 not_found` and nothing is
+written. See
+[replica state recovery](../designs/2026-09-25-replica-state-recovery.md).
+
 ## See also
 
 - [CLI reference](../cli-reference.md) — full `prune`, `consolidate`, `rebuild`,
-  and `gc` flags.
+  `gc`, and `erase` flags.
 - [Configuration](../configuration.md) — the `COMEMORY_PRUNE_*` floors and the
   `COMEMORY_LEARNING_RETENTION_DAYS` window.
 - [Getting started](../getting-started.md) — the save / index / search loop.

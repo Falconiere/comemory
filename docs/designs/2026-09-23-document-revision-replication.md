@@ -174,3 +174,15 @@ transaction, and [the exchange client](2026-09-24-replica-exchange-client.md)
 pushes it. The first pass after a key selects `replica-v1` queues every
 revision journalled before this change, which had a feed position but no
 queue entry.
+
+## Changed by #256
+
+`comemory erase --document <shared-id>` permanently removes a shared
+document's chunk text from every table and journal copy, on its origin and
+on a peer holding the pulled copy, while its source file on disk is
+untouched; a later pull or replay of the erased revision applies nothing,
+and re-indexing the unchanged file records the share blocked `erased`
+rather than sharing it again — editing it does share a new revision. A
+revoked repository's pulled document passages hide from `find --only
+document` on a policy-loaded client the same way a revoked code generation
+does. See [replica state recovery](2026-09-25-replica-state-recovery.md).

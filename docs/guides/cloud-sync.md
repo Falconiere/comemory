@@ -538,7 +538,8 @@ legacy cursors:
 
 - `protocol`, `coverage`, `coverage_reason` — as above.
 - `network` — `ok`, `backoff` (with `retry_at` and `consecutive_failures`),
-  `auth_suspended` or `protocol_error`, and `last_error`.
+  `auth_suspended`, `restore_unverified` or `protocol_error`, and
+  `last_error`.
 - `stream_epoch`, `applied_sequence`, `upstream_head` — the pull cursor and
   the head the last completed pass saw.
 - `caught_up` — true only when the cursor equals that head, no replay is in
@@ -571,6 +572,7 @@ earliest one, and the replay can never put an older revision over a newer.
 | `401` / `403` | `auth_suspended` | only once `auth.json` holds a different credential |
 | `409 sync_policy_changed` | — | the policy is reloaded and the pass runs once more, then backs off |
 | `409 epoch_mismatch` / `cursor_ahead`, or the entry at the cursor changed | rebootstrap | at once |
+| `503 restore_unverified` | `restore_unverified` | the exchange holds — nothing is sent or pulled — until the upstream's own restore finishes verifying its erasure manifest |
 
 Within a pass a failed request is retried at most twice. `auth_suspended`
 stops network work only: the daemon keeps running, saves keep journalling,
@@ -585,6 +587,13 @@ digests with the same buckets over what this key last exchanged. A kind that
 differs is replayed from the start for that kind alone, then compared again;
 what still differs is reported (`kinds[].differing_buckets`,
 `repaired: false`) beside `held_positions`, never looped on.
+
+A hub mid-`comemory backup restore` — before its erasure manifest has merged
+— answers every sync route `503 restore_unverified`; a client sees exactly
+that state and sends nothing until the hub clears it (`comemory backup
+merge-erasures`, or the merge that completes on its own once the manifest
+is established). See [replica state
+recovery](../designs/2026-09-25-replica-state-recovery.md).
 
 An upstream restored from a backup (its head below the cursor) or replaced
 by a new stream (a new epoch) makes the next pass **rebootstrap**: the cursor

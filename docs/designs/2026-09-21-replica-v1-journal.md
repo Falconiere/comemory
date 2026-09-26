@@ -303,3 +303,18 @@ behaviors stated above:
 - Seeding journals pre-journal memories without queueing uploads, and the
   refusal of an import over an owed upload applies only on an engine that is
   itself a `replica-v1` client of some upstream.
+
+## Changed by #256
+
+`comemory rebuild` no longer builds a fresh file and renames it over the
+live database: it replaces the live connection's content in place through
+SQLite's online backup API (`store::replace_in_place`), holding
+`memory-save.lock` for the whole run so no markdown write races the copy.
+Every `schema_meta` key prefixed `replica_` — every seeding cursor, capture
+and backfill cursor, the document policy fingerprint, the restore state —
+survives a rebuild, and a live memory the copy could not carry a journal
+row for restarts the bootstrap scan rather than falsely advertising it.
+Retention now skips a payload a pending outbox operation still owes, and a
+permanently erased digest can never be stored again — an import or a pull
+carrying it answers `payload_erased` and materializes nothing. See
+[replica state recovery](2026-09-25-replica-state-recovery.md).

@@ -707,3 +707,14 @@ like any other. The capture batch skips a run that already carries an event
 id, so a rebuild, which drops the capture cursor, never shares a run twice. A
 pulled event this engine already holds is answered `duplicate` under any
 operation id, as the import route answers it.
+
+## Changed by #256
+
+Retention now skips a payload a pending outbox operation still owes
+upstream, instead of expiring it out from under an upload that hasn't
+delivered yet. Every redaction — expiry or erasure — also reaches beyond
+`replica_payload`: it blanks the same digest inside a killed replay's
+`replica_replay` scratch row, and deletes any complete staged-part set that
+assembled to it (an incomplete one is already reclaimed by the existing
+24-hour stage sweep). `gc_runs` gains `staged_rows`. See
+[replica state recovery](2026-09-25-replica-state-recovery.md).

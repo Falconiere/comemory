@@ -43,6 +43,7 @@ bash scripts/test-replication-e2e.sh \
 | `events` | engine | Feedback verdicts and activity runs as `replica-v1` events (#254): stable event ids and origin devices, one counter contribution per event through replays, echoes, an induced fault and a SIGKILL mid-envelope, the one-time backfill, retention expiry and purge erasure reaching the journal, tied timestamps kept in acceptance order, and the allowlist / path / secret policy on what text may leave (`--test replica_events` / `replica_events_2` / `replica_events_3`; ACs `V-1`…`V-7`) |
 | `exchange` | engine | The exchange client (#255) against real `comemory serve` hubs behind a real fault proxy (drop, hold, delay, flip, rate-limit): negotiation and a one-way upgrade, a 2,000+ operation backlog drained in one run, held pages then an allowed entry, stalls that replay safely, held states that never starve the rest, `429`/`502`/timeout survival, restored and replaced streams, workspace switches, code generations and documents both ways, and feedback and activity events counted once (`--test replica_exchange` … `replica_exchange_8`) |
 | `daemon` | engine | The required resident sync coordinator (#257) against real processes, real signals and a real engine hub behind a real fault proxy: discovery, preflight, lifecycle (`ensure`/`restart`/`repair`/`stop`/`uninstall`), auth/logout/status driven through it, triggers (hooks, save, the workspace channel), `watch` attached to it, and backlog/verify robustness — a 2,100-op outage-and-recovery scenario, SIGSTOP/SIGCONT, `verify_every` across a restart (`--test replica_daemon` … `replica_daemon_5`; ACs `R-1`…`R-11`) |
+| `recovery` | engine | Replica state recovery (#256): a legacy engine upgrades and seeds its journal once even through a kill; `comemory rebuild` and `comemory gc` keep every replica row, an owed-but-undelivered payload, and a staged upload a pending operation still needs; `comemory erase` leaves only the digest barrier behind, for both a memory and a shared document; a revoked repository's pulled code and document caches hide without touching its own local index (`--test replica_recovery` … `replica_recovery_4`; ACs `B-1`, `B-2`, `B-4`…`B-7`) |
 | `baseline` | platform | A saved document slice reaches a second store; two workspaces are provisioned |
 | `fault-ack` | platform | A dropped sync acknowledgement converges to one file on the next sync |
 | `corrupt` | platform | One flipped request byte leaves the receiver empty |
@@ -51,8 +52,8 @@ bash scripts/test-replication-e2e.sh \
 | `lost-nudge` | platform | `sync daemon run` pulls the file on the next 5 second cycle |
 
 Run the event suite on its own with
-`bash scripts/test-replication-e2e.sh --case events`; like `contract` it needs
-no platform checkout, so the public engine CI runs it.
+`bash scripts/test-replication-e2e.sh --case events`; like `contract` and
+`recovery` it needs no platform checkout, so the public engine CI runs it.
 
 `bash scripts/check-replication-coverage.sh` is also a `check-all` gate.
 It does not boot the platform. Pass `--platform-root` to also require the

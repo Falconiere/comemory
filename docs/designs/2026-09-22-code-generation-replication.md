@@ -147,3 +147,13 @@ upstream's order without the parent check the import route keeps, and a
 pending local plan is then answered stale upstream and replanned.
 `code_generation::active_local`, which stood in for that upload selection, is
 gone.
+
+## Changed by #256
+
+On an engine that has loaded a policy snapshot, revoking a repository's
+approval now hides its pulled code generation from `repos` and the code
+graph — the cache is hidden, not deleted, so reapproving it shows the same
+generation again with no reload — while that repository's own local index
+stays fully searchable regardless of policy. An engine that never loaded a
+policy keeps today's unfiltered behavior. See
+[replica state recovery](2026-09-25-replica-state-recovery.md).

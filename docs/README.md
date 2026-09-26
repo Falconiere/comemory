@@ -114,6 +114,12 @@ Understanding-oriented background:
   that means durable contiguous handling, held states that never starve the
   rest, backoff and auth suspension, verify and rebootstrap, and keying by
   API origin and workspace. The how-to is [cloud-sync](guides/cloud-sync.md#exchange).
+- **[Replica state recovery](designs/2026-09-25-replica-state-recovery.md)** —
+  seeding every eligible entity through a kill, rebuild and gc keeping
+  replica progress and an owed upload, permanent erase and the digest
+  barrier, stream identity and the erasure manifest kept outside the
+  corpus, in-place rebuild and restore through SQLite's backup API, and
+  revoked pulled caches hidden without touching a local index.
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.

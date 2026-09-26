@@ -839,3 +839,16 @@ None blocking. Decisions taken without a human, with the reason:
    whole-`src/` generation is 0.9 MiB), and an operator behind a proxy with a
    smaller body limit needs the same knob. Jev preferred it over padding the
    corpus with dependency sources (0.95 vs 0.05; "test-only knob" 0.10).
+
+## Changed by #256
+
+The drain now advances this engine's own seeding locally, every pass,
+before events adopt — previously the trash and document seeding walks only
+ever ran when another peer's request reached the manifest or changes route
+handler, so a pure client never seeded them at all. A client also adopts
+any memory a local seed already wrote before it ever became a client (no
+outbox row, no binding), sending that history out once on its first sync.
+While an upstream is `restore_unverified` — mid `comemory backup restore`,
+before its erasure manifest has merged — every exchange pass holds and
+sends nothing until that clears. See
+[replica state recovery](2026-09-25-replica-state-recovery.md).
