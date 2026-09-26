@@ -253,3 +253,37 @@ fn stream_epoch_is_the_minted_value() {
         .expect("row");
     assert_eq!(epoch, stored);
 }
+
+#[test]
+fn set_identity_gives_the_database_a_new_epoch_and_the_identity_device() {
+    let (_dir, conn) = migrated_db();
+    let device = comemory::store::replica_device::id(&conn).expect("device");
+    let (epoch, other) = ("1".repeat(32), "2".repeat(32));
+
+    replica_journal::set_identity(&conn, &epoch, &other, "2026-09-25T10:00:00Z").expect("set");
+
+    assert_eq!(stream_epoch(&conn).expect("epoch"), epoch);
+    assert_eq!(
+        comemory::store::replica_device::id(&conn).expect("device"),
+        other
+    );
+    assert_ne!(other, device);
+    let at: String = conn
+        .query_row("SELECT created_at FROM replica_stream", [], |r| r.get(0))
+        .expect("created_at");
+    assert_eq!(
+        at, "2026-09-25T10:00:00Z",
+        "the epoch's mint time moves with it"
+    );
+}
+
+#[test]
+fn set_identity_refuses_a_database_with_no_identity_rows() {
+    let (_dir, conn) = migrated_db();
+    conn.execute("DELETE FROM replica_stream", [])
+        .expect("drop the stream row");
+
+    let result = replica_journal::set_identity(&conn, &"1".repeat(32), &"2".repeat(32), "t");
+
+    assert!(result.is_err(), "{result:?}");
+}

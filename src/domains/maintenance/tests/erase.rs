@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 
 use comemory::domains::maintenance::erase::{self, Report, Request, Target};
 use comemory::domains::sync::replica::contract::Disposition;
+use comemory::domains::sync::replica::erasure_manifest;
+use comemory::domains::sync::replica::identity::{self, ERASURES_KEY, Ensured, MANIFEST_FILE};
 use comemory::prelude::{Error, Result};
 use comemory::store::replica_read::{self, Redaction};
 use comemory::store::{replica_outbox, replica_redaction};
@@ -245,6 +247,10 @@ fn an_erase_on_a_data_directory_without_a_database_creates_none() {
     assert!(
         !paths.db_path().exists(),
         "an erase of nothing writes nothing"
+    );
+    assert!(
+        !paths.data_dir().join(identity::DIR).exists(),
+        "not even a stream identity"
     );
 }
 
@@ -477,5 +483,156 @@ fn the_report_names_every_rollback_snapshot_still_holding_prior_state() {
             "memories.pre-restore",
         ],
         "a temp file is not a snapshot"
+    );
+}
+
+/// The erasure count the database itself carries.
+fn stamped(home: &Home) -> Option<String> {
+    home.conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = ?1",
+            [ERASURES_KEY],
+            |r| r.get(0),
+        )
+        .ok()
+}
+
+fn manifest_of(home: &Home) -> erasure_manifest::Manifest {
+    erasure_manifest::read(&identity::file(&home.paths, MANIFEST_FILE))
+        .expect("read")
+        .expect("erasures.jsonl")
+}
+
+#[test]
+fn an_erase_appends_its_line_and_stamps_both_counts() {
+    let mut home = Home::new();
+    let id = home.save(&token_body(), &["erase"]);
+    verdict(&mut home, &id);
+    let revision = replica_read::revision(&home.conn, "memory", &id)
+        .expect("revision")
+        .and_then(|r| r.payload_digest)
+        .expect("digest");
+
+    let report = erase_memory(&mut home, &id).expect("erase");
+
+    let manifest = manifest_of(&home);
+    assert!(manifest.established(1));
+    let line = &manifest.lines[0];
+    assert_eq!(
+        (line.kind.as_str(), line.key.as_str()),
+        ("memory", id.as_str())
+    );
+    assert_eq!(line.digests.len(), report.payloads_erased);
+    assert!(line.digests.contains(&revision), "{:?}", line.digests);
+    let identity = identity::read(&home.paths)
+        .expect("read")
+        .expect("identity");
+    assert_eq!(identity.erasures, 1);
+    assert_eq!(stamped(&home).as_deref(), Some("1"));
+    let epoch = home.epoch();
+    assert_eq!(
+        identity::ensure(&home.paths, &home.cfg, &mut home.conn).expect("ensure"),
+        Ensured::Current,
+        "an ordinary erase is not a replaced database"
+    );
+    assert_eq!(home.epoch(), epoch);
+}
+
+#[test]
+fn an_entity_never_held_records_no_line() {
+    let mut home = Home::new();
+    home.save(BODY, &["kept"]);
+
+    let missing = erase_memory(&mut home, "0badc0de");
+
+    assert!(matches!(missing, Err(Error::NotFound(_))), "{missing:?}");
+    assert!(manifest_of(&home).lines.is_empty());
+    let identity = identity::read(&home.paths)
+        .expect("read")
+        .expect("identity");
+    assert_eq!(identity.erasures, 0);
+}
+
+/// Env vars telling the second process where to erase, and what.
+const CHILD_DIR: &str = "COMEMORY_TEST_ERASE_CHILD_DIR";
+const CHILD_IDS: &str = "COMEMORY_TEST_ERASE_CHILD_IDS";
+
+/// Erase every id in `ids` from the data directory at `paths`, each through
+/// its own `erase::run` on its own connection, as a CLI process does.
+fn erase_all(paths: &comemory::config::Paths, ids: &[String]) {
+    let cfg = comemory::config::Config::defaults();
+    let mut conn = comemory::store::connection::open(paths.db_path()).expect("open");
+    for id in ids {
+        let mut ctx = comemory::utilities::context::Ctx::borrowed(paths, &cfg, &mut conn);
+        erase::run(
+            &mut ctx,
+            Request {
+                memory: Some(id.clone()),
+                document: None,
+            },
+        )
+        .expect("erase");
+    }
+}
+
+#[test]
+fn two_processes_erasing_at_once_keep_the_chain_whole() {
+    let wait = std::time::Duration::from_secs(30);
+    if let (Some(dir), Some(ids)) = (std::env::var_os(CHILD_DIR), std::env::var(CHILD_IDS).ok()) {
+        let paths = comemory::config::Paths::new(PathBuf::from(dir));
+        fs::write(paths.data_dir().join("ready"), b"").expect("ready");
+        let deadline = std::time::Instant::now() + wait;
+        while !paths.data_dir().join("go").exists() {
+            assert!(std::time::Instant::now() < deadline, "never told to go");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let ids: Vec<String> = ids.split(',').map(str::to_string).collect();
+        erase_all(&paths, &ids);
+        return;
+    }
+    let mut home = Home::new();
+    let ids: Vec<String> = (0..8)
+        .map(|n| home.save(&format!("{BODY} Concurrent erase number {n}."), &["erase"]))
+        .collect();
+    let (mine, theirs) = ids.split_at(4);
+    let test = format!(
+        "{}::two_processes_erasing_at_once_keep_the_chain_whole",
+        module_path!().trim_start_matches("comemory::")
+    );
+    let mut child = std::process::Command::new(std::env::current_exe().expect("test binary"))
+        .args(["--exact", &test, "--nocapture"])
+        .env(CHILD_DIR, home.paths.data_dir())
+        .env(CHILD_IDS, theirs.join(","))
+        .spawn()
+        .expect("spawn the second process");
+    let deadline = std::time::Instant::now() + wait;
+    while !home.paths.data_dir().join("ready").exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the second process never started"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    fs::write(home.paths.data_dir().join("go"), b"").expect("go");
+
+    erase_all(&home.paths, mine);
+    let status = child.wait().expect("wait");
+    assert!(status.success(), "the second process failed: {status}");
+
+    let manifest = manifest_of(&home);
+    assert!(manifest.intact, "two erasers broke the chain");
+    let mut keys: Vec<String> = manifest.lines.iter().map(|l| l.key.clone()).collect();
+    keys.sort();
+    let mut expected = ids.clone();
+    expected.sort();
+    assert_eq!(keys, expected, "one line per erase, from both processes");
+    let identity = identity::read(&home.paths)
+        .expect("read")
+        .expect("identity");
+    assert_eq!(identity.erasures, 8);
+    assert_eq!(stamped(&home).as_deref(), Some("8"));
+    assert_eq!(
+        identity::ensure(&home.paths, &home.cfg, &mut home.conn).expect("ensure"),
+        Ensured::Current
     );
 }

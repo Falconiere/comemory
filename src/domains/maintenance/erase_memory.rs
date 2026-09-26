@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{Applied, clear_copies, entries, withdraw};
+use super::{Applied, Ledger, clear_copies, commit, entries, withdraw};
 use crate::domains::memories::frontmatter::Frontmatter;
 use crate::domains::memories::journal;
 use crate::domains::memories::replica_payload::MEMORY_ENTITY_KIND;
@@ -31,6 +31,7 @@ struct Markdown {
 /// file, row or journal position names `id`.
 pub(super) fn erase(
     _guard: &SaveGuard,
+    ledger: Option<Ledger<'_>>,
     memories_dir: &Path,
     conn: &mut Connection,
     id: &str,
@@ -69,7 +70,7 @@ pub(super) fn erase(
     digests.extend(replica_redaction::redact(&tx, Reach::RunsNaming(id), at)?);
     digests.extend(erase_rows::erase_memory(&tx, id, at)?);
     let (replay_blanked, staged_removed) = clear_copies(&tx, &digests)?;
-    tx.commit()?;
+    commit(tx, ledger, (MEMORY_ENTITY_KIND, id), &digests, at)?;
     Ok(Applied {
         tombstoned: tombstone.is_some(),
         digests,

@@ -1,15 +1,20 @@
 //! Redaction of journal copies: retention **expires** shared events (#254);
 //! a memory purge **erases** the verdicts on it; a permanent erase (#256)
-//! erases an entity's own payloads and the shared runs naming it.
+//! erases an entity's own payloads and the shared runs naming it; a merge of
+//! the erasure manifest ([`bar`]) erases every digest it lists, and
+//! [`erased_entities`] is what the manifest is first written from.
 //!
 //! Every arm blanks `replica_payload.bytes` and keeps the row: the digest,
 //! feed position, revision and receipts survive as the barrier a later offer
 //! reads — `payload_expired` or `payload_erased` ([`Redaction`]).
 //!
 //! Hand SQL: `IN` subqueries across the feed, revisions, outbox and event
-//! tables; tracked in `docs/guides/runtime-orm.md`.
+//! tables, and `json_each` over a digest list; tracked in
+//! `docs/guides/runtime-orm.md`.
 
-use rusqlite::{Connection, params_from_iter};
+use std::collections::HashMap;
+
+use rusqlite::{Connection, params, params_from_iter};
 
 use super::replica_read::Redaction;
 use crate::prelude::*;
@@ -39,6 +44,9 @@ pub enum Reach<'a> {
     /// does — a run evicted locally still has its journal copy. Erased,
     /// upgrading expiry.
     RunsNaming(&'a str),
+    /// A merge of the erasure manifest (#256, B-4): every digest in this JSON
+    /// array, whoever's it is. Erased, upgrading expiry.
+    Listed(&'a str),
 }
 
 /// The digests [`Reach::PastRetention`] selects: `?3` the cutoff, `?4` and `?5`
@@ -91,6 +99,9 @@ const RUNS_NAMING: &str = "
            AND CASE WHEN json_valid(bytes)
                     THEN json_extract(bytes, '$.summary.id') = ?3 ELSE 0 END";
 
+/// The digests [`Reach::Listed`] selects: `?3` a JSON array of them.
+const LISTED: &str = "SELECT value FROM json_each(?3)";
+
 /// The guard every erasing arm shares: a copy not yet redacted, or one only
 /// expired — an erasure is the stronger claim a replay must read.
 fn erasable() -> String {
@@ -138,6 +149,7 @@ pub fn redact(conn: &Connection, reach: Reach<'_>, at: &str) -> Result<Vec<Strin
             RUNS_NAMING,
             vec![memory_id, ACTIVITY_EVENT],
         ),
+        Reach::Listed(digests) => (Redaction::Erased, erasable(), LISTED, vec![digests]),
     };
     let mut statement = conn.prepare(&format!(
         "UPDATE replica_payload
@@ -167,6 +179,94 @@ pub fn redaction_of(conn: &Connection, digest: &str) -> Result<Option<Redaction>
     };
     let (at, kind): (Option<String>, Option<String>) = (row.get(0)?, row.get(1)?);
     Ok(Redaction::of(at.as_deref(), kind.as_deref()))
+}
+
+/// Make every digest in `digests` an erased barrier (#256, B-4): a payload
+/// row this engine holds loses its bytes (an expired one is upgraded), and a
+/// digest it never stored gets a bytes-less row under `kind` — the row
+/// acceptance reads to answer `payload_erased`, so merging the erasure
+/// manifest stops a replay even of content this database never held. The
+/// barrier row's `schema_version` and `byte_len` are `0`: the manifest does
+/// not carry them. Returns how many digests were barred or redacted.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn bar(conn: &Connection, digests: &[String], kind: &str, at: &str) -> Result<usize> {
+    if digests.is_empty() {
+        return Ok(0);
+    }
+    let listed = serde_json::to_string(digests)?;
+    let barred = conn.execute(
+        "INSERT OR IGNORE INTO replica_payload
+             (digest, entity_kind, schema_version, bytes, byte_len, created_at,
+              redacted_at, redaction)
+         SELECT value, ?2, 0, NULL, 0, ?3, ?3, ?4 FROM json_each(?1)",
+        params![listed, kind, at, Redaction::Erased.as_str()],
+    )?;
+    Ok(barred + redact(conn, Reach::Listed(&listed), at)?.len())
+}
+
+/// One entity whose payload bytes this database has erased, with every
+/// erased digest it owns: a line of the erasure manifest the first replica
+/// read writes from the database (#256, B-4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErasedEntity {
+    /// Entity kind the feed, revision or outbox names the digest under — or
+    /// the payload row's own kind when nothing names it.
+    pub kind: String,
+    /// Entity key — or the digest itself when nothing names it.
+    pub key: String,
+    /// Every erased digest the entity owns.
+    pub digests: Vec<String>,
+    /// When its first payload was erased.
+    pub erased_at: String,
+}
+
+/// Every erased payload with the entity that owns it, oldest erasure first.
+/// A row redacted before v26 has no kind and reads as erased.
+const ERASED: &str = "
+    WITH owner(digest, kind, key) AS (
+        SELECT payload_digest, entity_kind, entity_key FROM replica_feed
+         WHERE payload_digest IS NOT NULL
+        UNION
+        SELECT payload_digest, entity_kind, entity_key FROM replica_revision
+         WHERE payload_digest IS NOT NULL
+        UNION
+        SELECT payload_digest, entity_kind, entity_key FROM replica_operation
+         WHERE payload_digest IS NOT NULL)
+    SELECT COALESCE(o.kind, p.entity_kind), COALESCE(o.key, p.digest), p.digest, p.redacted_at
+      FROM replica_payload p LEFT JOIN owner o ON o.digest = p.digest
+     WHERE p.redacted_at IS NOT NULL AND COALESCE(p.redaction, 'erased') = 'erased'
+     ORDER BY p.redacted_at, 1, 2, p.digest";
+
+/// Every entity whose payload bytes are erased, grouped, in the order its
+/// first digest was erased.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn erased_entities(conn: &Connection) -> Result<Vec<ErasedEntity>> {
+    let mut statement = conn.prepare(ERASED)?;
+    let rows = statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<rusqlite::Result<Vec<(String, String, String, String)>>>()?;
+    let mut entities: Vec<ErasedEntity> = Vec::new();
+    let mut seen: HashMap<(String, String), usize> = HashMap::new();
+    for (kind, key, digest, erased_at) in rows {
+        let owner = (kind, key);
+        if let Some(&at) = seen.get(&owner) {
+            entities[at].digests.push(digest);
+            continue;
+        }
+        seen.insert(owner.clone(), entities.len());
+        let (kind, key) = owner;
+        entities.push(ErasedEntity {
+            kind,
+            key,
+            digests: vec![digest],
+            erased_at,
+        });
+    }
+    Ok(entities)
 }
 
 #[cfg(test)]

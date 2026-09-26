@@ -5,21 +5,26 @@
 //! an erase removes the entity's text from every table, journal copy and the
 //! markdown tree, keeping feed rows, revisions, receipts and digests — the
 //! barrier a later offer of the same bytes reads as `payload_erased`.
-//! [`run`] takes `memory-save.lock`, then calls the lock-free
-//! [`apply_locked`] and [`settle`], which a lock holder composes itself.
+//! [`run`] takes `memory-save.lock`, then `identity.lock`, then calls the
+//! lock-free [`apply_locked`] — which appends the erase to the erasure
+//! manifest before it commits — and [`settle`]; a lock holder composes them
+//! itself.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::Paths;
 use crate::domains::memories::save_lock::{self, SaveGuard};
 use crate::domains::sync::replica::contract::Disposition;
+use crate::domains::sync::replica::erasure_manifest::Entry;
+use crate::domains::sync::replica::identity::{self, IdentityGuard};
 use crate::prelude::*;
 use crate::store::erase_rows::{self, FtsIndex};
 use crate::store::replica_journal::ReplicaOp;
 use crate::store::replica_outbox::{self, Outcome, Scope};
-use crate::store::{Connection, replica_redaction_copies};
+use crate::store::{Connection, Transaction, replica_redaction_copies};
 use crate::utilities::context::Ctx;
 
 /// The memory half of [`apply_locked`], its own file for the size ceiling —
@@ -131,14 +136,24 @@ pub struct Report {
     pub snapshots_with_prior_state: Vec<String>,
 }
 
-/// Erase `req`'s entity under `memory-save.lock`, bounded by
-/// `[sync] pause_wait`.
+/// Where a committed erase records itself: the held `identity.lock` and the
+/// data directory whose erasure manifest it appends to (#256, B-4).
+#[derive(Debug, Clone, Copy)]
+pub struct Ledger<'a> {
+    /// Proof `identity.lock` is held.
+    pub held: &'a IdentityGuard,
+    /// The data directory holding the manifest.
+    pub paths: &'a Paths,
+}
+
+/// Erase `req`'s entity under `memory-save.lock` and then `identity.lock`,
+/// each bounded by `[sync] pause_wait`.
 ///
 /// # Errors
 /// [`Error::BadRequest`] unless exactly one entity is named;
 /// [`Error::NotFound`] for an entity this engine never held (nothing is
-/// written); [`Error::Busy`] when the lock is not granted in time; SQLite
-/// and filesystem failures.
+/// erased or recorded); [`Error::Busy`] when a lock is not granted in time;
+/// SQLite and filesystem failures.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     let target = Target::try_from(req)?;
     // A data directory with no database holds nothing to erase, and opening
@@ -150,11 +165,19 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
             target.key()
         )));
     }
-    let guard = save_lock::acquire_within(ctx.paths, ctx.cfg.sync.pause_wait_duration()?)?;
-    let memories_dir = ctx.paths.memories_dir();
+    let wait = ctx.cfg.sync.pause_wait_duration()?;
+    let guard = save_lock::acquire_within(ctx.paths, wait)?;
+    let held = identity::lock(ctx.paths, wait)?;
+    let paths = ctx.paths;
+    let memories_dir = paths.memories_dir();
     let conn = ctx.conn()?;
-    let applied = apply_locked(&guard, &memories_dir, conn, &target)?;
+    // Before the erase's transaction: the first identity is written from the
+    // database's erasures as they stood, and this erase then appends its own.
+    identity::establish(&held, paths, conn)?;
+    let ledger = Ledger { held: &held, paths };
+    let applied = apply_locked(&guard, Some(ledger), &memories_dir, conn, &target)?;
     let wal_truncated = settle(conn, &applied.touched)?;
+    drop(held);
     drop(guard);
     Ok(Report {
         kind: target.kind(),
@@ -172,22 +195,47 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
 /// The lock-free core: erase `target` from `conn` and from the markdown tree
 /// under `memories_dir`, in one transaction with `secure_delete` on. The
 /// guard is the proof the caller holds `memory-save.lock`, so no markdown
-/// writer moves the files this deletes.
+/// writer moves the files this deletes. With a `ledger`, the erase is
+/// appended to the erasure manifest before the transaction commits; a caller
+/// replaying the manifest itself passes `None`.
 ///
 /// # Errors
 /// [`Error::NotFound`] when neither the markdown, the mirror nor the journal
 /// holds `target` — nothing is written; SQLite and filesystem failures.
 pub fn apply_locked(
     guard: &SaveGuard,
+    ledger: Option<Ledger<'_>>,
     memories_dir: &Path,
     conn: &mut Connection,
     target: &Target,
 ) -> Result<Applied> {
     let at = crate::store::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
     erase_rows::with_secure_delete(conn, |conn| match target {
-        Target::Memory(id) => memory::erase(guard, memories_dir, conn, id, &at),
-        Target::Document(shared_id) => document::erase(conn, shared_id, &at),
+        Target::Memory(id) => memory::erase(guard, ledger, memories_dir, conn, id, &at),
+        Target::Document(shared_id) => document::erase(ledger, conn, shared_id, &at),
     })
+}
+
+/// Record the erase of `(kind, key)` in `ledger`'s manifest, when there is
+/// one, then commit `tx` — the manifest line is on disk before the erase is.
+fn commit(
+    tx: Transaction<'_>,
+    ledger: Option<Ledger<'_>>,
+    (kind, key): (&str, &str),
+    digests: &[String],
+    at: &str,
+) -> Result<()> {
+    if let Some(ledger) = ledger {
+        let entry = Entry {
+            kind,
+            key,
+            digests,
+            erased_at: at,
+        };
+        identity::record(ledger.held, ledger.paths, &tx, &entry)?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 /// The post-commit steps: refresh the derived graph state, `optimize` every

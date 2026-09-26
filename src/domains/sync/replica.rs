@@ -29,6 +29,8 @@ pub mod contract;
 pub mod contract_views;
 /// Acceptance for a pulled document revision: one transaction, no local row.
 pub mod document_accept;
+/// The hash-chained erasure manifest kept outside the database.
+pub mod erasure_manifest;
 /// Acceptance for a feedback or activity event: row, counter, position and
 /// receipt in one transaction.
 pub mod event_accept;
@@ -36,6 +38,8 @@ pub mod event_accept;
 pub mod event_capture;
 /// `GET /sync/replica/events` — notification-only frames.
 pub mod events;
+/// The stream identity kept outside the database, and `ensure`.
+pub mod identity;
 /// `GET /sync/replica/manifest` — holdings, capability and seeding progress.
 pub mod manifest;
 /// The write half of acceptance — markdown, mirror, journal and receipt.

@@ -4,7 +4,7 @@
 //! journalled only for a document this engine shares; a pulled copy is
 //! erased locally, since its tombstone would delete it for the workspace.
 
-use super::{Applied, clear_copies, withdraw};
+use super::{Applied, Ledger, clear_copies, commit, withdraw};
 use crate::domains::documents::journal;
 use crate::domains::documents::replica_payload::DOCUMENT_ENTITY_KIND;
 use crate::prelude::*;
@@ -15,7 +15,12 @@ use crate::store::{Connection, replica_read};
 /// Erase the document shared as `shared_id`. `NotFound`, with the
 /// transaction rolled back, when no local share, pulled copy or journal
 /// position names it.
-pub(super) fn erase(conn: &mut Connection, shared_id: &str, at: &str) -> Result<Applied> {
+pub(super) fn erase(
+    ledger: Option<Ledger<'_>>,
+    conn: &mut Connection,
+    shared_id: &str,
+    at: &str,
+) -> Result<Applied> {
     // Read under the write lock, so an index racing the erase cannot slip a
     // row in between what was found and what is deleted.
     let tx = crate::store::connection::write_transaction(conn)?;
@@ -37,7 +42,7 @@ pub(super) fn erase(conn: &mut Connection, shared_id: &str, at: &str) -> Result<
     let digests =
         replica_redaction::redact(&tx, Reach::Entity(DOCUMENT_ENTITY_KIND, shared_id), at)?;
     let (replay_blanked, staged_removed) = clear_copies(&tx, &digests)?;
-    tx.commit()?;
+    commit(tx, ledger, (DOCUMENT_ENTITY_KIND, shared_id), &digests, at)?;
     let mut touched = Vec::new();
     if !local.is_empty() {
         touched.push(FtsIndex::Documents);

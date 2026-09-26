@@ -64,6 +64,7 @@ pub mod verify;
 
 use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
+use crate::domains::sync::replica::identity;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::sync_exchange::{self, ExchangeRow};
@@ -89,12 +90,16 @@ pub struct Drained {
 
 /// Drain `auth`'s key: run passes until one ends without `more` (the inline
 /// push runs exactly one), or a logout or shutdown stops the run
-/// ([`stop::requested`], [`End::Cancelled`]). A policy that changes under a pass is reloaded and
-/// the pass run once more at once; a second change backs off.
+/// ([`stop::requested`], [`End::Cancelled`]). A policy that changes under a
+/// pass is reloaded and the pass run once more at once; a second change backs off. Before any
+/// session opens, the database is checked against the stream identity
+/// (`replica::identity::ensure`), so a replaced database never exchanges
+/// under the identity it copied.
 ///
 /// # Errors
-/// Configuration, clock, store and markdown failures; network failures are
-/// recorded on the key and reported as [`End::Network`].
+/// Configuration, clock, store and markdown failures, and
+/// [`Error::Busy`] when the identity locks are not granted in time; network
+/// failures are recorded on the key and reported as [`End::Network`].
 pub fn drain(
     paths: &Paths,
     cfg: &Config,
@@ -105,6 +110,7 @@ pub fn drain(
     // A client that never saved anything has no memories directory yet, and
     // the first pulled memory is written there.
     paths.ensure_dirs()?;
+    identity::ensure(paths, cfg, conn)?;
     let mut drained = Drained::default();
     let mut reloaded = false;
     loop {
