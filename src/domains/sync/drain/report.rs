@@ -41,7 +41,8 @@ pub struct Report {
     pub rejected: u32,
     /// Why the last pass ended.
     pub end: End,
-    /// Whether another pass should run at once.
+    /// Whether work may remain after this pass or run. Cancellation preserves
+    /// this flag but ends the current run.
     pub more: bool,
     /// Passes run.
     pub passes: u32,

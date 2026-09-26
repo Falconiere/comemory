@@ -135,7 +135,8 @@ pub fn status(paths: &Paths, api_url_override: Option<&str>) -> Result<Option<St
 /// Drop this machine's credentials. The coordinator is never stopped (D11):
 /// the barrier goes up first, so every credential read answers logged out
 /// and a pass mid-drain stops at its next batch boundary; then this waits
-/// for `sync.lock` to free before the credential file goes.
+/// for `sync.lock` and holds it through stamping and credential removal when
+/// acquired within the bound.
 ///
 /// There is no remote revoke: the key stays valid until the organization
 /// rotates it.
@@ -149,8 +150,9 @@ pub fn logout(paths: &Paths, cfg: &Config) -> Result<LoggedOut> {
     // otherwise make the barrier-first ordering below skip the stamp.
     let leaving = outgoing(paths);
     auth_barrier::raise(paths)?;
-    let in_flight = wait_for_pass_lock(paths, wait_bound(cfg)?);
+    let (in_flight, pass_lock) = wait_for_pass_lock(paths, wait_bound(cfg)?);
     forget_with(paths, cfg, leaving)?;
+    drop(pass_lock);
     let (daemon_running, _instance) = reload_and_probe(paths);
     Ok(LoggedOut {
         daemon_running,
@@ -179,26 +181,26 @@ fn wait_bound(cfg: &Config) -> Result<Duration> {
     Ok(parse_duration(&cfg.sync.request_timeout)? + Duration::from_secs(5))
 }
 
-/// Wait up to `bound` for `sync.lock` to be free. A lock that cannot even be
-/// opened (permissions, disk full) counts as free — best-effort, and there
-/// is nothing else to wait on.
-fn wait_for_pass_lock(paths: &Paths, bound: Duration) -> InFlight {
+/// Wait up to `bound` for `sync.lock`, returning its guard to the caller.
+/// A lock that cannot be opened (permissions, disk full) counts as free:
+/// best-effort, since there is nothing else to wait on.
+fn wait_for_pass_lock(paths: &Paths, bound: Duration) -> (InFlight, Option<FileLock>) {
     let path = paths.data_dir().join(PASS_LOCK);
     match FileLock::try_acquire(&path, "sync") {
-        Ok(Some(_lock)) => InFlight::None,
+        Ok(Some(lock)) => (InFlight::None, Some(lock)),
         Ok(None) => {
             let deadline = Instant::now() + bound;
             while Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(100));
-                if matches!(FileLock::try_acquire(&path, "sync"), Ok(Some(_))) {
-                    return InFlight::Drained;
+                if let Ok(Some(lock)) = FileLock::try_acquire(&path, "sync") {
+                    return (InFlight::Drained, Some(lock));
                 }
             }
-            InFlight::TimedOut
+            (InFlight::TimedOut, None)
         }
         Err(e) => {
             tracing::warn!(error = %e, "logout: sync.lock probe failed; proceeding");
-            InFlight::None
+            (InFlight::None, None)
         }
     }
 }

@@ -108,7 +108,7 @@ pub fn drain(
     loop {
         if stop::requested(paths) {
             drained.exchange.end = End::Cancelled;
-            drained.exchange.more = false;
+            drained.exchange.more = true;
             return Ok(drained);
         }
         let mut session = match session::open(conn, cfg, auth, mode)? {
@@ -128,19 +128,17 @@ pub fn drain(
             continue;
         }
         if changed {
-            back_off_on_policy_churn(conn, &mut session)?;
-            drained
-                .exchange
-                .network
-                .clone_from(&session.row.network_state);
-            drained.error = session.row.last_error;
+            back_off_on_policy_churn(conn, *session, &mut drained)?;
             return Ok(drained);
         }
         if drained.exchange.end == End::Network {
             drained.error = session.row.last_error;
             return Ok(drained);
         }
-        if !drained.exchange.more || matches!(mode, Mode::Inline(_)) {
+        if !drained.exchange.more
+            || drained.exchange.end == End::Cancelled
+            || matches!(mode, Mode::Inline(_))
+        {
             return Ok(drained);
         }
     }
@@ -169,13 +167,20 @@ fn run_pass(
 
 /// A policy that changed again after a reload backs off like an
 /// unavailable upstream.
-fn back_off_on_policy_churn(conn: &Connection, session: &mut Session) -> Result<()> {
+fn back_off_on_policy_churn(
+    conn: &Connection,
+    mut session: Session,
+    drained: &mut Drained,
+) -> Result<()> {
     let failure = Failure::Unavailable(format!(
         "{}: the policy changed twice in one run",
         network::POLICY_CHANGED
     ));
     network::fail(&mut session.row, &failure, &session.fingerprint)?;
-    sync_exchange::save(conn, &session.row, &network::now()?)
+    sync_exchange::save(conn, &session.row, &network::now()?)?;
+    drained.exchange.network = session.row.network_state;
+    drained.error = session.row.last_error;
+    Ok(())
 }
 
 /// `full` on `replica-v1`; the old protocol carries memories and code only.

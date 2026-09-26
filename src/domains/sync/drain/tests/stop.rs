@@ -38,8 +38,8 @@ fn a_barrier_raised_under_a_loaded_credential_cancels_the_run() {
     assert_eq!(drained.exchange.end, End::Cancelled);
     assert_eq!((drained.exchange.pushed, drained.exchange.pulled), (0, 0));
     assert!(
-        !drained.exchange.more,
-        "a cancelled run asks for no other pass"
+        drained.exchange.more,
+        "a cancelled run still owes the operation once the barrier clears"
     );
     assert_eq!(
         engine.changes(0, None).entries.len(),

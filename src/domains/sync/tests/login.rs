@@ -161,3 +161,59 @@ fn logout_of_a_machine_with_no_store_creates_none() {
     );
     assert!(AuthFile::load(&paths).expect("load").is_none());
 }
+
+#[test]
+fn logout_pass_lock_stays_exclusive_until_the_caller_finishes() {
+    use comemory::domains::sync::auto::PASS_LOCK;
+    use comemory::utilities::file_lock::FileLock;
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    let lock_path = home.path().join(PASS_LOCK);
+    {
+        let (in_flight, _held) =
+            super::wait_for_pass_lock(&paths, std::time::Duration::from_secs(1));
+        assert_eq!(in_flight, login::InFlight::None);
+        assert!(
+            FileLock::try_acquire(&lock_path, "competing pass")
+                .expect("probe")
+                .is_none(),
+            "logout must retain the lock while its caller stamps outgoing rows"
+        );
+    }
+    assert!(
+        FileLock::try_acquire(&lock_path, "next pass")
+            .expect("probe after logout")
+            .is_some()
+    );
+}
+
+#[test]
+fn logout_pass_lock_retains_a_lock_acquired_after_an_in_flight_pass() {
+    use comemory::domains::sync::auto::PASS_LOCK;
+    use comemory::utilities::file_lock::FileLock;
+    use std::time::Duration;
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    let lock_path = home.path().join(PASS_LOCK);
+    let running = FileLock::acquire(&lock_path, "running pass").expect("lock");
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        drop(running);
+    });
+    let (in_flight, held) = super::wait_for_pass_lock(&paths, Duration::from_secs(5));
+    release.join().expect("release running pass");
+    assert_eq!(in_flight, login::InFlight::Drained);
+    assert!(
+        FileLock::try_acquire(&lock_path, "competing pass")
+            .expect("probe")
+            .is_none()
+    );
+    drop(held);
+    assert!(
+        FileLock::try_acquire(&lock_path, "next pass")
+            .expect("probe after logout")
+            .is_some()
+    );
+}

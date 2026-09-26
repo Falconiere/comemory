@@ -14,6 +14,7 @@ pub mod architecture;
 pub mod ast;
 /// `comemory auth`: cloud workspace-key login / status / logout.
 pub mod auth;
+/// TTY and JSON rendering for authentication commands.
 pub mod auth_render;
 /// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
@@ -46,7 +47,6 @@ pub mod eval;
 pub mod export_dataset;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
-/// `comemory sources`: list registered document sources.
 /// `comemory find` — one ranked list across memory, code, and documents.
 pub mod find;
 /// `comemory gc`: retention sweep over the learning tables.
@@ -76,6 +76,7 @@ pub mod list;
 pub mod mcp;
 /// `comemory mine`: distill query reformulations into expansions.
 pub mod mine;
+/// Run blocking platform calls outside the async runtime.
 pub mod off_runtime;
 /// TTY and JSON writers shared by the subcommands (`cli::output::*`).
 pub mod output;
@@ -105,6 +106,7 @@ pub mod serve;
 pub mod setup;
 /// `comemory show` — one memory in full.
 pub mod show;
+/// `comemory sources`: list registered document sources.
 pub mod sources;
 /// `comemory stats` — corpus counters and database size.
 pub mod stats;
@@ -125,6 +127,7 @@ pub mod tune;
 pub mod unindex;
 /// `comemory upgrade`: move this binary to a newer release.
 pub mod upgrade;
+/// `comemory watch`: follow workspace changes through the coordinator.
 pub mod watch;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
@@ -265,19 +268,19 @@ pub enum Cmd {
     Capture(capture::Args),
 }
 
-/// Finish any memory write a killed process left half-done, before the
-/// subcommand runs.
-///
-/// This is the CLI's half of `memories::recover` — `store::connection::open`
-/// cannot call it, because `store/` may not reach into a domain
-/// (`scripts/architecture-check.sh`, #177).
-///
-/// Skipped entirely when the database file is not there yet: a fresh install
-/// has nothing to reconcile, and a subcommand that never touches the store
-/// must not be the thing that creates one. Skipped too when the database is
-/// ahead of this build, so the forward-compat contract stays the
-/// subcommand's. `serve` and `mcp` are skipped by the caller — see [`run`].
-fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
+/// Recover interrupted writes before dispatch, outside the store layer.
+/// Skip absent/newer databases and daemon lifecycle commands. Serve and MCP
+/// reconcile during their own startup, respecting their read-only option.
+fn reconcile_pending(data_dir: Option<&std::path::Path>, cmd: &Cmd) -> Result<()> {
+    if matches!(
+        cmd,
+        Cmd::Sync(sync::Args {
+            cmd: Some(sync::SyncCmd::Daemon(_)),
+            ..
+        })
+    ) {
+        return Ok(());
+    }
     let paths = Paths::new(crate::config::paths::resolve_data_dir(
         data_dir.map(std::path::Path::to_path_buf),
     ));
@@ -309,18 +312,7 @@ fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
 /// place that knows about every variant, keeping individual subcommand modules
 /// free of cross-references.
 pub async fn run(cli: Cli) -> Result<()> {
-    // The required resident coordinator (#257): verified/repaired before
-    // most commands, per its own exhaustive classification (exempt/
-    // best-effort/required — see the module doc).
-    daemon_preflight::run(cli.data_dir.as_deref(), &cli.cmd)?;
-    // `serve` and `mcp` reconcile from inside their own startup, where they
-    // know whether the session is read-only; doing it here too would write
-    // through a `--read-only` session, which is exactly what that flag
-    // forbids. Every other subcommand is a writable one by definition.
-    if !matches!(cli.cmd, Cmd::Serve(_) | Cmd::Mcp(_)) {
-        reconcile_pending(cli.data_dir.as_deref())?;
-    }
-    match cli.cmd {
+    match prepare_command(cli.cmd, cli.data_dir.as_deref())? {
         Cmd::Architecture(a) => architecture::run(a, cli.json, cli.data_dir).await,
         Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,
         Cmd::Search(a) => search::run(a, cli.json, cli.data_dir).await,
@@ -356,8 +348,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
-        // Not awaited: `consolidate` is a blocking-read report with no async
-        // work, so its handler is a plain fn.
         Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir),
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::RecallStatus(a) => recall_status::run(a, cli.json, cli.data_dir).await,
@@ -370,6 +360,17 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Watch(a) => watch::run(a, cli.json, cli.data_dir).await,
         Cmd::Capture(a) => capture::run(a, cli.json, cli.data_dir).await,
     }
+}
+
+/// Prepare the coordinator and recover pending writes before dispatch.
+fn prepare_command(cmd: Cmd, data_dir: Option<&std::path::Path>) -> Result<Cmd> {
+    daemon_preflight::run(data_dir, &cmd)?;
+    // Serve and MCP reconcile during their own startup, which knows whether
+    // the session is read-only. Daemon lifecycle commands never reconcile.
+    if !matches!(cmd, Cmd::Serve(_) | Cmd::Mcp(_)) {
+        reconcile_pending(data_dir, &cmd)?;
+    }
+    Ok(cmd)
 }
 
 /// Load the layered config: defaults → optional `config.toml` → env. Every
