@@ -161,6 +161,41 @@
     ],
     "X-8": [
       "exchange"
+    ],
+    "R-1": [
+      "daemon"
+    ],
+    "R-2": [
+      "daemon"
+    ],
+    "R-3": [
+      "daemon"
+    ],
+    "R-4": [
+      "daemon"
+    ],
+    "R-5": [
+      "daemon",
+      "propagation",
+      "lost-nudge"
+    ],
+    "R-6": [
+      "daemon"
+    ],
+    "R-7": [
+      "daemon"
+    ],
+    "R-8": [
+      "daemon"
+    ],
+    "R-9": [
+      "daemon"
+    ],
+    "R-10": [
+      "daemon"
+    ],
+    "R-11": [
+      "daemon"
     ]
   }
 }
