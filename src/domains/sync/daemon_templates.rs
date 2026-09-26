@@ -85,3 +85,7 @@ WantedBy=default.target
 "
     )
 }
+
+#[cfg(test)]
+#[path = "tests/daemon_templates.rs"]
+mod tests;

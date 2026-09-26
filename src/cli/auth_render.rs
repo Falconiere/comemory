@@ -6,11 +6,14 @@ use owo_colors::OwoColorize;
 use serde::Serialize;
 
 use crate::cli::output::json;
+use crate::config::Paths;
 use crate::domains::sync::auth_file::AuthFile;
 use crate::domains::sync::cloud::StatusReport;
-use crate::domains::sync::daemon;
+use crate::domains::sync::daemon::status_view;
+use crate::domains::sync::login::{InFlight, LoggedOut};
 use crate::prelude::*;
 
+/// `comemory auth login --json`'s report.
 #[derive(Serialize)]
 pub(crate) struct LoginJson<'a> {
     pub authenticated: bool,
@@ -25,13 +28,17 @@ pub(crate) struct LoginJson<'a> {
     pub initial_sync: InitialSyncJson,
 }
 
+/// A verified coordinator's own record of `skipped` is always `false` now
+/// (#257): every login is preceded by preflight ensuring one. The field
+/// stays for schema stability with the pre-#257 shape.
 #[derive(Serialize)]
 pub(crate) struct DaemonLoginJson {
+    pub running: bool,
     pub skipped: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub running: Option<bool>,
+    pub instance: Option<String>,
 }
 
+/// The login report's first-sync outcome.
 #[derive(Serialize)]
 pub(crate) struct InitialSyncJson {
     pub ok: bool,
@@ -51,10 +58,21 @@ pub(crate) struct InitialSyncJson {
     pub error: Option<String>,
 }
 
+/// `comemory auth logout --json`'s report.
 #[derive(Serialize)]
 pub(crate) struct LogoutJson {
     pub logged_out: bool,
-    pub daemon_stopped: bool,
+    pub daemon: LogoutDaemonJson,
+}
+
+/// The coordinator's state a logout observed.
+#[derive(Serialize)]
+pub(crate) struct LogoutDaemonJson {
+    /// Whether a verified coordinator still answers — logout never stops it
+    /// (D11), only its auth view changes.
+    pub running: bool,
+    /// What the wait for a pass already holding `sync.lock` found.
+    pub in_flight: InFlight,
 }
 
 /// Display label for the organization a credential is scoped to.
@@ -98,9 +116,10 @@ pub(crate) fn initial_sync_json(
     }
 }
 
-pub(crate) fn emit_logged_out(json_flag: bool) -> Result<()> {
+pub(crate) fn emit_logged_out(json_flag: bool, paths: &Paths) -> Result<()> {
     emit_status(
         json_flag,
+        paths,
         &StatusReport {
             authenticated: false,
             api_url: None,
@@ -112,12 +131,10 @@ pub(crate) fn emit_logged_out(json_flag: bool) -> Result<()> {
     )
 }
 
-pub(crate) fn emit_status(json_flag: bool, report: &StatusReport) -> Result<()> {
-    let daemon_st = if report.authenticated {
-        daemon::status().ok()
-    } else {
-        None
-    };
+pub(crate) fn emit_status(json_flag: bool, paths: &Paths, report: &StatusReport) -> Result<()> {
+    // Read regardless of `authenticated`: the coordinator is required and
+    // healthy whether or not this machine is logged in (AC-4).
+    let view = status_view::view(paths).ok();
     if json_flag {
         json::write(&serde_json::json!({
             "authenticated": report.authenticated,
@@ -126,41 +143,10 @@ pub(crate) fn emit_status(json_flag: bool, report: &StatusReport) -> Result<()> 
             "organization_name": report.organization_name,
             "workspace_id": report.workspace_id,
             "key_prefix": report.key_prefix,
-            "daemon": daemon_st,
+            "daemon": view,
         }))?;
-    } else if report.authenticated {
-        let mut out = std::io::stdout().lock();
-        let org = report
-            .organization_name
-            .as_deref()
-            .filter(|n| !n.is_empty())
-            .or(report.organization_id.as_deref())
-            .unwrap_or("unknown");
-        writeln!(
-            out,
-            "{} authenticated · organization {} ({})",
-            "\u{2713}".green(),
-            org.bold(),
-            report.key_prefix.as_deref().unwrap_or("cmk_????").dimmed()
-        )?;
-        if let Some(api) = &report.api_url {
-            writeln!(out, "  api {api}")?;
-        }
-        if let Some(workspace) = &report.workspace_id {
-            writeln!(out, "  workspace {workspace}")?;
-        }
-        if let Some(st) = &daemon_st {
-            writeln!(
-                out,
-                "  daemon: installed={} running={}",
-                st.installed, st.running
-            )?;
-            if let Some(warn) = st.inactive_warning() {
-                writeln!(out, "  warning: {warn}")?;
-            }
-        }
     } else {
-        writeln!(std::io::stdout().lock(), "not logged in")?;
+        write_status_text(report, view.as_ref())?;
     }
     if report.authenticated {
         Ok(())
@@ -169,26 +155,65 @@ pub(crate) fn emit_status(json_flag: bool, report: &StatusReport) -> Result<()> 
     }
 }
 
-pub(crate) fn write_logout(json_flag: bool, daemon_stopped: bool) -> Result<()> {
+/// The TTY half of [`emit_status`], split out to keep it under the
+/// function-length ceiling.
+fn write_status_text(report: &StatusReport, view: Option<&status_view::StatusView>) -> Result<()> {
+    let mut out = std::io::stdout().lock();
+    if !report.authenticated {
+        writeln!(out, "not logged in")?;
+        return Ok(());
+    }
+    let org = report
+        .organization_name
+        .as_deref()
+        .filter(|n| !n.is_empty())
+        .or(report.organization_id.as_deref())
+        .unwrap_or("unknown");
+    writeln!(
+        out,
+        "{} authenticated · organization {} ({})",
+        "\u{2713}".green(),
+        org.bold(),
+        report.key_prefix.as_deref().unwrap_or("cmk_????").dimmed()
+    )?;
+    if let Some(api) = &report.api_url {
+        writeln!(out, "  api {api}")?;
+    }
+    if let Some(workspace) = &report.workspace_id {
+        writeln!(out, "  workspace {workspace}")?;
+    }
+    if let Some(view) = view {
+        writeln!(out, "  daemon: {}", view.detail)?;
+        if view.version_matches == Some(false) {
+            writeln!(
+                out,
+                "  warning: coordinator version differs from this binary"
+            )?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn write_logout(json_flag: bool, out: &LoggedOut) -> Result<()> {
     if json_flag {
         return json::write(&LogoutJson {
             logged_out: true,
-            daemon_stopped,
+            daemon: LogoutDaemonJson {
+                running: out.daemon_running,
+                in_flight: out.in_flight,
+            },
         });
     }
-    let mut out = std::io::stdout().lock();
-    if daemon_stopped {
-        writeln!(
-            out,
-            "{} logged out (local credentials removed; sync daemon stopped)",
-            "\u{2713}".green()
-        )?;
+    let mut stdout = std::io::stdout().lock();
+    let detail = if out.daemon_running {
+        "sync daemon still running (now idle)"
     } else {
-        writeln!(
-            out,
-            "{} logged out (local credentials removed; sync daemon still running — run `comemory sync daemon stop`)",
-            "\u{2713}".green()
-        )?;
-    }
+        "sync daemon unavailable"
+    };
+    writeln!(
+        stdout,
+        "{} logged out (local credentials removed; {detail})",
+        "\u{2713}".green()
+    )?;
     Ok(())
 }

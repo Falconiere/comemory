@@ -42,49 +42,12 @@ pub mod worker;
 use crate::config::Paths;
 use crate::prelude::*;
 
-pub use crate::domains::sync::daemon_unit::{
-    DAEMON_LABEL, DaemonStatus, SYSTEMD_UNIT, install, launch_agent_plist,
-    render_launch_agent_plist, render_systemd_unit, start, status, stop, systemd_user_unit,
-    uninstall,
-};
-
 /// Run the coordinator in the foreground (`comemory sync daemon run`).
 ///
 /// # Errors
 /// As [`coordinator::run`].
 pub async fn run_foreground(paths: &Paths) -> Result<()> {
     coordinator::run(paths).await
-}
-
-/// Best-effort install+start used by `auth login` (never fails the login).
-pub fn install_and_start_best_effort(paths: &Paths) {
-    // Integration tests set this so login does not touch the host launchd /
-    // systemd session while HOME is a tempfile.
-    if crate::config::sync::daemon_disabled() {
-        tracing::debug!("sync daemon skipped (COMEMORY_SYNC_DAEMON=0)");
-        return;
-    }
-    match install(paths) {
-        Ok(path) => tracing::info!(path = %path.display(), "sync daemon installed"),
-        Err(e) => {
-            tracing::warn!(error = %e, "sync daemon install failed");
-            return;
-        }
-    }
-    if let Err(e) = start() {
-        tracing::warn!(error = %e, "sync daemon start failed");
-    }
-}
-
-/// Best-effort stop used by `auth logout` (unit left installed).
-pub fn stop_best_effort() {
-    // The same guard as the install: a test's logout must not stop the
-    // host's own daemon.
-    if crate::config::sync::daemon_disabled() {
-        tracing::debug!("sync daemon stop skipped (COMEMORY_SYNC_DAEMON=0)");
-        return;
-    }
-    stop();
 }
 
 #[cfg(test)]
