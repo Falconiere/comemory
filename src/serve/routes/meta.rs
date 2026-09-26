@@ -32,10 +32,13 @@ use crate::utilities::context::Ctx;
 /// interrupted, which is not a request-response shape. `mcp` is the same
 /// refusal as `serve` from the other side: it IS a server, one that speaks
 /// JSON-RPC on the process's own stdin/stdout, so an HTTP request must never
-/// be able to start one.
+/// be able to start one. `backup` replaces the database a server holds open
+/// (`restore`) or writes to an operator-named path (`create`), which a
+/// request must never trigger.
 const CLI_ONLY: &[&str] = &[
     "architecture",
     "auth",
+    "backup",
     "benchmark",
     "capture",
     "distill",

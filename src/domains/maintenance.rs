@@ -15,6 +15,10 @@
 
 /// The activity feed's read side: one filtered page plus its rollups.
 pub mod activity;
+/// `comemory backup create|restore|merge-erasures`: snapshot the data
+/// directory, and install one under a new epoch with erasures merged.
+/// CLI-only.
+pub mod backup;
 /// `comemory consolidate`: the advisory near-duplicate cluster core.
 pub mod consolidate;
 /// Union-find clustering of live fingerprints and keeper ordering.

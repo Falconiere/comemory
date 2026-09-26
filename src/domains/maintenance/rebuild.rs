@@ -198,7 +198,7 @@ fn snapshot_before_swap(db: &Path, paths: &Paths) -> Result<()> {
 /// path, then renames it over `dest` only on success — a failed `VACUUM
 /// INTO` never touches `dest` itself, so a prior good backup there is never
 /// destroyed by a failed attempt at a new one.
-fn snapshot_before_swap_inner(db: &Path, dest: &Path) -> Result<()> {
+pub(crate) fn snapshot_before_swap_inner(db: &Path, dest: &Path) -> Result<()> {
     let staging = staging_dest(dest);
     if staging.exists() {
         // Best-effort cleanup of a stale staging file left by a previous
@@ -225,7 +225,7 @@ fn staging_dest(dest: &Path) -> PathBuf {
 /// failure is logged rather than returned — this runs from [`Staged`]'s
 /// `Drop`, where there is no caller to hand it to, and the next rebuild
 /// clears the path again before reusing it.
-fn remove_db_and_sidecars(path: &Path) {
+pub(crate) fn remove_db_and_sidecars(path: &Path) {
     for suffix in ["", "-wal", "-shm"] {
         let mut target = path.as_os_str().to_os_string();
         target.push(suffix);

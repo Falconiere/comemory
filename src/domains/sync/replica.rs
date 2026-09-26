@@ -46,6 +46,9 @@ pub mod manifest;
 pub mod materialize;
 /// Apply one entry pulled from an upstream, in the upstream's order.
 pub mod pulled;
+/// Whether a restored engine may exchange yet: `restore.pending` and
+/// `replica_restore_state`, checked before every sync surface.
+pub mod restore_state;
 /// Journal seeding for documents indexed before the journal existed.
 pub mod seed_documents;
 /// Journal seeding for memories trashed before the journal existed.

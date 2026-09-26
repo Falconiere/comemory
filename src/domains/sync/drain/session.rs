@@ -9,8 +9,8 @@
 
 use std::time::Duration;
 
-use crate::config::Config;
 use crate::config::sync::parse_duration;
+use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::client_policy::SyncPolicyStatus;
 use crate::domains::sync::client_protocol::SYNC_PROTOCOL;
@@ -20,6 +20,7 @@ use crate::domains::sync::drain::transport::{Failure, Transport};
 use crate::domains::sync::drain::{keying, network, upgrade};
 use crate::domains::sync::replica::contract::PROTOCOL as REPLICA;
 use crate::domains::sync::replica::contract_views::ManifestResponse;
+use crate::domains::sync::replica::restore_state;
 use crate::domains::sync::repository_policy::RepositoryPolicy;
 use crate::prelude::*;
 use crate::store::Connection;
@@ -94,6 +95,33 @@ pub enum Opened {
     Skipped(Box<ExchangeRow>),
 }
 
+/// Admit a drain of `auth`'s key on this engine: check the database against
+/// the stream identity ([`restore_state::admit`]) — or, while a restore here
+/// is unverified, record `restore_unverified` on the key and return its row:
+/// the drain then sends nothing.
+///
+/// # Errors
+/// Everything [`restore_state::admit`] returns but the refusal it names;
+/// clock and SQLite failures recording it.
+pub fn admit(
+    paths: &Paths,
+    cfg: &Config,
+    conn: &mut Connection,
+    auth: &AuthFile,
+) -> Result<Option<Box<ExchangeRow>>> {
+    match restore_state::admit(paths, cfg, conn) {
+        Ok(_) => Ok(None),
+        Err(Error::RestoreUnverified(why)) => {
+            tracing::warn!(%why, "sync refused: this engine's restore is not verified");
+            let key = ExchangeKey::new(&auth.api_url, &auth.workspace_id);
+            let row = sync_exchange::load(conn, &key)?.unwrap_or_else(|| ExchangeRow::fresh(&key));
+            let refused = Failure::RestoreUnverified(why);
+            Ok(Some(Box::new(record(conn, row, &refused, "")?)))
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Open a pass for `auth` under `mode`.
 ///
 /// # Errors
@@ -115,7 +143,10 @@ pub fn open(conn: &mut Connection, cfg: &Config, auth: &AuthFile, mode: Mode) ->
         Err(failure) => return skip(conn, row, &failure, &fingerprint),
     };
     let (replica, legacy) = split(plain, managed.then(|| policy.revision()));
-    let (outcome, manifest) = read_manifest(&replica);
+    let (outcome, manifest) = match read_manifest(&replica) {
+        Ok(read) => read,
+        Err(failure) => return skip(conn, row, &failure, &fingerprint),
+    };
     let stored = Protocol::parse(row.protocol.as_deref());
     let failure = match negotiate::decide(stored, &outcome) {
         Decision::Select {
@@ -213,29 +244,35 @@ fn select(
     Ok(row)
 }
 
-/// Read and classify the replica manifest.
-fn read_manifest(replica: &Transport) -> (Manifest, Option<ManifestResponse>) {
-    match replica.get::<ManifestResponse>("/v1/sync/replica/manifest", &[]) {
-        Ok(manifest) if manifest.protocol != REPLICA => (
-            Manifest::Invalid(format!("the upstream speaks {}", manifest.protocol)),
-            None,
-        ),
-        Ok(manifest) if manifest.capabilities.iter().any(|c| c == REPLICA) => {
-            (Manifest::Ready, Some(manifest))
-        }
-        // A seeding engine advertises nothing at all; capabilities that name
-        // kinds but not the protocol are not a replica manifest.
-        Ok(manifest) if manifest.capabilities.is_empty() => (Manifest::Seeding, Some(manifest)),
-        Ok(_) => (
-            Manifest::Invalid(format!("the upstream does not advertise {REPLICA}")),
-            None,
-        ),
-        Err(Failure::NotFound) => (Manifest::Missing, None),
-        Err(Failure::Auth(status)) => (Manifest::Unauthorized(status), None),
-        Err(Failure::Unavailable(why)) => (Manifest::Unavailable(why), None),
-        Err(Failure::RateLimited(_)) => (Manifest::Unavailable("rate limited".into()), None),
-        Err(other) => (Manifest::Invalid(format!("{other:?}")), None),
-    }
+/// Read and classify the replica manifest; an upstream refusing sync until
+/// its restore is verified ends the pass before any negotiation.
+fn read_manifest(
+    replica: &Transport,
+) -> std::result::Result<(Manifest, Option<ManifestResponse>), Failure> {
+    Ok(
+        match replica.get::<ManifestResponse>("/v1/sync/replica/manifest", &[]) {
+            Ok(manifest) if manifest.protocol != REPLICA => (
+                Manifest::Invalid(format!("the upstream speaks {}", manifest.protocol)),
+                None,
+            ),
+            Ok(manifest) if manifest.capabilities.iter().any(|c| c == REPLICA) => {
+                (Manifest::Ready, Some(manifest))
+            }
+            // A seeding engine advertises nothing at all; capabilities that name
+            // kinds but not the protocol are not a replica manifest.
+            Ok(manifest) if manifest.capabilities.is_empty() => (Manifest::Seeding, Some(manifest)),
+            Ok(_) => (
+                Manifest::Invalid(format!("the upstream does not advertise {REPLICA}")),
+                None,
+            ),
+            Err(Failure::NotFound) => (Manifest::Missing, None),
+            Err(Failure::Auth(status)) => (Manifest::Unauthorized(status), None),
+            Err(Failure::Unavailable(why)) => (Manifest::Unavailable(why), None),
+            Err(Failure::RateLimited(_)) => (Manifest::Unavailable("rate limited".into()), None),
+            Err(refused @ Failure::RestoreUnverified(_)) => return Err(refused),
+            Err(other) => (Manifest::Invalid(format!("{other:?}")), None),
+        },
+    )
 }
 
 /// The time after which a pass starts no new batch: `[sync] pass_budget`
@@ -287,14 +324,29 @@ pub fn close(
 /// Record `failure` on the key and end the pass without a request.
 fn skip(
     conn: &Connection,
-    mut row: ExchangeRow,
+    row: ExchangeRow,
     failure: &Failure,
     fingerprint: &str,
 ) -> Result<Opened> {
+    Ok(Opened::Skipped(Box::new(record(
+        conn,
+        row,
+        failure,
+        fingerprint,
+    )?)))
+}
+
+/// Record `failure` on the key's row and save it.
+fn record(
+    conn: &Connection,
+    mut row: ExchangeRow,
+    failure: &Failure,
+    fingerprint: &str,
+) -> Result<ExchangeRow> {
     network::fail(&mut row, failure, fingerprint)?;
     row.last_session_at = Some(network::now()?);
     sync_exchange::save(conn, &row, &network::now()?)?;
-    Ok(Opened::Skipped(Box::new(row)))
+    Ok(row)
 }
 
 #[cfg(test)]

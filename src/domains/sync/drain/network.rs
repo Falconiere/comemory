@@ -17,6 +17,10 @@ pub const RATE_LIMITED: &str = "rate_limited";
 /// carried is no longer current.
 pub const POLICY_CHANGED: &str = "sync_policy_changed";
 
+/// The network state of a key held by an unverified restore — its upstream's
+/// or this engine's own (#256, B-4). No backoff: the next pass asks again.
+pub const RESTORE_UNVERIFIED: &str = "restore_unverified";
+
 /// Record `failure` on `row`. `fingerprint` names the credential a `401`/`403`
 /// suspends.
 ///
@@ -43,6 +47,12 @@ pub fn fail(row: &mut ExchangeRow, failure: &Failure, fingerprint: &str) -> Resu
             row.network_state = "backoff".to_string();
             row.retry_at = Some(stamp(now + delay)?);
             row.last_error = Some(why.clone());
+        }
+        Failure::RestoreUnverified(why) => {
+            row.consecutive_failures += 1;
+            row.network_state = RESTORE_UNVERIFIED.to_string();
+            row.retry_at = None;
+            row.last_error = Some(format!("{RESTORE_UNVERIFIED}: {why}"));
         }
         Failure::NotFound | Failure::Conflict(_) | Failure::Refused(_) | Failure::Protocol(_) => {
             row.network_state = "protocol_error".to_string();

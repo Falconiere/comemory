@@ -41,6 +41,7 @@ One line per file, named after its primary item:
 | `distill.rs` | `Args` | `comemory distill` — extract explicit saves and propose platform candidates (CLI-only) |
 | `doctor.rs` | `Args` | `comemory doctor` — runtime health check against the SQLite storage stack |
 | `edges.rs` | `Args` | `comemory edges` — lexical search over the relation graph |
+| `backup.rs` | `Args`, `BackupCmd` | `comemory backup create [--out DIR]`, `restore DIR --confirm [--erasure-manifest FILE]`, `merge-erasures FILE` — the restore's `--confirm` gate and the three reports (`maintenance::backup`). CLI-only |
 | `erase.rs` | `Args` | `comemory erase --memory ID \| --document SHARED_ID --confirm` — permanently erase one entity; the `--confirm` gate, then the report (`maintenance::erase`) |
 | `benchmark.rs` | `Args` | `comemory benchmark` — score a reviewed benchmark set over memory, code and document retrieval, print the arm summary, and write the replayable artifact |
 | `eval.rs` | `GoldenSetArgs` | `comemory eval` — score retrieval quality (recall@k, MRR) against a golden set |

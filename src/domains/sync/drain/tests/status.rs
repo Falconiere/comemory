@@ -74,3 +74,74 @@ fn caught_up_holds_only_while_nothing_is_owed_either_way() {
         (Some("partial"), false)
     );
 }
+
+/// Drain `home` against its engine once, the way `comemory sync` does.
+fn drain_once(home: &mut crate::domains::sync::replica::test_support::Home, auth: &AuthFile) {
+    let (paths, cfg) = (home.paths.clone(), home.cfg.clone());
+    drain::drain(
+        &paths,
+        &cfg,
+        &mut home.conn,
+        auth,
+        (Mode::Manual, Legs::Both),
+    )
+    .expect("drain");
+}
+
+#[test]
+fn an_upstream_whose_restore_is_unverified_holds_the_exchange() {
+    use crate::domains::sync::replica::restore_state::{self, State};
+    let engine = LiveEngine::start();
+    let mut home = client_of(&engine);
+    let auth = AuthFile::load(&home.paths).expect("load").expect("auth");
+    home.save(BODY, &["sync"]);
+    let upstream = crate::store::connection::open(engine.session.home.path().join("comemory.db"))
+        .expect("the engine's database");
+    restore_state::set(&upstream, State::ErasureUnknown).expect("set");
+
+    drain_once(&mut home, &auth);
+
+    let held = status(&home.conn, &auth).expect("status");
+    assert_eq!(held.network, "restore_unverified", "{held:?}");
+    assert_eq!(held.retry_at, None, "no backoff: the next pass asks again");
+    assert!(!held.caught_up);
+    assert_eq!(held.outbox.pending, 1, "the edit is kept, not sent");
+    assert!(engine.feed().is_empty(), "the upstream received nothing");
+
+    restore_state::clear(&upstream).expect("clear");
+    drain_once(&mut home, &auth);
+
+    let released = status(&home.conn, &auth).expect("status");
+    assert_eq!(released.network, "ok", "{released:?}");
+    assert_eq!(released.outbox.pending, 0);
+    assert_eq!(engine.feed().len(), 1, "the edit reached the upstream");
+}
+
+#[test]
+fn a_restore_pending_here_records_restore_unverified_and_sends_nothing() {
+    use crate::domains::sync::replica::restore_state;
+    let engine = LiveEngine::start();
+    let mut home = client_of(&engine);
+    let auth = AuthFile::load(&home.paths).expect("load").expect("auth");
+    home.save(BODY, &["sync"]);
+    let pending = restore_state::pending_path(&home.paths);
+    std::fs::write(&pending, "{}").expect("a restore mid-swap");
+
+    drain_once(&mut home, &auth);
+
+    let held = status(&home.conn, &auth).expect("status");
+    assert_eq!(held.network, "restore_unverified", "{held:?}");
+    assert!(
+        held.last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("backup restore")),
+        "{held:?}"
+    );
+    assert_eq!(held.outbox.pending, 1);
+    assert!(engine.feed().is_empty(), "nothing was sent");
+
+    std::fs::remove_file(&pending).expect("the restore finished");
+    drain_once(&mut home, &auth);
+    assert_eq!(status(&home.conn, &auth).expect("status").network, "ok");
+    assert_eq!(engine.feed().len(), 1);
+}

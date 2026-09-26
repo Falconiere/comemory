@@ -27,6 +27,10 @@ pub enum Failure {
     RateLimited(Option<Duration>),
     /// A timeout, a refused connection or a `5xx`.
     Unavailable(String),
+    /// `503 restore_unverified`: a restore — the upstream's, or this
+    /// engine's own — is not verified, so nothing is exchanged until its
+    /// erasures are merged (#256, B-4). Carries why; not retried in the pass.
+    RestoreUnverified(String),
     /// `404`: the upstream does not serve the route.
     NotFound,
     /// `409` with its code (`epoch_mismatch`, `cursor_ahead`,
@@ -231,6 +235,11 @@ fn classify(status: StatusCode, response: Response) -> Failure {
         429 => Failure::RateLimited(retry),
         404 => Failure::NotFound,
         409 => Failure::Conflict(code),
+        503 if code == "restore_unverified" => Failure::RestoreUnverified(
+            "the upstream refuses sync until its restore is verified (`comemory backup \
+             merge-erasures` there)"
+                .to_string(),
+        ),
         400 | 413 => Failure::Refused(format!("HTTP {status} {code}")),
         _ if status.is_server_error() => Failure::Unavailable(format!("HTTP {status}")),
         _ => Failure::Protocol(format!("HTTP {status} {code}")),

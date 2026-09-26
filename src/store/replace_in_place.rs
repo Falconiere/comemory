@@ -10,6 +10,7 @@
 //! rolled back like any other transaction.
 
 use std::ffi::c_int;
+use std::io::Read as _;
 use std::path::Path;
 use std::time::Duration;
 
@@ -68,6 +69,31 @@ fn copy_pages(
             }
         }
     }
+}
+
+/// The page size recorded in the header of the SQLite file at `path`, read
+/// from the file itself — nothing is opened, created or migrated, so a
+/// restore can refuse a snapshot it could not replace the live file with
+/// before it touches anything.
+///
+/// # Errors
+/// [`Error::Other`] when `path` is not a SQLite database; filesystem
+/// failures.
+pub fn page_size(path: &Path) -> Result<u32> {
+    let mut header = [0u8; 18];
+    std::fs::File::open(path)?.read_exact(&mut header)?;
+    let (magic, size) = header.split_at(16);
+    if magic != b"SQLite format 3\0" {
+        return Err(Error::Other(format!(
+            "{} is not a SQLite database",
+            path.display()
+        )));
+    }
+    // The header stores 65536 as 1: it does not fit in two bytes.
+    Ok(match u16::from_be_bytes([size[0], size[1]]) {
+        1 => 65_536,
+        raw => u32::from(raw),
+    })
 }
 
 /// Refuse a copy between different page sizes up front. SQLite refuses it

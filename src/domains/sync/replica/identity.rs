@@ -42,6 +42,9 @@ pub const CREATED: &str = "created";
 /// Epoch reason: the database was found replaced by something other than a
 /// supported restore, and `ensure` re-epoched it.
 pub const REPLACED: &str = "replaced";
+/// Epoch reason: `comemory backup restore` installed a snapshot under a new
+/// epoch.
+pub const RESTORED: &str = "restore";
 
 /// `identity.json`'s format version.
 const VERSION: u32 = 1;
@@ -259,6 +262,30 @@ pub fn read(paths: &Paths) -> Result<Option<Identity>> {
     }
 }
 
+/// Move `identity` to `epoch`, effective `at` for `reason`, counting
+/// `erasures` manifest lines, and write it — once the database carrying the
+/// epoch has committed, so a crash between the two leaves a mismatch the
+/// next [`ensure`] repairs rather than an identity no database carries.
+///
+/// # Errors
+/// Filesystem and JSON failures.
+pub fn rotate(
+    held: &IdentityGuard,
+    paths: &Paths,
+    identity: &mut Identity,
+    (epoch, reason, at): (&str, &str, &str),
+    erasures: u64,
+) -> Result<()> {
+    identity.epoch = epoch.to_string();
+    identity.epochs.push(Epoch {
+        epoch: epoch.to_string(),
+        since: at.to_string(),
+        reason: reason.to_string(),
+    });
+    identity.erasures = erasures;
+    write(held, paths, identity)
+}
+
 /// Replace `identity.json` durably.
 fn write(_held: &IdentityGuard, paths: &Paths, identity: &Identity) -> Result<()> {
     let mut bytes = serde_json::to_vec_pretty(identity)?;
@@ -298,13 +325,17 @@ impl Stamped {
     }
 }
 
-/// Stamp `erasures` on the database.
-fn stamp(conn: &Connection, erasures: u64) -> Result<()> {
+/// Stamp `erasures` on the database: the manifest lines it reflects.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn stamp(conn: &Connection, erasures: u64) -> Result<()> {
     schema_meta::upsert(conn, ERASURES_KEY, &erasures.to_string())
 }
 
 /// A line count as the identity stores it.
-fn count(lines: usize) -> u64 {
+#[must_use]
+pub fn count(lines: usize) -> u64 {
     u64::try_from(lines).unwrap_or(u64::MAX)
 }
 
@@ -319,7 +350,7 @@ fn now() -> Result<String> {
 ///
 /// # Errors
 /// Filesystem failures.
-pub(super) fn write_durable(path: &Path, bytes: &[u8]) -> Result<()> {
+pub fn write_durable(path: &Path, bytes: &[u8]) -> Result<()> {
     let tmp = path.with_extension("tmp");
     let mut staged = File::create(&tmp)?;
     staged.write_all(bytes)?;
@@ -333,7 +364,7 @@ pub(super) fn write_durable(path: &Path, bytes: &[u8]) -> Result<()> {
 ///
 /// # Errors
 /// Filesystem failures.
-pub(super) fn sync_dir(path: &Path) -> Result<()> {
+pub fn sync_dir(path: &Path) -> Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| Error::Other(format!("{} has no directory", path.display())))?;

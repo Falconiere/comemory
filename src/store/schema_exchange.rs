@@ -46,7 +46,7 @@ pub struct SyncExchange {
     #[column(
         not_null,
         default = "'ok'",
-        check = "network_state IN ('ok', 'backoff', 'auth_suspended', 'protocol_error')"
+        check = "network_state IN ('ok', 'backoff', 'auth_suspended', 'protocol_error', 'restore_unverified')"
     )]
     pub network_state: Text,
     /// RFC3339 time before which no request is made while backing off.

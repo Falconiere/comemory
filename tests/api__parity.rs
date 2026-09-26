@@ -70,6 +70,10 @@ const CLI_ONLY: &[&str] = &[
     // request must never do.
     "architecture",
     "auth",
+    // `backup restore` replaces the database a server holds open, and
+    // `backup create` writes to an operator-named path: neither is ever
+    // triggered by an HTTP request.
+    "backup",
     "benchmark",
     "capture",
     "distill",

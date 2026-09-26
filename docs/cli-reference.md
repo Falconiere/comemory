@@ -66,6 +66,7 @@ Commands:
   prune           Detect (and optionally soft-delete) stale memories
   consolidate     Report near-duplicate memory clusters and the member worth keeping
   rebuild         Drop `comemory.db` and repopulate it from the markdown source of truth
+  backup          Back up the data directory, restore a backup under a new stream epoch, or merge an erasure manifest a restore could not find (CLI-only)
   recall-status   Report tracked recalls awaiting a verdict, verdicts and saves since a bound
   gc              Purge old `memories/.trash/` entries and learning telemetry past retention
   erase           Permanently erase one memory or document from every table, journal copy and the markdown tree, keeping only the digests that refuse its bytes afterwards
@@ -1615,6 +1616,37 @@ Examples:
 
   # Same under --json (rebuild emits no payload; the flag is still accepted)
   comemory rebuild --json
+```
+
+---
+
+## comemory backup
+
+```
+Back up the data directory, restore a backup under a new stream epoch, or merge an erasure manifest a restore could not find (CLI-only)
+
+Usage: comemory backup [OPTIONS] <COMMAND>
+
+Commands:
+  create          Snapshot the database and `memories/` (with `.trash/`) into a backup directory with a `backup.json` descriptor
+  restore         Install a backup under a new stream epoch, merging every erase it predates; without an established erasure manifest it restores local-only and refuses sync until `merge-erasures`
+  merge-erasures  Merge an established erasure manifest into the live store and allow sync again after a local-only restore
+  help            Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Snapshot the database and memories/ into <data_dir>/backups/<timestamp>/
+  comemory backup create
+
+  # Restore it: a new stream epoch, every later erase merged back in
+  comemory backup restore ~/.comemory/backups/20260925T101500.000Z --confirm
+
+  # The erasure manifest was elsewhere: merge it and allow sync again
+  comemory backup merge-erasures /mnt/safe/erasures.jsonl
 ```
 
 ---

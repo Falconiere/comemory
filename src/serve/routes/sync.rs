@@ -1,6 +1,8 @@
 //! `GET /api/v1/sync/{changes,manifest}` and `POST /api/v1/sync/import`
 //! (memory-sync design spec), plus `GET /api/v1/sync/code/manifest` and
-//! `POST /api/v1/sync/code/import` (code-graph sync design).
+//! `POST /api/v1/sync/code/import` (code-graph sync design). Every route
+//! answers `503 restore_unverified` while a restore of this engine is
+//! unverified (`replica::restore_state`, #256).
 
 use std::time::Instant;
 
@@ -12,6 +14,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use crate::domains::sync::exchange::{self, CodeImportRequest, ImportRequest};
+use crate::domains::sync::replica::restore_state;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond};
@@ -168,8 +171,9 @@ enum Gate {
     Write,
 }
 
-/// One request: gate it, open the shared connection off the runtime, run
-/// `f` over a borrowed [`Ctx`], and envelope the result under `command`.
+/// One request: gate it, open the shared connection off the runtime, refuse
+/// an unverified restore, run `f` over a borrowed [`Ctx`], and envelope the
+/// result under `command`.
 async fn handle<T, F>(
     state: AppState,
     command: &'static str,
@@ -193,6 +197,7 @@ where
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
+        restore_state::refuse_unverified(state.paths(), &conn)?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         f(&mut ctx)
     })

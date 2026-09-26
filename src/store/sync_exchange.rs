@@ -79,7 +79,8 @@ pub struct ExchangeRow {
     pub replay_scan_through: Option<i64>,
     /// Head the replay reads to.
     pub replay_target: Option<i64>,
-    /// `ok`, `backoff`, `auth_suspended` or `protocol_error`.
+    /// `ok`, `backoff`, `auth_suspended`, `protocol_error` or
+    /// `restore_unverified`.
     pub network_state: String,
     /// No request before this RFC3339 time while backing off.
     pub retry_at: Option<String>,

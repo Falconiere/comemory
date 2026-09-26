@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use super::identity::{IdentityGuard, sync_dir, write_durable};
 use crate::prelude::*;
+use crate::store::{Connection, erase_rows, replica_redaction, replica_redaction_copies};
 use crate::utilities::digest::sha256_hex;
 
 /// The line format's version.
@@ -99,7 +100,8 @@ pub fn read(path: &Path) -> Result<Option<Manifest>> {
 }
 
 /// The lines of `bytes` that parse and chain, and whether all of them did.
-fn parse(bytes: &[u8]) -> Manifest {
+#[must_use]
+pub fn parse(bytes: &[u8]) -> Manifest {
     let mut manifest = Manifest {
         lines: Vec::new(),
         intact: true,
@@ -156,6 +158,15 @@ pub fn append(_held: &IdentityGuard, path: &Path, entry: &Entry<'_>) -> Result<(
     Ok(())
 }
 
+/// Put `bytes` — a manifest the caller verified — in place at `path`
+/// durably, replacing whatever is there (`comemory backup merge-erasures`).
+///
+/// # Errors
+/// Filesystem failures.
+pub fn install(_held: &IdentityGuard, path: &Path, bytes: &[u8]) -> Result<()> {
+    write_durable(path, bytes)
+}
+
 /// Write `entries` as a whole new manifest — the first replica read's, from
 /// the database — through a fsynced temporary file renamed into place.
 ///
@@ -171,6 +182,24 @@ pub fn create(_held: &IdentityGuard, path: &Path, entries: &[Entry<'_>]) -> Resu
         text.push('\n');
     }
     write_durable(path, text.as_bytes())
+}
+
+/// Make every digest `lines` name an erased barrier in `conn`: the payload
+/// rows (a digest `conn` never stored gets a bytes-less row, so a later offer
+/// of it is refused too), the replay scratch and the complete staged sets —
+/// the digest-level half of merging the manifest into a database.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn bar_all(conn: &Connection, lines: &[Line], at: &str) -> Result<()> {
+    let mut digests = Vec::new();
+    for line in lines {
+        replica_redaction::bar(conn, &line.digests, &line.kind, at)?;
+        digests.extend(line.digests.iter().cloned());
+    }
+    replica_redaction_copies::clear_replay_of(conn, &digests)?;
+    erase_rows::erase_staged_of(conn, &digests)?;
+    Ok(())
 }
 
 /// The bytes after the last newline in `done` — its last line.

@@ -36,7 +36,9 @@ pub struct ExchangeStatus {
     pub coverage: Option<String>,
     /// Why coverage is partial.
     pub coverage_reason: Option<String>,
-    /// `ok`, `backoff`, `auth_suspended` or `protocol_error`.
+    /// `ok`, `backoff`, `auth_suspended`, `protocol_error` or
+    /// `restore_unverified` (this engine's restore, or its upstream's, is
+    /// not verified: nothing is sent until it is).
     pub network: String,
     /// When the next unattended request may go out.
     pub retry_at: Option<String>,

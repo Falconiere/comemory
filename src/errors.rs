@@ -185,6 +185,15 @@ pub enum Error {
     #[error("busy: {0}")]
     Busy(String),
 
+    /// This engine was restored and its erasures are not verified — a
+    /// `comemory backup restore` is still pending, or ran without an
+    /// established erasure manifest — so it refuses every sync surface until
+    /// `comemory backup merge-erasures` (or the rerun restore) settles it.
+    /// Maps to HTTP `503 restore_unverified`; on the CLI path it maps to
+    /// EX_TEMPFAIL (75) (#256, B-4).
+    #[error("restore_unverified: {0}")]
+    RestoreUnverified(String),
+
     /// A catch-all for failures that don't fit another variant.
     #[error("other: {0}")]
     Other(String),

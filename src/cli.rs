@@ -16,6 +16,8 @@ pub mod ast;
 pub mod auth;
 /// TTY and JSON rendering for authentication commands.
 pub mod auth_render;
+/// `comemory backup`: create, restore and merge-erasures (CLI-only).
+pub mod backup;
 /// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
 /// `comemory benchmark` — the domain-aware offline retrieval benchmark.
@@ -246,6 +248,9 @@ pub enum Cmd {
     Consolidate(consolidate::Args),
     /// Drop `comemory.db` and repopulate it from the markdown source of truth.
     Rebuild(rebuild::Args),
+    /// Back up the data directory, restore a backup under a new stream epoch,
+    /// or merge an erasure manifest a restore could not find (CLI-only).
+    Backup(backup::Args),
     /// Report tracked recalls awaiting a verdict, verdicts and saves since a
     /// bound.
     RecallStatus(recall_status::Args),
@@ -356,6 +361,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
         Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir),
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
+        Cmd::Backup(a) => backup::run(a, cli.json, cli.data_dir).await,
         Cmd::RecallStatus(a) => recall_status::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::Erase(a) => erase::run(a, cli.json, cli.data_dir).await,

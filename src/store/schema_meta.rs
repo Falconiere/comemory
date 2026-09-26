@@ -62,6 +62,12 @@ pub(crate) fn upsert(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Remove the `schema_meta` row stored under `key`; absent is not an error.
+pub(crate) fn delete(conn: &Connection, key: &str) -> Result<()> {
+    let query = SchemaMeta::delete().filter(schema_meta::key.eq(key));
+    orm::execute(conn, query.to_sql()).map(drop)
+}
+
 /// Select the stored value for one metadata key.
 fn select_value(key: &str) -> toolu_orm::query::select::SelectBuilder {
     SchemaMeta::select()

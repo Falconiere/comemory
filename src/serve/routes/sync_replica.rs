@@ -5,9 +5,10 @@
 //! Reads are read-class, writes take the mutating gate, and nothing here
 //! starts a daemon. Six routes, two shapes — a cursor read and a JSON write —
 //! each mounted by one generic builder, so adding a route is a line rather
-//! than a copy. Every route funnels through [`handle`], which checks the
-//! database against the stream identity (`replica::identity::ensure`) before
-//! its core. The cores live in [`crate::domains::sync::replica`].
+//! than a copy. Every route funnels through [`handle`], which refuses `503
+//! restore_unverified` while a restore is unverified and checks the database
+//! against the stream identity (`replica::restore_state::admit`) before its
+//! core. The cores live in [`crate::domains::sync::replica`].
 
 use std::time::Instant;
 
@@ -21,7 +22,7 @@ use serde::de::DeserializeOwned;
 
 use crate::domains::sync::replica::contract::ImportRequest;
 use crate::domains::sync::replica::contract_views::{ActivateRequest, StageRequest};
-use crate::domains::sync::replica::{accept, changes, events, identity, manifest, staging};
+use crate::domains::sync::replica::{accept, changes, events, manifest, restore_state, staging};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond};
@@ -192,9 +193,9 @@ enum Gate {
     Write,
 }
 
-/// One request: gate it, open the shared connection off the runtime, check
-/// the database against the stream identity, run `f` over a borrowed
-/// [`Ctx`], and envelope the result under `command`.
+/// One request: gate it, open the shared connection off the runtime, refuse
+/// an unverified restore and check the database against the stream identity,
+/// run `f` over a borrowed [`Ctx`], and envelope the result under `command`.
 async fn handle<T, F>(
     state: AppState,
     command: &'static str,
@@ -218,7 +219,7 @@ where
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        identity::ensure(state.paths(), &cfg, &mut conn)?;
+        restore_state::admit(state.paths(), &cfg, &mut conn)?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         f(&mut ctx)
     })
