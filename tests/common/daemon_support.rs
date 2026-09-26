@@ -101,6 +101,28 @@ impl DaemonHome {
         self.command_with_binary(&cargo_bin("comemory"))
     }
 
+    /// A `<root>/bin/comemory` symlink to the binary under test, so a real
+    /// git hook's `command -v comemory` (or its `$HOME/.cargo/bin` etc.
+    /// fallback search) finds this build rather than a host install.
+    pub fn hook_bin_dir(&self) -> PathBuf {
+        let dir = self.root.path().join("bin");
+        if !dir.join("comemory").exists() {
+            std::fs::create_dir_all(&dir).expect("hook bin dir");
+            std::os::unix::fs::symlink(cargo_bin("comemory"), dir.join("comemory"))
+                .expect("symlink comemory");
+        }
+        dir
+    }
+
+    /// A bare `PATH` naming only this home's `comemory` and the system git —
+    /// never the host's own installed `comemory` (tests-firing-git-hooks
+    /// note).
+    pub fn hook_path(&self) -> std::ffi::OsString {
+        let mut path = self.hook_bin_dir().into_os_string();
+        path.push(":/usr/bin:/bin");
+        path
+    }
+
     /// Like [`Self::command`], running `bin` instead of the binary under
     /// test — a copy at another path, to prove identity-based replacement.
     pub fn command_with_binary(&self, bin: &Path) -> Command {

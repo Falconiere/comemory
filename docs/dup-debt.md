@@ -3,10 +3,20 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**287 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 620 production `.rs` files under `src/`. That
+**288 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 621 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number rose from 287 (#257, hook and save wakes).**
+`cli::sync_auto::{run, run_in_process}` pair: both end with "build a JSON
+report, or print nothing" once `json_flag` is checked, but `run` sends one
+wake and reports the coordinator's instance while `run_in_process` (only
+reachable under the `COMEMORY_SYNC_DAEMON=0` harness switch, where there is
+no coordinator to wake) runs the whole pass in-process and reports every
+leg. Merging them behind an `in_process: bool` would replace two short,
+readable functions with one long one branching on it throughout — the same
+bodies with a worse name.
 
 **Why this number rose from 285 (#257, the required resident daemon).**
 `domains::sync::daemon::supervisor` gives every lifecycle action one function
