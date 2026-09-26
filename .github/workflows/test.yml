@@ -175,7 +175,16 @@ jobs:
         # header of scripts/machete-check.sh.
         run: bash scripts/machete-check.sh
       - name: Run coverage gate
-        run: bash scripts/coverage-check.sh
+        # Real SQLite/markdown fixtures make thousands of durable writes.
+        # Keep their temporary files on RAM-backed storage to avoid competing
+        # for the runner's block device; process-kill/restart tests still use
+        # real databases, locks and files. Build/coverage artifacts stay on disk.
+        run: |
+          test_tmp="$(mktemp -d)"
+          sudo mount -t tmpfs -o size=2G,mode=1777,exec,nosuid,nodev tmpfs "$test_tmp"
+          trap 'sudo umount "$test_tmp"; rmdir "$test_tmp"' EXIT
+          df -h "$test_tmp"
+          TMPDIR="$test_tmp" bash scripts/coverage-check.sh
       - name: Run eval gate
         run: bash scripts/eval-check.sh
       - name: Run replication harness self-checks
