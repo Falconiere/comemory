@@ -15,11 +15,35 @@ use comemory::store::code_graph_edges::{self, EdgeQuery};
 use comemory::store::edges::{self, EdgeKey};
 use comemory::store::remote_code::{Edge, File, Projection};
 use comemory::store::replica_journal::ReplicaOrigin;
-use comemory::store::{connection, migrate, remote_code, remote_code_view};
+use comemory::store::sync_exchange::ExchangeKey;
+use comemory::store::sync_policy_snapshot::{self, PolicySnapshot};
+use comemory::store::{connection, migrate, remote_code, remote_code_view, repository_approval};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
 const REPO: &str = "Falconiere/comemory";
+
+/// Load a policy snapshot approving exactly `repos` — the same two writes a
+/// real policy load leaves (`sync_policy_snapshot` plus `repository_approval`).
+fn load_policy(conn: &Connection, repos: &[&str]) {
+    sync_policy_snapshot::save(
+        conn,
+        &ExchangeKey::new("http://hub/api", "ws"),
+        &PolicySnapshot {
+            revision: 1,
+            fingerprint: "fp".to_string(),
+            allowlist: repos.iter().map(|r| (*r).to_string()).collect(),
+            mappings: std::collections::BTreeMap::new(),
+            loaded_at: "2026-09-25T10:00:00Z".to_string(),
+        },
+    )
+    .expect("save snapshot");
+    let resolved: Vec<(String, String)> = repos
+        .iter()
+        .map(|r| ((*r).to_string(), (*r).to_string()))
+        .collect();
+    repository_approval::replace_all(conn, &resolved, "2026-09-25T10:00:00Z").expect("approve");
+}
 
 fn migrated_db() -> (TempDir, Connection) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -257,4 +281,135 @@ fn another_repos_share_is_out_of_scope() {
         1,
         "and an unscoped read still sees it"
     );
+}
+
+#[test]
+fn no_loaded_policy_lists_every_share_unfiltered() {
+    let (_dir, conn) = migrated_db();
+    activate(
+        &conn,
+        "a".repeat(32).as_str(),
+        ReplicaOrigin::Sync,
+        &projection(3),
+    );
+
+    // No `sync_policy_snapshot` row at all: a hub or a bare `serve`.
+    assert_eq!(
+        remote_code_view::shared_repos(&conn)
+            .expect("shared_repos")
+            .len(),
+        1
+    );
+    assert_eq!(
+        remote_code_view::shared_edges(&conn, Some(REPO))
+            .expect("shared_edges")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn a_loaded_policy_hides_a_revoked_repo_and_reapproval_shows_it_again() {
+    let (_dir, conn) = migrated_db();
+    activate(
+        &conn,
+        "a".repeat(32).as_str(),
+        ReplicaOrigin::Sync,
+        &projection(3),
+    );
+    load_policy(&conn, &["Falconiere/other"]);
+
+    assert!(
+        remote_code_view::shared_repos(&conn)
+            .expect("shared_repos")
+            .is_empty(),
+        "REPO is not in the loaded allowlist"
+    );
+    assert!(
+        remote_code_view::shared_edges(&conn, Some(REPO))
+            .expect("shared_edges")
+            .is_empty()
+    );
+
+    // Hidden, not deleted: the pulled rows are still there underneath.
+    let projection_rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM remote_code_edge", [], |r| r.get(0))
+        .expect("count");
+    assert!(projection_rows > 0, "the cache was never touched");
+
+    load_policy(&conn, &[REPO]);
+
+    assert_eq!(
+        remote_code_view::shared_repos(&conn)
+            .expect("shared_repos")
+            .len(),
+        1,
+        "reapproval shows it again, with no reload of anything"
+    );
+    assert_eq!(
+        remote_code_view::shared_edges(&conn, Some(REPO))
+            .expect("shared_edges")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn the_paginated_window_agrees_about_a_revoked_repo() {
+    let (_dir, conn) = migrated_db();
+    activate(
+        &conn,
+        "a".repeat(32).as_str(),
+        ReplicaOrigin::Sync,
+        &projection(3),
+    );
+    load_policy(&conn, &[]);
+
+    let (rows, total) = code_graph_edges::fetch_page(
+        &conn,
+        &EdgeQuery {
+            rels: &["imports"],
+            repo: Some(REPO),
+            min_weight: 1,
+            limit: 0,
+            offset: 0,
+        },
+    )
+    .expect("fetch_page");
+
+    assert_eq!(total, 0, "the paginated window agrees the repo is revoked");
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn revocation_never_touches_a_local_edge_for_the_same_repo() {
+    let (_dir, conn) = migrated_db();
+    edges::insert_weighted(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: &format!("file:{REPO}:src/local_only.rs"),
+            dst_kind: "file",
+            dst_id: &format!("file:{REPO}:src/store.rs"),
+            rel: "imports",
+        },
+        7,
+    )
+    .expect("local edge");
+    load_policy(&conn, &[]);
+
+    let (rows, total) = code_graph_edges::fetch_page(
+        &conn,
+        &EdgeQuery {
+            rels: &["imports"],
+            repo: Some(REPO),
+            min_weight: 1,
+            limit: 0,
+            offset: 0,
+        },
+    )
+    .expect("fetch_page");
+
+    assert_eq!(total, 1, "the local edge answers regardless of policy");
+    assert_eq!(rows[0].weight, 7);
 }

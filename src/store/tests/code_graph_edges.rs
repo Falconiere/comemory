@@ -8,14 +8,88 @@
 //! Mirror test for `src/store/code_graph_edges.rs` — the dynamic, paginated
 //! file→file `edges` window behind `comemory graph`.
 
+use comemory::store::code_generation::{self, Generation, State};
 use comemory::store::code_graph_edges::{EdgeQuery, fetch_page};
-use comemory::store::connection;
-use comemory::store::edges::{self, EdgeKey};
+use comemory::store::edges::EdgeKey;
+use comemory::store::remote_code::{self, Edge, File, Projection};
+use comemory::store::replica_journal::ReplicaOrigin;
+use comemory::store::sync_exchange::ExchangeKey;
+use comemory::store::sync_policy_snapshot::{self, PolicySnapshot};
+use comemory::store::{connection, edges, migrate, repository_approval};
 
 fn seed_db() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().expect("tempdir");
     let conn = connection::open(dir.path().join("comemory.db")).expect("open");
     (dir, conn)
+}
+
+/// A migrated database — [`seed_db`] plus every table a pulled generation and
+/// a loaded policy need.
+fn migrated_db() -> (tempfile::TempDir, rusqlite::Connection) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    migrate::run(&mut conn).expect("migrate");
+    (dir, conn)
+}
+
+/// Record and activate one peer-shared generation for `repo`, carrying one
+/// import edge between two files.
+fn activate_shared(conn: &rusqlite::Connection, repo: &str) {
+    let projection = Projection {
+        files: vec![File {
+            path: "src/lib.rs".to_string(),
+            blob_oid: "aaaa1111".to_string(),
+        }],
+        symbols: Vec::new(),
+        edges: vec![Edge {
+            rel: "imports".to_string(),
+            src_path: "src/lib.rs".to_string(),
+            dst_path: "src/store.rs".to_string(),
+            weight: 3,
+            anchor: Some("aaaa1111".to_string()),
+        }],
+    };
+    code_generation::record(
+        conn,
+        &Generation {
+            repo: repo.to_string(),
+            generation_id: "a".repeat(32),
+            parent_id: None,
+            head: "head-1".to_string(),
+            mined_commit: None,
+            origin: ReplicaOrigin::Sync,
+            state: State::Staged,
+            file_count: 1,
+            manifest_digest: "d".repeat(64),
+        },
+        "2026-09-25T10:00:00Z",
+    )
+    .expect("record");
+    remote_code::replace_generation(conn, repo, "a".repeat(32).as_str(), &projection)
+        .expect("projection");
+    code_generation::activate(conn, repo, "a".repeat(32).as_str(), "2026-09-25T10:01:00Z")
+        .expect("activate");
+}
+
+/// Load a policy snapshot approving exactly `repos`.
+fn load_policy(conn: &rusqlite::Connection, repos: &[&str]) {
+    sync_policy_snapshot::save(
+        conn,
+        &ExchangeKey::new("http://hub/api", "ws"),
+        &PolicySnapshot {
+            revision: 1,
+            fingerprint: "fp".to_string(),
+            allowlist: repos.iter().map(|r| (*r).to_string()).collect(),
+            mappings: std::collections::BTreeMap::new(),
+            loaded_at: "2026-09-25T10:00:00Z".to_string(),
+        },
+    )
+    .expect("save snapshot");
+    let resolved: Vec<(String, String)> = repos
+        .iter()
+        .map(|r| ((*r).to_string(), (*r).to_string()))
+        .collect();
+    repository_approval::replace_all(conn, &resolved, "2026-09-25T10:00:00Z").expect("approve");
 }
 
 fn seed_edge(conn: &rusqlite::Connection, src: &str, dst: &str, rel: &str, weight: i64) {
@@ -125,4 +199,32 @@ fn window_orders_weight_desc_then_paginates() {
     )
     .expect("fetch page 2");
     assert_eq!(page2[0].dst_id, "file:r:d.rs", "weight 5 sorts second");
+}
+
+#[test]
+fn a_revoked_repos_shared_edges_drop_from_the_window_and_return_on_reapproval() {
+    const REPO: &str = "Falconiere/comemory";
+    let (_dir, conn) = migrated_db();
+    activate_shared(&conn, REPO);
+    let query = EdgeQuery {
+        rels: &["imports"],
+        repo: Some(REPO),
+        min_weight: 1,
+        limit: 0,
+        offset: 0,
+    };
+
+    // No policy loaded at all: unfiltered, as today.
+    let (_, total) = fetch_page(&conn, &query).expect("fetch, no policy");
+    assert_eq!(total, 1, "a hub or bare serve sees the shared edge");
+
+    load_policy(&conn, &[]);
+    let (rows, total) = fetch_page(&conn, &query).expect("fetch, revoked");
+    assert_eq!(total, 0, "the window drops the revoked repo's shared edge");
+    assert!(rows.is_empty());
+
+    load_policy(&conn, &[REPO]);
+    let (rows, total) = fetch_page(&conn, &query).expect("fetch, reapproved");
+    assert_eq!(total, 1, "reapproval shows it again with no reload");
+    assert_eq!(rows[0].weight, 3);
 }

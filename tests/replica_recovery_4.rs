@@ -11,6 +11,9 @@
 //! with a real client syncing over real HTTP through the fault proxy. And
 //! the local-only restore whose manifest is gone, refusing every sync route
 //! through a `comemory rebuild` until `backup merge-erasures`.
+//!
+//! Also #256 B-7 / AC-10: a policy-loaded client's pulled code generation and
+//! pulled document, hidden by revocation and shown again by reapproval.
 
 #[path = "common/replica_support.rs"]
 mod replica_support;
@@ -484,4 +487,379 @@ fn restore_without_a_manifest_fails_closed() {
     assert!(hub.feed().iter().any(|(_, key, _)| key == &owed));
     let status = a.exchange_status();
     assert_eq!(status["caught_up"], json!(true), "{status}");
+}
+
+/// Percent-encode the `/` in a repo label for a query string.
+fn urlencoding_lite(label: &str) -> String {
+    label.replace('/', "%2F")
+}
+
+/// The `repos` row for `REPO` on `client`, or `Value::Null` when it is not
+/// listed at all — which is what full revocation with no local checkout
+/// looks like.
+fn repo_row(client: &Client) -> Value {
+    client.cli(&["repos", "--repo", REPO])["repos"]
+        .as_array()
+        .expect("repos")
+        .first()
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+/// How many edges the code graph answers for `REPO` on `client`.
+fn graph_edge_count(client: &Client) -> usize {
+    let engine = client.serve();
+    let (status, body) = engine.get(&format!("/api/v1/graph?repo={}", urlencoding_lite(REPO)));
+    assert_eq!(status, 200, "{body}");
+    body["data"]["edges"].as_array().map_or(0, Vec::len)
+}
+
+/// A word the shared guides and the client's own local note both use.
+const TERM: &str = "workspace";
+
+/// Every `search --only document` hit on `client` for [`TERM`].
+fn document_hits(client: &Client) -> Vec<Value> {
+    client.cli(&["search", "--only", "document", TERM])["items"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// `(entity_kind, repository)` for every `policy`-held pull position on
+/// `client`, oldest first.
+fn policy_holds(client: &Client) -> Vec<(String, Option<String>)> {
+    let conn = client.open();
+    let mut statement = conn
+        .prepare(
+            "SELECT entity_kind, repository FROM replica_pull_hold \
+              WHERE reason = 'policy' ORDER BY from_sequence",
+        )
+        .expect("prepare");
+    statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .expect("query")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("collect")
+}
+
+/// #256 B-7 / AC-10: a client with a loaded policy pulls a code generation
+/// and a document of `REPO` from a real hub. Revoking `REPO` hides both from
+/// `repos`, the code graph and `search --only document`, while the client's
+/// own local document index of `REPO` keeps answering. A later revision
+/// pulled while still revoked is held, not dropped; reapproval shows the
+/// pulled cache again, now at that held revision.
+#[test]
+fn revocation_hides_pulled_caches_only() {
+    let hub = Hub::start();
+    let a = approved_client(&hub);
+    let workdir = tempfile::tempdir().expect("workdir");
+
+    // `a` builds a real checkout and a real docs tree under REPO, and pushes
+    // both to the hub.
+    let code_root = replica_support::pinned_repo(workdir.path(), 12);
+    replica_support::git(
+        &code_root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/falconiere/comemory.git",
+        ],
+    );
+    a.cli(&[
+        "index-code",
+        "--repo",
+        REPO,
+        "--path",
+        code_root.to_str().expect("utf8 path"),
+    ]);
+    // Documents share only from under the label's indexed root
+    // (`repo_marker.root_path`, set by `index-code` above), so the guides
+    // land INSIDE the same checkout `code_root` names, not a sibling of it.
+    let docs_root = replica_support::docs_tree(workdir.path(), "pinned-repo");
+    assert_eq!(docs_root, code_root, "the premise: one root, two indexers");
+    let guides_dir = docs_root.join("docs/guides");
+    a.cli(&[
+        "index",
+        guides_dir.to_str().expect("utf8 path"),
+        "--repo",
+        REPO,
+    ]);
+    a.sync();
+    let head_1 = repo_row(&a)["last_head"]
+        .as_str()
+        .expect("a's first head")
+        .to_string();
+
+    // `b`: a client with a loaded policy, approved for REPO, with its own
+    // small local document index of REPO under a path it never shares with
+    // anyone — a real local index, untouched by anything about the cache.
+    let b = approved_client(&hub);
+    let b_notes = workdir.path().join("b-notes");
+    std::fs::create_dir_all(&b_notes).expect("b notes dir");
+    std::fs::write(
+        b_notes.join("local-notes.md"),
+        // n=50 is a real excerpt that happens to use TERM, same as the
+        // shared guides do.
+        format!("# Local notes\n\n{}", exchange_support::guide_body(50)),
+    )
+    .expect("write local note");
+    b.cli(&[
+        "index",
+        b_notes.to_str().expect("utf8 path"),
+        "--repo",
+        REPO,
+    ]);
+    b.sync();
+
+    let before = repo_row(&b);
+    assert_eq!(
+        before["shared_head"],
+        json!(head_1),
+        "the pulled generation shows in repos: {before}"
+    );
+    assert!(
+        graph_edge_count(&b) > 0,
+        "and the pulled edges answer the graph"
+    );
+    let hits_before = document_hits(&b);
+    assert!(
+        hits_before.iter().any(|h| h["shared_from"] == json!(REPO)),
+        "the pulled document answers search: {hits_before:?}"
+    );
+    assert!(
+        hits_before.iter().any(|h| h["shared_from"].is_null()),
+        "and so does b's own local note: {hits_before:?}"
+    );
+
+    // Revoke REPO on `b` — the same store-API write a policy load leaves.
+    b.approve(&hub.api_url(), WORKSPACE, &[], 2);
+
+    let revoked = repo_row(&b);
+    assert!(
+        revoked["shared_head"].is_null(),
+        "revoked: the pulled generation is hidden from repos: {revoked}"
+    );
+    assert_eq!(
+        graph_edge_count(&b),
+        0,
+        "revoked: the pulled edges are hidden from the graph"
+    );
+    let hits_revoked = document_hits(&b);
+    assert!(
+        !hits_revoked.iter().any(|h| h["shared_from"] == json!(REPO)),
+        "revoked: the pulled document is hidden from search: {hits_revoked:?}"
+    );
+    assert!(
+        hits_revoked.iter().any(|h| h["shared_from"].is_null()),
+        "but b's own local note keeps answering: {hits_revoked:?}"
+    );
+    let cache_rows: i64 = b
+        .open()
+        .query_row("SELECT COUNT(*) FROM remote_code_edge", [], |r| r.get(0))
+        .expect("count");
+    assert!(cache_rows > 0, "hidden, not deleted");
+
+    // `a` moves to a second revision of both, while `b` stays revoked.
+    std::fs::write(code_root.join("file_9999.rs"), "pub fn added_later() {}\n").expect("write");
+    replica_support::git(&code_root, &["add", "-A"]);
+    replica_support::git(&code_root, &["commit", "-q", "-m", "add a file"]);
+    a.cli(&[
+        "index-code",
+        "--repo",
+        REPO,
+        "--path",
+        code_root.to_str().expect("utf8 path"),
+    ]);
+    std::fs::write(
+        guides_dir.join("extra-guide.md"),
+        format!("# Extra\n\n{}", exchange_support::guide_body(1)),
+    )
+    .expect("write extra guide");
+    a.cli(&[
+        "index",
+        guides_dir.to_str().expect("utf8 path"),
+        "--repo",
+        REPO,
+    ]);
+    a.sync();
+    let head_2 = repo_row(&a)["last_head"]
+        .as_str()
+        .expect("a's second head")
+        .to_string();
+    assert_ne!(head_2, head_1, "the premise: a genuinely new generation");
+
+    // `b` pulls again while still revoked: the new entries are held, not
+    // dropped and not applied (#255's existing hold mechanism).
+    b.sync();
+    let held = policy_holds(&b);
+    assert!(
+        held.iter().any(|(k, _)| k == "code_generation"),
+        "the second code generation is held: {held:?}"
+    );
+    assert!(
+        held.iter().any(|(k, _)| k == "document_revision"),
+        "the new document revision is held too: {held:?}"
+    );
+    assert!(
+        repo_row(&b)["shared_head"].is_null(),
+        "still revoked, still hidden"
+    );
+
+    // Reapprove REPO: the held entries apply.
+    b.approve(&hub.api_url(), WORKSPACE, &[REPO], 3);
+    b.sync();
+
+    let reapproved = repo_row(&b);
+    assert_eq!(
+        reapproved["shared_head"],
+        json!(head_2),
+        "the held generation applied on reapproval: {reapproved}"
+    );
+    assert!(
+        graph_edge_count(&b) > 0,
+        "and the graph answers from it again"
+    );
+    let hits_after = document_hits(&b);
+    assert!(
+        hits_after.iter().any(|h| h["shared_from"] == json!(REPO)),
+        "the held document applied too: {hits_after:?}"
+    );
+}
+
+/// Env var that arms candidate capture for one `comemory find` run.
+const CAPTURE_ON: (&str, &str) = ("COMEMORY_OBSERVATIONS_ENABLED", "1");
+
+/// Every `replica_*` table and column that holds `marker`, as `table.column`.
+/// A generic sweep rather than a named list, so a future replica table needs
+/// no update here to stay covered.
+fn replica_columns_holding(conn: &rusqlite::Connection, marker: &str) -> Vec<String> {
+    let mut tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'replica_%'")
+        .expect("prepare")
+        .query_map([], |r| r.get(0))
+        .expect("query")
+        .collect::<std::result::Result<_, _>>()
+        .expect("collect");
+    tables.sort();
+    let mut hits = Vec::new();
+    for table in tables {
+        let columns: Vec<String> = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .expect("prepare")
+            .query_map([], |r| r.get(1))
+            .expect("query")
+            .collect::<std::result::Result<_, _>>()
+            .expect("collect");
+        for column in columns {
+            let count: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM {table} \
+                          WHERE instr(CAST({column} AS TEXT), ?1) > 0"
+                    ),
+                    [marker],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if count > 0 {
+                hits.push(format!("{table}.{column}"));
+            }
+        }
+    }
+    hits
+}
+
+/// A word only in the memory body — legitimately replicated as the memory's
+/// own payload, so it proves the pool actually captured the passage rather
+/// than proving anything about a leak.
+const CMARK: &str = "candidateProbeVexillum4407";
+
+/// A word only in the query string — never part of any memory, document or
+/// code content, so its presence anywhere is unambiguously the captured
+/// query, not something a legitimate push was always going to carry.
+const QMARK: &str = "queryProbeVexillum9214";
+
+/// #256 B-7 / AC-10: a captured candidate observation never reaches a
+/// replica table or an outbound push body, whether captured before or
+/// redacted after a purge.
+#[test]
+fn candidate_observations_never_leak_into_replica_state_or_a_push_body() {
+    let hub = Hub::start();
+    let a = approved_client(&hub);
+    let id = a.save(
+        &format!("A decision naming {CMARK}, for a search to surface."),
+        REPO,
+    );
+    a.sync();
+
+    let (code, stdout, stderr) = a.cli_raw(&["find", &format!("{CMARK} {QMARK}")], &[CAPTURE_ON]);
+    assert_eq!(code, 0, "find: {stderr}");
+    let found: Value = serde_json::from_str(stdout.trim()).expect("find json");
+    assert!(
+        found["observation_id"].is_string(),
+        "the premise: capture was armed: {found}"
+    );
+
+    let conn = a.open();
+    let query_captured: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM candidate_query_observations WHERE instr(query, ?1) > 0",
+            [QMARK],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert!(
+        query_captured > 0,
+        "the premise: the query was captured verbatim"
+    );
+    let passage_captured: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM candidate_observations WHERE instr(text, ?1) > 0",
+            [CMARK],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert!(
+        passage_captured > 0,
+        "the premise: the memory's own passage was pooled"
+    );
+    assert_eq!(
+        replica_columns_holding(&conn, QMARK),
+        Vec::<String>::new(),
+        "captured: no replica table carries the captured query"
+    );
+    drop(conn);
+
+    a.sync();
+    assert!(
+        !hub.proxy.log().iter().any(|l| l.body.contains(QMARK)),
+        "captured: no push body ever carried the captured query: {:?}",
+        hub.proxy.log()
+    );
+
+    a.cli(&["erase", "--memory", &id, "--confirm"]);
+
+    let conn = a.open();
+    let redacted: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM candidate_observations WHERE instr(text, ?1) > 0",
+            [CMARK],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert_eq!(redacted, 0, "the purge redacted the candidate's passage");
+    assert_eq!(
+        replica_columns_holding(&conn, QMARK),
+        Vec::<String>::new(),
+        "redacted: still no replica table carries the captured query"
+    );
+    drop(conn);
+
+    a.sync();
+    assert!(
+        !hub.proxy.log().iter().any(|l| l.body.contains(QMARK)),
+        "redacted: still no push body carries the captured query: {:?}",
+        hub.proxy.log()
+    );
 }
