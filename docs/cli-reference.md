@@ -1851,8 +1851,9 @@ Examples:
   comemory sync --allow-secret deadbeef
   comemory sync --action auto --path /path/to/repo
   comemory sync daemon status
-  comemory sync daemon install
-  comemory sync daemon start
+  comemory sync daemon ensure
+  comemory sync daemon restart
+  comemory sync daemon repair
   comemory sync daemon stop
   comemory sync daemon uninstall
   comemory sync daemon run

@@ -105,20 +105,25 @@ _None at the `auth` level._ Nested subcommand required: `login` | `status` |
 - **Expect:** exit 0, and `comemory sync --action status` reports `pending ≥ 1`
 - **Covered by:** `tests/cli__auth.rs::a_save_still_succeeds_when_the_platform_is_unreachable`
 
-### auth-12 The daemon is opt-in and the old opt-out is gone
+### auth-12 A plain login always reports `daemon.skipped: false`
 
-- **Flags:** `--daemon`
+- **Flags:** _(none)_
 - **Command:** `comemory auth login`, then `comemory auth login --no-daemon`
-- **Expect:** the plain login reports `daemon.skipped: true`; `--no-daemon`
-  exits 2 as an unknown argument.
-- **Covered by:** `tests/cli__auth.rs::a_plain_login_installs_no_daemon_and_the_old_opt_out_is_gone`
+- **Expect:** `login` is a `Required` command (#257): preflight already
+  ensured a coordinator before it ran, so `daemon.skipped` is always
+  `false` now — kept in the schema, not a live switch. `--no-daemon`, which
+  opted out of the old opt-in install, is still refused as an unknown
+  argument (exit 2), not ignored.
+- **Covered by:** `tests/cli__auth.rs::login_reports_skipped_false_and_the_removed_no_daemon_flag_is_refused`
 
-### auth-13 `--daemon` takes the install path
+### auth-13 `--daemon` is a deprecated no-op
 
 - **Flags:** `--daemon`
 - **Command:** `comemory auth login --daemon`
-- **Expect:** the report says `daemon.skipped: false`
-- **Covered by:** `tests/cli__auth.rs::login_with_the_daemon_flag_asks_for_the_unit`
+- **Expect:** parses (hidden from `--help`) and warns on stderr that it is
+  deprecated; the report is unchanged (`daemon.skipped: false`) — the
+  coordinator is always ensured, not something this flag ever started.
+- **Covered by:** `tests/cli__auth.rs::login_with_the_deprecated_daemon_flag_still_logs_in_and_warns`
 
 ### auth-03 Logout removes auth.json
 
