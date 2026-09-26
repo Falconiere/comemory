@@ -154,7 +154,7 @@ pub async fn channel_loop<R: OffRuntime + Sync>(
 /// without it the clock's sub-second remainder stands in, which is a weaker
 /// spread but still a spread — unlike a constant, which would line every
 /// client of a restarted platform up on the same reconnect instant.
-fn rand_fraction() -> f64 {
+pub(crate) fn rand_fraction() -> f64 {
     let mut bytes = [0_u8; 2];
     if std::fs::File::open("/dev/urandom")
         .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes))
