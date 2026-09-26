@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use crate::config::Paths;
 use crate::domains::sync::daemon::client::{self, Probe};
 use crate::domains::sync::daemon::readiness::Readiness;
-use crate::domains::sync::daemon::{identity, spawn, supervisor};
+use crate::domains::sync::daemon::{identity, runtime_record, spawn, supervisor};
 use crate::prelude::*;
 use crate::utilities::file_lock::FileLock;
 
@@ -121,6 +121,20 @@ fn stop_if_healthy(paths: &Paths, deadline: Instant) {
     }
 }
 
+/// Best-effort courtesy cleanup for an orphaned coordinator: `daemon.json`
+/// can outlive the process that wrote it (a crash, a SIGKILL). Never load
+/// bearing — [`supervisor::signal_stale_pid`] itself verifies the pid is
+/// still literally `comemory` before sending anything, so a stray process
+/// that merely recycled the pid, or one for a different data directory
+/// entirely, is left alone.
+fn signal_stale_record(paths: &Paths) {
+    if let Some(record) = runtime_record::read(paths)
+        && let Err(e) = supervisor::signal_stale_pid(record.pid)
+    {
+        tracing::debug!(error = %e, pid = record.pid, "stale daemon.json pid check failed");
+    }
+}
+
 /// Serialize on [`ENSURE_LOCK`], re-probe (a racer may have just fixed it),
 /// then write/start the backend `[`supervisor::detect`]` chooses.
 fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
@@ -158,6 +172,8 @@ fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
     // directory never race for `daemon.lock`.
     if evicting {
         stop_if_healthy(paths, deadline);
+    } else {
+        signal_stale_record(paths);
     }
 
     let canonical = identity::canonical_data_dir(paths)?;
