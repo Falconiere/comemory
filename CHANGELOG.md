@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-09-25
+
+### Fixed
+
+- handle stale v2-stamped auth credentials ([#299](https://github.com/Falconiere/comemory/pull/299))
+
 ## [0.49.0] - 2026-09-25
 
 ### Added
