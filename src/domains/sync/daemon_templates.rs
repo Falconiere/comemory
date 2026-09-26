@@ -1,4 +1,5 @@
-//! Plist / systemd unit file text for the sync daemon.
+//! Plist / systemd unit file text for the required sync daemon, one per
+//! canonical data directory ([`crate::domains::sync::daemon::identity`]).
 
 use std::path::Path;
 
@@ -9,8 +10,13 @@ fn xml_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Render the LaunchAgent plist body for label `io.comemory.sync`.
-pub fn render_launch_agent_plist(exe: &Path, data_dir: &Path) -> String {
+/// Render the LaunchAgent plist body for `label`.
+///
+/// `KeepAlive.SuccessfulExit = false`: a graceful stop (exit 0, e.g.
+/// `comemory sync daemon stop`) is not respawned; a crash is. The next
+/// ordinary CLI command brings a stopped coordinator back (D10).
+pub fn render_launch_agent_plist(label: &str, exe: &Path, data_dir: &Path) -> String {
+    let label_s = xml_escape(label);
     let exe_s = xml_escape(&exe.display().to_string());
     let data_s = xml_escape(&data_dir.display().to_string());
     let log_dir = data_dir.join("logs");
@@ -22,10 +28,12 @@ pub fn render_launch_agent_plist(exe: &Path, data_dir: &Path) -> String {
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>io.comemory.sync</string>
+  <string>{label_s}</string>
   <key>ProgramArguments</key>
   <array>
     <string>{exe_s}</string>
+    <string>--data-dir</string>
+    <string>{data_s}</string>
     <string>sync</string>
     <string>daemon</string>
     <string>run</string>
@@ -33,7 +41,10 @@ pub fn render_launch_agent_plist(exe: &Path, data_dir: &Path) -> String {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>WorkingDirectory</key>
   <string>{data_s}</string>
   <key>EnvironmentVariables</key>
@@ -51,19 +62,19 @@ pub fn render_launch_agent_plist(exe: &Path, data_dir: &Path) -> String {
     )
 }
 
-/// Render the systemd user unit body.
+/// Render the systemd user unit body for `unit_name`'s description.
 pub fn render_systemd_unit(exe: &Path, data_dir: &Path) -> String {
     // systemd treats `%` as a specifier; double it in paths.
     let exe_s = exe.display().to_string().replace('%', "%%");
     let data_s = data_dir.display().to_string().replace('%', "%%");
     format!(
         r"[Unit]
-Description=comemory organization sync daemon
+Description=comemory sync daemon ({data_s})
 Documentation=https://comemory.io/docs
 
 [Service]
 Type=simple
-ExecStart={exe_s} sync daemon run
+ExecStart={exe_s} --data-dir {data_s} sync daemon run
 WorkingDirectory={data_s}
 Environment=COMEMORY_DATA_DIR={data_s}
 Restart=on-failure
@@ -74,3 +85,7 @@ WantedBy=default.target
 "
     )
 }
+
+#[cfg(test)]
+#[path = "tests/daemon_templates.rs"]
+mod tests;

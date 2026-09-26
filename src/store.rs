@@ -141,6 +141,9 @@ pub mod query_expansions;
 /// Shared random-hex id generation (`/dev/urandom`), the neutral home for
 /// both `serve::security` and `maintenance::gc`.
 pub mod random_id;
+/// Read-only probe of whether `comemory.db` is absent, current, behind or
+/// ahead — the resident coordinator's gate, which never migrates.
+pub mod readiness;
 /// The `ATTACH`-based rebuild preservation copy: entry point, `DETACH`
 /// guarantee, and the two attached-DB schema-probe helpers.
 pub mod rebuild_copy;

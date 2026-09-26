@@ -414,6 +414,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/completions.rs | comemory::cli::completions; preserve | none | none | delivery::cli | src/cli/completions.rs | retain |
 | src/cli/consolidate.rs | comemory::cli::consolidate; preserve | none | none | delivery::cli | src/cli/consolidate.rs | retain |
 | src/cli/context.rs | comemory::cli::context; preserve | none | none | delivery::cli | src/cli/context.rs | retain |
+| src/cli/daemon_preflight.rs | private | src/cli/tests/daemon_preflight.rs | none | delivery::cli | src/cli/daemon_preflight.rs | retain |
 | src/cli/delete.rs | comemory::cli::delete; preserve | none | none | delivery::cli | src/cli/delete.rs | retain |
 | src/cli/distill.rs | comemory::cli::distill; preserve | none | none | delivery::cli | src/cli/distill.rs | retain |
 | src/cli/doctor.rs | comemory::cli::doctor; preserve | none | none | delivery::cli | src/cli/doctor.rs | retain |
@@ -465,6 +466,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/stats.rs | comemory::cli::stats; preserve | none | none | delivery::cli | src/cli/stats.rs | retain |
 | src/cli/sync.rs | comemory::cli::sync; preserve | none | none | delivery::cli | src/cli/sync.rs | retain |
 | src/cli/sync_auto.rs | comemory::cli::sync_auto; preserve | none | none | delivery::cli | src/cli/sync_auto.rs | retain |
+| src/cli/sync_daemon.rs | comemory::cli::sync_daemon; preserve | src/cli/tests/sync_daemon.rs | none | delivery::cli | src/cli/sync_daemon.rs | retain |
 | src/cli/sync_exchange_render.rs | comemory::cli::sync_exchange_render; preserve | none | none | delivery::cli | src/cli/sync_exchange_render.rs | retain |
 | src/cli/sync_render.rs | comemory::cli::sync_render; preserve | src/cli/tests/sync_render.rs | none | delivery::cli | src/cli/sync_render.rs | retain |
 | src/cli/tune.rs | comemory::cli::tune; preserve | none | none | delivery::cli | src/cli/tune.rs | retain |
@@ -710,6 +712,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/retrieval/unified.rs | comemory::domains::retrieval::unified; crate-root-alias | src/domains/retrieval/tests/unified.rs | none | domains::retrieval | src/domains/retrieval/unified.rs | retain |
 | src/domains/retrieval/unified/fuse_domains.rs | comemory::domains::retrieval::unified::fuse_domains; crate-root-alias | none | none | domains::retrieval | src/domains/retrieval/unified/fuse_domains.rs | retain |
 | src/domains/sync.rs | comemory::domains::sync; crate-root-alias | none | none | domains::sync | src/domains/sync.rs | retain |
+| src/domains/sync/auth_barrier.rs | comemory::domains::sync::auth_barrier; preserve | src/domains/sync/tests/auth_barrier.rs | none | domains::sync | src/domains/sync/auth_barrier.rs | retain |
 | src/domains/sync/auth_file.rs | comemory::domains::sync::auth_file; crate-root-alias | src/domains/sync/tests/auth_file.rs | none | domains::sync | src/domains/sync/auth_file.rs | retain |
 | src/domains/sync/auto.rs | comemory::domains::sync::auto; preserve | src/domains/sync/tests/auto.rs | none | domains::sync | src/domains/sync/auto.rs | retain |
 | src/domains/sync/client.rs | comemory::domains::sync::client; crate-root-alias | src/domains/sync/tests/client.rs; src/domains/sync/tests/client_https.rs | none | domains::sync | src/domains/sync/client.rs | retain |
@@ -723,7 +726,24 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/code_plan.rs | comemory::domains::sync::code_plan; crate-root-alias | src/domains/sync/tests/code_plan.rs | none | domains::sync | src/domains/sync/code_plan.rs | retain |
 | src/domains/sync/code_repo_push.rs | comemory::domains::sync::code_repo_push; preserve | none | none | domains::sync | src/domains/sync/code_repo_push.rs | retain |
 | src/domains/sync/daemon.rs | comemory::domains::sync::daemon; crate-root-alias | src/domains/sync/tests/daemon.rs | none | domains::sync | src/domains/sync/daemon.rs | retain |
-| src/domains/sync/daemon_templates.rs | comemory::domains::sync::daemon_templates; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_templates.rs | retain |
+| src/domains/sync/daemon/channel.rs | comemory::domains::sync::daemon::channel; preserve | none | none | domains::sync | src/domains/sync/daemon/channel.rs | retain |
+| src/domains/sync/daemon/client.rs | comemory::domains::sync::daemon::client; preserve | src/domains/sync/daemon/tests/client.rs | none | domains::sync | src/domains/sync/daemon/client.rs | retain |
+| src/domains/sync/daemon/control.rs | comemory::domains::sync::daemon::control; preserve | none | none | domains::sync | src/domains/sync/daemon/control.rs | retain |
+| src/domains/sync/daemon/coordinator.rs | comemory::domains::sync::daemon::coordinator; preserve | none | none | domains::sync | src/domains/sync/daemon/coordinator.rs | retain |
+| src/domains/sync/daemon/ensure.rs | comemory::domains::sync::daemon::ensure; preserve | src/domains/sync/daemon/tests/ensure.rs | none | domains::sync | src/domains/sync/daemon/ensure.rs | retain |
+| src/domains/sync/daemon/handshake.rs | comemory::domains::sync::daemon::handshake; preserve | src/domains/sync/daemon/tests/handshake.rs | none | domains::sync | src/domains/sync/daemon/handshake.rs | retain |
+| src/domains/sync/daemon/identity.rs | comemory::domains::sync::daemon::identity; preserve | src/domains/sync/daemon/tests/identity.rs | none | domains::sync | src/domains/sync/daemon/identity.rs | retain |
+| src/domains/sync/daemon/readiness.rs | comemory::domains::sync::daemon::readiness; preserve | none | none | domains::sync | src/domains/sync/daemon/readiness.rs | retain |
+| src/domains/sync/daemon/runtime_record.rs | comemory::domains::sync::daemon::runtime_record; preserve | src/domains/sync/daemon/tests/runtime_record.rs | none | domains::sync | src/domains/sync/daemon/runtime_record.rs | retain |
+| src/domains/sync/daemon/server.rs | comemory::domains::sync::daemon::server; preserve | none | none | domains::sync | src/domains/sync/daemon/server.rs | retain |
+| src/domains/sync/daemon/socket_path.rs | comemory::domains::sync::daemon::socket_path; preserve | src/domains/sync/daemon/tests/socket_path.rs | none | domains::sync | src/domains/sync/daemon/socket_path.rs | retain |
+| src/domains/sync/daemon/spawn.rs | comemory::domains::sync::daemon::spawn; preserve | src/domains/sync/daemon/tests/spawn.rs | none | domains::sync | src/domains/sync/daemon/spawn.rs | retain |
+| src/domains/sync/daemon/state.rs | comemory::domains::sync::daemon::state; preserve | none | none | domains::sync | src/domains/sync/daemon/state.rs | retain |
+| src/domains/sync/daemon/status_view.rs | comemory::domains::sync::daemon::status_view; preserve | src/domains/sync/daemon/tests/status_view.rs | none | domains::sync | src/domains/sync/daemon/status_view.rs | retain |
+| src/domains/sync/daemon/supervisor.rs | comemory::domains::sync::daemon::supervisor; preserve | src/domains/sync/daemon/tests/supervisor.rs | none | domains::sync | src/domains/sync/daemon/supervisor.rs | retain |
+| src/domains/sync/daemon/watchdog.rs | comemory::domains::sync::daemon::watchdog; preserve | none | none | domains::sync | src/domains/sync/daemon/watchdog.rs | retain |
+| src/domains/sync/daemon/worker.rs | comemory::domains::sync::daemon::worker; preserve | none | none | domains::sync | src/domains/sync/daemon/worker.rs | retain |
+| src/domains/sync/daemon_templates.rs | comemory::domains::sync::daemon_templates; crate-root-alias | src/domains/sync/tests/daemon_templates.rs | none | domains::sync | src/domains/sync/daemon_templates.rs | retain |
 | src/domains/sync/daemon_unit.rs | comemory::domains::sync::daemon_unit; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_unit.rs | retain |
 | src/domains/sync/exchange.rs | comemory::domains::sync::exchange; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/sync/exchange/tests/changes.rs; src/domains/sync/exchange/tests/import.rs | none | domains::sync | src/domains/sync/exchange.rs | retain |
 | src/domains/sync/exchange/changes.rs | comemory::domains::sync::exchange::changes; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::sync | src/domains/sync/exchange/changes.rs | retain |
@@ -798,6 +818,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/drain/verify.rs | comemory::domains::sync::drain::verify; preserve | src/domains/sync/drain/tests/verify.rs | none | domains::sync | src/domains/sync/drain/verify.rs | retain |
 | src/domains/sync/drain/replay.rs | comemory::domains::sync::drain::replay; preserve | none | none | domains::sync | src/domains/sync/drain/replay.rs | retain |
 | src/domains/sync/drain/adopt.rs | comemory::domains::sync::drain::adopt; preserve | src/domains/sync/drain/tests/adopt.rs | none | domains::sync | src/domains/sync/drain/adopt.rs | retain |
+| src/domains/sync/drain/stop.rs | comemory::domains::sync::drain::stop; preserve | src/domains/sync/drain/tests/stop.rs | none | domains::sync | src/domains/sync/drain/stop.rs | retain |
 | src/errors.rs | comemory::errors; preserve | none | none | shared::root | src/errors.rs | retain |
 | src/lib.rs | private | none | none | shared::root | src/lib.rs | retain |
 | src/main.rs | private | none | none | shared::root | src/main.rs | retain |
@@ -960,6 +981,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/replica_staging.rs | comemory::store::replica_staging; preserve | src/store/tests/replica_staging.rs | none | infrastructure::store | src/store/replica_staging.rs | retain |
 | src/store/memory_intent.rs | comemory::store::memory_intent; preserve | src/store/tests/memory_intent.rs | none | infrastructure::store | src/store/memory_intent.rs | retain |
 | src/store/needs_embedding.rs | comemory::store::needs_embedding; preserve | src/store/tests/needs_embedding.rs | none | infrastructure::store | src/store/needs_embedding.rs | retain |
+| src/store/readiness.rs | comemory::store::readiness; preserve | src/store/tests/readiness.rs | none | infrastructure::store | src/store/readiness.rs | retain |
 | src/store/sources.rs | comemory::store::sources; preserve | src/store/tests/sources.rs | none | infrastructure::store | src/store/sources.rs | retain |
 | src/store/stats_counts.rs | comemory::store::stats_counts; breaking 0.36.0 docs/guides/runtime-orm.md#rust-api | src/store/tests/stats_counts.rs | none | infrastructure::store | src/store/stats_counts.rs | retain |
 | src/store/sync_binding.rs | comemory::store::sync_binding; preserve | src/store/tests/sync_binding.rs | none | infrastructure::store | src/store/sync_binding.rs | retain |

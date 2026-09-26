@@ -14,10 +14,13 @@ snippet-free projection for each approved canonical repository (paths, blob OIDs
 manifest. `[sync] code_index = false` turns it off; `skip_repos` withholds a
 repo's index along with its memories.
 
-Most users never run this: `comemory auth login` performs the first full sync,
-`save` and `delete` push inline afterwards, and [`comemory watch`](watch.md)
-covers the pull direction. The user-level daemon is opt-in
-(`comemory auth login --daemon`) for headless hosts.
+Most users never run this by hand: `comemory auth login` performs the first
+full sync, `save` and `delete` push inline afterwards, and the required
+resident coordinator (`comemory sync daemon …`, #257) keeps pulling and
+retrying whatever an inline push could not finish — [`comemory
+watch`](watch.md) attaches to that same coordinator rather than running its
+own loop. See [cloud-sync.md](../guides/cloud-sync.md) for the coordinator's
+lifecycle.
 
 **Runnable tests:** `tests/cli__sync.rs`, `tests/cli__sync_auto.rs`
 
@@ -48,21 +51,30 @@ push, and report it as `refresh` (`refreshed: N of M hooked repo(s)` on a
 TTY).
 
 `--action auto` is the unattended pass comemory's git hooks and the agent
-`SessionStart` hook fire, from any cwd: index `--path` (when given), refresh
-every stale hooked repo, then — only when logged in — pull, push, and push the
-code of repos whose index moved. It needs no login, prints nothing without
-`--json`, and exits 0 even when a network leg failed (the failure is in
-`error`). Passes serialize on `sync.lock`; a trigger that finds a pass already
-queued exits with `{"action":"auto","coalesced":true}`.
+`SessionStart` hook fire, from any cwd. With the required coordinator running
+(the ordinary case), it queues a wake over the coordinator's control socket
+and returns — the coordinator does the indexing, refresh, pull and push, so
+two hooks racing each other coalesce there instead. Only under the
+`COMEMORY_SYNC_DAEMON=0` harness switch, where no coordinator exists to wake,
+does it fall back to running the pass in-process: index `--path` (when
+given), refresh every stale hooked repo, then — only when logged in — pull,
+push, and push the code of repos whose index moved, serialized on
+`sync.lock`, with a trigger that finds a pass already queued exiting
+`{"action":"auto","coalesced":true}`. Either way it needs no login, prints
+nothing without `--json`, and exits 0 even when a network leg failed (the
+failure is in `error`).
 
 `--action status` reports `pending` — how many local writes are still owed to
-the platform — beside the two cursors, and one `code` row per indexed repo
-(local head, last pushed head, `moved_since_push`, plus `withheld=worktree` /
+the platform — beside the two cursors, the coordinator's own live `daemon`
+status (state, detail, whether its version matches this binary — never an
+`ensure`, purely a read), and one `code` row per indexed repo (local head,
+last pushed head, `moved_since_push`, plus `withheld=worktree` /
 `withheld=missing_root` / `withheld=no_checkout` on a row the push never
 offers).
 
-Nested: `comemory sync daemon {install,uninstall,start,stop,status,run}` —
-see [cloud-sync.md](../guides/cloud-sync.md).
+Nested: `comemory sync daemon {ensure,status,restart,repair,stop,uninstall,run}`
+— see [cloud-sync.md](../guides/cloud-sync.md). `install`/`start` are hidden
+deprecated aliases of `repair`/`ensure`.
 
 There is no `--workspace`: the org-scoped key names the only workspace it can
 reach. Switching organization means running `comemory auth login` again.

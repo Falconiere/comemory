@@ -227,6 +227,14 @@ impl Client {
             serde_json::to_vec_pretty(&auth).unwrap(),
         )
         .expect("write auth.json");
+        // A real login (`AuthFile::save`) always clears the logout barrier
+        // (#257); this writes the same file a login would, so it must too —
+        // otherwise a `write_auth` right after a real `auth logout` in the
+        // same test still reads back as logged out.
+        comemory::domains::sync::auth_barrier::clear(&comemory::config::Paths::new(
+            self.data_dir(),
+        ))
+        .expect("clear logout barrier");
     }
 
     /// Approve `repos` for the key `(api_url, workspace)` at `revision`, through

@@ -18,10 +18,23 @@ embedder = { max-threads = 1 }
 # alternation branch rather than a rename of this group.
 env-mutating = { max-threads = 1 }
 
+# Each of these tests spawns one or more real `comemory sync daemon run`
+# processes. A freshly linked debug binary's first several spawns pay macOS
+# code-signing/Gatekeeper verification, which serializes across concurrent
+# `exec`s of the same file; running many of these tests at once turns a
+# ~1-2s spawn into a double-digit-second one and starves the wait bound.
+# Bounding parallelism keeps spawn latency predictable without weakening
+# what each test asserts.
+daemon = { max-threads = 4 }
+
 [[profile.default.overrides]]
 filter = 'test(/embedder|memory_index|code_index/)'
 test-group = 'embedder'
 
 [[profile.default.overrides]]
-filter = 'test(/^(config::env::tests|store::migrate::backup::tests|store::migrate::preflight::tests|domains::sync::cloud::api_url::tests)/)'
+filter = 'binary_id(~replica_daemon) or binary_id(~replica_exchange)'
+test-group = 'daemon'
+
+[[profile.default.overrides]]
+filter = 'test(/^(config::env::tests|store::migrate::backup::tests|store::migrate::preflight::tests|domains::sync::cloud::api_url::tests|domains::sync::daemon::supervisor::tests|domains::sync::daemon::status_view::tests)/)'
 test-group = 'env-mutating'

@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange daemon)
 
 case_name=""
 platform_root=""
@@ -180,6 +180,20 @@ run_exchange() {
   log_ok "replication" "exchange client suite passed"
 }
 
+# The required resident coordinator (#257): discovery, preflight, lifecycle
+# (ensure/restart/repair/stop/uninstall), auth/logout/status through it,
+# triggers (hooks, save, the workspace channel), `watch` attached to it, and
+# backlog/verify robustness. Real processes, real signals, a real engine hub
+# behind a real fault proxy, in-repo like the contract case.
+run_daemon() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_daemon --test replica_daemon_2 \
+      --test replica_daemon_3 --test replica_daemon_4 --test replica_daemon_5
+  )
+  log_ok "replication" "required sync daemon suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -267,5 +281,6 @@ case "$case_name" in
   documents) run_documents ;;
   events) run_events ;;
   exchange) run_exchange ;;
+  daemon) run_daemon ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

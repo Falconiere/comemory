@@ -51,6 +51,8 @@ pub mod retry_after;
 pub mod session;
 /// The `exchange` block of `sync --action status`.
 pub mod status;
+/// Whether a drain must stop at its next boundary (logout, shutdown).
+pub mod stop;
 /// One request builder and one answer classification for upstream calls.
 pub mod transport;
 /// The first pass after a key selects `replica-v1`.
@@ -84,7 +86,8 @@ pub struct Drained {
 }
 
 /// Drain `auth`'s key: run passes until one ends without `more` (the inline
-/// push runs exactly one). A policy that changes under a pass is reloaded and
+/// push runs exactly one), or a logout or shutdown stops the run
+/// ([`stop::requested`], [`End::Cancelled`]). A policy that changes under a pass is reloaded and
 /// the pass run once more at once; a second change backs off.
 ///
 /// # Errors
@@ -103,6 +106,11 @@ pub fn drain(
     let mut drained = Drained::default();
     let mut reloaded = false;
     loop {
+        if stop::requested(paths) {
+            drained.exchange.end = End::Cancelled;
+            drained.exchange.more = false;
+            return Ok(drained);
+        }
         let mut session = match session::open(conn, cfg, auth, mode)? {
             Opened::Ready(session) => session,
             Opened::Skipped(row) => {

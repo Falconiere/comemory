@@ -18,7 +18,7 @@ use crate::domains::sync::drain::replay::{self, Replayed};
 use crate::domains::sync::drain::report::{End, Report};
 use crate::domains::sync::drain::session::{self, Legs, Mode, Session};
 use crate::domains::sync::drain::transport::Failure;
-use crate::domains::sync::drain::{adopt, code_capture, holds, network, rebootstrap};
+use crate::domains::sync::drain::{adopt, code_capture, holds, network, rebootstrap, stop};
 use crate::domains::sync::replica::contract::CursorRef;
 use crate::domains::sync::replica::contract_views::ManifestResponse;
 use crate::prelude::*;
@@ -215,9 +215,9 @@ impl<'a> Pass<'a> {
                 self.report.end = end;
                 return Ok(None);
             }
-            if budget.is_some_and(|b| started.elapsed() >= b) {
-                self.report.end = End::Budget;
-                self.report.more = true;
+            if let Some(end) = stop::boundary(self.step.paths, started, budget) {
+                self.report.more = matches!(end, End::Budget | End::Cancelled);
+                self.report.end = end;
                 return Ok(None);
             }
         }

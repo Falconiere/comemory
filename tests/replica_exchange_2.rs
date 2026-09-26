@@ -8,7 +8,9 @@
 //! The exchange client (#255), part 2: draining a large durable backlog in
 //! one run (AC-4), and a budgeted daemon pass that reschedules without
 //! sleeping, yields to an inline save, and survives `SIGTERM`/`SIGKILL`
-//! (AC-5).
+//! (AC-5). The daemon here is the required resident coordinator (#257):
+//! `SIGTERM` exits gracefully within its documented stop-grace bound rather
+//! than immediately, so a pass reaches its own batch boundary first.
 //!
 //! Real `comemory serve` hubs, the real CLI binary, real SQLite, real HTTP
 //! through the fault proxy's request log (never a mocked clock).
@@ -276,7 +278,11 @@ fn budgeted_pass_reschedules_and_yields() {
     let _ = daemon.kill();
     let _ = daemon.wait();
 
-    // --- (b) SIGTERM mid-drain exits within 2s. ---
+    // --- (b) SIGTERM mid-drain exits gracefully within the coordinator's
+    // stop-grace bound (#257: up to 15s so a pass reaches its own batch
+    // boundary — pull, then push, then save the cursor — rather than being
+    // cut off mid-page; the daemon's own supervisor unit encodes the same
+    // bound). ---
     let c = approved_client(&hub);
     std::fs::write(c.data_dir().join("config.toml"), budget_config).expect("write C config");
 
@@ -289,20 +295,20 @@ fn budgeted_pass_reschedules_and_yields() {
         .expect("send SIGTERM");
     assert!(sent.success(), "kill -TERM {pid} was accepted");
 
-    let term_deadline = Instant::now() + Duration::from_secs(2);
-    let mut exited = false;
+    let term_deadline = Instant::now() + Duration::from_secs(30);
+    let mut exit_status = None;
     while Instant::now() < term_deadline {
-        if term_daemon
-            .try_wait()
-            .expect("poll after SIGTERM")
-            .is_some()
-        {
-            exited = true;
+        if let Some(status) = term_daemon.try_wait().expect("poll after SIGTERM") {
+            exit_status = Some(status);
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert!(exited, "a daemon sent SIGTERM mid-drain exits within 2s");
+    assert_eq!(
+        exit_status.and_then(|s| s.code()),
+        Some(0),
+        "a daemon sent SIGTERM mid-drain exits 0 within the stop-grace bound"
+    );
     let _ = term_daemon.kill();
     let _ = term_daemon.wait();
 

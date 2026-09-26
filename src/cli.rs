@@ -30,6 +30,8 @@ pub mod completions;
 pub mod consolidate;
 /// `comemory context`: headline memory + code bundle for a query.
 pub mod context;
+/// The required resident daemon's per-command classification and preflight.
+mod daemon_preflight;
 /// `comemory delete`: soft-delete one memory.
 pub mod delete;
 /// `comemory distill`: extract explicit saves and propose platform candidates.
@@ -110,6 +112,8 @@ pub mod stats;
 pub mod sync;
 /// `comemory sync --action auto`: the hook-fired pass and its `--json`.
 pub mod sync_auto;
+/// `comemory sync daemon`: the required resident coordinator's lifecycle.
+pub mod sync_daemon;
 /// Rendering of the `exchange` state for `comemory sync`.
 pub mod sync_exchange_render;
 /// Rendering for `comemory sync` (TTY + `--json` shapes).
@@ -305,6 +309,10 @@ fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
 /// place that knows about every variant, keeping individual subcommand modules
 /// free of cross-references.
 pub async fn run(cli: Cli) -> Result<()> {
+    // The required resident coordinator (#257): verified/repaired before
+    // most commands, per its own exhaustive classification (exempt/
+    // best-effort/required — see the module doc).
+    daemon_preflight::run(cli.data_dir.as_deref(), &cli.cmd)?;
     // `serve` and `mcp` reconcile from inside their own startup, where they
     // know whether the session is read-only; doing it here too would write
     // through a `--read-only` session, which is exactly what that flag

@@ -1,10 +1,10 @@
 //! What a pass (or a run of passes) did — the `exchange` leg every sync
 //! report carries.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Why a pass ended.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum End {
     /// Cursor at the captured head and nothing eligible left to send.
@@ -18,6 +18,8 @@ pub enum End {
     NoProgress,
     /// A request failed after its in-pass retries, or the pass made none.
     Network,
+    /// A logout or a coordinator shutdown stopped the run at a boundary.
+    Cancelled,
 }
 
 /// The `exchange` leg of a sync report.

@@ -9,10 +9,10 @@
 use std::time::{Duration, Instant};
 
 use crate::config::{Config, Paths};
-use crate::domains::sync::drain::network;
 use crate::domains::sync::drain::report::{End, Report};
 use crate::domains::sync::drain::session::{self, Legs, Mode, Session};
 use crate::domains::sync::drain::transport::Failure;
+use crate::domains::sync::drain::{network, stop};
 use crate::domains::sync::pull::{self, PullStats};
 use crate::domains::sync::push::{self, PushStats, Wire};
 use crate::prelude::*;
@@ -132,9 +132,9 @@ impl Pass<'_> {
                 report.end = End::NoProgress;
                 return Ok(None);
             }
-            if budget.is_some_and(|b| started.elapsed() >= b) {
-                report.end = End::Budget;
-                report.more = true;
+            if let Some(end) = stop::boundary(self.paths, started, budget) {
+                report.more = matches!(end, End::Budget | End::Cancelled);
+                report.end = end;
                 return Ok(None);
             }
         }
