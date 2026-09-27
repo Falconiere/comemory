@@ -90,10 +90,7 @@ fn accept(intent: Intent, probe: Probe) -> Option<Ensured> {
         return None;
     }
     let current = identity::BinaryIdentity::current().ok()?;
-    let same_binary = readiness.version == current.version && readiness.binary == current.path;
-    let acceptable =
-        same_binary || (matches!(intent, Intent::Preflight) && readiness.binary.exists());
-    acceptable.then(|| Ensured {
+    fits(intent, &readiness, &current).then(|| Ensured {
         ready: true,
         action: "none",
         // `detect` is a pure env/OS check (no I/O), so the fast accept path
@@ -103,6 +100,58 @@ fn accept(intent: Intent, probe: Probe) -> Option<Ensured> {
         daemon: Some(*readiness),
         error: None,
     })
+}
+
+/// Whether a verified coordinator may stay for `intent`. `ensure`,
+/// `restart` and `repair` want exactly the caller's binary: version, path
+/// and file (#258 D3a). Preflight keeps any coordinator whose binary still
+/// exists unless [`preflight_replaces`] says the file under it was swapped.
+fn fits(intent: Intent, readiness: &Readiness, current: &identity::BinaryIdentity) -> bool {
+    if matches!(intent, Intent::Preflight) {
+        return preflight_accepts(readiness, current);
+    }
+    readiness.version == current.version
+        && readiness.binary == current.path
+        && (current.file.is_none() || readiness.binary_file == current.file)
+}
+
+/// Preflight's verdict on a verified coordinator: keep it unless its binary
+/// is gone or [`preflight_replaces`] holds.
+#[must_use]
+pub fn preflight_accepts(readiness: &Readiness, current: &identity::BinaryIdentity) -> bool {
+    readiness.binary.exists()
+        && !preflight_replaces(
+            readiness,
+            current,
+            identity::file_id(&current.path).as_deref(),
+        )
+}
+
+/// #258 D3c: a coordinator at the caller's own path is replaced by
+/// preflight only when the caller *is* the file on disk (`on_disk`) and the
+/// coordinator runs a different file — an installer renamed a new binary
+/// over it and died before `ensure`. A coordinator predating `binary_file`
+/// is compared by version instead. A caller still running an older file
+/// (its own file is not the one on disk) never evicts.
+#[must_use]
+pub fn preflight_replaces(
+    readiness: &Readiness,
+    caller: &identity::BinaryIdentity,
+    on_disk: Option<&str>,
+) -> bool {
+    if readiness.binary != caller.path {
+        return false;
+    }
+    let Some(own) = caller.file.as_deref() else {
+        return false;
+    };
+    if on_disk != Some(own) {
+        return false;
+    }
+    match readiness.binary_file.as_deref() {
+        Some(running) => running != own,
+        None => readiness.version != caller.version,
+    }
 }
 
 /// Best-effort graceful stop, waiting up to `deadline` — the caller's own
@@ -125,26 +174,27 @@ fn stop_if_healthy(paths: &Paths, deadline: Instant) {
 /// then write/start the backend `[`supervisor::detect`]` chooses.
 fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
     let lock_path = paths.data_dir().join(ENSURE_LOCK);
-    let lock = loop {
+    let _lock = loop {
         if let Some(lock) = FileLock::try_acquire(&lock_path, "daemon-ensure")? {
-            break Some(lock);
+            break lock;
         }
-        if let Probe::Healthy(readiness) = client::probe(paths, Duration::from_millis(200)) {
-            return Ok(Ensured {
-                ready: true,
-                action: "none",
-                supervisor: supervisor::detect().unwrap_or(supervisor::Kind::External),
-                notes: vec!["a concurrent ensure already repaired the coordinator".into()],
-                daemon: Some(*readiness),
-                error: None,
-            });
+        if let Some(mut repaired) = accept(
+            settled(intent),
+            client::probe(paths, Duration::from_millis(200)),
+        ) {
+            repaired
+                .notes
+                .push("a concurrent ensure already repaired the coordinator".into());
+            return Ok(repaired);
         }
         if Instant::now() >= deadline {
-            break None;
+            let supervisor = supervisor::detect().unwrap_or(supervisor::Kind::Process);
+            return Ok(not_ready(
+                supervisor,
+                Vec::new(),
+                local_service_error(supervisor),
+            ));
         }
-    };
-    let Some(_lock) = lock else {
-        return Ok(timed_out(paths, deadline));
     };
 
     repair_locked(paths, intent, deadline)
@@ -169,7 +219,7 @@ fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ens
     let canonical = identity::canonical_data_dir(paths)?;
     let kind = supervisor::detect()?;
     if kind == supervisor::Kind::External {
-        return wait_or_fail(paths, kind, Vec::new(), deadline, "none");
+        return wait_or_fail(paths, intent, kind, Vec::new(), deadline, "none");
     }
     let (chosen, notes) = start_backend(paths, &canonical, kind)?;
     let action = if evicting {
@@ -177,7 +227,7 @@ fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ens
     } else {
         action_of(intent)
     };
-    wait_or_fail(paths, chosen, notes, deadline, action)
+    wait_or_fail(paths, intent, chosen, notes, deadline, action)
 }
 
 /// Try `kind`; on any failure fall back to [`supervisor::Kind::Process`]
@@ -223,15 +273,30 @@ const fn action_of(intent: Intent) -> &'static str {
 
 fn wait_or_fail(
     paths: &Paths,
+    intent: Intent,
     supervisor: supervisor::Kind,
     notes: Vec<String>,
     deadline: Instant,
     action: &'static str,
 ) -> Result<Ensured> {
+    let current = identity::BinaryIdentity::current()?;
+    let mut stale = false;
     loop {
         if let Probe::Healthy(readiness) =
             client::probe(paths, remaining(deadline, client::PROBE_BOUND))
         {
+            if !fits(settled(intent), &readiness, &current) {
+                stale = true;
+                if Instant::now() >= deadline {
+                    return Ok(not_ready(
+                        supervisor,
+                        notes,
+                        "the previous coordinator did not stop in time".into(),
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
             return Ok(Ensured {
                 ready: true,
                 action,
@@ -242,42 +307,41 @@ fn wait_or_fail(
             });
         }
         if Instant::now() >= deadline {
-            return Ok(Ensured {
-                ready: false,
-                action: "none",
-                supervisor,
-                notes,
-                daemon: None,
-                error: Some(local_service_error(supervisor)),
-            });
+            let error = if stale {
+                "the previous coordinator did not stop in time".into()
+            } else {
+                local_service_error(supervisor)
+            };
+            return Ok(not_ready(supervisor, notes, error));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
 }
 
-fn timed_out(paths: &Paths, deadline: Instant) -> Ensured {
-    let supervisor = supervisor::detect().unwrap_or(supervisor::Kind::Process);
-    match client::probe(paths, remaining(deadline, Duration::from_millis(200))) {
-        Probe::Healthy(readiness) => Ensured {
-            ready: true,
-            action: "none",
-            supervisor,
-            notes: Vec::new(),
-            daemon: Some(*readiness),
-            error: None,
-        },
-        _ => Ensured {
-            ready: false,
-            action: "none",
-            supervisor,
-            notes: Vec::new(),
-            daemon: None,
-            error: Some(local_service_error(supervisor)),
-        },
+fn not_ready(supervisor: supervisor::Kind, notes: Vec<String>, error: String) -> Ensured {
+    Ensured {
+        ready: false,
+        action: "none",
+        supervisor,
+        notes,
+        daemon: None,
+        error: Some(error),
+    }
+}
+
+/// The identity a finished repair must show: `repair` rewrote the unit for
+/// this binary, so it settles on this binary exactly like `ensure`.
+const fn settled(intent: Intent) -> Intent {
+    match intent {
+        Intent::Repair => Intent::Ensure,
+        other => other,
     }
 }
 
 fn local_service_error(supervisor: supervisor::Kind) -> String {
+    if supervisor == supervisor::Kind::External {
+        return "sync daemon not ready (external) — restart your comemory sync daemon run under your supervisor so it runs this binary".into();
+    }
     format!(
         "sync daemon not ready ({}) — run `comemory sync daemon run` in the foreground, or `comemory sync daemon repair`",
         supervisor.as_str()

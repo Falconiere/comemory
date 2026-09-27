@@ -48,6 +48,7 @@ fn readiness_for(data_dir: &Path) -> Readiness {
         protocol: 1,
         version: env!("CARGO_PKG_VERSION").into(),
         binary: "/usr/bin/comemory".into(),
+        binary_file: None,
         pid: std::process::id(),
         instance: "0123456789abcdef".into(),
         started_at: "2026-09-25T10:00:00Z".into(),

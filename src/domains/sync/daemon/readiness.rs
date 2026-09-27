@@ -18,6 +18,10 @@ pub struct Readiness {
     pub version: String,
     /// The coordinator binary's canonical path.
     pub binary: PathBuf,
+    /// `<dev>:<ino>` of the executable file it runs (#258); absent from a
+    /// coordinator that predates it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary_file: Option<String>,
     /// Its process id.
     pub pid: u32,
     /// Random per start: two starts of one pid never share it.

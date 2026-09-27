@@ -22,6 +22,15 @@ fn launch_agent_plist_names_label_data_dir_and_run_args() {
     assert!(body.contains("/tmp/cm"));
     assert!(body.contains("KeepAlive"));
     assert!(body.contains("<false/>"), "SuccessfulExit is false (D10)");
+    assert!(
+        body.contains("<key>COMEMORY_DAEMON_SUPERVISOR</key>\n    <string>launchd</string>"),
+        "readiness reports the real backend (#258 D12)"
+    );
+    assert_eq!(
+        body.matches("<key>COMEMORY_").count(),
+        2,
+        "no other env key"
+    );
 }
 
 #[test]
@@ -36,4 +45,6 @@ fn systemd_unit_names_exec_and_data_dir() {
     assert!(body.contains("COMEMORY_DATA_DIR=/home/u/.comemory"));
     assert!(body.contains("WantedBy=default.target"));
     assert!(body.contains("Restart=on-failure"));
+    assert!(body.contains("Environment=COMEMORY_DAEMON_SUPERVISOR=systemd"));
+    assert_eq!(body.matches("Environment=").count(), 2, "no other env key");
 }

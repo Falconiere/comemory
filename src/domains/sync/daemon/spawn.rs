@@ -25,6 +25,9 @@ pub fn spawn(paths: &Paths) -> Result<()> {
         .arg("--data-dir")
         .arg(&canonical)
         .args(["sync", "daemon", "run", "--detach-session"])
+        // The protected `auth.json` is the resident coordinator's only
+        // credential; an installer shell's exported key must not become it.
+        .env_remove("COMEMORY_API_KEY")
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr);

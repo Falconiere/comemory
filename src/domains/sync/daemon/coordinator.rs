@@ -195,6 +195,7 @@ fn initial_readiness(paths: &Paths, canonical: &Path, socket: &Path) -> Result<R
         protocol: PROTOCOL,
         version: me.version,
         binary: me.path,
+        binary_file: me.file,
         pid: std::process::id(),
         instance: random_hex(8)?,
         started_at: network::now()?,
