@@ -163,3 +163,54 @@ fn a_zero_pause_wait_is_refused_rather_than_failing_busy_on_any_contention() {
         "the error must name the offending key: {err}"
     );
 }
+
+#[test]
+fn milliseconds_read_as_milliseconds_not_minutes() {
+    assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
+    assert_eq!(parse_duration("5s").unwrap(), Duration::from_secs(5));
+    assert_eq!(parse_duration("2m").unwrap(), Duration::from_mins(2));
+    assert_eq!(parse_duration("1h").unwrap(), Duration::from_hours(1));
+    assert_eq!(
+        parse_duration("1500MS").unwrap(),
+        Duration::from_millis(1500)
+    );
+}
+
+#[test]
+fn an_unknown_unit_is_refused_rather_than_guessed_from_its_first_letter() {
+    for raw in [
+        "5x", "5sec", "5secs", "5min", "5hours", "5 s", "5ms2", "5mss", "5",
+    ] {
+        let err = parse_duration(raw).expect_err(raw);
+        assert!(
+            err.to_string().contains(raw.trim()),
+            "the error must quote the value: {raw} → {err}"
+        );
+    }
+    let err = parse_duration("5sec").unwrap_err().to_string();
+    assert!(
+        err.contains("ms, s, m, h, or d"),
+        "names the accepted units: {err}"
+    );
+}
+
+#[test]
+fn a_sub_second_pause_wait_loads_through_the_config_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[sync]\npause_wait = \"500ms\"\n").unwrap();
+
+    let cfg = comemory::config::Config::defaults()
+        .with_file(&path)
+        .expect("a millisecond bound loads");
+    assert_eq!(
+        cfg.sync.pause_wait_duration().unwrap(),
+        Duration::from_millis(500)
+    );
+
+    std::fs::write(&path, "[sync]\npause_wait = \"5sec\"\n").unwrap();
+    let err = comemory::config::Config::defaults()
+        .with_file(&path)
+        .expect_err("an unknown unit must not load");
+    assert!(err.to_string().contains("pause_wait"), "{err}");
+}

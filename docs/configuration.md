@@ -106,6 +106,13 @@ table.
 
 Set these in `config.toml`; they have **no** environment override.
 
+Every `sync.*` duration (`daemon_interval`, `verify_every`,
+`push_on_save_timeout`, `pause_wait`, `request_timeout`, `pass_budget`) is a
+number followed by exactly one unit — `ms`, `s`, `m`, `h` or `d`,
+case-insensitive (`500ms`, `5s`, `2m`, `1h`, `7d`). Any other suffix (`5sec`,
+`5min`, `5 s`) is refused with a config error rather than read by its first
+letter.
+
 | Knob | Purpose | Default |
 |------|---------|---------|
 | `prune.trash_retention_days` | Days a soft-deleted memory stays in `memories/.trash/` before `comemory gc` reaps it. Must be ≥ 1. Editable live through `PUT /api/v1/gc/policy`. | `30` |

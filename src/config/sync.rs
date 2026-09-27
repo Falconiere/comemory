@@ -331,17 +331,23 @@ fn warn_deprecated(key: &str) {
     );
 }
 
-/// Parse a compact duration string: `<n><s|m|h|d>` (e.g. `5m`, `7d`, `1h`).
+/// Parse a compact duration string: `<n><unit>` with the unit exactly one of
+/// `ms`, `s`, `m`, `h` or `d`, case-insensitive (e.g. `500ms`, `5m`, `7d`).
+/// Anything else after the number is refused rather than guessed: `5sec` or
+/// `300ms` read by its first letter would silently mean seconds or minutes.
+///
+/// # Errors
+/// [`Error::Config`] naming `raw` when it is empty, has no number or no
+/// unit, names another unit, or overflows.
 pub fn parse_duration(raw: &str) -> Result<Duration> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(Error::Config("duration must not be empty".into()));
     }
-    let (num, unit) = trimmed
-        .char_indices()
-        .find(|(_, c)| !c.is_ascii_digit())
-        .map(|(i, c)| (&trimmed[..i], c))
+    let split = trimmed
+        .find(|c: char| !c.is_ascii_digit())
         .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: missing unit")))?;
+    let (num, unit) = trimmed.split_at(split);
     if num.is_empty() {
         return Err(Error::Config(format!(
             "invalid duration `{raw}`: missing number"
@@ -350,24 +356,26 @@ pub fn parse_duration(raw: &str) -> Result<Duration> {
     let n: u64 = num
         .parse()
         .map_err(|_| Error::Config(format!("invalid duration `{raw}`: bad number")))?;
-    let secs = match unit {
-        's' | 'S' => n,
-        'm' | 'M' => n
+    let overflow = || Error::Config(format!("invalid duration `{raw}`: overflow"));
+    match unit.to_ascii_lowercase().as_str() {
+        "ms" => Ok(Duration::from_millis(n)),
+        "s" => Ok(Duration::from_secs(n)),
+        "m" => n
             .checked_mul(60)
-            .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: overflow")))?,
-        'h' | 'H' => n
+            .map(Duration::from_secs)
+            .ok_or_else(overflow),
+        "h" => n
             .checked_mul(3600)
-            .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: overflow")))?,
-        'd' | 'D' => n
+            .map(Duration::from_secs)
+            .ok_or_else(overflow),
+        "d" => n
             .checked_mul(86_400)
-            .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: overflow")))?,
-        _ => {
-            return Err(Error::Config(format!(
-                "invalid duration `{raw}`: unit must be s, m, h, or d"
-            )));
-        }
-    };
-    Ok(Duration::from_secs(secs))
+            .map(Duration::from_secs)
+            .ok_or_else(overflow),
+        _ => Err(Error::Config(format!(
+            "invalid duration `{raw}`: unit `{unit}` is not one of ms, s, m, h, or d"
+        ))),
+    }
 }
 
 /// When `[embed].model` is set, mirror it into `schema_meta.memory_vector_model`.

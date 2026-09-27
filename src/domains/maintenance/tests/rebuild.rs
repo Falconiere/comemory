@@ -733,9 +733,9 @@ fn a_rebuild_waits_pause_wait_for_a_held_save_lock_then_fails_busy_and_changes_n
     let inode = live_inode(&home);
     let paths = Paths::new(home.path());
     let mut cfg = Config::defaults();
-    // Whole seconds: `[sync]` durations take an `s`/`m`/`h`/`d` unit, so
-    // `300ms` would read as 300 minutes.
-    cfg.sync.pause_wait = "1s".to_string();
+    // `[sync]` durations take `ms`, `s`, `m`, `h` or `d`; a sub-second bound
+    // keeps this case fast and proves milliseconds reach the lock wait.
+    cfg.sync.pause_wait = "300ms".to_string();
     // Another writer — a save in any process — holds the lock throughout.
     let _held = comemory::domains::memories::save_lock::acquire_within(
         &paths,
@@ -752,9 +752,11 @@ fn a_rebuild_waits_pause_wait_for_a_held_save_lock_then_fails_busy_and_changes_n
         matches!(err, comemory::errors::Error::Busy(_)),
         "fails busy, got: {err}"
     );
+    let waited = started.elapsed();
     assert!(
-        started.elapsed() >= std::time::Duration::from_secs(1),
-        "it waited the configured pause_wait first"
+        waited >= std::time::Duration::from_millis(300)
+            && waited < std::time::Duration::from_mins(1),
+        "it waited the configured 300 ms pause_wait, not 300 minutes: {waited:?}"
     );
     assert!(!home.path().join("comemory.db.rebuild.tmp").exists());
     assert!(!home.path().join("comemory.db.pre-rebuild.bak").exists());
