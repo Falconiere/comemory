@@ -122,14 +122,7 @@ fn report(json_flag: bool, key: &str, message: &str) -> Result<()> {
 
 fn emit_ensured(json_flag: bool, ensured: Ensured) -> Result<()> {
     if json_flag {
-        json::write(&serde_json::json!({
-            "ready": ensured.ready,
-            "action": ensured.action,
-            "supervisor": ensured.supervisor.as_str(),
-            "notes": ensured.notes,
-            "daemon": ensured.daemon,
-            "error": ensured.error,
-        }))?;
+        json::write(&ensured.to_json())?;
     } else {
         let mut out = std::io::stdout().lock();
         if ensured.ready {

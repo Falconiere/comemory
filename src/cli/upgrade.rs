@@ -10,6 +10,7 @@ use clap::Args as ClapArgs;
 use owo_colors::OwoColorize;
 
 use crate::cli::output::json;
+use crate::config::paths::resolve_data_dir;
 use crate::domains::maintenance::upgrade::{self, Report, Request, Status};
 use crate::prelude::*;
 
@@ -44,15 +45,17 @@ pub struct Args {
     pub force: bool,
 }
 
-/// Run the upgrade and render its report. `data_dir` is unused: nothing
-/// here touches the store. Under `--json` the installer runs quietly so
-/// stdout carries only the report; on a TTY it paints its own progress.
-pub async fn run(a: Args, json_flag: bool, _data_dir: Option<PathBuf>) -> Result<()> {
+/// Run the upgrade and render its report. `data_dir` names whose sync
+/// daemon must end up on the installed binary; the store itself is never
+/// opened. Under `--json` the installer runs quietly so stdout carries only
+/// the report; on a TTY it paints its own progress.
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let req = Request {
         check: a.check,
         version: a.version,
         force: a.force,
         quiet: json_flag,
+        data_dir: resolve_data_dir(data_dir),
     };
     let report = upgrade::run(&req)?;
     if json_flag {
@@ -94,6 +97,16 @@ fn render(out: &mut impl std::io::Write, r: &Report) -> Result<()> {
     writeln!(out, "{}", detail.dimmed())?;
     if let Some(hint) = &r.hint {
         writeln!(out, "  {hint}")?;
+    }
+    if let Some(d) = &r.daemon {
+        writeln!(
+            out,
+            "  sync daemon ready ({}, pid {}, {}) \u{2192} {}",
+            d.version,
+            d.pid,
+            d.supervisor,
+            d.data_dir.display()
+        )?;
     }
     Ok(())
 }
