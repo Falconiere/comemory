@@ -180,8 +180,8 @@ things are still refused outright: a review that did not finish, and a report
 that names findings but no severity breakdown — an unclassified finding is not
 provably below the bar.
 
-Required checks on `main` are `test`, `review`, `plan`, `gitleaks`,
-`Opengrep OSS` and `merge-gate`. If a check is renamed, add the new name in
+Required checks on `main` are `test`, `review`, `plan`, `gitleaks` and
+`Opengrep OSS`. If a check is renamed, add the new name in
 branch protection or the gate silently stops blocking. The required name is
 still `test` (the thin propagator), not `test-suite`.
 
@@ -190,19 +190,9 @@ still `test` (the thin propagator), not `test-suite`.
 Auto-merge is on, and no approving review is required: a PR armed with
 `gh pr merge <n> --auto --squash --delete-branch` merges by itself once
 
-- every required check above is green,
+- every required check above is green, and
 - every review thread is resolved (branch protection's required conversation
-  resolution), and
-- `merge-gate` passes: the PR carries the `merge-approved` label, which the
-  Code Review bot sets when its verdict is approved, and every review thread
-  has a reply from an account other than the one that opened it. The bot's
-  own follow-ups inside its threads do not count as replies. A resolved
-  code-scanning alert thread needs no reply.
-
-`merge-gate` is the shared `falconiere/toolu-ghactions/merge-gate@v8` action,
-the same check every Falconiere repo requires. It first runs as a job of
-`code-review.yml`, after the reviewer has posted. `merge-gate.yml` runs it again on each thread reply and each manual
-label change. Rerunning the review workflow runs it again too.
+  resolution).
 
 Arm auto-merge with your own token, never from a workflow's `GITHUB_TOKEN`: a
 merge performed by `GITHUB_TOKEN` fires no `push` workflows, so `test` on
