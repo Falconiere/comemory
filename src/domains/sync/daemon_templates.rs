@@ -51,6 +51,8 @@ pub fn render_launch_agent_plist(label: &str, exe: &Path, data_dir: &Path) -> St
   <dict>
     <key>COMEMORY_DATA_DIR</key>
     <string>{data_s}</string>
+    <key>COMEMORY_DAEMON_SUPERVISOR</key>
+    <string>launchd</string>
   </dict>
   <key>StandardOutPath</key>
   <string>{stdout}</string>
@@ -77,6 +79,7 @@ Type=simple
 ExecStart={exe_s} --data-dir {data_s} sync daemon run
 WorkingDirectory={data_s}
 Environment=COMEMORY_DATA_DIR={data_s}
+Environment=COMEMORY_DAEMON_SUPERVISOR=systemd
 Restart=on-failure
 RestartSec=5
 

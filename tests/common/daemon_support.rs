@@ -15,6 +15,7 @@
 //! to the pid it answers with, SIGKILL if it lingers, and the data directory
 //! removed, which the coordinator's own guard also watches for.
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -267,6 +268,16 @@ impl DaemonHome {
 
 impl Drop for DaemonHome {
     fn drop(&mut self) {
+        // A failing test's evidence: the coordinator's own logs, before the
+        // private root (and with it the logs) is deleted.
+        if std::thread::panicking() {
+            for name in ["sync-daemon.err.log", "sync-daemon.out.log"] {
+                let log = self.data.join("logs").join(name);
+                if let Ok(text) = std::fs::read_to_string(&log) {
+                    let _ = writeln!(std::io::stderr(), "--- {} ---\n{text}", log.display());
+                }
+            }
+        }
         if let Ok(canonical) = std::fs::canonicalize(&self.data) {
             for pid in coordinator_pids_for(&canonical) {
                 terminate(pid);

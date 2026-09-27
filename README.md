@@ -107,9 +107,10 @@ curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
 # Homebrew (macOS + Linuxbrew)
 brew install Falconiere/tap/comemory
 
-# From a local checkout (not published to crates.io)
+# From a local checkout (not published to crates.io) — the finalizing
+# wrapper: builds, installs, then starts and verifies the sync daemon
 git clone https://github.com/Falconiere/comemory && cd comemory
-cargo install --path .
+bash scripts/dev-install.sh
 ```
 
 The installer detects the platform, resolves the newest release (or the one
@@ -123,6 +124,23 @@ installs and registers Bash, Zsh, Fish, and PowerShell completions. Both steps
 are idempotent: a `comemory` already on `PATH` and the generated completions
 are refreshed in place, which is how `comemory upgrade` moves both to the next
 release afterwards.
+
+The installer does not finish there: it also starts and verifies the
+required sync daemon on the file it just placed, and only reports success
+once that coordinator answers ready on that exact binary — a mismatched or
+unreachable one rolls back the swap (or, on a first install, keeps the new
+file) and exits 69. `scripts/dev-install.sh` does the same after `cargo
+install`, which is why it's the way to finish a source install rather than a
+bare `cargo install --path .`. A bare `cargo install` or a binary copied into
+place by hand is **unmanaged placement** — nothing runs `sync daemon ensure`
+for you, so either the next ordinary command's own startup preflight repairs
+it, or run `comemory sync daemon ensure` yourself right after. Homebrew's own
+`post_install` hook is pending
+[homebrew-tap#1](https://github.com/Falconiere/homebrew-tap/issues/1); until
+it ships, `brew install` / `brew upgrade` do not by themselves guarantee an
+immediately ready daemon (`comemory upgrade` already covers that channel).
+See [docs/guides/upgrading.md](docs/guides/upgrading.md) and
+[docs/configuration.md](docs/configuration.md) for the failure modes.
 
 | Flag / env | Effect |
 |---|---|

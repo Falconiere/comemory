@@ -49,7 +49,8 @@ if [[ "$WITH_TOOLS" -eq 1 ]]; then
   fi
 fi
 
-BIN_DIR="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}/bin}"
+BIN_DIR="${CARGO_INSTALL_ROOT:+$CARGO_INSTALL_ROOT/bin}"
+BIN_DIR="${BIN_DIR:-${CARGO_HOME:-$HOME/.cargo}/bin}"
 BIN_PATH="$BIN_DIR/comemory"
 
 if [[ ! -x "$BIN_PATH" ]]; then
@@ -58,6 +59,33 @@ fi
 
 INSTALLED_VERSION="$("$BIN_PATH" --version 2>/dev/null || true)"
 log_ok "$STEP" "installed $BIN_PATH ($INSTALLED_VERSION)"
+
+# json_str <json> <key> — a `"key":"value"` string out of compact JSON, the
+# same whitespace-tolerant sed install.sh's ensure_daemon uses (D2).
+json_str() { printf '%s' "$1" | sed -n "s/.*\"$2\":[[:space:]]*\"\([^\"]*\)\".*/\\1/p"; }
+
+ensure_daemon() {
+  want="${INSTALLED_VERSION#* }"; path="$(cd -P "$BIN_DIR" && pwd -P)/comemory"
+  errfile="$(mktemp)"
+  out="$("$BIN_PATH" sync daemon ensure --json 2>"$errfile")" || true
+  got_v="$(json_str "$out" version)"; got_b="$(json_str "$out" binary)"
+  case "$out" in
+    *'"ready":true'*)
+      if [[ "$got_v" == "$want" && "$got_b" == "$path" ]]; then
+        pid="$(printf '%s' "$out" | sed -n 's/.*"pid":\([0-9]*\).*/\1/p')"
+        log_ok "$STEP" "sync daemon ready (v$got_v, pid $pid, $(json_str "$out" supervisor))"
+        rm -f "$errfile"
+        return 0
+      fi
+      ;;
+  esac
+  cause="$(json_str "$out" error)"
+  [[ -n "$cause" ]] || cause="$(tail -n 1 "$errfile" 2>/dev/null || true)"
+  [[ -n "$cause" ]] || cause="it answered as ${got_v:-nothing} at ${got_b:-nowhere}, expected $want at $path"
+  rm -f "$errfile"
+  die "$STEP" "cargo replaced $BIN_PATH, but the sync daemon is not ready: $cause — run: $BIN_PATH sync daemon repair"
+}
+ensure_daemon
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

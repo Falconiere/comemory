@@ -21,8 +21,14 @@ use release_server::{ReleaseServer, host_target, stage_release, tooling_present}
 use serde_json::Value;
 use tempfile::TempDir;
 
+#[path = "common/daemon_support.rs"]
+mod daemon_support;
+#[path = "common/install_rig.rs"]
+mod install_rig;
 #[path = "common/release_server.rs"]
 mod release_server;
+
+use install_rig::{Rig, current_tag};
 
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
@@ -47,6 +53,7 @@ fn run(exe: &Path, base: &str, home: &TempDir, args: &[&str]) -> Output {
         .env("COMEMORY_RELEASES_URL", base)
         .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
         .env("HOME", home.path())
+        .env("COMEMORY_DAEMON_SUPERVISOR", "process")
         .env_remove("XDG_CONFIG_HOME")
         .env_remove("XDG_DATA_HOME")
         .env_remove("ZDOTDIR")
@@ -68,6 +75,27 @@ fn json(out: &Output) -> Value {
             String::from_utf8_lossy(&out.stdout)
         )
     })
+}
+
+/// Install the real binary with the real `install.sh` into the rig's
+/// private `bin/` and return its canonical path.
+fn installed(rig: &Rig) -> PathBuf {
+    let dir = rig.dir("bin");
+    rig.install_ok(&dir, &["--quiet"]);
+    std::fs::canonicalize(dir.join("comemory")).unwrap()
+}
+
+/// `exe <args>` in the rig's private home against its release server.
+fn rig_run(rig: &Rig, exe: &Path, args: &[&str]) -> Output {
+    rig.home
+        .command_with_binary(exe)
+        .env("COMEMORY_RELEASES_URL", &rig.srv.base)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("ZDOTDIR")
+        .args(args)
+        .output()
+        .expect("run comemory")
 }
 
 fn version_of(exe: &Path) -> String {
@@ -122,37 +150,29 @@ fn check_reports_up_to_date_when_latest_is_the_running_build() {
 
 #[test]
 fn upgrade_replaces_the_running_binary_in_place() {
-    if host_target().is_none() || !tooling_present() {
-        return;
-    }
-    let home = TempDir::new().unwrap();
-    let srv = server(&home, "v9.9.9");
-    stage_release(
-        &home.path().join("releases"),
-        "v9.9.9",
-        host_target().unwrap(),
-    );
-    let exe = private_copy(&home);
-    let report = json(&run(&exe, &srv.base, &home, &["--json", "upgrade"]));
-    assert_eq!(report["status"], "upgraded");
+    let rig = Rig::new(&[]);
+    let exe = installed(&rig);
+    let report = json(&rig_run(
+        &rig,
+        &exe,
+        &["--json", "upgrade", "--force", "--version", &current_tag()],
+    ));
+    assert_eq!(report["status"], "installed");
     assert_eq!(report["current"], CURRENT);
-    assert_eq!(report["target"], "9.9.9");
+    assert_eq!(report["target"], CURRENT);
+    assert_eq!(report["exe"], Value::String(exe.display().to_string()));
     assert_eq!(
-        report["exe"],
-        Value::String(std::fs::canonicalize(&exe).unwrap().display().to_string())
+        report["daemon"]["binary"],
+        Value::String(exe.display().to_string())
     );
-    assert_eq!(
-        version_of(&exe),
-        "comemory 9.9.9",
-        "the file on disk is the release"
-    );
+    assert_eq!(version_of(&exe), format!("comemory {CURRENT}"));
     for relative in [
         ".local/share/bash-completion/completions/comemory",
         ".local/share/zsh/site-functions/_comemory",
         ".config/fish/completions/comemory.fish",
         ".config/powershell/comemory.ps1",
     ] {
-        let path = home.path().join(relative);
+        let path = rig.home.home_dir().join(relative);
         assert!(path.is_file(), "upgrade did not refresh {}", path.display());
     }
     let leftovers: Vec<_> = std::fs::read_dir(exe.parent().unwrap())
@@ -163,16 +183,15 @@ fn upgrade_replaces_the_running_binary_in_place() {
         .collect();
     assert!(
         leftovers.is_empty(),
-        "no staging files left behind: {leftovers:?}"
+        "no staging, rollback or lock files left behind: {leftovers:?}"
     );
 }
 
 #[test]
 fn upgrade_is_a_no_op_when_already_on_latest() {
-    let home = TempDir::new().unwrap();
-    let srv = server(&home, &format!("v{CURRENT}"));
-    let exe = private_copy(&home);
-    let out = run(&exe, &srv.base, &home, &["upgrade"]);
+    let rig = Rig::new(&[]);
+    let exe = installed(&rig);
+    let out = rig_run(&rig, &exe, &["upgrade"]);
     assert!(
         out.status.success(),
         "{}",
@@ -182,6 +201,7 @@ fn upgrade_is_a_no_op_when_already_on_latest() {
     // The TTY line is colored (`0.18.2` is bold), so match its two halves.
     assert!(stdout.contains("is up to date"), "{stdout}");
     assert!(stdout.contains(CURRENT), "{stdout}");
+    assert!(stdout.contains("sync daemon ready"), "{stdout}");
     assert_eq!(version_of(&exe), format!("comemory {CURRENT}"));
 }
 
@@ -206,36 +226,28 @@ fn pinning_an_older_release_needs_force() {
 }
 
 #[test]
-fn force_installs_a_pinned_older_release() {
-    if host_target().is_none() || !tooling_present() {
-        return;
-    }
-    let home = TempDir::new().unwrap();
-    let srv = server(&home, "v9.9.9");
-    stage_release(
-        &home.path().join("releases"),
-        "v0.0.1",
-        host_target().unwrap(),
-    );
-    let exe = private_copy(&home);
-    let out = run(
+fn a_forced_release_that_cannot_become_ready_is_rolled_back_with_69() {
+    let rig = Rig::new(&["v0.0.1"]);
+    let exe = installed(&rig);
+    let out = rig_run(
+        &rig,
         &exe,
-        &srv.base,
-        &home,
         &["--json", "upgrade", "--version", "v0.0.1", "--force"],
     );
-    let report = json(&out);
-    assert_eq!(report["status"], "installed");
-    assert_eq!(report["latest"], "9.9.9");
-    assert_eq!(report["target"], "0.0.1");
-    assert_eq!(version_of(&exe), "comemory 0.0.1");
+    assert_eq!(out.status.code(), Some(69), "EX_UNAVAILABLE");
+    assert!(out.stdout.is_empty(), "no success JSON");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("rolled back to comemory"), "{stderr}");
+    assert_eq!(version_of(&exe), format!("comemory {CURRENT}"));
 }
 
 #[test]
 fn installer_failure_is_relayed_and_leaves_the_binary_alone() {
-    if host_target().is_none() || !tooling_present() {
-        return;
-    }
+    assert!(
+        host_target().is_some(),
+        "comemory publishes a build for this host"
+    );
+    assert!(tooling_present(), "tar, xz, curl and sh are required");
     let home = TempDir::new().unwrap();
     let srv = server(&home, "v9.9.9");
     let root = home.path().join("releases");

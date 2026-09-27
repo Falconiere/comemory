@@ -5,6 +5,7 @@
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tokio::net::UnixListener;
@@ -45,9 +46,12 @@ pub fn bind(socket: &Path) -> Result<UnixListener> {
     Ok(UnixListener::from_std(listener)?)
 }
 
-/// Remove our socket on the way out; a leftover would only cost a probe.
-pub fn unbind(socket: &Path, instance: &str, paths: &Paths) {
-    let ours = std::fs::symlink_metadata(socket).is_ok_and(|m| m.file_type().is_socket());
+/// Remove our socket on the way out — only if the path still holds the
+/// inode this instance bound (`bound`). The lock is already free by then,
+/// so a replacement may have bound a fresh socket at the same path; that
+/// one must survive. A leftover of ours would only cost a probe.
+pub fn unbind(socket: &Path, bound: u64, instance: &str, paths: &Paths) {
+    let ours = inode(socket) == Some(bound);
     if ours && let Err(e) = std::fs::remove_file(socket) {
         tracing::debug!(error = %e, instance, data_dir = %paths.data_dir().display(), "socket removal failed");
     }
@@ -81,6 +85,7 @@ pub async fn guard(
     socket: PathBuf,
     rebind: mpsc::Sender<UnixListener>,
     shutdown: Arc<Notify>,
+    owned: Arc<AtomicU64>,
 ) {
     let mut bound = inode(&socket);
     loop {
@@ -97,6 +102,7 @@ pub async fn guard(
             Ok(listener) => {
                 tracing::info!(socket = %socket.display(), "sync daemon re-bound its socket");
                 bound = inode(&socket);
+                owned.store(bound.unwrap_or(0), Ordering::SeqCst);
                 if rebind.send(listener).await.is_err() {
                     return;
                 }
@@ -107,9 +113,14 @@ pub async fn guard(
 }
 
 /// The socket's inode, when a socket is there.
-fn inode(socket: &Path) -> Option<u64> {
+#[must_use]
+pub fn inode(socket: &Path) -> Option<u64> {
     std::fs::symlink_metadata(socket)
         .ok()
         .filter(|m| m.file_type().is_socket())
         .map(|m| m.ino())
 }
+
+#[cfg(test)]
+#[path = "tests/watchdog.rs"]
+mod tests;

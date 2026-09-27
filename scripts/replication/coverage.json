@@ -196,6 +196,33 @@
     ],
     "R-11": [
       "daemon"
+    ],
+    "I-1": [
+      "install"
+    ],
+    "I-2": [
+      "install"
+    ],
+    "I-3": [
+      "install"
+    ],
+    "I-4": [
+      "install"
+    ],
+    "I-5": [
+      "install"
+    ],
+    "I-6": [
+      "install"
+    ],
+    "I-7": [
+      "install"
+    ],
+    "I-8": [
+      "install"
+    ],
+    "I-9": [
+      "install"
     ]
   }
 }

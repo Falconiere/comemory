@@ -201,22 +201,84 @@ jobs:
             exit 1
           fi
 
+  # Managed install/update lifecycle (#258): the real installer, real
+  # published old binaries and two real branch builds, against the real user
+  # service manager of a disposable runner (launchd's GUI domain on macOS,
+  # a lingering systemd --user manager on Ubuntu) plus a headless pass with
+  # no user bus. The native modes never run on a developer's session: the
+  # script refuses them outside CI. A missing service manager fails the job
+  # rather than letting a silent `process` fallback pass.
+  daemon-install:
+    if: ${{ !github.event.pull_request.draft && !startsWith(github.head_ref, 'release-plz-') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, mode: native }
+          - { os: ubuntu-22.04, mode: native }
+          - { os: ubuntu-22.04, mode: headless }
+    runs-on: ${{ matrix.os }}
+    env:
+      COMEMORY_INDEXING_AUTO_REINDEX: "off"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: "1.95"
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: daemon-install-${{ matrix.mode }}
+      - name: Install sqlite3
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+      - name: Require the launchd GUI domain
+        if: runner.os == 'macOS'
+        run: launchctl print "gui/$(id -u)" >/dev/null
+      - name: Start a systemd user manager
+        if: runner.os == 'Linux' && matrix.mode == 'native'
+        run: |
+          set -euo pipefail
+          sudo loginctl enable-linger "$USER"
+          uid="$(id -u)"
+          for _ in $(seq 1 30); do
+            [ -S "/run/user/$uid/bus" ] && break
+            sleep 1
+          done
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+      - name: Require systemd --user
+        if: runner.os == 'Linux' && matrix.mode == 'native'
+        run: systemctl --user show-environment >/dev/null
+      - name: Run the lifecycle suite
+        run: bash scripts/test-daemon-install.sh --${{ matrix.mode }}
+
   # Required-check facade. Branch protection requires the check name `test`.
-  # When `test-suite` is skipped (release-plz PR) or succeeds, this job is
-  # green; when the suite fails or is cancelled, this job fails too.
+  # When `test-suite` and `daemon-install` are each skipped (release-plz PR)
+  # or succeed, this job is green; when either fails or is cancelled, this
+  # job fails too.
   # `always()` (not `!cancelled()`): a cancelled suite must still turn the
   # required `test` check red rather than leaving it missing.
   test:
-    needs: test-suite
+    needs: [test-suite, daemon-install]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
-      - name: Propagate suite result
+      - name: Propagate suite results
         run: |
-          case "${{ needs.test-suite.result }}" in
-            success|skipped) exit 0 ;;
-            *)
-              echo "::error::test-suite ended as ${{ needs.test-suite.result }}"
-              exit 1
-              ;;
-          esac
+          fail=0
+          for pair in "test-suite=${{ needs.test-suite.result }}" \
+                      "daemon-install=${{ needs.daemon-install.result }}"; do
+            case "${pair#*=}" in
+              success|skipped) ;;
+              *)
+                echo "::error::${pair%%=*} ended as ${pair#*=}"
+                fail=1
+                ;;
+            esac
+          done
+          exit "$fail"

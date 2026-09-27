@@ -22,7 +22,7 @@ pub mod release;
 /// `MAJOR.MINOR.PATCH[-pre]` parsing and ordering.
 pub mod version;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -43,6 +43,8 @@ pub struct Request {
     /// Keep the installer's output off the terminal (the `--json` path owns
     /// stdout).
     pub quiet: bool,
+    /// The data directory whose sync daemon must run the installed binary.
+    pub data_dir: PathBuf,
 }
 
 /// What happened.
@@ -79,6 +81,10 @@ pub struct Report {
     /// Advice when the command could not, or did not need to, act itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// The verified sync daemon on the installed binary; absent under
+    /// `--check`, which touches nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daemon: Option<installer::DaemonReport>,
 }
 
 /// The running build's version, from `CARGO_PKG_VERSION`.
@@ -101,6 +107,8 @@ pub fn run(req: &Request) -> Result<Report> {
     }
     if !newer && !req.force {
         if target == current {
+            let exe = installed_exe(&report)?;
+            ensure_daemon(req, &mut report, &exe, &current, false)?;
             return Ok(report);
         }
         return Err(Error::Usage(format!(
@@ -108,8 +116,46 @@ pub fn run(req: &Request) -> Result<Report> {
         )));
     }
     swap(req, &report.channel, &target)?;
-    verify(&mut report, &current, &target)?;
+    let exe = installed_exe(&report)?;
+    let installed = verify(&mut report, &exe, &current, &target)?;
+    ensure_daemon(
+        req,
+        &mut report,
+        &exe,
+        &installed,
+        installed != current || req.force,
+    )?;
     Ok(report)
+}
+
+/// The binary the channel now has installed: the file this process started
+/// from, except under Homebrew, whose `brew upgrade` links a new Cellar
+/// file (the old keg may already be cleaned up).
+fn installed_exe(report: &Report) -> Result<PathBuf> {
+    match report.channel {
+        Channel::Homebrew => installer::brew_binary(),
+        _ => Ok(report.exe.clone()),
+    }
+}
+
+/// Require the installed binary `exe`'s own `sync daemon ensure` to report
+/// a ready coordinator on `installed` (#258 D4).
+fn ensure_daemon(
+    req: &Request,
+    report: &mut Report,
+    exe: &Path,
+    installed: &Version,
+    replaced: bool,
+) -> Result<()> {
+    let daemon = installer::ensure_child(exe, &req.data_dir, installed).map_err(|cause| {
+        Error::Unavailable(format!(
+            "{} is now {installed} ({}), but the sync daemon is not ready: {cause} \u{2014} run: comemory sync daemon repair",
+            exe.display(),
+            if replaced { "binary replaced" } else { "binary unchanged" }
+        ))
+    })?;
+    report.daemon = Some(daemon);
+    Ok(())
 }
 
 /// The running, target, and (provisionally `UpToDate`) report: one round
@@ -131,6 +177,7 @@ fn resolve(req: &Request) -> Result<(Version, Version, Report)> {
         exe,
         status: Status::UpToDate,
         hint: None,
+        daemon: None,
     };
     Ok((current, target, report))
 }
@@ -150,27 +197,32 @@ fn swap(req: &Request, channel: &Channel, target: &Version) -> Result<()> {
             installer::brew_upgrade(req.quiet)
         }
         Channel::CargoInstall { source } => Err(Error::Unsupported(cargo_hint(source, target))),
-        Channel::Standalone { dir } => {
-            installer::run_script(&release::releases_url()?, &target.tag(), dir, req.quiet)
-        }
+        Channel::Standalone { dir } => installer::run_script(
+            &release::releases_url()?,
+            &target.tag(),
+            dir,
+            &req.data_dir,
+            req.quiet,
+        ),
     }
 }
 
-/// Read the installed version back off disk and settle the status. A
-/// Homebrew tap can lag a GitHub release by minutes; `brew upgrade` then
-/// leaves `current` in place, which is reported as a hint, not a failure.
-fn verify(report: &mut Report, current: &Version, target: &Version) -> Result<()> {
-    let installed = installer::installed_version(&report.exe)?;
+/// Read the installed version back off disk, settle the status, and return
+/// it. A Homebrew tap can lag a GitHub release by minutes; `brew upgrade`
+/// then leaves `current` in place, which is reported as a hint, not a
+/// failure.
+fn verify(report: &mut Report, exe: &Path, current: &Version, target: &Version) -> Result<Version> {
+    let installed = installer::installed_version(exe)?;
     if installed != *target {
         if report.channel == Channel::Homebrew && installed == *current {
             report.hint = Some(format!(
                 "the Homebrew tap still serves {installed}; {target} has not reached it yet"
             ));
-            return Ok(());
+            return Ok(installed);
         }
         return Err(Error::Other(format!(
             "{} reports {installed} after the install, expected {target}",
-            report.exe.display()
+            exe.display()
         )));
     }
     report.status = if installed > *current {
@@ -178,7 +230,7 @@ fn verify(report: &mut Report, current: &Version, target: &Version) -> Result<()
     } else {
         Status::Installed
     };
-    Ok(())
+    Ok(installed)
 }
 
 /// What to run to get `target` onto this channel — the `--check` hint.
@@ -191,12 +243,14 @@ fn act_hint(channel: &Channel, target: &Version) -> String {
 }
 
 /// A `cargo install` build is rebuilt from source, not swapped: name the
-/// recorded source and the two ways to rebuild it at `target`.
+/// recorded source and the finalizing wrapper that also starts its daemon
+/// (#258 I-7).
 fn cargo_hint(source: &str, target: &Version) -> String {
+    let tag = target.tag();
     format!(
-        "this comemory was built by `cargo install` from {source}; rebuild it with \
-         `cargo install --git https://github.com/Falconiere/comemory --tag {}` \
-         (or `git pull && cargo install --path .` in that checkout)",
-        target.tag()
+        "this comemory was built by `cargo install` from {source}; rebuild it at {tag} \
+         with the finalizing wrapper: `git checkout {tag} && bash scripts/dev-install.sh` \
+         in that checkout (a bare `cargo install` must be followed by \
+         `comemory sync daemon ensure`)"
     )
 }

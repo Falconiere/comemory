@@ -214,13 +214,28 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          sh install.sh --version "$TAG" --dir "$RUNNER_TEMP/bin" --no-modify-path
+          # The published installer must also finish on a verified sync
+          # daemon for the published binary (#258): headless here (no user
+          # bus), so `process` supervision, in a throwaway data directory.
+          export COMEMORY_DATA_DIR="$RUNNER_TEMP/data"
+          out="$(sh install.sh --version "$TAG" --dir "$RUNNER_TEMP/bin" --no-modify-path)"
+          printf '%s\n' "$out"
           got="$("$RUNNER_TEMP/bin/comemory" --version)"
           if [[ "$got" != "comemory ${TAG#v}" ]]; then
             echo "::error::installed binary reports '$got', expected 'comemory ${TAG#v}'"
             exit 1
           fi
-          echo "::notice::install.sh installed $got"
+          if ! grep -q "Sync daemon  ready (${TAG#v}, pid" <<< "$out"; then
+            echo "::error::install.sh did not report a ready sync daemon"
+            exit 1
+          fi
+          ensured="$("$RUNNER_TEMP/bin/comemory" sync daemon ensure --json)"
+          bin="$(cd -P "$RUNNER_TEMP/bin" && pwd -P)/comemory"
+          jq -e --arg v "${TAG#v}" --arg b "$bin" \
+            '.ready and .daemon.version == $v and .daemon.binary == $b' <<< "$ensured" >/dev/null \
+            || { echo "::error::sync daemon identity mismatch: $ensured"; exit 1; }
+          "$RUNNER_TEMP/bin/comemory" sync daemon uninstall
+          echo "::notice::install.sh installed $got with a verified sync daemon"
 
       - name: Curate release notes from CHANGELOG.md
         id: notes

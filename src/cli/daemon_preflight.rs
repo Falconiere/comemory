@@ -19,6 +19,7 @@ use crate::cli::{Cmd, load_config};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::config::sync::daemon_disabled;
 use crate::domains::sync::daemon::ensure::{self, Intent};
+use crate::domains::sync::daemon::identity::{self, BinaryIdentity};
 use crate::prelude::*;
 
 /// How preflight treats one command.
@@ -151,12 +152,16 @@ pub fn run(data_dir: Option<&Path>, cmd: &Cmd) -> Result<()> {
 }
 
 /// A bare probe, bounded to [`PROBE_BOUND`] — the common case (an already
-/// verified coordinator) never pays `ensure`'s lock/repair machinery.
+/// verified coordinator) never pays `ensure`'s lock/repair machinery. A
+/// coordinator still running the file an installer renamed a new binary
+/// over is not accepted here (#258 D3c), so `ensure` replaces it.
 fn quick_probe(paths: &Paths) -> bool {
-    matches!(
-        crate::domains::sync::daemon::client::probe(paths, PROBE_BOUND),
-        crate::domains::sync::daemon::client::Probe::Healthy(_)
-    )
+    let crate::domains::sync::daemon::client::Probe::Healthy(readiness) =
+        crate::domains::sync::daemon::client::probe(paths, PROBE_BOUND)
+    else {
+        return false;
+    };
+    BinaryIdentity::current().is_ok_and(|current| identity::preflight_accepts(&readiness, &current))
 }
 
 #[cfg(test)]

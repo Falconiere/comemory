@@ -655,7 +655,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/maintenance/stats.rs | comemory::domains::maintenance::stats; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/maintenance/tests/stats.rs | none | domains::maintenance | src/domains/maintenance/stats.rs | retain |
 | src/domains/maintenance/upgrade.rs | comemory::domains::maintenance::upgrade; crate-root-alias | none | none | domains::maintenance | src/domains/maintenance/upgrade.rs | retain |
 | src/domains/maintenance/upgrade/channel.rs | comemory::domains::maintenance::upgrade::channel; crate-root-alias | src/domains/maintenance/upgrade/tests/channel.rs | none | domains::maintenance | src/domains/maintenance/upgrade/channel.rs | retain |
-| src/domains/maintenance/upgrade/installer.rs | comemory::domains::maintenance::upgrade::installer; crate-root-alias | none | none | domains::maintenance | src/domains/maintenance/upgrade/installer.rs | retain |
+| src/domains/maintenance/upgrade/installer.rs | comemory::domains::maintenance::upgrade::installer; crate-root-alias | src/domains/maintenance/upgrade/tests/installer.rs | none | domains::maintenance | src/domains/maintenance/upgrade/installer.rs | retain |
 | src/domains/maintenance/upgrade/release.rs | comemory::domains::maintenance::upgrade::release; crate-root-alias | none | none | domains::maintenance | src/domains/maintenance/upgrade/release.rs | retain |
 | src/domains/maintenance/upgrade/version.rs | comemory::domains::maintenance::upgrade::version; crate-root-alias | src/domains/maintenance/upgrade/tests/version.rs | none | domains::maintenance | src/domains/maintenance/upgrade/version.rs | retain |
 | src/domains/memories.rs | comemory::domains::memories; crate-root-alias | none | none | domains::memories | src/domains/memories.rs | retain |
@@ -741,7 +741,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/daemon/state.rs | comemory::domains::sync::daemon::state; preserve | none | none | domains::sync | src/domains/sync/daemon/state.rs | retain |
 | src/domains/sync/daemon/status_view.rs | comemory::domains::sync::daemon::status_view; preserve | src/domains/sync/daemon/tests/status_view.rs | none | domains::sync | src/domains/sync/daemon/status_view.rs | retain |
 | src/domains/sync/daemon/supervisor.rs | comemory::domains::sync::daemon::supervisor; preserve | src/domains/sync/daemon/tests/supervisor.rs | none | domains::sync | src/domains/sync/daemon/supervisor.rs | retain |
-| src/domains/sync/daemon/watchdog.rs | comemory::domains::sync::daemon::watchdog; preserve | none | none | domains::sync | src/domains/sync/daemon/watchdog.rs | retain |
+| src/domains/sync/daemon/watchdog.rs | comemory::domains::sync::daemon::watchdog; preserve | src/domains/sync/daemon/tests/watchdog.rs | none | domains::sync | src/domains/sync/daemon/watchdog.rs | retain |
 | src/domains/sync/daemon/worker.rs | comemory::domains::sync::daemon::worker; preserve | none | none | domains::sync | src/domains/sync/daemon/worker.rs | retain |
 | src/domains/sync/daemon_templates.rs | comemory::domains::sync::daemon_templates; crate-root-alias | src/domains/sync/tests/daemon_templates.rs | none | domains::sync | src/domains/sync/daemon_templates.rs | retain |
 | src/domains/sync/daemon_unit.rs | comemory::domains::sync::daemon_unit; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_unit.rs | retain |
