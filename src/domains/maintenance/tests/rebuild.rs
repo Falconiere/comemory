@@ -765,3 +765,43 @@ fn a_rebuild_waits_pause_wait_for_a_held_save_lock_then_fails_busy_and_changes_n
         "nothing changed"
     );
 }
+
+#[test]
+fn a_replace_that_fails_busy_still_removes_the_staged_tmp() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "a replace held off by a writer"]);
+    let paths = Paths::new(home.path());
+    let mut cfg = Config::defaults();
+    cfg.sync.pause_wait = "1s".to_string();
+    let original = count(&open_db(&home), "SELECT count(*) FROM memories");
+
+    let staged = maintenance::rebuild::stage(&paths, &cfg).expect("stage");
+    let tmp = home.path().join("comemory.db.rebuild.tmp");
+    assert!(tmp.exists(), "stage builds the tmp db");
+    let blocker = Connection::open(paths.db_path()).expect("blocker");
+    blocker
+        .execute_batch(
+            "BEGIN IMMEDIATE; UPDATE schema_meta SET value = value WHERE key = 'version';",
+        )
+        .expect("hold the write lock");
+    let mut live = comemory::store::replace_in_place::open_destination(
+        &paths.db_path(),
+        std::time::Duration::from_secs(1),
+    )
+    .expect("open live");
+
+    let err = staged
+        .replace_into(&mut live)
+        .expect_err("a held write lock fails the replace");
+
+    assert!(matches!(err, comemory::errors::Error::Busy(_)), "{err}");
+    assert!(
+        !tmp.exists(),
+        "the consumed Staged is dropped on the error path and removes its tmp db"
+    );
+    blocker.execute_batch("ROLLBACK;").expect("release");
+    assert_eq!(
+        count(&open_db(&home), "SELECT count(*) FROM memories"),
+        original
+    );
+}
