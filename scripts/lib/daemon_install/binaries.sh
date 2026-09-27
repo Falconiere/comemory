@@ -109,8 +109,9 @@ lifecycle_tag() {
 }
 
 # build_lifecycle <suffix> <target-dir> — a scratch `git worktree` at HEAD
-# with Cargo.toml's version rewritten, `cargo update -p comemory --offline`,
-# then `cargo build --profile release-quick` sharing `target-dir` so
+# with Cargo.toml's version rewritten, `cargo update -p comemory` (offline
+# when the index is cached), then `cargo build --profile release-quick`
+# sharing `target-dir` so
 # lifecycle.2 reuses lifecycle.1's dependency compilation. Cached by HEAD sha
 # + suffix. Prints `<bin-path>\t<tag>`.
 build_lifecycle() {
@@ -136,7 +137,9 @@ build_lifecycle() {
         && mv "$scratch/Cargo.toml.new" "$scratch/Cargo.toml" || ok=0
     fi
     if [ "$ok" -eq 1 ]; then
-      (cd "$scratch" && cargo update -p comemory --offline) >&2 || ok=0
+      # Offline first (a warm developer cache); a fresh CI runner has no
+      # index yet, so fall back to a network update of comemory alone.
+      (cd "$scratch" && { cargo update -p comemory --offline || cargo update -p comemory; }) >&2 || ok=0
     fi
     if [ "$ok" -eq 1 ]; then
       (cd "$scratch" && CARGO_TARGET_DIR="$target_dir" cargo build --profile release-quick --locked) >&2 || ok=0
