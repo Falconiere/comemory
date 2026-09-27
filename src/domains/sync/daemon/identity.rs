@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Paths;
+use crate::domains::sync::daemon::readiness::Readiness;
 use crate::prelude::*;
 use crate::utilities::digest::sha256_hex;
 
@@ -87,6 +88,41 @@ fn running_file() -> Option<&'static String> {
             std::env::current_exe().ok().and_then(|exe| file_id(&exe))
         })
         .as_ref()
+}
+
+/// Preflight's verdict on a verified coordinator: keep it unless its binary
+/// is gone or [`preflight_replaces`] holds.
+#[must_use]
+pub fn preflight_accepts(readiness: &Readiness, current: &BinaryIdentity) -> bool {
+    readiness.binary.exists()
+        && !preflight_replaces(readiness, current, file_id(&current.path).as_deref())
+}
+
+/// #258 D3c: a coordinator at the caller's own path is replaced by
+/// preflight only when the caller *is* the file on disk (`on_disk`) and the
+/// coordinator runs a different file — an installer renamed a new binary
+/// over it and died before `ensure`. A coordinator predating `binary_file`
+/// is compared by version instead. A caller still running an older file
+/// (its own file is not the one on disk) never evicts.
+#[must_use]
+pub fn preflight_replaces(
+    readiness: &Readiness,
+    caller: &BinaryIdentity,
+    on_disk: Option<&str>,
+) -> bool {
+    if readiness.binary != caller.path {
+        return false;
+    }
+    let Some(own) = caller.file.as_deref() else {
+        return false;
+    };
+    if on_disk != Some(own) {
+        return false;
+    }
+    match readiness.binary_file.as_deref() {
+        Some(running) => running != own,
+        None => readiness.version != caller.version,
+    }
 }
 
 #[cfg(test)]

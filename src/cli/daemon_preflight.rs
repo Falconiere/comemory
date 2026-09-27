@@ -19,7 +19,7 @@ use crate::cli::{Cmd, load_config};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::config::sync::daemon_disabled;
 use crate::domains::sync::daemon::ensure::{self, Intent};
-use crate::domains::sync::daemon::identity::BinaryIdentity;
+use crate::domains::sync::daemon::identity::{self, BinaryIdentity};
 use crate::prelude::*;
 
 /// How preflight treats one command.
@@ -161,7 +161,7 @@ fn quick_probe(paths: &Paths) -> bool {
     else {
         return false;
     };
-    BinaryIdentity::current().is_ok_and(|current| ensure::preflight_accepts(&readiness, &current))
+    BinaryIdentity::current().is_ok_and(|current| identity::preflight_accepts(&readiness, &current))
 }
 
 #[cfg(test)]

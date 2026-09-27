@@ -239,6 +239,29 @@ wait_one_coordinator() {
 
 # stop_root <root> — terminate every coordinator this root's data dir still
 # runs (a scenario's cleanup, best effort).
+# diagnose_root <root> — on a failed scenario, what a human needs to see:
+# the data directory, the coordinator's own logs, and (native) the service
+# manager's view of this data directory's unit. Never fails the run.
+diagnose_root() {
+  local root=$1 canonical f
+  [ -d "$root/d" ] || return 0
+  canonical="$(cd -P "$root/d" && pwd -P)"
+  printf 'DIAG data dir %s:\n' "$canonical"
+  for f in "$canonical"/* "$canonical"/.[!.]*; do
+    [ -e "$f" ] && printf 'DIAG   %s\n' "$(basename "$f")"
+  done
+  for f in "$canonical"/logs/*.log; do
+    [ -f "$f" ] || continue
+    printf 'DIAG %s (tail):\n' "$f"
+    tail -n 20 "$f" 2>&1 | sed 's/^/DIAG   /'
+  done
+  [ "${MODE:-headless}" = native ] || return 0
+  case "$(uname -s)" in
+    Darwin) launchctl list 2>&1 | grep 'io.comemory.sync' | sed 's/^/DIAG launchctl /' || true ;;
+    Linux) systemctl --user list-units 'comemory-sync-*' --all 2>&1 | sed 's/^/DIAG systemctl /' || true ;;
+  esac
+}
+
 stop_root() {
   local root=$1 canonical pid
   [ -d "$root/d" ] || return 0

@@ -124,50 +124,11 @@ fn accept(intent: Intent, probe: Probe) -> Option<Ensured> {
 /// exists unless [`preflight_replaces`] says the file under it was swapped.
 fn fits(intent: Intent, readiness: &Readiness, current: &identity::BinaryIdentity) -> bool {
     if matches!(intent, Intent::Preflight) {
-        return preflight_accepts(readiness, current);
+        return identity::preflight_accepts(readiness, current);
     }
     readiness.version == current.version
         && readiness.binary == current.path
         && (current.file.is_none() || readiness.binary_file == current.file)
-}
-
-/// Preflight's verdict on a verified coordinator: keep it unless its binary
-/// is gone or [`preflight_replaces`] holds.
-#[must_use]
-pub fn preflight_accepts(readiness: &Readiness, current: &identity::BinaryIdentity) -> bool {
-    readiness.binary.exists()
-        && !preflight_replaces(
-            readiness,
-            current,
-            identity::file_id(&current.path).as_deref(),
-        )
-}
-
-/// #258 D3c: a coordinator at the caller's own path is replaced by
-/// preflight only when the caller *is* the file on disk (`on_disk`) and the
-/// coordinator runs a different file — an installer renamed a new binary
-/// over it and died before `ensure`. A coordinator predating `binary_file`
-/// is compared by version instead. A caller still running an older file
-/// (its own file is not the one on disk) never evicts.
-#[must_use]
-pub fn preflight_replaces(
-    readiness: &Readiness,
-    caller: &identity::BinaryIdentity,
-    on_disk: Option<&str>,
-) -> bool {
-    if readiness.binary != caller.path {
-        return false;
-    }
-    let Some(own) = caller.file.as_deref() else {
-        return false;
-    };
-    if on_disk != Some(own) {
-        return false;
-    }
-    match readiness.binary_file.as_deref() {
-        Some(running) => running != own,
-        None => readiness.version != caller.version,
-    }
 }
 
 /// Best-effort graceful stop, waiting up to `deadline` — the caller's own
@@ -352,7 +313,15 @@ fn wait_or_fail(
     }
 }
 
+/// A not-ready result. The notes (a supervisor fallback, say) are folded
+/// into the error too, so a caller that prints only the error — an
+/// installer — still shows why the backend it expected was not used.
 fn not_ready(supervisor: supervisor::Kind, notes: Vec<String>, error: String) -> Ensured {
+    let error = if notes.is_empty() {
+        error
+    } else {
+        format!("{error} [{}]", notes.join("; "))
+    };
     Ensured {
         ready: false,
         action: "none",

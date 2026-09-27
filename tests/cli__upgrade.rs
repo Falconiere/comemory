@@ -90,6 +90,9 @@ fn rig_run(rig: &Rig, exe: &Path, args: &[&str]) -> Output {
     rig.home
         .command_with_binary(exe)
         .env("COMEMORY_RELEASES_URL", &rig.srv.base)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("ZDOTDIR")
         .args(args)
         .output()
         .expect("run comemory")

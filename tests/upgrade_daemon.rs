@@ -43,6 +43,9 @@ fn upgrade(rig: &Rig, home: &DaemonHome, bin: &Path, args: &[&str]) -> (i32, Str
     let out = home
         .command_with_binary(bin)
         .env("COMEMORY_RELEASES_URL", &rig.srv.base)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("ZDOTDIR")
         .arg("--json")
         .args(args)
         .output()

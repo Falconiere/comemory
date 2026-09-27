@@ -81,7 +81,12 @@ impl Rig {
             .env("SHELL", "/bin/sh")
             .env_remove("COMEMORY_INSTALL_DIR")
             .env_remove("COMEMORY_VERSION")
-            .env_remove("COMEMORY_NO_MODIFY_PATH");
+            .env_remove("COMEMORY_NO_MODIFY_PATH")
+            // Shell setup must land under the private HOME, never a CI
+            // runner's real XDG directories.
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("XDG_DATA_HOME")
+            .env_remove("ZDOTDIR");
         for (k, v) in env {
             cmd.env(k, v);
         }

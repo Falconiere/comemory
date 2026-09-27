@@ -25,6 +25,7 @@ run_scenario() {
     pass "$report_name"
   else
     fail "$report_name" "$SCEN_REASON"
+    diagnose_root "$root" >&2
   fi
   stop_root "$root"
   rm -rf "$root"
