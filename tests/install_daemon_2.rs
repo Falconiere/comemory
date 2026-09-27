@@ -158,7 +158,9 @@ fn any_file_contains(root: &Path, needle: &str) -> bool {
 #[test]
 fn an_exported_api_key_never_reaches_the_coordinator_or_its_files() {
     let rig = Rig::new(&[]);
-    let key = format!("cmk_{}{}", "installer", "shellsecret0123456789");
+    // Not a credential: a unique marker in the key's shape, built at run
+    // time, searched for in the coordinator's environment and files.
+    let key = format!("cmk_marker_installer_{}", std::process::id());
     let out = rig.install(&rig.dir("bin"), &[], &[("COMEMORY_API_KEY", key.as_str())]);
     assert!(
         out.status.success(),

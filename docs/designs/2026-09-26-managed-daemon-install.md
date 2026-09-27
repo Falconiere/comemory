@@ -352,7 +352,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
     evicts.
 - **AC-7:** (I-9)
   - A `process`-supervised coordinator started by `install.sh` with
-    `COMEMORY_API_KEY` exported (a split literal, safe for gitleaks) has no
+    `COMEMORY_API_KEY` exported (a run-time marker in the key shape, not a credential) has no
     such variable in its environment (`ps eww` / `/proc/<pid>/environ`). It
     reports `auth.state: logged_out`, and no file under the data dir or unit
     directory contains the value.

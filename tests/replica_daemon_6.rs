@@ -153,7 +153,9 @@ fn environment_of(pid: u32) -> String {
 #[test]
 fn a_process_supervised_coordinator_never_inherits_the_api_key() {
     let home = DaemonHome::new();
-    let key = format!("cmk_{}{}", "inherit", "edsecret0123456789");
+    // Not a credential: a unique marker in the key's shape, built at run
+    // time, whose only job is to be searched for in the child's environment.
+    let key = format!("cmk_marker_inherited_{}", std::process::id());
     let ensured = ensure_from(
         &home,
         &assert_cmd::cargo::cargo_bin("comemory"),
