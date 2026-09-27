@@ -163,3 +163,29 @@ fn a_process_supervised_coordinator_never_inherits_the_api_key() {
         "logged_out"
     );
 }
+
+#[test]
+fn a_descriptor_the_caller_leaked_never_pins_the_callers_pipe_open() {
+    let home = DaemonHome::new();
+    // The shell duplicates its stdout pipe onto fd 7 without CLOEXEC — the
+    // same inheritance a multithreaded parent's racing pipe creation
+    // produces. A coordinator that kept fd 7 would hold this pipe's write
+    // end forever, so reading the command's output would never end.
+    let mut cmd = home.command_with_binary(Path::new("sh"));
+    cmd.args(["-c", "exec 7>&1; exec \"$0\" --json sync daemon ensure"])
+        .arg(assert_cmd::cargo::cargo_bin("comemory"));
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(cmd.output());
+    });
+    let out = rx
+        .recv_timeout(READY)
+        .expect("the caller's pipe reached EOF")
+        .expect("run ensure");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    home.wait_ready(READY);
+}

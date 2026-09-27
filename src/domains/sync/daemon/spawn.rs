@@ -31,8 +31,38 @@ pub fn spawn(paths: &Paths) -> Result<()> {
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr);
+    close_inherited_descriptors(&mut command);
     let _child = command.spawn()?;
     Ok(())
+}
+
+/// The coordinator outlives whoever started it, so it must not keep any
+/// descriptor it merely inherited. On macOS a multithreaded parent can leak
+/// another thread's not-yet-`CLOEXEC` pipe into this process; a detached
+/// coordinator holding that pipe's write end would keep the parent's reader
+/// from ever seeing EOF. Close every inherited descriptor above stderr that
+/// `exec` would keep (`CLOEXEC` ones close anyway, including std's own
+/// exec-error pipe, which must survive until `exec`).
+fn close_inherited_descriptors(command: &mut Command) {
+    use nix::libc::{F_GETFD, FD_CLOEXEC, close, fcntl, getdtablesize};
+    use std::os::unix::process::CommandExt as _;
+    // Read in the parent: only async-signal-safe calls run after `fork`.
+    // SAFETY: getdtablesize takes no arguments and only reads a limit.
+    let limit = unsafe { getdtablesize() }.clamp(3, 65_536);
+    // SAFETY: the closure runs in the forked child before `exec` and only
+    // calls `fcntl(F_GETFD)` and `close`, both async-signal-safe. A
+    // descriptor that is not open makes `fcntl` return -1 and is skipped.
+    unsafe {
+        command.pre_exec(move || {
+            for fd in 3..limit {
+                let flags = fcntl(fd, F_GETFD);
+                if flags >= 0 && flags & FD_CLOEXEC == 0 {
+                    close(fd);
+                }
+            }
+            Ok(())
+        });
+    }
 }
 
 #[cfg(test)]
