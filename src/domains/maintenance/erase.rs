@@ -192,7 +192,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     })
 }
 
-/// The lock-free core: erase `target` from `conn` and from the markdown tree
+/// The core, which takes no lock itself: erase `target` from `conn` and from the markdown tree
 /// under `memories_dir`, in one transaction with `secure_delete` on. The
 /// guard is the proof the caller holds `memory-save.lock`, so no markdown
 /// writer moves the files this deletes. With a `ledger`, the erase is

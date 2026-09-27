@@ -207,7 +207,7 @@ fn snapshot_before_swap(db: &Path, paths: &Paths) -> Result<()> {
 /// path, then renames it over `dest` only on success — a failed `VACUUM
 /// INTO` never touches `dest` itself, so a prior good backup there is never
 /// destroyed by a failed attempt at a new one.
-pub(crate) fn snapshot_before_swap_inner(db: &Path, dest: &Path) -> Result<()> {
+pub(super) fn snapshot_before_swap_inner(db: &Path, dest: &Path) -> Result<()> {
     let staging = staging_dest(dest);
     if staging.exists() {
         // Best-effort cleanup of a stale staging file left by a previous
