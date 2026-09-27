@@ -61,6 +61,10 @@ fn ordinary_data_commands_and_login_and_mcp_and_watch_are_required() {
         vec!["mcp"],
         vec!["watch"],
         vec!["gc"],
+        vec!["backup", "create"],
+        vec!["backup", "restore", "/tmp/backup", "--confirm"],
+        vec!["backup", "merge-erasures", "/tmp/erasures.jsonl"],
+        vec!["erase", "--memory", "12345678", "--confirm"],
     ] {
         assert_eq!(
             classify(&cmd(&args)),

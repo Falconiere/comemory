@@ -79,6 +79,8 @@ fn classify(cmd: &Cmd) -> Classification {
         | Cmd::Prune(_)
         | Cmd::Consolidate(_)
         | Cmd::Rebuild(_)
+        | Cmd::Backup(_)
+        | Cmd::Erase(_)
         | Cmd::RecallStatus(_)
         | Cmd::Gc
         | Cmd::InstallHooks(_)
