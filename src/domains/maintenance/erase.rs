@@ -157,8 +157,10 @@ pub struct Ledger<'a> {
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     let target = Target::try_from(req)?;
     // A data directory with no database holds nothing to erase, and opening
-    // one here would create it — an erase of nothing must write nothing.
-    if !ctx.paths.db_path().exists() {
+    // one here would create it — an erase of nothing must write nothing. A
+    // database that cannot even be checked (a permission error) is an error,
+    // never "nothing to erase": the operator must not read it as gone.
+    if !ctx.paths.db_path().try_exists()? {
         return Err(Error::NotFound(format!(
             "{} {}",
             target.kind(),

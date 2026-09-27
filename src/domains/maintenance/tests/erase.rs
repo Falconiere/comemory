@@ -258,6 +258,27 @@ fn an_erase_on_a_data_directory_without_a_database_creates_none() {
 }
 
 #[test]
+fn an_unreadable_data_directory_fails_the_erase_rather_than_answering_not_found() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut home = Home::new();
+    let id = home.save(&token_body(), &["erase"]);
+    let data_dir = home.paths.data_dir().to_path_buf();
+    let mode = fs::metadata(&data_dir).expect("mode").permissions().mode();
+    fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o000)).expect("chmod");
+
+    let result = erase_memory(&mut home, &id);
+    fs::set_permissions(&data_dir, fs::Permissions::from_mode(mode)).expect("restore");
+
+    assert!(
+        matches!(result, Err(Error::Io(_))),
+        "a database that cannot be checked is an error, never `nothing to erase`: {result:?}"
+    );
+    let report = erase_memory(&mut home, &id).expect("the erase runs once readable");
+    assert!(report.tombstoned, "the memory was still there to erase");
+}
+
+#[test]
 fn a_request_must_name_exactly_one_entity() {
     for request in [
         Request::default(),
