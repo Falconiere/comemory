@@ -310,7 +310,7 @@ pub fn redact_memory_candidates(
         ),
         [&prefix],
     )?;
-    Ok(changed as u64)
+    Ok(u64::try_from(changed).unwrap_or(u64::MAX))
 }
 
 /// Evict every observation older than `cutoff` that carries no judgment, with
