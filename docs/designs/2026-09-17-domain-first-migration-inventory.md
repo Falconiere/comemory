@@ -746,7 +746,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/daemon/identity.rs | comemory::domains::sync::daemon::identity; preserve | src/domains/sync/daemon/tests/identity.rs | none | domains::sync | src/domains/sync/daemon/identity.rs | retain |
 | src/domains/sync/daemon/readiness.rs | comemory::domains::sync::daemon::readiness; preserve | none | none | domains::sync | src/domains/sync/daemon/readiness.rs | retain |
 | src/domains/sync/daemon/runtime_record.rs | comemory::domains::sync::daemon::runtime_record; preserve | src/domains/sync/daemon/tests/runtime_record.rs | none | domains::sync | src/domains/sync/daemon/runtime_record.rs | retain |
-| src/domains/sync/daemon/server.rs | comemory::domains::sync::daemon::server; preserve | none | none | domains::sync | src/domains/sync/daemon/server.rs | retain |
+| src/domains/sync/daemon/server.rs | comemory::domains::sync::daemon::server; preserve | src/domains/sync/daemon/tests/server.rs | none | domains::sync | src/domains/sync/daemon/server.rs | retain |
 | src/domains/sync/daemon/socket_path.rs | comemory::domains::sync::daemon::socket_path; preserve | src/domains/sync/daemon/tests/socket_path.rs | none | domains::sync | src/domains/sync/daemon/socket_path.rs | retain |
 | src/domains/sync/daemon/spawn.rs | comemory::domains::sync::daemon::spawn; preserve | src/domains/sync/daemon/tests/spawn.rs | none | domains::sync | src/domains/sync/daemon/spawn.rs | retain |
 | src/domains/sync/daemon/state.rs | comemory::domains::sync::daemon::state; preserve | none | none | domains::sync | src/domains/sync/daemon/state.rs | retain |

@@ -1,7 +1,8 @@
 //! The control server: accept on the Unix socket, check the peer's uid,
 //! run the two-way handshake under a deadline, then serve one op. Answers
-//! come from shared state or the queue, never from the store or the network,
-//! so the socket stays responsive while a pass blocks.
+//! come from shared state or the queue, never from the network; the one store
+//! touch — `status`'s read-only health probe — runs on a blocking thread, so
+//! the socket stays responsive while a pass blocks.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,7 +17,7 @@ use tokio::sync::{Notify, mpsc};
 use crate::config::Paths;
 use crate::domains::sync::daemon::control::{Hello, MAX_FRAME, Op, PROTOCOL, Request, Response};
 use crate::domains::sync::daemon::handshake;
-use crate::domains::sync::daemon::readiness::{Trigger, probe_store};
+use crate::domains::sync::daemon::readiness::{Readiness, Trigger, probe_store};
 use crate::domains::sync::daemon::state::State;
 use crate::domains::sync::daemon::worker::Queue;
 use crate::prelude::*;
@@ -112,12 +113,22 @@ async fn greet(
     Ok(request)
 }
 
+/// The `status` answer: the shared readiness, with the store's health
+/// re-probed first on a blocking thread so a restore or failed upgrade since
+/// the last pass is reported now. A probe task that fails keeps the last
+/// known state.
+async fn status(ctx: &Ctx) -> Readiness {
+    let paths = ctx.paths.clone();
+    match tokio::task::spawn_blocking(move || probe_store(&paths)).await {
+        Ok(store) => ctx.state.set_store(store),
+        Err(e) => tracing::warn!(error = %e, "sync daemon: store probe task failed"),
+    }
+    ctx.state.readiness()
+}
+
 async fn dispatch(op: Op, write: &mut OwnedWriteHalf, ctx: &Ctx) -> Result<()> {
     match op {
-        Op::Status {} => {
-            ctx.state.set_store(probe_store(&ctx.paths));
-            reply(write, &ctx.state.readiness()).await
-        }
+        Op::Status {} => reply(write, &status(ctx).await).await,
         Op::Wake(wake) => {
             ctx.queue.wake(wake.reason, wake.checkout);
             ctx.state.set_queued(true);
@@ -193,3 +204,7 @@ async fn write_frame(write: &mut OwnedWriteHalf, frame: &impl Serialize) -> Resu
     write.write_all(&line).await?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/server.rs"]
+mod tests;

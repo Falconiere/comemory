@@ -198,7 +198,11 @@ pub fn apply_reload(paths: &Paths, state: &State, generation: &generation::Sende
     generation.send_modify(|g| *g = g.wrapping_add(1) % channel::STOP);
 }
 
-fn initial_readiness(paths: &Paths, canonical: &Path, socket: &Path) -> Result<Readiness> {
+pub(super) fn initial_readiness(
+    paths: &Paths,
+    canonical: &Path,
+    socket: &Path,
+) -> Result<Readiness> {
     let me = identity::BinaryIdentity::current()?;
     Ok(Readiness {
         protocol: PROTOCOL,
