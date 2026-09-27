@@ -68,16 +68,26 @@ fn another_version_or_path_is_not_the_installed_binary() {
     let bin = real_binary(dir.path());
     let want = Version::parse("0.50.1").unwrap();
     let old = verify_ensured(&ensured(Some(readiness(&bin, "0.50.0")), None), &bin, &want);
-    assert!(old.unwrap_err().contains("answers as 0.50.0"));
-    let elsewhere = verify_ensured(
-        &ensured(
-            Some(readiness(Path::new("/elsewhere/comemory"), "0.50.1")),
-            None,
-        ),
+    assert_eq!(
+        old.unwrap_err(),
+        format!(
+            "the coordinator answers as 0.50.0 at {0}, expected 0.50.1 at {0}",
+            bin.display()
+        )
+    );
+    let elsewhere = Path::new("/elsewhere/comemory");
+    let moved = verify_ensured(
+        &ensured(Some(readiness(elsewhere, "0.50.1")), None),
         &bin,
         &want,
     );
-    assert!(elsewhere.unwrap_err().contains("/elsewhere/comemory"));
+    assert_eq!(
+        moved.unwrap_err(),
+        format!(
+            "the coordinator answers as 0.50.1 at /elsewhere/comemory, expected 0.50.1 at {}",
+            bin.display()
+        )
+    );
 }
 
 #[test]

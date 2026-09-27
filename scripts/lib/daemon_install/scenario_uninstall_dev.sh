@@ -36,6 +36,13 @@ scenario_uninstall() {
 
   wait_gone "$first_pid" 30
   assert "first coordinator still alive after uninstall" test $? -eq 0 || return 1
+  if [ "$MODE" = native ]; then
+    local home=${DAEMON_INSTALL_NATIVE_HOME:-$HOME}
+    assert "uninstall left this data dir's unit" \
+      test "$(native_unit_count "$home" "$(canonical "$root/d")")" -eq 0 || return 1
+    assert "uninstall touched the other data dir's unit" \
+      test "$(native_unit_count "$home" "$(canonical "$root2/d")")" -eq 1 || return 1
+  fi
   assert "socket still present: $socket" test ! -e "$socket" || return 1
   assert "comemory.db missing after uninstall" test -f "$root/d/comemory.db" || return 1
 

@@ -22,7 +22,7 @@ pub mod release;
 /// `MAJOR.MINOR.PATCH[-pre]` parsing and ordering.
 pub mod version;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -107,7 +107,8 @@ pub fn run(req: &Request) -> Result<Report> {
     }
     if !newer && !req.force {
         if target == current {
-            ensure_daemon(req, &mut report, &current, false)?;
+            let exe = installed_exe(&report)?;
+            ensure_daemon(req, &mut report, &exe, &current, false)?;
             return Ok(report);
         }
         return Err(Error::Usage(format!(
@@ -115,30 +116,38 @@ pub fn run(req: &Request) -> Result<Report> {
         )));
     }
     swap(req, &report.channel, &target)?;
-    let installed = verify(&mut report, &current, &target)?;
+    let exe = installed_exe(&report)?;
+    let installed = verify(&mut report, &exe, &current, &target)?;
     ensure_daemon(
         req,
         &mut report,
+        &exe,
         &installed,
         installed != current || req.force,
     )?;
     Ok(report)
 }
 
-/// Require the installed binary's own `sync daemon ensure` to report a ready
-/// coordinator on `installed` (#258 D4). Homebrew's binary is the linked
-/// Cellar file, not the path this (old) process started from.
+/// The binary the channel now has installed: the file this process started
+/// from, except under Homebrew, whose `brew upgrade` links a new Cellar
+/// file (the old keg may already be cleaned up).
+fn installed_exe(report: &Report) -> Result<PathBuf> {
+    match report.channel {
+        Channel::Homebrew => installer::brew_binary(),
+        _ => Ok(report.exe.clone()),
+    }
+}
+
+/// Require the installed binary `exe`'s own `sync daemon ensure` to report
+/// a ready coordinator on `installed` (#258 D4).
 fn ensure_daemon(
     req: &Request,
     report: &mut Report,
+    exe: &Path,
     installed: &Version,
     replaced: bool,
 ) -> Result<()> {
-    let exe = match report.channel {
-        Channel::Homebrew => installer::brew_binary()?,
-        _ => report.exe.clone(),
-    };
-    let daemon = installer::ensure_child(&exe, &req.data_dir, installed).map_err(|cause| {
+    let daemon = installer::ensure_child(exe, &req.data_dir, installed).map_err(|cause| {
         Error::Unavailable(format!(
             "{} is now {installed} ({}), but the sync daemon is not ready: {cause} \u{2014} run: comemory sync daemon repair",
             exe.display(),
@@ -202,8 +211,8 @@ fn swap(req: &Request, channel: &Channel, target: &Version) -> Result<()> {
 /// it. A Homebrew tap can lag a GitHub release by minutes; `brew upgrade`
 /// then leaves `current` in place, which is reported as a hint, not a
 /// failure.
-fn verify(report: &mut Report, current: &Version, target: &Version) -> Result<Version> {
-    let installed = installer::installed_version(&report.exe)?;
+fn verify(report: &mut Report, exe: &Path, current: &Version, target: &Version) -> Result<Version> {
+    let installed = installer::installed_version(exe)?;
     if installed != *target {
         if report.channel == Channel::Homebrew && installed == *current {
             report.hint = Some(format!(
@@ -213,7 +222,7 @@ fn verify(report: &mut Report, current: &Version, target: &Version) -> Result<Ve
         }
         return Err(Error::Other(format!(
             "{} reports {installed} after the install, expected {target}",
-            report.exe.display()
+            exe.display()
         )));
     }
     report.status = if installed > *current {

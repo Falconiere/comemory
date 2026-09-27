@@ -235,3 +235,36 @@ fn uninstall_removes_only_this_directory_service_and_keeps_the_data() {
     };
     assert_eq!(still.instance, other_ready.instance);
 }
+
+#[test]
+fn leftovers_of_dead_installers_are_swept_and_a_live_racers_are_kept() {
+    let rig = Rig::new(&[]);
+    let dir = rig.dir("bin");
+    std::fs::create_dir_all(&dir).unwrap();
+    let dead = dead_pid();
+    let live = std::process::id();
+    let seeded = [
+        format!(".comemory.new.{dead}"),
+        format!(".comemory.prev.{dead}"),
+        format!(".comemory.prev.{live}"),
+    ];
+    for name in &seeded {
+        std::fs::write(dir.join(name), "leftover").unwrap();
+    }
+
+    rig.install_ok(&dir, &[]);
+
+    assert!(
+        !dir.join(&seeded[0]).exists(),
+        "dead installer's staged file swept"
+    );
+    assert!(
+        !dir.join(&seeded[1]).exists(),
+        "dead installer's previous file swept"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join(&seeded[2])).unwrap(),
+        "leftover",
+        "a live installer's rollback copy is never touched"
+    );
+}

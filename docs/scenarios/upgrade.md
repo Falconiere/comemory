@@ -198,7 +198,8 @@ _None._
 `release-finalize.yml`) is what `upgrade` runs. Its own contract —
 `--version`, `--dir`, `--no-modify-path`, `--no-completions`, `--quiet`, the
 env twins, checksum verification, in-place replacement of the `comemory`
-already on `PATH`, the once-only rc-file PATH line, completion installation,
-and finally the new binary's own `sync daemon ensure` (restoring the
-previous binary and exiting 69 when it never becomes ready) — is driven by
-`tests/install_script.rs`.
+already on `PATH`, the new binary's own `sync daemon ensure` right after the
+swap (restoring the previous binary and exiting 69 when it never becomes
+ready, before any completion or PATH step), then completion installation
+and the once-only rc-file PATH line — is driven by `tests/install_script.rs`
+and `tests/install_daemon.rs`.

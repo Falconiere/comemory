@@ -19,12 +19,13 @@ _isolated_envs() {
   # both stop parsing options at the first assignment, so a `-u` after one
   # is treated as the command to exec (`env: -u: No such file or
   # directory`), not an unset.
-  local -a envs=(-u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS -u COMEMORY_API_KEY
-    -u COMEMORY_SYNC_DAEMON -u COMEMORY_INSTALL_DIR -u COMEMORY_VERSION -u COMEMORY_NO_MODIFY_PATH)
+  # Native mode keeps the session bus: systemd --user needs it (D10).
+  local -a envs=(-u COMEMORY_API_KEY -u COMEMORY_SYNC_DAEMON -u COMEMORY_INSTALL_DIR
+    -u COMEMORY_VERSION -u COMEMORY_NO_MODIFY_PATH)
   if [ "$mode" = native ]; then
     home_dir="${DAEMON_INSTALL_NATIVE_HOME:-$HOME}"
   else
-    envs+=(COMEMORY_DAEMON_SUPERVISOR=process)
+    envs+=(-u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS COMEMORY_DAEMON_SUPERVISOR=process)
   fi
   envs+=(HOME="$home_dir" TMPDIR="$root/t" COMEMORY_DATA_DIR="$root/d" COMEMORY_INDEXING_AUTO_REINDEX=off)
   ISOLATED_ENVS=("${envs[@]}")

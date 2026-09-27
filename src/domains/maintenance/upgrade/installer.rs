@@ -234,6 +234,13 @@ pub fn brew_binary() -> Result<PathBuf> {
         .stdin(Stdio::null())
         .output()
         .map_err(|e| Error::Other(format!("brew --prefix comemory: {e}")))?;
+    if !out.status.success() {
+        return Err(Error::Other(format!(
+            "brew --prefix comemory exited with {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
     let prefix = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let linked = PathBuf::from(prefix).join("bin/comemory");
     std::fs::canonicalize(&linked).map_err(|e| Error::Other(format!("{}: {e}", linked.display())))

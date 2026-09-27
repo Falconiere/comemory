@@ -84,10 +84,8 @@ scenario_race() {
   code2="$(head -1 "$out2")"
   rm -f "$out1" "$out2"
 
-  local one_ok=0
-  [ "$code1" = 0 ] && one_ok=$((one_ok + 1))
-  [ "$code2" = 0 ] && one_ok=$((one_ok + 1))
-  assert "neither racer succeeded ($code1, $code2)" test "$one_ok" -ge 1 || return 1
+  # The lock waits up to 60 s, so both racers finish the install.
+  assert "a racer failed ($code1, $code2)" test "$code1" = 0 -a "$code2" = 0 || return 1
 
   wait_running "$MODE" "$root" "$bin" 30
   assert "coordinator never verified ready after the race" test $? -eq 0 || return 1

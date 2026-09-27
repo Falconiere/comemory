@@ -39,6 +39,8 @@ scenario_fresh() {
   if [ "$MODE" = native ]; then
     assert "supervisor $got_super != $(native_expected_supervisor)" \
       test "$got_super" = "$(native_expected_supervisor)" || return 1
+    assert "not exactly one unit for this data dir" \
+      test "$(native_unit_count "${DAEMON_INSTALL_NATIVE_HOME:-$HOME}" "$(canonical "$root/d")")" -eq 1 || return 1
   else
     assert "supervisor $got_super != process" test "$got_super" = process || return 1
   fi

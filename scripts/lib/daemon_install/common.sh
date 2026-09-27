@@ -100,11 +100,13 @@ run_bin() {
   out="$(mktemp)"
   err="$(mktemp)"
   home_dir="$root/h"
-  local -a envs=(-u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS -u COMEMORY_API_KEY -u COMEMORY_SYNC_DAEMON)
+  # Every `-u` precedes every assignment (see install_helpers.sh). Native
+  # mode keeps the session bus: systemd --user needs it (D10).
+  local -a envs=(-u COMEMORY_API_KEY -u COMEMORY_SYNC_DAEMON)
   if [ "$mode" = native ]; then
     home_dir="${DAEMON_INSTALL_NATIVE_HOME:-$HOME}"
   else
-    envs+=(COMEMORY_DAEMON_SUPERVISOR=process)
+    envs+=(-u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS COMEMORY_DAEMON_SUPERVISOR=process)
   fi
   envs+=(HOME="$home_dir" TMPDIR="$root/t" COMEMORY_DATA_DIR="$root/d" COMEMORY_INDEXING_AUTO_REINDEX=off)
   if env "${envs[@]}" "$bin" "$@" >"$out" 2>"$err"; then

@@ -74,8 +74,9 @@ pub fn file_id(path: &Path) -> Option<String> {
 
 /// The file this process was started from, read on first use and kept: an
 /// installer may rename a new file over the path afterwards. Linux names the
-/// running image itself (`/proc/self/exe`); elsewhere the executable path is
-/// read at the first call, which preflight makes at startup.
+/// running image itself (`/proc/self/exe`), so it is exact whenever read;
+/// elsewhere the executable path is stat'ed at the first call — for a CLI
+/// command, its preflight's probe, moments after it started.
 fn running_file() -> Option<&'static String> {
     static RUNNING: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     RUNNING

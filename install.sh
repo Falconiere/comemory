@@ -191,21 +191,26 @@ pick_dir() {
 # atomic and carries the pid). A dead owner's lock is reclaimed only by the
 # one racer that creates `.reclaim.<pid>`; a reclaimer that died mid-way
 # leaves a state no installer guesses about.
-alive() { ps -p "$1" >/dev/null 2>&1; }
+# A pid counts as alive when any probe says so: `kill -0` (ours), `/proc`
+# (Linux, any owner), `ps` (macOS, any owner). Minimal images may lack `ps`.
+alive() { kill -0 "$1" 2>/dev/null || [ -d "/proc/$1" ] || ps -p "$1" >/dev/null 2>&1; }
 lock_dir() {
   LOCK="$DIR/.$APP-install.lock"; waited=0
   until ln -s "$$" "$LOCK" 2>/dev/null; do
     owner="$(readlink "$LOCK" 2>/dev/null || true)"
     if [ -n "$owner" ] && ! alive "$owner"; then
       if ln -s "$$" "$LOCK.reclaim.$owner" 2>/dev/null; then
-        ln -sf "$$" "$LOCK.new.$$" && mv -f "$LOCK.new.$$" "$LOCK" && break
+        if [ "$(readlink "$LOCK" 2>/dev/null)" = "$owner" ]; then
+          ln -sf "$$" "$LOCK.new.$$" && mv -f "$LOCK.new.$$" "$LOCK" && break
+        fi
+        rm -f "$LOCK.reclaim.$owner"; continue
       fi
       by="$(readlink "$LOCK.reclaim.$owner" 2>/dev/null || true)"
       [ -z "$by" ] || alive "$by" || die "a previous install into $DIR was interrupted while taking its lock" \
         "remove $DIR/.$APP-install.lock* and retry"
     fi
-    [ "$waited" -lt 60 ] || die "another install into $DIR is running (pid ${owner:-?})" "retry when it finishes"
-    waited=$((waited + 1)); sleep 1
+    [ "$waited" -lt 120 ] || die "another install into $DIR is running (pid ${owner:-?})" "retry when it finishes"
+    waited=$((waited + 1)); sleep 0.5
   done
   for f in "$DIR/.$APP.new."* "$DIR/.$APP.prev."*; do
     pid="${f##*.}"
