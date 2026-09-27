@@ -33,6 +33,16 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 - **Expect:** JSON identifies `comemory@comemory`; neither destination is created.
 - **Covered by:** `tests/cli_scenario_install.rs::installation_preview_does_not_write_or_require_a_host`
 
+> **Not to be confused with the shell installer** (`install.sh` at the repo
+> root, run via `curl … | sh` or `comemory upgrade`). That script — unrelated
+> to this `comemory install <HOST>` command — now finishes only after the
+> binary it just placed answers its own `sync daemon ensure` ready; a
+> daemon that never comes up rolls the swap back (`rolled back to …`) or, on
+> a first install with no previous binary to restore, keeps the new file and
+> names the fix at its absolute path, `<dir>/comemory sync daemon ensure`.
+> See [Upgrading comemory](../guides/upgrading.md) and the
+> [upgrade scenarios](upgrade.md) for that behavior and its rollback.
+
 ### install-02 `.mcp.json` manifest
 
 - **Flags:** `--config-dir` `--json` (dry-run and a real install both shown)

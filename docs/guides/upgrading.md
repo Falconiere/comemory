@@ -16,9 +16,9 @@ out how the running binary was installed, compares, and then:
 
 | Channel | What `upgrade` does |
 | --- | --- |
-| **Standalone** — `install.sh`, or a tarball you unpacked | Downloads that release's own `install.sh` and runs it pinned (`--version <tag> --dir <this binary's dir> --no-modify-path`). The script verifies the archive's SHA-256, runs the new binary's `--version` before touching anything, then renames it over the running one — an atomic swap, so the process you launched keeps executing the old inode until it exits. It then refreshes Bash, Zsh, Fish, and PowerShell completions idempotently |
-| **Homebrew** — under a `Cellar` / Homebrew prefix | Runs `brew upgrade comemory`. The formula regenerates Homebrew-managed Bash, Zsh, Fish, and PowerShell completions. The tap can lag a GitHub release by a few minutes; the report says so instead of failing |
-| **`cargo install`** — listed in `$CARGO_HOME/.crates.toml` | Refuses (exit 64) and prints the rebuild recipe: `cargo install --git … --tag vX.Y.Z`, or `git pull && cargo install --path .` in that checkout |
+| **Standalone** — `install.sh`, or a tarball you unpacked | Downloads that release's own `install.sh` and runs it pinned (`--version <tag> --dir <this binary's dir> --no-modify-path`), exporting `COMEMORY_DATA_DIR` so it ensures the right data directory's daemon. The script verifies the archive's SHA-256, runs the new binary's `--version` before touching anything, then renames it over the running one — an atomic swap, so the process you launched keeps executing the old inode until it exits. It then refreshes Bash, Zsh, Fish, and PowerShell completions idempotently, and finally the new binary's own `sync daemon ensure` — see [rollback](#when-the-daemon-never-comes-up) below |
+| **Homebrew** — under a `Cellar` / Homebrew prefix | Runs `brew upgrade comemory`. The formula regenerates Homebrew-managed Bash, Zsh, Fish, and PowerShell completions. The tap can lag a GitHub release by a few minutes; the report says so instead of failing. `comemory upgrade` then runs `sync daemon ensure` itself against the linked Cellar binary — the formula's own `post_install` hook that would do this at `brew` time is pending [homebrew-tap#1](https://github.com/Falconiere/homebrew-tap/issues/1), so a bare `brew install` / `brew upgrade` alone does not yet guarantee an immediately ready daemon; running `comemory upgrade` afterward does |
+| **`cargo install`** — listed in `$CARGO_HOME/.crates.toml` | Refuses (exit 64) and prints the rebuild recipe: rebuild at that tag with the finalizing wrapper, `git checkout vX.Y.Z && bash scripts/dev-install.sh`, in that checkout — it builds, installs, and ensures the daemon in one step. A bare `cargo install` recipe instead must be followed by `comemory sync daemon ensure` |
 
 After the swap it runs the binary on disk with `--version` and fails loudly if
 that is not the release it asked for. Flags: `--version <v>` pins a release
@@ -32,6 +32,72 @@ installer itself failed — its last stderr lines are relayed.
 
 There is no HTTP twin: `comemory serve` never replaces its own binary on
 request (`transport: "cli-only"` in `GET /api/v1/commands`).
+
+## The daemon `upgrade` leaves running
+
+`upgrade` never stops at swapping the binary. In every outcome except
+`--check` — a fresh `upgraded`/`installed` swap, and just as much an
+`up_to_date` no-op — it also runs the **installed** binary's own `sync
+daemon ensure --json` (never this, possibly just-replaced, process's) and
+requires that coordinator to answer ready on that exact binary and version
+before it reports success. `--check` never reaches any of this: it only
+compares versions, starts nothing, probes nothing, and writes nothing.
+`--data-dir` (or `COMEMORY_DATA_DIR`) picks which data directory's
+coordinator gets ensured; the default data directory is never created just
+to check one.
+
+Under `--json` the report gains a `daemon` object, absent entirely when
+`--check` was passed:
+
+```json
+{ "current": "0.50.0", "latest": "0.50.1", "target": "0.50.1",
+  "channel": {"kind": "standalone", "dir": "/u/.local/bin"},
+  "exe": "/u/.local/bin/comemory", "status": "upgraded",
+  "daemon": { "ready": true, "action": "none", "supervisor": "launchd",
+              "version": "0.50.1", "binary": "/u/.local/bin/comemory",
+              "binary_file": "16777232:9123456", "pid": 4242,
+              "data_dir": "/u/.comemory" } }
+```
+
+When that coordinator never becomes ready, `upgrade` exits **69** with
+nothing on stdout:
+
+```
+error: /u/.local/bin/comemory is now 0.50.1 (binary replaced), but the sync daemon is not ready: <cause> — run: comemory sync daemon repair
+```
+
+`binary replaced` names a swap that actually happened this run; `binary
+unchanged` names an already-current or `--force`-free no-op where only the
+`ensure` failed. On the Standalone channel, that failure is usually
+`install.sh`'s own rollback (next section), relayed here as
+`Error::Unavailable`; any other `install.sh` failure keeps exit `70`.
+
+### When the daemon never comes up (`install.sh` rollback) {#when-the-daemon-never-comes-up}
+
+On the Standalone channel, if the post-swap `sync daemon ensure` never
+reports ready — an old coordinator still stopping, a data directory the new
+binary cannot write to, an `external` supervisor with nobody running `sync
+daemon run` (see [Configuration](../configuration.md)) — `install.sh`
+restores the exact file it replaced and reruns *that* restored file's own
+`ensure` before failing:
+
+```
+error: sync daemon not ready after installing comemory v0.50.1: <cause>
+    rolled back to comemory 0.50.0 at /u/.local/bin/comemory (sync daemon: ready)
+```
+
+A first-time install has no previous binary to restore, so it keeps the new
+file instead and names the fix at its absolute path (PATH setup never ran):
+
+```
+error: sync daemon not ready after installing comemory v0.50.1: <cause>
+    comemory v0.50.1 is installed at /u/.local/bin/comemory; fix the cause, then run: /u/.local/bin/comemory sync daemon ensure
+```
+
+Either way the process exits **69**. Rollback never opens the store, so it
+cannot introduce a schema mismatch on its own; if the restored coordinator's
+store reports `too_new`, that predates this install and the message adds a
+forward-recovery line naming `comemory doctor`.
 
 ## Schema upgrades are automatic
 

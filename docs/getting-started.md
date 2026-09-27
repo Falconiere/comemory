@@ -40,6 +40,26 @@ the next commands. Every archive is verified against the SHA-256 sidecar the
 release ships, using `sha256sum`, `shasum -a 256`, or `openssl`; the installer
 refuses to continue without one of them rather than skipping the check.
 
+The list does not end at "installed": the last step runs the binary it just
+placed against its own `sync daemon ensure` and does not report success
+until that coordinator answers ready on this exact file —
+
+```
+  ✓ Sync daemon  ready (0.50.1, pid 4242, launchd)  → /Users/you/.comemory
+```
+
+If it never comes up — an old coordinator still stopping, a data directory
+the new binary cannot write to, an `external` supervisor with nobody running
+`sync daemon run` yet — the installer restores the file it replaced (a
+first-time install instead keeps the new one) and exits **69**:
+`sync daemon not ready after installing comemory vX.Y.Z: <cause>`. Fix the
+named cause, then follow the line the error prints: on a rollback, just
+re-run the installer; on a first install, the absolute-path fix it names,
+`<dir>/comemory sync daemon ensure` (PATH setup never ran, so the hint gives
+the full path). See [Upgrading comemory](guides/upgrading.md) and
+[Configuration](configuration.md) for what can cause this and how the
+`external` supervisor case differs.
+
 Piping into a shell runs whatever the URL serves, sight unseen. The two-step
 form below lets you read the script first, and it is the one to use in anything
 scripted; the checksum-verified archive route lives in README § Verifying
@@ -85,13 +105,22 @@ Homebrew is as quick, on macOS and Linuxbrew:
 brew install Falconiere/tap/comemory
 ```
 
-From a local checkout (comemory is **not** published to crates.io, so
-`cargo install --path .` builds from source):
+From a local checkout (comemory is **not** published to crates.io, so this
+builds from source). `scripts/dev-install.sh` is the finalizing wrapper —
+`cargo install --path .`, then the installed binary's own `sync daemon
+ensure` and `completions --install`, failing the same way `install.sh` does
+if the daemon never comes up:
 
 ```bash
 git clone https://github.com/Falconiere/comemory && cd comemory
-cargo install --path .
+bash scripts/dev-install.sh
 ```
+
+A bare `cargo install --path .` places the binary but starts nothing — it is
+unmanaged placement, same as a binary copied by hand. Follow it with
+`comemory completions --install` and `comemory sync daemon ensure` yourself,
+or just let the next ordinary command's own startup preflight repair the
+daemon.
 
 Prefer a prebuilt binary? Tarballs for macOS (aarch64) and Linux (aarch64,
 x86_64) are attached to every
@@ -99,9 +128,11 @@ x86_64) are attached to every
 `install.sh` and cargo-dist's older `comemory-installer.sh` (still published;
 no pinning, no in-place upgrade, and it skips the checksum on stock macOS).
 
-`install.sh` and Homebrew install Bash, Zsh, Fish, and PowerShell completions
-automatically; `comemory upgrade` refreshes them along with the binary. Cargo
-has no post-install hook, so a source install needs one follow-up command:
+`install.sh`, Homebrew, and `scripts/dev-install.sh` install Bash, Zsh, Fish,
+and PowerShell completions automatically; `comemory upgrade` refreshes them
+along with the binary and re-verifies the daemon on every outcome. Cargo
+itself has no post-install hook, so a bare `cargo install --path .` needs the
+one follow-up command already named above:
 
 ```bash
 comemory completions --install

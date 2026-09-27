@@ -61,6 +61,47 @@ floors in [Prune, rebuild, and gc](guides/prune-and-gc.md);
 `COMEMORY_API` / `COMEMORY_API_KEY` back device login — see
 [CLI reference: auth](cli-reference.md#comemory-auth) and README § Cloud auth.
 
+## Sync daemon on install and upgrade
+
+Every managed install or upgrade (`install.sh`, `scripts/dev-install.sh`,
+`comemory upgrade`) finishes by running the newly placed binary's own `sync
+daemon ensure` and requires a ready coordinator on that exact file before it
+reports success. What that means for the four cases worth knowing about
+ahead of time:
+
+- **`COMEMORY_DAEMON_SUPERVISOR=external`.** `ensure` evicts a mismatched
+  operator-run coordinator gracefully, then waits for the operator's own
+  restart policy — a container's `restart:`, a systemd unit's
+  `Restart=always` — to relaunch `sync daemon run` from the stable path,
+  which is now the new file. Without a restart within the bound, the result
+  is not ready, so the install rolls back (or, on a first install, keeps the
+  new file) and the message says: `restart your comemory sync daemon run`
+  under your supervisor so it runs this binary. A container whose main
+  process *is* `sync daemon run` restarts as a whole when that process
+  exits, so inside such a container install from the image build, not by
+  running the installer via `docker exec` into a live container — a
+  `docker exec` install can place the new file but nothing then restarts the
+  main process onto it.
+- **An exported `COMEMORY_API_KEY` is not inherited** by the resident
+  daemon. `spawn` (the `process` supervisor) strips it from the child's
+  environment before starting the coordinator, and the native launchd/
+  systemd units never carry it at all; the resident daemon reads the
+  protected `auth.json` file only, so an installer shell's exported key never
+  becomes its credential.
+- **Package uninstall.** Run `comemory sync daemon uninstall`, then remove
+  the binary. It removes only this data directory's service (unit file,
+  socket, `daemon.json`) — never memories, `comemory.db`, or any other data
+  directory's own service.
+- **Unmanaged placement.** A bare `cargo install` or a binary copied into
+  place by hand starts nothing: no installer ran `sync daemon ensure` for it.
+  The next ordinary command's own startup preflight repairs the daemon
+  lazily, or run `comemory sync daemon ensure` yourself right after.
+
+See [Upgrading comemory](guides/upgrading.md) for the JSON `daemon` report
+and the install.sh rollback text in full, and
+[Sync daemon (required)](guides/cloud-sync.md#sync-daemon) for the command
+table.
+
 ## Config-file-only knobs
 
 Set these in `config.toml`; they have **no** environment override.
