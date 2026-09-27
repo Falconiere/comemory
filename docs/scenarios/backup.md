@@ -4,7 +4,10 @@ Back up the data directory, restore a backup under a new stream epoch, and
 merge an erasure manifest a restore could not find (#256). Nested:
 `create` / `restore` / `merge-erasures`.
 
-`create` writes a self-contained directory under `memory-save.lock`: a
+`create` and `restore` first pause the exchange (hold `sync.lock`, waiting
+up to `[sync] pause_wait` for a running pass, else exit 75 `busy` having
+changed nothing). `create` writes a self-contained directory under
+`memory-save.lock`: a
 `VACUUM INTO` copy of `comemory.db`, a copy of `memories/` (`.trash/`
 included) and `backup.json` (`{created_at, binary_version, schema_markers,
 epoch}`), written last.

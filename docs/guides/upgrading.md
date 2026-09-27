@@ -280,6 +280,19 @@ for the migration safety net — a long-running server holding a stale
 connection while a separate CLI invocation migrates the file underneath it
 is not something SQLite (or comemory) can detect for you.
 
+## When an upgrade fails
+
+An upgrade that cannot migrate — a read-only data directory, a read-only
+`comemory.db`, a full disk — refuses to start `comemory serve` with the
+reason, adds no migration marker, and leaves the database as the old binary
+wrote it. `serve` records the failure in `store-health.json` beside the
+database, so `comemory sync daemon status` reports `store:
+migration_failed` (`migration_pending` when the directory could not even hold
+the record) with `healthy: false`, and `comemory doctor`'s `store health`
+check fails with the recorded error. Fix the cause and start `serve` again:
+the next successful open applies the chain — also after an upgrade killed
+part-way — and removes the record.
+
 ## See also
 
 - [Architecture: schema migration & upgrade safety](../architecture.md#32-schema-migration--upgrade-safety)

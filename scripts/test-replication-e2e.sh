@@ -213,17 +213,14 @@ run_install() {
 # Replica state recovery (#256): seeding survives a legacy upgrade and a
 # kill, rebuild and gc keep replica progress and an owed payload, erase
 # leaves only the digest barrier, and a revoked repository's pulled cache
-# hides without touching its local index. Real spawned engines, the real
-# CLI and real HTTP, in-repo like the contract case.
-#
-# TODO(#256 B-3/B-8): once the daemon-exchange gate and store-health land,
-# add `--test replica_recovery_5` here (the AC-11/AC-12 suite) and its two
-# coverage.json rows.
+# hides without touching its local index; a rebuild waits for the exchange
+# gate and pauses writers, and a failed upgrade never reads healthy. Real
+# spawned engines, the real CLI and real HTTP, in-repo like the contract case.
 run_recovery() {
   (
     cd "$ENGINE_ROOT"
     cargo nextest run --all-features --test replica_recovery --test replica_recovery_2 \
-      --test replica_recovery_3 --test replica_recovery_4
+      --test replica_recovery_3 --test replica_recovery_4 --test replica_recovery_5
   )
   log_ok "replication" "replica state recovery suite passed"
 }
