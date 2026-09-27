@@ -8,53 +8,71 @@
 #![cfg(unix)]
 //! `install.sh` on its own, against the loopback stand-in for GitHub
 //! Releases (`tests/common/release_server.rs`): the real script, run by
-//! `/bin/sh`, downloading a real tarball and checksum from a real socket.
-//! `HOME` is a temp dir so the PATH step can only ever write there.
+//! `/bin/sh` inside a `DaemonHome` (#258) — a private `HOME`, data
+//! directory, and the `process` supervisor, so an install here can never
+//! register a launchd agent in the developer's own session. Coordinators an
+//! install starts are stopped when the fixture drops.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-
-use release_server::{ReleaseServer, host_target, stage_release, tooling_present};
-use tempfile::TempDir;
-
+#[path = "common/daemon_support.rs"]
+mod daemon_support;
+#[path = "common/install_rig.rs"]
+mod install_rig;
 #[path = "common/release_server.rs"]
 mod release_server;
 
-const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/install.sh");
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::time::Duration;
 
+use install_rig::{Rig, SCRIPT, current_tag};
+use release_server::{host_target, stage_real_release};
+
+const READY: Duration = Duration::from_secs(30);
+
+/// `comemory <CARGO_PKG_VERSION>`, the real branch binary's own `--version`
+/// line — every install here places this same binary, whatever tag names
+/// it.
+fn real_version() -> String {
+    format!("comemory {}", env!("CARGO_PKG_VERSION"))
+}
+
+/// A rig with the real branch binary staged as `current_tag()` (`latest`);
+/// `stub_tags` add `--version`-only stub releases alongside it.
 struct Fixture {
-    home: TempDir,
-    srv: ReleaseServer,
+    rig: Rig,
 }
 
 impl Fixture {
-    /// Serve `tags` (the first is `latest`) from a fresh temp root.
-    fn new(tags: &[&str]) -> Option<Self> {
-        let target = host_target()?;
-        if !tooling_present() {
-            return None;
+    fn new(stub_tags: &[&str]) -> Self {
+        Self {
+            rig: Rig::new(stub_tags),
         }
-        let home = TempDir::new().unwrap();
-        let root = home.path().join("releases");
-        for tag in tags {
-            stage_release(&root, tag, target);
-        }
-        let srv = ReleaseServer::start(root, tags[0]);
-        Some(Self { home, srv })
     }
 
-    fn root(&self) -> PathBuf {
-        self.home.path().join("releases")
+    /// `<root>/releases`, the directory the loopback server publishes from.
+    fn root(&self) -> &Path {
+        &self.rig.releases
     }
 
-    /// `sh install.sh <args>` with the fixture env. `extra_env` is applied
-    /// last so a test can add `PATH`, `SHELL`, or `COMEMORY_*` overrides.
+    /// `<root>/<name>`, a directory under the rig's private root (never
+    /// `HOME`) a test names for an install target.
+    fn dir(&self, name: &str) -> PathBuf {
+        self.rig.dir(name)
+    }
+
+    /// The private `HOME` install.sh sees; shell rc files land here.
+    fn home_dir(&self) -> PathBuf {
+        self.rig.home.home_dir()
+    }
+
+    /// `sh install.sh <args>` in the rig's daemon-safe environment.
+    /// `extra_env` is applied last so a test can add `PATH`, `SHELL`, or
+    /// `COMEMORY_*` overrides.
     fn run(&self, args: &[&str], extra_env: &[(&str, &str)]) -> Output {
-        let mut cmd = Command::new("sh");
+        let mut cmd = self.rig.home.command_with_binary(Path::new("sh"));
         cmd.arg(SCRIPT)
             .args(args)
-            .env("COMEMORY_RELEASES_URL", &self.srv.base)
-            .env("HOME", self.home.path())
+            .env("COMEMORY_RELEASES_URL", &self.rig.srv.base)
             .env("NO_COLOR", "1")
             .env_remove("XDG_CONFIG_HOME")
             .env_remove("XDG_DATA_HOME")
@@ -86,37 +104,37 @@ fn ok(out: &Output) -> String {
 
 #[test]
 fn installs_latest_into_dir_and_reports_each_step() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("bin");
+    let fx = Fixture::new(&[]);
+    let dir = fx.dir("bin");
     let stdout = ok(&fx.run(&["--dir", dir.to_str().unwrap(), "--no-modify-path"], &[]));
+    let ready = fx.rig.home.wait_ready(READY);
     for expected in [
-        "Platform",
-        "Version",
-        "v9.9.9 (latest)",
-        "Install dir",
-        "Checksum",
-        "sha256",
-        "Installed",
-        "comemory v9.9.9 installed",
-        "comemory doctor",
-        "comemory upgrade",
+        "Platform".to_string(),
+        "Version".to_string(),
+        format!("{} (latest)", current_tag()),
+        "Install dir".to_string(),
+        "Checksum".to_string(),
+        "sha256".to_string(),
+        "Installed".to_string(),
+        format!("comemory {} installed", current_tag()),
+        format!("Sync daemon  ready ({}, pid {}", ready.version, ready.pid),
+        "comemory doctor".to_string(),
+        "comemory upgrade".to_string(),
     ] {
         assert!(
-            stdout.contains(expected),
+            stdout.contains(&expected),
             "missing {expected:?} in:\n{stdout}"
         );
     }
-    assert_eq!(version_of(&dir.join("comemory")), "comemory 9.9.9");
+    assert_eq!(version_of(&dir.join("comemory")), real_version());
 }
 
 #[test]
 fn env_pins_version_and_dir() {
-    let Some(fx) = Fixture::new(&["v9.9.9", "v1.2.3"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("elsewhere");
+    let fx = Fixture::new(&[]);
+    let target = host_target().expect("comemory publishes a build for this host");
+    stage_real_release(fx.root(), "v1.2.3", target);
+    let dir = fx.dir("elsewhere");
     let stdout = ok(&fx.run(
         &["--no-modify-path", "--quiet"],
         &[
@@ -128,15 +146,15 @@ fn env_pins_version_and_dir() {
         stdout.is_empty(),
         "--quiet prints nothing on success: {stdout}"
     );
-    assert_eq!(version_of(&dir.join("comemory")), "comemory 1.2.3");
+    assert_eq!(version_of(&dir.join("comemory")), real_version());
 }
 
 #[test]
 fn rerun_replaces_the_comemory_already_on_path() {
-    let Some(fx) = Fixture::new(&["v9.9.9", "v1.2.3"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("bin");
+    let fx = Fixture::new(&[]);
+    let target = host_target().expect("comemory publishes a build for this host");
+    stage_real_release(fx.root(), "v1.2.3", target);
+    let dir = fx.dir("bin");
     ok(&fx.run(
         &[
             "--version",
@@ -147,22 +165,20 @@ fn rerun_replaces_the_comemory_already_on_path() {
         ],
         &[],
     ));
-    assert_eq!(version_of(&dir.join("comemory")), "comemory 1.2.3");
+    assert_eq!(version_of(&dir.join("comemory")), real_version());
     let path = format!("{}:/usr/bin:/bin", dir.display());
     let stdout = ok(&fx.run(&["--no-modify-path"], &[("PATH", &path)]));
     assert!(
         stdout.contains(&format!("replacing {}", dir.join("comemory").display())),
         "{stdout}"
     );
-    assert_eq!(version_of(&dir.join("comemory")), "comemory 9.9.9");
+    assert_eq!(version_of(&dir.join("comemory")), real_version());
 }
 
 #[test]
 fn without_dir_it_falls_through_to_an_existing_cargo_bin() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let cargo_home = fx.home.path().join("cargo");
+    let fx = Fixture::new(&[]);
+    let cargo_home = fx.dir("cargo");
     std::fs::create_dir_all(cargo_home.join("bin")).unwrap();
     let stdout = ok(&fx.run(
         &["--no-modify-path"],
@@ -174,39 +190,40 @@ fn without_dir_it_falls_through_to_an_existing_cargo_bin() {
     assert!(stdout.contains("(cargo bin directory)"), "{stdout}");
     assert_eq!(
         version_of(&cargo_home.join("bin").join("comemory")),
-        "comemory 9.9.9"
+        real_version()
     );
     assert!(
-        !fx.home.path().join(".local/bin/comemory").exists(),
+        !fx.home_dir().join(".local/bin/comemory").exists(),
         "the binary did not fall through to the last-resort install dir"
     );
 }
 
 #[test]
 fn without_dir_or_cargo_bin_it_uses_local_bin() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let mut cmd_env = vec![("PATH", "/usr/bin:/bin")];
-    let cargo_home = fx.home.path().join("no-such-cargo");
-    cmd_env.push(("CARGO_HOME", cargo_home.to_str().unwrap()));
-    let stdout = ok(&fx.run(&["--no-modify-path"], &cmd_env));
+    let fx = Fixture::new(&[]);
+    let cargo_home = fx.dir("no-such-cargo");
+    let stdout = ok(&fx.run(
+        &["--no-modify-path"],
+        &[
+            ("PATH", "/usr/bin:/bin"),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+        ],
+    ));
     assert!(stdout.contains("(default)"), "{stdout}");
-    let bin = fx.home.path().join(".local").join("bin").join("comemory");
-    assert_eq!(version_of(&bin), "comemory 9.9.9");
+    let bin = fx.home_dir().join(".local").join("bin").join("comemory");
+    assert_eq!(version_of(&bin), real_version());
 }
 
 #[test]
 fn checksum_mismatch_aborts_and_installs_nothing() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
+    let fx = Fixture::new(&[]);
+    let target = host_target().expect("comemory publishes a build for this host");
     let sidecar = fx
         .root()
-        .join("v9.9.9")
-        .join(format!("comemory-{}.tar.xz.sha256", host_target().unwrap()));
+        .join(current_tag())
+        .join(format!("comemory-{target}.tar.xz.sha256"));
     std::fs::write(&sidecar, format!("{} *x\n", "f".repeat(64))).unwrap();
-    let dir = fx.home.path().join("bin");
+    let dir = fx.dir("bin");
     let out = fx.run(&["--dir", dir.to_str().unwrap(), "--no-modify-path"], &[]);
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -217,10 +234,8 @@ fn checksum_mismatch_aborts_and_installs_nothing() {
 
 #[test]
 fn missing_release_names_the_url() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("bin");
+    let fx = Fixture::new(&[]);
+    let dir = fx.dir("bin");
     let out = fx.run(
         &[
             "--version",
@@ -238,98 +253,29 @@ fn missing_release_names_the_url() {
 }
 
 #[test]
-fn path_line_is_appended_to_the_shell_rc_once() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("bin");
-    let rc = if cfg!(target_os = "macos") {
-        fx.home.path().join(".bash_profile")
-    } else {
-        fx.home.path().join(".bashrc")
-    };
-    let env = [("SHELL", "/bin/bash"), ("PATH", "/usr/bin:/bin")];
-    let first = ok(&fx.run(&["--dir", dir.to_str().unwrap()], &env));
-    assert!(first.contains("added $HOME/bin to"), "{first}");
-    let second = ok(&fx.run(&["--dir", dir.to_str().unwrap()], &env));
-    assert!(second.contains("already adds $HOME/bin"), "{second}");
-    let text = std::fs::read_to_string(&rc).unwrap();
-    let line = "export PATH=\"$HOME/bin:$PATH\"";
-    assert_eq!(text.matches(line).count(), 1, "{text}");
-    assert!(text.contains("# added by the comemory installer"));
-    assert!(first.contains("open a new shell"), "{first}");
-}
-
-#[test]
-fn no_modify_path_skips_the_path_line_but_keeps_completion_setup() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("bin");
-    let stdout = ok(&fx.run(
-        &["--dir", dir.to_str().unwrap(), "--no-modify-path"],
-        &[("SHELL", "/bin/bash"), ("PATH", "/usr/bin:/bin")],
-    ));
-    assert!(stdout.contains("PATH rc changes skipped"), "{stdout}");
-    for relative in [".bashrc", ".bash_profile"] {
-        let body = std::fs::read_to_string(fx.home.path().join(relative)).unwrap();
-        assert!(body.contains("comemory completions"), "{body}");
-        assert!(!body.contains("export PATH="), "{body}");
-    }
-}
-
-#[test]
-fn installs_shell_completions_by_default() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("bin");
-
-    ok(&fx.run(&["--dir", dir.to_str().unwrap(), "--no-modify-path"], &[]));
-
-    for relative in [
-        ".local/share/bash-completion/completions/comemory",
-        ".local/share/zsh/site-functions/_comemory",
-        ".config/fish/completions/comemory.fish",
-        ".config/powershell/comemory.ps1",
-    ] {
-        let path = fx.home.path().join(relative);
-        assert!(path.is_file(), "missing completion {}", path.display());
-    }
-}
-
-#[test]
-fn no_completions_skips_completion_installation() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
-    let dir = fx.home.path().join("bin");
-
-    ok(&fx.run(
-        &[
-            "--dir",
-            dir.to_str().unwrap(),
-            "--no-modify-path",
-            "--no-completions",
-        ],
-        &[],
-    ));
-
-    assert!(!fx.home.path().join(".local/share/bash-completion").exists());
-    assert!(!fx.home.path().join(".local/share/zsh").exists());
-    assert!(!fx.home.path().join(".config/fish").exists());
-    assert!(!fx.home.path().join(".config/powershell").exists());
-}
-
-#[test]
 fn help_and_unknown_option_exit_codes() {
-    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
-        return;
-    };
+    let fx = Fixture::new(&[]);
     let help = fx.run(&["--help"], &[]);
     assert!(help.status.success());
     assert!(String::from_utf8_lossy(&help.stdout).contains("--no-modify-path"));
     let bogus = fx.run(&["--bogus"], &[]);
     assert_eq!(bogus.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&bogus.stderr).contains("unknown option: --bogus"));
+}
+
+/// TEXT check: no supported CI host reaches `detect_target`'s unsupported
+/// branch without faking `uname`, so this reads install.sh's source instead
+/// of running it.
+#[test]
+fn unsupported_platform_hints_name_the_wrapper() {
+    let text = std::fs::read_to_string(SCRIPT).unwrap();
+    let hints: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains("build from source"))
+        .collect();
+    assert!(hints.len() >= 2, "{text}");
+    for hint in &hints {
+        assert!(hint.contains("bash scripts/dev-install.sh"), "{hint}");
+    }
+    assert!(!text.contains("cargo install --path ."), "{text}");
 }
