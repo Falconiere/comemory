@@ -83,7 +83,7 @@ Other gaps:
 ```text
 install.sh ─ download ─ sha256 ─ extract ─ new --version ─┐   (any failure: old file untouched, exit 1)
                                                            ▼
-     lock $DIR/.comemory-install.lock (D6) ─ keep previous as $DIR/.comemory.prev.$$ (hard link, else cp -p)
+     lock $DIR/.comemory-install.lock (D6) ─ keep previous as $DIR/.comemory.prev.$$ (hard link; cp -p fallback)
      atomic rename staged → $DIR/comemory
      "$DIR/comemory" sync daemon ensure --json      (the new file; ensure evicts a mismatched coordinator,
                                                      returns ready only for its own identity, D3)
@@ -142,15 +142,15 @@ No new crate.
 |---|---|---|
 | D1 | On any post-swap readiness failure, `install.sh` **restores the previous file** by atomic rename and runs the restored file's `sync daemon ensure --json` (best effort). A binary predating 257 has no `ensure`, which is reported, not fatal. It exits **69**. A first-time install keeps the new file and exits 69 with `<DIR>/comemory sync daemon ensure` as the fix (the absolute path, since PATH setup did not run). Rollback cannot introduce a schema incompatibility: the transaction never opens the store (Non-Goal 4). If the restored coordinator's `store` reads `too_new`, that state predates this install; the message then adds the forward-recovery line (`keep the newer comemory; run comemory doctor`). | I-3/I-4. (Jev choice `restore` p=0.75.) |
 | D2 | `install.sh` parses `ensure`'s compact JSON (`src/cli/output/json.rs:15`) with whitespace-tolerant `sed`. The patterns are `"ready":[[:space:]]*true`, and `"version":"…"`/`"binary":"…"` inside the `daemon` object. Success requires: exit 0, `ready` true, `daemon.version` equal to the new file's `--version` number, and `daemon.binary` equal to `$(cd -P "$DIR" && pwd -P)/comemory`. A path containing `"` or `\` fails loudly as a mismatch and is never trusted. Identity beyond version and path is enforced by `ensure` itself (D3), so the shell needs no `stat` dialects. | I-1: report the daemon's responding version/path. No `jq` dependency. |
-| D3 | Readiness gains `binary_file: "<dev>:<ino>"`, captured when the coordinator starts from `metadata(current_exe())`. `BinaryIdentity` gains the same `file` for the caller. Rules: (a) `ensure::accept` for `Ensure`/`Restart`/`Repair` requires version, path **and** file to match the caller. (b) `wait_or_fail` accepts only a coordinator passing (a) for those intents; an old coordinator still answering at the deadline is `not ready: previous coordinator did not stop`. (c) Preflight, in both `quick_probe` and `accept`, replaces a coordinator when its `binary` is the caller's own canonical path, its `binary_file` differs, and the caller's `file` equals `stat(path)` now; that is, the caller *is* the on-disk file. A missing `binary_file` (pre-258 coordinator) counts as "differs" for (a) and "keep" for (c). | Same-version reinstall and rebuild restart on the new file (I-2). A kill after the rename is repaired by the next command (I-5). A still-running old process never evicts a newer coordinator. Amends 257 D13. (Jev choice `file_identity` p=0.99.) |
+| D3 | Readiness gains `binary_file: "<dev>:<ino>"`, captured when the coordinator starts from `metadata(current_exe())`. `BinaryIdentity` gains the same `file` for the caller. Rules: (a) `ensure::accept` for `Ensure`/`Restart`/`Repair` requires version, path **and** file to match the caller. (b) `wait_or_fail` accepts only a coordinator passing (a) for those intents; an old coordinator still answering at the deadline is `not ready: previous coordinator did not stop`. (c) Preflight, in both `quick_probe` and `accept`, replaces a coordinator when its `binary` is the caller's own canonical path, its `binary_file` differs, and the caller's `file` equals `stat(path)` now; that is, the caller *is* the on-disk file. A missing `binary_file` (pre-258 coordinator, e.g. v0.50.0) counts as "differs" for (a). For (c), it is replaced when its `binary` is the caller's own path, its `version` differs from the caller's, and the caller is the on-disk file. Otherwise it is kept. | Same-version reinstall and rebuild restart on the new file (I-2). A kill after the rename is repaired by the next command (I-5). A still-running old process never evicts a newer coordinator. Amends 257 D13. (Jev choice `file_identity` p=0.99.) |
 | D4 | `comemory upgrade` runs `ensure_child` in every non-`--check` outcome: `up_to_date`, the Homebrew tap-lag hint, `upgraded`, `installed`. On failure it exits 69 (`Error::Unavailable`), stating `binary replaced` or `binary unchanged`. It prints no success JSON. When `install.sh` itself exits 69 (D1), `run_script` maps it to `Error::Unavailable` with the script's rollback tail; other script failures keep `Error::Other` (70). | I-2 "repairs an absent daemon even when already up to date", and I-3. |
 | D5 | The `Report` JSON gains `daemon: {ready, action, supervisor, version, binary, binary_file, pid, data_dir}`. `supervisor` is `ensure`'s top-level value. With `--check` the field is absent: no probe, no write. | I-1 reporting. I-2 keeps `--check` non-mutating. |
-| D6 | `install.sh` serializes on `$DIR/.comemory-install.lock/`. **Acquire:** `mkdir` the lock, then immediately write `pid`. **Contended:** if `pid` exists and names a dead process, reclaim by `mv` of the lock to `.comemory-install.lock.stale.$$`; `rename` is atomic, so only one racer wins. The winner removes the stale copy and retries `mkdir`. A lock with no `pid` yet, or a live pid, means wait. The wait polls every 0.5 s for up to 60 s, then exits 1 with `another install into <dir> is running (pid N)`. At start, the installer also removes `.comemory.new.<pid>`/`.comemory.prev.<pid>` leftovers whose pid is dead. | "Race two installers": one swap and one `ensure` at a time. A rollback cannot clobber a racer's newer file. |
+| D6 | `install.sh` serializes on `$DIR/.comemory-install.lock`, a **symlink whose target is the owner pid**. `ln -s "$$" lock` is atomic and carries the pid, so there is no window between creation and pid write. **Liveness:** `ps -p <pid>` (works for other users' pids; any process with that pid counts as alive). **Reclaim of a dead pid P:** first claim the one-shot right with `ln -s "$$" lock.reclaim.P`. Only one racer per P can create it; losers wait. The winner re-reads `lock`; if it still names P, it replaces it atomically (`ln -s "$$" lock.new.$$ && mv -f lock.new.$$ lock`). Nobody else can take a lock that names a dead P, because its owner never releases it and every reclaim of P is gated by the marker. **Release:** `rm -f lock lock.reclaim.*`, only while `lock` still names `$$`. **Wait:** poll every 0.5 s for up to 60 s, then exit 1 with `another install into <dir> is running (pid N)`. At start the installer also removes `.comemory.new.<pid>`/`.comemory.prev.<pid>` leftovers whose pid is dead. | "Race two installers": one swap and one `ensure` at a time. A rollback cannot clobber a racer's newer file. (Round-2 review: a mkdir+pid-file lock could steal a live lock and wedge on a pid-less dir.) |
 | D7 | `spawn` (the `process` supervisor) removes `COMEMORY_API_KEY` from the child environment. Units carry only `COMEMORY_DATA_DIR` and `COMEMORY_DAEMON_SUPERVISOR` (D12). | I-9: an installer shell's exported key never becomes the resident daemon's credential. Protected `auth.json` stays the only path. Only `COMEMORY_API_KEY` is a credential variable (`src/config/env.rs:311`). |
 | D8 | On the Homebrew channel, `upgrade` runs `ensure_child` with `$(brew --prefix comemory)/bin/comemory`. The expected `binary` is the **canonicalized** result of that path (the new Cellar file), not the old `exe`. Real brew evidence is tap#1's. | The I-6 split. Without canonicalizing, the check could never pass (reviewer finding). |
-| D9 | No flag or env var skips `ensure` in either installer. `--quiet` hides only progress; `--no-completions` and `--no-modify-path` are unrelated. **External supervisor:** `ensure` evicts a mismatched operator-run coordinator gracefully, then waits for the operator's restart policy (docker `restart:`, systemd `Restart=always`) to relaunch `sync daemon run` from the stable path, which is now the new file. Without a restart within the bound, the result is not ready, so the install rolls back (D1). The message names `restart your comemory sync daemon run`. Documented in `docs/configuration.md`. | I-8, and an explicit failure with a supported foreground path. (Jev choice `evict_and_wait` p=0.92.) |
+| D9 | No flag or env var skips `ensure` in either installer. `--quiet` hides only progress; `--no-completions` and `--no-modify-path` are unrelated. **External supervisor:** `ensure` evicts a mismatched operator-run coordinator gracefully, then waits for the operator's restart policy (docker `restart:`, systemd `Restart=always`) to relaunch `sync daemon run` from the stable path, which is now the new file. Without a restart within the bound, the result is not ready, so the install rolls back (D1). The message names `restart your comemory sync daemon run`. Documented in `docs/configuration.md`, with the limitation that a container whose main process is `sync daemon run` restarts as a whole. Inside such a container, install from the image build, not via `docker exec`. | I-8, and an explicit failure with a supported foreground path. (Jev choice `evict_and_wait` p=0.92.) |
 | D10 | Native lifecycle evidence runs on disposable GitHub Actions runners. A new `daemon-install` job in `test.yml` runs on every ready PR and is added to the required `test` facade's `needs`, with test-suite's release-plz skip handling. Its matrix: `macos-14` (launchd), `ubuntu-22.04` native (systemd `--user`), `ubuntu-22.04` headless. **macOS:** the first step runs `launchctl print gui/$(id -u)` and **fails** the job if absent. **Ubuntu native:** it runs `sudo loginctl enable-linger "$USER"`, exports `XDG_RUNTIME_DIR=/run/user/$(id -u)` and `DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus`, waits for `systemctl --user is-system-running` to answer, and fails if it does not. Native mode uses the runner's **real HOME**, so the user manager reads `~/.config/systemd/user` and the LaunchAgents directory. The script asserts readiness `supervisor` equals the native kind, so a silent `process` fallback fails the run. **Headless:** unsets both bus variables and expects `process`. Local iteration uses Colima (Linux, headless). The script refuses native mode unless `CI=true` or `COMEMORY_DISPOSABLE_ENV=1`. | Orchestrator decision 2026-09-27 (Jev ci 1.0). The issue forbids the developer's session. The repo is public, so runner minutes are free. (Jev noul 0.53 on every-PR; chosen because daemon behavior can regress from any `src/` change.) |
-| D11 | The script's binaries: **old** is the real published `v0.50.0` artifact (carries 257's `ensure`); **broken-new** is the real `v0.49.1` artifact (no `ensure`). Both are fetched with their published `.sha256`. **New** is two real branch builds, `X.Y.(Z+1)-lifecycle.1` and `-lifecycle.2`. They are built from a scratch `git worktree` whose `Cargo.toml` version is rewritten and whose `Cargo.lock` is refreshed by `cargo update -p comemory --offline`. They share the job's `CARGO_TARGET_DIR`, so only the `comemory` crate recompiles. v0.50.0 → lifecycle.1 exercises the old client's `upgrade` running the new `install.sh`. lifecycle.1 → lifecycle.2 exercises the new `upgrade` code. | "Exercise old/new actual binaries". Cargo tests cannot build two versions offline. |
+| D11 | The script's binaries: **old** is the real published `v0.50.0` artifact (carries 257's `ensure`); **broken-new** is the real `v0.49.1` artifact (no `ensure`). Both are fetched with their published `.sha256`. **New** is two real branch builds, `X.Y.(Z+1)-lifecycle.1` and `-lifecycle.2`. They are built from a scratch `git worktree` whose `Cargo.toml` version is rewritten and whose `Cargo.lock` is refreshed by `cargo update -p comemory --offline`. They are built with `--profile release-quick`, the profile `dev-install.sh` uses, and share the job's `CARGO_TARGET_DIR`, so only the `comemory` crate recompiles. v0.50.0 → lifecycle.1 exercises the old client's `upgrade` running the new `install.sh`. lifecycle.1 → lifecycle.2 exercises the new `upgrade` code. | "Exercise old/new actual binaries". Cargo tests cannot build two versions offline. |
 | D12 | `render_launch_agent_plist`/`render_systemd_unit` add `COMEMORY_DAEMON_SUPERVISOR=launchd|systemd`. | Readiness then reports the real kind, which 257's design already promised. |
 | D13 | I-7 in-product text: `cargo_hint` (`upgrade.rs:196-200`) and `install.sh`'s unsupported-platform hints (`install.sh:98,102`) recommend `scripts/dev-install.sh` (the finalizing wrapper). A bare `cargo install` recipe is followed by `&& comemory sync daemon ensure`. | Supported source-install instructions must use the wrapper. |
 | D14 | The release-finalize smoke additionally asserts the `Sync daemon  ready` line and a matching `ensure --json` from the published binary on `ubuntu-22.04` (headless, so `process`), then runs `sync daemon uninstall`. | I-6: generated release artifacts keep the hook, checked on the real published asset. |
@@ -163,8 +163,17 @@ Flags are unchanged. `comemory upgrade` still passes
 `--version --dir --no-modify-path --quiet`, and now also exports
 `COMEMORY_DATA_DIR`.
 
-The installer must stay within the 300-line guardrail; the budget is about 70
-added code lines. Usage text gains no flag. A new progress line follows
+The installer must stay within the 300-line guardrail. The budget is about
+70 added code lines, and if it overflows, cut in this order:
+
+1. one-line error hints;
+2. merge `say`/`step` variants;
+3. fold the leftover sweep into the lock helper.
+
+Usage text gains no flag. `.prev` is a hard link (same directory, same
+filesystem), so AC-4(a)'s same-pid assertion holds. The `cp -p` fallback,
+used only where hard links fail, gives a new inode: the restored `ensure`
+then replaces the coordinator and still reports ready. A new progress line follows
 "Installed":
 
 ```text
@@ -303,7 +312,9 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
   - the outbox op ids and count are unchanged;
   - `data_dir`, the cursor rows and the unit `<id>` are unchanged.
 
-  When the hub starts, the hub receives exactly those N ops from the new pid.
+  When the hub starts, the hub's feed holds exactly those N ops. The new
+  pid's readiness then reports `sync.last_pass.pushed` summing to N and an
+  empty outbox.
 - **AC-4 (I-3/I-4 rollback):**
   - (a) Installing a release whose binary cannot become ready (the stub
     archive in cargo tests; the real `v0.49.1` archive in the script) over a
@@ -331,7 +342,10 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
   - (c) Simulated kill after the rename: `mv` of a freshly built copy over
     `<bin>/comemory`, with no `ensure`. The next `comemory stats`, run from
     `<bin>/comemory`, replaces the coordinator with one whose `binary_file`
-    matches the file. The D3c rule is a pure function over readiness and
+    matches the file. The test polls the probe for up to 30 s, because a
+    preflight's `wait_or_fail` may still see the old coordinator stopping.
+    The script adds the same case from a real v0.50.0 coordinator (no
+    `binary_file`). The D3c rule is a pure function over readiness and
     caller identity. A colocated unit test runs it on the metadata of two
     real files. It proves that a caller whose own `file` differs from
     `stat(path)`, i.e. an older process still running after the swap, never
@@ -342,7 +356,8 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
     such variable in its environment (`ps eww` / `/proc/<pid>/environ`). It
     reports `auth.state: logged_out`, and no file under the data dir or unit
     directory contains the value.
-  - `sync daemon uninstall` removes the unit, `daemon.sock` and
+  - `sync daemon uninstall` removes the unit, the socket at the path
+    readiness reported in `socket` (it may be the fallback directory), and
     `daemon.json`; `comemory.db` still returns a saved memory; a second data
     dir's coordinator still answers.
   - Native units contain only the two documented env keys.
@@ -366,9 +381,13 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
   supervisor kind equal to the mode.
 - **AC-9 (I-6/I-7 artifacts):** The release-finalize smoke asserts the daemon
   line and `ensure` identity for the published asset. `upgrade`'s
-  `cargo install` hint (asserted in `cli__upgrade.rs`) and install.sh's
-  unsupported-platform hint (asserted by a unit-level shell case) name
-  `scripts/dev-install.sh`.
+  `cargo install` hint (asserted at runtime in `cli__upgrade.rs` on a real
+  `cargo install` layout: `.crates.toml` beside the copied binary, the
+  existing channel fixture) names `scripts/dev-install.sh`. install.sh's
+  unsupported-platform hints are checked as **text**
+  (`install_script.rs::unsupported_platform_hints_name_the_wrapper` reads
+  `install.sh`), because no supported CI host reaches that branch without
+  faking `uname`.
 
 ## Acceptance evidence
 
@@ -382,7 +401,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
 | AC-6 | Two concurrent real `sh install.sh`; a second `--dir`; `mv` without `ensure` | One pid (`coordinator_pids_for`); one unit (native); replacement on `stats` | Race, relocation, older-process non-eviction | `install_daemon`; script `race`, `relocate`, `kill-after-rename` |
 | AC-7 | Exported key-shaped value; two data dirs | Absent from env and files; uninstall scope | Second data dir survives | `install_daemon`; script `uninstall` |
 | AC-8 | Real v0.50.0 and v0.49.1 artifacts from GitHub; two real branch builds | Every scenario `PASS` in three modes | Headless without a bus; launchd `gui/<uid>` probe fails the job when absent | `test.yml` job `daemon-install` (a facade `needs`) |
-| AC-9 | Published release asset; upgrade hint; install.sh hint | Smoke passes; hints name the wrapper | — | release-finalize smoke; `cargo nextest run --test cli__upgrade --test install_script` |
+| AC-9 | Published release asset; real `cargo install` layout; install.sh text | Smoke passes; hints name the wrapper (install.sh hint is a labelled text check) | — | release-finalize smoke; `cargo nextest run --test cli__upgrade --test install_script` |
 
 Every cargo test above is added red first on current code, which produces no
 daemon at install time, no `daemon` field, and no same-version replacement.
