@@ -12,14 +12,25 @@
 //! The `process` spawn also never hands an inherited `COMEMORY_API_KEY` to
 //! the resident coordinator.
 
+#[path = "common/daemon_hub_support.rs"]
+mod daemon_hub_support;
 #[path = "common/daemon_support.rs"]
 mod daemon_support;
+#[path = "common/exchange_support.rs"]
+mod exchange_support;
+#[path = "common/fault_proxy.rs"]
+mod fault_proxy;
+#[path = "common/replica_support.rs"]
+mod replica_support;
 
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use daemon_hub_support::write_auth;
 use daemon_support::{DaemonHome, alive};
+use exchange_support::Hub;
+use fault_proxy::Fault;
 
 const READY: Duration = Duration::from_secs(30);
 
@@ -188,4 +199,34 @@ fn a_descriptor_the_caller_leaked_never_pins_the_callers_pipe_open() {
         String::from_utf8_lossy(&out.stderr)
     );
     home.wait_ready(READY);
+}
+
+#[test]
+fn a_coordinator_draining_a_held_pass_is_still_replaced_within_ensure() {
+    let hub = Hub::start();
+    let home = DaemonHome::new();
+    drop(comemory::store::connection::open(home.paths().db_path()).unwrap());
+    std::fs::write(
+        home.data_dir().join("config.toml"),
+        "[sync]\ndaemon_interval = \"1s\"\n",
+    )
+    .unwrap();
+    write_auth(&home, &hub);
+    let bin = install_copy(&home.root().join("bin/comemory"));
+    let old_pid = pid_of(&ensure_from(&home, &bin, &[]));
+
+    // The old coordinator's next tick blocks inside an upstream request, so
+    // its graceful stop spends its whole grace waiting for that pass.
+    hub.proxy.arm(Fault::HoldRequest {
+        path: "/sync/replica/changes".into(),
+    });
+    std::thread::sleep(Duration::from_millis(2500));
+    install_copy(&bin);
+    let after = ensure_from(&home, &bin, &[]);
+    hub.proxy.release();
+
+    assert_eq!(after["ready"], true, "{after}");
+    assert_ne!(pid_of(&after), old_pid, "{after}");
+    assert_eq!(after["daemon"]["binary_file"], file_id(&bin), "{after}");
+    wait_gone(old_pid);
 }

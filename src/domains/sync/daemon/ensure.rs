@@ -17,6 +17,10 @@ use crate::utilities::file_lock::FileLock;
 /// Lock file serializing repairs for one data directory.
 pub const ENSURE_LOCK: &str = "daemon-ensure.lock";
 
+/// How long an evicted coordinator may take to drain and release
+/// `daemon.lock`: its own 15 s stop grace plus a margin.
+const EVICT_BOUND: Duration = Duration::from_secs(20);
+
 /// How the caller intends to use the result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Intent {
@@ -208,9 +212,15 @@ fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ens
     // Whatever answered has the wrong identity (or nothing does): evict it
     // gracefully before starting a fresh one, so two coordinators for this
     // directory never race for `daemon.lock`.
-    if evicting {
-        stop_if_healthy(paths, deadline);
-    }
+    // The drain gets its own bound (the coordinator's stop grace plus a
+    // margin), and the replacement then gets the intent's full window: a
+    // loaded host can spend most of one shared budget on the drain alone.
+    let deadline = if evicting {
+        stop_if_healthy(paths, Instant::now() + EVICT_BOUND);
+        Instant::now() + intent.bound()
+    } else {
+        deadline
+    };
     // Stale metadata cannot prove process ownership after PID reuse. Only
     // the authenticated control connection above authorizes shutdown.
 
@@ -280,10 +290,11 @@ fn wait_or_fail(
     let current = identity::BinaryIdentity::current()?;
     // The last verified coordinator that was not this binary, if any.
     let mut other: Option<String>;
+    // Why the last probe found no coordinator, for the error.
+    let mut last_miss: Option<Probe> = None;
     loop {
-        if let Probe::Healthy(readiness) =
-            client::probe(paths, remaining(deadline, client::PROBE_BOUND))
-        {
+        let probe = client::probe(paths, remaining(deadline, client::PROBE_BOUND));
+        if let Probe::Healthy(readiness) = probe {
             if fits(settled(intent), &readiness, &current) {
                 return Ok(Ensured {
                     ready: true,
@@ -304,13 +315,28 @@ fn wait_or_fail(
             ));
         } else {
             other = None;
+            last_miss = Some(probe);
         }
         if Instant::now() >= deadline {
-            let error = other.unwrap_or_else(|| local_service_error(supervisor));
+            let error = other.unwrap_or_else(|| unanswered(paths, supervisor, last_miss.take()));
             return Ok(not_ready(supervisor, notes, error));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// Why nothing answered by the deadline: the local-service fix, what the
+/// last probe saw, and the process-supervised coordinator's own last log
+/// line (a start-up failure such as a held `daemon.lock` shows up there).
+fn unanswered(paths: &Paths, supervisor: supervisor::Kind, miss: Option<Probe>) -> String {
+    let mut parts = vec![local_service_error(supervisor)];
+    if let Some(Probe::NotRunning(why) | Probe::Stale(why)) = miss {
+        parts.push(format!("last probe: {why}"));
+    }
+    if let Some(line) = spawn::last_log_line(paths) {
+        parts.push(format!("coordinator log: {line}"));
+    }
+    parts.join("; ")
 }
 
 /// A not-ready result. The notes (a supervisor fallback, say) are folded

@@ -459,3 +459,26 @@ None blocking. Homebrew lifecycle and real-brew evidence belong to
 homebrew-tap#1 (owner: that issue's worker; blocked by this issue). It is
 non-blocking here because D8 keeps `comemory upgrade` correct on that channel,
 and the docs claim no more.
+
+## Delivery findings (post-approval, recorded for review)
+
+Proving the installers on loaded CI runners exposed four races in 257's
+eviction path. Each is fixed in this change with a real-process test:
+
+- **Lock release before start.** A stopping coordinator stops answering
+  before it drops `daemon.lock`. `ensure` now waits for the lock after an
+  eviction; a replacement started earlier would exit 75.
+- **Socket ownership on unbind.** The lock is released before the socket is
+  removed, so a replacement can bind a fresh socket at the same path first.
+  `unbind` now removes only the inode that instance bound, which the guard
+  keeps current across rebinds (`tests/watchdog.rs`).
+- **Separate drain and start budgets.** The drain gets its own bound (the
+  15 s stop grace plus a margin), then the replacement gets the intent's
+  full window. A single shared 20 s budget could be spent almost entirely on
+  the drain.
+- **Inherited descriptors.** The `process` spawn closes every inherited
+  non-CLOEXEC descriptor. On macOS a leaked parent pipe pinned a test's
+  output forever.
+
+A not-ready `ensure` error now carries its notes, the last probe result and
+the coordinator's last log line, so an installer's failure explains itself.

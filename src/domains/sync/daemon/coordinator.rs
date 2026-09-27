@@ -10,6 +10,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::signal::unix::{SignalKind, signal};
@@ -55,19 +56,24 @@ pub async fn run(paths: &Paths) -> Result<()> {
     })?;
     let socket = socket_path::plan(&canonical)?;
     let listener = watchdog::bind(&socket)?;
+    // The socket inode this instance owns right now; the guard updates it
+    // on a rebind, and the final unbind removes only that inode.
+    let bound = Arc::new(AtomicU64::new(watchdog::inode(&socket).unwrap_or(0)));
     let state = State::new(initial_readiness(&paths, &canonical, &socket)?);
     let me = state.readiness();
     runtime_record::write(&paths, &record_of(&me))?;
     tracing::info!(pid = me.pid, socket = %socket.display(), "sync daemon answering");
 
-    let tasks = spawn_tasks(&paths, &canonical, &socket, &state, listener)?;
+    let tasks = spawn_tasks(&paths, &canonical, &socket, &state, listener, &bound)?;
     let outcome = wait_for_stop(&paths, &state, &tasks).await;
     shutdown(&state, tasks).await;
     // Release `daemon.lock` before the socket and record disappear: a
     // replacement spawned the instant this instance looks stopped must
     // never race this instance for the lock (D2/D13).
     drop(lock);
-    watchdog::unbind(&socket, &me.instance, &paths);
+    // A replacement may already have bound a fresh socket at this path
+    // (the lock is free); only this instance's own inode is removed.
+    watchdog::unbind(&socket, bound.load(Ordering::SeqCst), &me.instance, &paths);
     runtime_record::remove_if_ours(&paths, &me.instance)?;
     tracing::info!("sync daemon stopped");
     outcome
@@ -91,6 +97,7 @@ fn spawn_tasks(
     socket: &Path,
     state: &Arc<State>,
     listener: tokio::net::UnixListener,
+    bound: &Arc<AtomicU64>,
 ) -> Result<Tasks> {
     let queue = Queue::new();
     let (gen_tx, gen_rx) = generation::channel(0_u64);
@@ -118,6 +125,7 @@ fn spawn_tasks(
         socket.to_path_buf(),
         rebind_tx,
         Arc::clone(&shutdown),
+        Arc::clone(bound),
     ));
     Ok(Tasks {
         worker,
