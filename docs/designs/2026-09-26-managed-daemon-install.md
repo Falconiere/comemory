@@ -285,7 +285,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
 
 ## Acceptance criteria
 
-- **AC-1 (I-1):** Setup: a logged-out isolated `HOME`, the `process`
+- **AC-1:** (I-1) Setup: a logged-out isolated `HOME`, the `process`
   supervisor, and a staged release of the real branch binary. Running
   `sh install.sh --dir <tmp>/bin --no-modify-path` (and again with
   `--quiet --no-completions`) exits 0. A verified coordinator then answers
@@ -296,7 +296,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
     `cargo install`.
   - Under `COMEMORY_DAEMON_SUPERVISOR=external`, dev-install.sh exits
     non-zero with `the sync daemon is not ready`.
-- **AC-2 (I-2):** Setup: a coordinator started by an installed real binary,
+- **AC-2:** (I-2) Setup: a coordinator started by an installed real binary,
   with pid P recorded.
   - `<bin>/comemory upgrade --force --version v<cur> --json` reports
     `status: installed` and a `daemon` whose `pid ≠ P`, with P gone, and
@@ -307,7 +307,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
     socket or coordinator process.
   - `comemory --data-dir <X> upgrade --force …` leaves the coordinator bound
     to canonical `<X>`, and the default data dir absent.
-- **AC-3 (I-2 preservation):** Setup: N pending operations saved against a
+- **AC-3:** (I-2 preservation) Setup: N pending operations saved against a
   stopped `exchange_support::Hub`. After AC-2's forced upgrade:
   - the outbox op ids and count are unchanged;
   - `data_dir`, the cursor rows and the unit `<id>` are unchanged.
@@ -315,7 +315,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
   When the hub starts, the hub's feed holds exactly those N ops (ids equal
   to the preserved outbox ids), and the client's outbox is empty. The
   coordinator answering is the new pid.
-- **AC-4 (I-3/I-4 rollback):**
+- **AC-4:** (I-3/I-4 rollback)
   - (a) Installing a release whose binary cannot become ready (the stub
     archive in cargo tests; the real `v0.49.1` archive in the script) over a
     working install exits 69. The file is byte-identical (sha256) to the
@@ -329,10 +329,10 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
     names `<path> sync daemon ensure`.
   - (d) `comemory upgrade` over (a) exits 69 with no stdout JSON, and the
     binary is unchanged.
-- **AC-5 (I-4 pre-swap):** A truncated archive, a wrong `.sha256` or a
+- **AC-5:** (I-4 pre-swap) A truncated archive, a wrong `.sha256` or a
   missing tag each exits 1. The previous file stays byte-identical and the
   previous coordinator answers with the same pid and instance.
-- **AC-6 (I-5):**
+- **AC-6:** (I-5)
   - (a) Two concurrent `install.sh` runs into one dir both exit 0, or one
     reports the lock. Afterwards `coordinator_pids_for(data_dir)` has exactly
     one pid; under native mode exactly one unit file exists for the data dir.
@@ -350,7 +350,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
     real files. It proves that a caller whose own `file` differs from
     `stat(path)`, i.e. an older process still running after the swap, never
     evicts.
-- **AC-7 (I-9):**
+- **AC-7:** (I-9)
   - A `process`-supervised coordinator started by `install.sh` with
     `COMEMORY_API_KEY` exported (a split literal, safe for gitleaks) has no
     such variable in its environment (`ps eww` / `/proc/<pid>/environ`). It
@@ -361,7 +361,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
     `daemon.json`; `comemory.db` still returns a saved memory; a second data
     dir's coordinator still answers.
   - Native units contain only the two documented env keys.
-- **AC-8 (native, CI):** `bash scripts/test-daemon-install.sh` passes in
+- **AC-8:** (native, CI) `bash scripts/test-daemon-install.sh` passes in
   three modes: `--native` on `macos-14` (launchd), `--native` on
   `ubuntu-22.04` (systemd `--user`), and `--headless` on `ubuntu-22.04`. The
   scenarios, all with real binaries:
@@ -379,7 +379,7 @@ resolved `--data-dir`/`COMEMORY_DATA_DIR`.
 
   Each asserts pid, version, binary path, `binary_file`, unit count, and the
   supervisor kind equal to the mode.
-- **AC-9 (I-6/I-7 artifacts):** The release-finalize smoke asserts the daemon
+- **AC-9:** (I-6/I-7 artifacts) The release-finalize smoke asserts the daemon
   line and `ensure` identity for the published asset. `upgrade`'s
   `cargo install` hint (asserted at runtime in `cli__upgrade.rs` on a real
   `cargo install` layout: the binary copied into `$CARGO_HOME/bin`, a
