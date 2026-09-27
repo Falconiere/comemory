@@ -1,6 +1,6 @@
 # Start and verify the required daemon after every managed install or update — Design
 
-**Date:** 2026-09-27   **Status:** Draft   **Author:** Auto
+**Date:** 2026-09-27   **Status:** Approved   **Author:** Auto
 **Topic:** Every managed install/update path ends with a verified, current
 sync coordinator for the data directory, or fails honestly (issue 258,
 epic 248). Builds on `2026-09-25-required-sync-daemon.md` (issue 257).
