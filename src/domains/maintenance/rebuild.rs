@@ -22,13 +22,15 @@
 //! connection of its own; the HTTP job replaces through the server's shared
 //! connection, so it needs no reopen and no swap.
 //!
-//! ## Writers paused
+//! ## Exchange and writers paused
 //!
-//! [`stage`] takes `memory-save.lock` before reading anything and the
-//! [`Staged`] value holds it until the replace is done, so no markdown writer
-//! can land between the markdown walk and the copy. It waits `[sync]
-//! pause_wait` for a current holder, then fails [`Error::Busy`] having
-//! changed nothing — as does a save waiting on a rebuild.
+//! [`stage`] first pauses the exchange ([`exchange_gate::pause`], so no
+//! sync pass pulls into or pushes out of the store mid-rebuild), then takes
+//! `memory-save.lock` before reading anything; the [`Staged`] value holds
+//! both until the replace is done, so no markdown writer can land between the
+//! markdown walk and the copy. Each waits `[sync] pause_wait` for a current
+//! holder, then fails [`Error::Busy`] having changed nothing — as does a save
+//! waiting on a rebuild.
 //!
 //! ## Code index + learning-state preservation
 //!
@@ -66,6 +68,7 @@ use crate::config::paths::Paths;
 use crate::domains::documents::source::mirror;
 use crate::domains::documents::source::registry::Registry;
 use crate::domains::memories::{MemoryStore, SaveGuard, save_lock};
+use crate::domains::sync::exchange_gate::{self, ExchangePause};
 use crate::domains::sync::replica::bootstrap;
 use crate::prelude::*;
 use crate::store::connection;
@@ -102,12 +105,14 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<()> {
     staged.replace_into(&mut live)
 }
 
-/// A rebuilt database staged beside the live one, holding `memory-save.lock`
-/// until [`Staged::replace_into`] installs it. Dropping it — installed or
-/// not — removes the tmp file and its sidecars, then releases the lock.
+/// A rebuilt database staged beside the live one, holding the exchange
+/// pause and `memory-save.lock` until [`Staged::replace_into`] installs it.
+/// Dropping it — installed or not — removes the tmp file and its sidecars,
+/// then releases the lock and, last, resumes the exchange.
 pub struct Staged {
     tmp_path: PathBuf,
     _guard: SaveGuard,
+    _pause: ExchangePause,
 }
 
 impl Staged {
@@ -129,17 +134,20 @@ impl Drop for Staged {
     }
 }
 
-/// Pause markdown writers, build the new DB at `comemory.db.rebuild.tmp`
+/// Pause the exchange and markdown writers, build the new DB at `comemory.db.rebuild.tmp`
 /// from markdown plus the preserved tables, and snapshot the still-live
 /// `comemory.db` to [`crate::config::paths::Paths::rebuild_backup`].
 ///
 /// # Errors
-/// [`Error::Busy`] when `memory-save.lock` is still held after `[sync]
-/// pause_wait` — before anything is read or written. Any build or snapshot
+/// [`Error::Busy`] when a sync pass still holds the exchange gate, or a
+/// writer `memory-save.lock`, after `[sync] pause_wait` — before anything is
+/// read or written. Any build or snapshot
 /// failure removes the tmp file and leaves the live DB untouched.
 pub fn stage(paths: &Paths, cfg: &Config) -> Result<Staged> {
     paths.ensure_dirs()?;
-    let guard = save_lock::acquire_within(paths, cfg.sync.pause_wait_duration()?)?;
+    let wait = cfg.sync.pause_wait_duration()?;
+    let pause = exchange_gate::pause(paths, wait)?;
+    let guard = save_lock::acquire_within(paths, wait)?;
     let db = paths.db_path();
     let tmp_path = {
         let mut p = db.clone().into_os_string();
@@ -153,6 +161,7 @@ pub fn stage(paths: &Paths, cfg: &Config) -> Result<Staged> {
     let staged = Staged {
         tmp_path,
         _guard: guard,
+        _pause: pause,
     };
     build_new_db(&db, &staged.tmp_path, paths)?;
     if db.exists() {

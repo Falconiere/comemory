@@ -401,3 +401,28 @@ fn a_replaced_database_without_its_manifest_stays_refused_until_merged() {
     assert_eq!(admit(&mut home).expect("admit"), Ensured::Current);
     assert!(live_memory_ids(&home.conn).is_empty());
 }
+
+#[test]
+fn a_sync_pass_holding_the_gate_holds_off_create_and_restore() {
+    let (mut home, _id, owner, dir) = backed_up_home();
+    home.cfg.sync.pause_wait = "1s".to_string();
+    let epoch = home.epoch();
+    let pass = comemory::domains::sync::auto::hold_pass_lock(&home.paths).expect("a pass");
+
+    let second = owner.path().join("second");
+    let created = backup::create(&home.paths, &home.cfg, Some(second.clone()));
+    assert!(matches!(created, Err(Error::Busy(_))), "{created:?}");
+    assert!(!second.exists(), "a held-off backup writes nothing");
+    let restored = restore_of(&home, &dir);
+    assert!(matches!(restored, Err(Error::Busy(_))), "{restored:?}");
+    assert!(
+        !restore_state::pending_path(&home.paths).exists(),
+        "a held-off restore records nothing"
+    );
+    assert_eq!(home.epoch(), epoch, "a held-off restore keeps the epoch");
+
+    drop(pass);
+    backup::create(&home.paths, &home.cfg, Some(second)).expect("create once the pass ends");
+    let restored = restore_of(&home, &dir).expect("restore once the pass ends");
+    assert_ne!(restored.epoch, epoch);
+}

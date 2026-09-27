@@ -775,6 +775,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/memory_store/git.rs | private | none | none | domains::sync | src/domains/sync/memory_store/git.rs | retain |
 | src/domains/sync/pull.rs | comemory::domains::sync::pull; crate-root-alias | src/domains/sync/tests/pull.rs | none | domains::sync | src/domains/sync/pull.rs | retain |
 | src/domains/sync/push.rs | comemory::domains::sync::push; crate-root-alias | src/domains/sync/tests/push.rs | none | domains::sync | src/domains/sync/push.rs | retain |
+| src/domains/sync/exchange_gate.rs | comemory::domains::sync::exchange_gate; preserve | src/domains/sync/tests/exchange_gate.rs | none | domains::sync | src/domains/sync/exchange_gate.rs | retain |
 | src/domains/sync/push_on_save.rs | comemory::domains::sync::push_on_save; crate-root-alias | src/domains/sync/tests/push_on_save.rs | none | domains::sync | src/domains/sync/push_on_save.rs | retain |
 | src/domains/sync/redact.rs | comemory::domains::sync::redact; crate-root-alias | src/domains/sync/tests/redact.rs | none | domains::sync | src/domains/sync/redact.rs | retain |
 | src/domains/sync/replica.rs | comemory::domains::sync::replica; preserve | src/domains/sync/replica/tests/support.rs | none | domains::sync | src/domains/sync/replica.rs | retain |

@@ -2,12 +2,12 @@
 //! (#256, B-4). CLI-only.
 //!
 //! [`create`] snapshots the database (`VACUUM INTO`), `memories/` and
-//! `backup.json` under `memory-save.lock`; [`restore`] installs one under a
-//! new stream epoch with the erasure manifest merged in before it is served;
-//! [`merge_erasures`] merges a manifest the restore could not find. The
-//! exchange gate (B-3) is not taken yet — `domains::sync::exchange_gate`
-//! lands in its own step — but every sync surface refuses while a restore is
-//! pending (`replica::restore_state`).
+//! `backup.json` with the exchange paused (`domains::sync::exchange_gate`)
+//! and under `memory-save.lock`; [`restore`] installs one, under the same
+//! two, with a new stream epoch and the erasure manifest merged in before it
+//! is served; [`merge_erasures`] merges a manifest the restore could not
+//! find. Every sync surface refuses while a restore is pending
+//! (`replica::restore_state`).
 
 use std::path::{Path, PathBuf};
 
@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, Paths};
 use crate::domains::memories::save_lock;
+use crate::domains::sync::exchange_gate;
 use crate::prelude::*;
 use crate::store::migrate::{backup as snapshot, preflight};
 use crate::store::{connection, replica_journal};
@@ -147,7 +148,8 @@ pub fn merge_erasures(paths: &Paths, cfg: &Config, file: &Path) -> Result<Merged
 /// # Errors
 /// [`Error::Unavailable`] when there is no database to back up;
 /// [`Error::Conflict`] when `out` already holds a backup; [`Error::Busy`]
-/// when `memory-save.lock` is not granted within `[sync] pause_wait`;
+/// when the exchange gate or `memory-save.lock` is not granted within
+/// `[sync] pause_wait`;
 /// SQLite and filesystem failures.
 pub fn create(paths: &Paths, cfg: &Config, out: Option<PathBuf>) -> Result<Created> {
     let db = paths.db_path();
@@ -168,7 +170,9 @@ pub fn create(paths: &Paths, cfg: &Config, out: Option<PathBuf>) -> Result<Creat
             dir.display()
         )));
     }
-    let _guard = save_lock::acquire_within(paths, cfg.sync.pause_wait_duration()?)?;
+    let wait = cfg.sync.pause_wait_duration()?;
+    let _pause = exchange_gate::pause(paths, wait)?;
+    let _guard = save_lock::acquire_within(paths, wait)?;
     let conn = connection::open(&db)?;
     std::fs::create_dir_all(&dir)?;
     snapshot::snapshot(&conn, &dir.join(DB_FILE))?;

@@ -2,13 +2,14 @@
 //! (#256, B-4): install a backup under a new stream epoch, with every erase
 //! the backup predates merged back in before anything is served.
 //!
-//! Under `memory-save.lock` for the whole run: record `restore.pending`; copy
-//! the snapshot beside the live files and open it (an older one migrates
-//! forward); mark it `merging`, mint an epoch into `identity.json` (reason
-//! `restore`) and give it the identity's device id; merge the manifest, or
-//! mark it `erasure_unknown` — local-only — when none is established;
-//! snapshot what it replaces; then swap ([`super::swap`]). A rerun finishes
-//! a swap it finds pending, and starts over a staging it finds pending.
+//! With the exchange paused and under `memory-save.lock` for the whole run:
+//! record `restore.pending`; copy the snapshot beside the live files and open
+//! it (an older one migrates forward); mark it `merging`, mint an epoch into
+//! `identity.json` (reason `restore`) and give it the identity's device id;
+//! merge the manifest, or mark it `erasure_unknown` — local-only — when none
+//! is established; snapshot what it replaces; then swap ([`super::swap`]). A
+//! rerun finishes a swap it finds pending, and starts over a staging it finds
+//! pending.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -18,6 +19,7 @@ use super::{DB_FILE, MEMORIES_DIR, RestoreRequest as Request, Restored};
 use crate::config::{Config, Paths};
 use crate::domains::maintenance::rebuild;
 use crate::domains::memories::save_lock::{self, SaveGuard};
+use crate::domains::sync::exchange_gate;
 use crate::domains::sync::replica::erasure_manifest;
 use crate::domains::sync::replica::identity::{self, IdentityGuard, MANIFEST_FILE, RESTORED};
 use crate::domains::sync::replica::restore_state::{self, State};
@@ -30,6 +32,7 @@ pub(super) fn run(paths: &Paths, cfg: &Config, req: &Request) -> Result<Restored
     let layout = Layout::of(paths);
     let wait = cfg.sync.pause_wait_duration()?;
     std::fs::create_dir_all(paths.data_dir())?;
+    let _pause = exchange_gate::pause(paths, wait)?;
     let guard = save_lock::acquire_within(paths, wait)?;
     if let Some(pending) = Pending::read(&layout.pending)?
         && pending.phase == Phase::Swapping
