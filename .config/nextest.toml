@@ -38,7 +38,7 @@ filter = 'test(/embedder|memory_index|code_index/)'
 test-group = 'embedder'
 
 [[profile.default.overrides]]
-filter = 'binary_id(~replica_daemon) or binary_id(~replica_exchange)'
+filter = 'binary_id(~replica_daemon) or binary_id(~replica_exchange) or binary_id(~install_) or binary_id(~upgrade)'
 test-group = 'daemon'
 
 [[profile.default.overrides]]
