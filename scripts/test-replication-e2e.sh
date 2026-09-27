@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange daemon)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange daemon install)
 
 case_name=""
 platform_root=""
@@ -194,6 +194,22 @@ run_daemon() {
   log_ok "replication" "required sync daemon suite passed"
 }
 
+# Managed install and update (#258): install.sh, comemory upgrade and the
+# source wrapper finish on a verified coordinator or roll back. The cargo
+# suites run the real branch binary through the real installer against a
+# loopback release server; the lifecycle script adds real published old
+# binaries and two real branch builds under the headless supervisor. The
+# native launchd/systemd modes run on disposable CI runners only.
+run_install() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test install_script --test install_script_2 \
+      --test install_daemon --test install_daemon_2 --test cli__upgrade --test upgrade_daemon
+    bash scripts/test-daemon-install.sh --headless
+  )
+  log_ok "replication" "managed install suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -282,5 +298,6 @@ case "$case_name" in
   events) run_events ;;
   exchange) run_exchange ;;
   daemon) run_daemon ;;
+  install) run_install ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac
