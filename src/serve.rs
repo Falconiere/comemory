@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
-use crate::store::{Connection, connection, repo_marker_roots};
+use crate::store::{Connection, repo_marker_roots, store_health};
 use crate::utilities::activity::Origin;
 
 pub mod envelope;
@@ -106,7 +106,9 @@ impl AppState {
     /// the result to [`router::build_router`], skipping the socket bind.
     pub fn new(paths: &Paths, opts: ServeOptions) -> Result<Self> {
         paths.ensure_dirs()?;
-        let conn = connection::open(paths.db_path())?;
+        // Through `open_recorded`, so a failed migration leaves the record
+        // `sync daemon status` and `doctor` report (#256, B-8).
+        let conn = store_health::open_recorded(&paths.db_path())?;
         let token = security::generate_token()?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),

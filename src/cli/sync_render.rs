@@ -10,6 +10,7 @@ use crate::cli::sync_exchange_render::{exchange_run_line, exchange_status_lines}
 use crate::config::Paths;
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::code::{self, CodePushStats, NotARepository};
+use crate::domains::sync::daemon::readiness::probe_store;
 use crate::domains::sync::daemon::status_view;
 use crate::domains::sync::drain::status;
 use crate::domains::sync::initial::InitialSyncStats;
@@ -159,12 +160,17 @@ fn code_status_line(row: &CodeStatusRow) -> String {
 /// The coordinator's status, or an honest "unavailable" when the probe
 /// itself fails (an unrecognized `COMEMORY_DAEMON_SUPERVISOR` override).
 fn daemon_status(paths: &Paths) -> status_view::StatusView {
-    status_view::view(paths).unwrap_or_else(|e| status_view::StatusView {
-        state: status_view::State::Unsupported,
-        detail: format!("daemon status unavailable: {e}"),
-        version_matches: None,
-        supervisor: "unknown",
-        daemon: None,
+    status_view::view(paths).unwrap_or_else(|e| {
+        let store = probe_store(paths);
+        status_view::StatusView {
+            state: status_view::State::Unsupported,
+            detail: format!("daemon status unavailable: {e}"),
+            version_matches: None,
+            supervisor: "unknown",
+            daemon: None,
+            store,
+            healthy: store.is_healthy(),
+        }
     })
 }
 

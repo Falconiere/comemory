@@ -18,7 +18,7 @@ published target is.
 | --- | --- | --- |
 | `identity.rs` | `BinaryIdentity` | Canonical data directory, its short id, and the binary a coordinator runs |
 | `control.rs` | `Op` | The control protocol's frames: hello, request, response, ops, events |
-| `readiness.rs` | `Readiness` | The owner-local readiness answer — never a secret |
+| `readiness.rs` | `Readiness` / `probe_store` | The owner-local readiness answer — never a secret — and the store's health in it: `store::readiness` plus an unverified restore (`RestoreUnverified`), `healthy` only when current or absent; the `status` op re-probes it (#256, B-8) |
 | `handshake.rs` | `load_or_create` / `proof` | `daemon.token` (0600, atomic hard-link publish) and the two-way `proof(Side, nonce, token)`; the token never crosses the socket |
 | `socket_path.rs` | `plan` / `expected` | `daemon.sock` beside the data, or a private 0700 runtime directory when the path is over 100 bytes; ownership and unsafe-mode checks |
 | `runtime_record.rs` | `RuntimeRecord` | `daemon.json`: where the live coordinator bound; discovery only, never identity |
@@ -41,7 +41,7 @@ published target is.
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `ensure.rs` | `ensure` / `Intent` | Verify (and, unless a read-only preflight already found one healthy, repair) the coordinator for a data directory. `daemon-ensure.lock` serializes concurrent repairs to one; shutdown requires an authenticated control connection, never an unverified PID from stale metadata |
-| `status_view.rs` | `view` / `StatusView` | `comemory sync daemon status`'s live probe report — starts nothing, never calls `ensure` |
+| `status_view.rs` | `view` / `StatusView` | `comemory sync daemon status`'s live probe report — starts nothing, never calls `ensure`; `store` and `healthy` come from this process's own read-only `probe_store`, so a failed upgrade reads unhealthy even with no coordinator running |
 | `supervisor.rs` | `Kind` / `detect` / `activate` | Which OS backend keeps a directory's coordinator running (`launchd` / `systemd` / `process` / `external`) and its per-directory unit lifecycle; `remove_legacy` retires the pre-#257 single, un-id'd unit |
 
 Tests live beside the modules under `tests/`. When you add a file here, add

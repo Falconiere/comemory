@@ -2,12 +2,15 @@
 //! is, what it serves and what it is doing. It never carries the credential
 //! secret, `COMEMORY_API_KEY` or the control token.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::Paths;
 use crate::domains::sync::drain::report::End;
-use crate::store::readiness::StoreReadiness;
+use crate::domains::sync::replica::restore_state;
+use crate::prelude::*;
+use crate::store::readiness::{self, StoreReadiness};
 
 /// Everything `status` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,7 +45,8 @@ pub struct Readiness {
     pub sync: SyncView,
 }
 
-/// [`StoreReadiness`] plus a probe that failed.
+/// [`StoreReadiness`] plus an unverified restore and a probe that failed —
+/// the store's health (#256, B-8), as [`probe_store`] reports it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StoreState {
@@ -52,10 +56,63 @@ pub enum StoreState {
     Ready,
     /// Behind; a writable command migrates it.
     MigrationPending,
+    /// Behind, and this build's last long-lived open failed migrating it.
+    MigrationFailed,
     /// Ahead; written by a newer build.
     TooNew,
+    /// At this build's schema, but restored and its erasures not merged:
+    /// it refuses to exchange until `comemory backup merge-erasures`.
+    RestoreUnverified,
     /// The probe failed.
     Error,
+}
+
+impl StoreState {
+    /// The serialized name, for a text line.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Absent => "absent",
+            Self::Ready => "ready",
+            Self::MigrationPending => "migration_pending",
+            Self::MigrationFailed => "migration_failed",
+            Self::TooNew => "too_new",
+            Self::RestoreUnverified => "restore_unverified",
+            Self::Error => "error",
+        }
+    }
+
+    /// Whether nothing is wrong: a current store, or none yet (the first
+    /// write creates it). Every other state needs an operator.
+    #[must_use]
+    pub const fn is_healthy(self) -> bool {
+        matches!(self, Self::Ready | Self::Absent)
+    }
+}
+
+/// Probe `paths`' store read-only: [`crate::store::readiness::probe`], and a
+/// current store whose restore is still unverified (`restore.pending` or
+/// the `replica_restore_state` key) reads [`StoreState::RestoreUnverified`].
+/// Creates, migrates and writes nothing.
+#[must_use]
+pub fn probe_store(paths: &Paths) -> StoreState {
+    let db = paths.db_path();
+    match readiness::probe(&db) {
+        Ok(StoreReadiness::Ready) => match restore_unverified(paths, &db) {
+            Ok(false) => StoreState::Ready,
+            Ok(true) => StoreState::RestoreUnverified,
+            Err(_) => StoreState::Error,
+        },
+        Ok(state) => state.into(),
+        Err(_) => StoreState::Error,
+    }
+}
+
+fn restore_unverified(paths: &Paths, db: &Path) -> Result<bool> {
+    if restore_state::pending_path(paths).try_exists()? {
+        return Ok(true);
+    }
+    Ok(restore_state::read(&readiness::open_probe(db)?)?.is_some())
 }
 
 impl From<StoreReadiness> for StoreState {
@@ -64,6 +121,7 @@ impl From<StoreReadiness> for StoreState {
             StoreReadiness::Absent => Self::Absent,
             StoreReadiness::Ready => Self::Ready,
             StoreReadiness::MigrationPending => Self::MigrationPending,
+            StoreReadiness::MigrationFailed => Self::MigrationFailed,
             StoreReadiness::TooNew => Self::TooNew,
         }
     }

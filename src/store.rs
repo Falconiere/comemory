@@ -279,6 +279,9 @@ pub mod sources;
 /// The corpus counters behind `comemory stats`: a generic scoped
 /// `COUNT(*)`, a table-wide `COUNT(*)`, and the logical database size.
 pub mod stats_counts;
+/// The record a failed migration leaves beside `comemory.db`, and the open
+/// that writes and clears it (#256, B-8).
+pub mod store_health;
 /// First-push workspace binding + `--allow-secret` overrides.
 pub mod sync_binding;
 /// Per-`(api_url, workspace)` exchange state: protocol, network, resume markers.

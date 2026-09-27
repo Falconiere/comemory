@@ -10,12 +10,18 @@
 //! HTTP writes, a `comemory mcp` session saving, and `comemory rebuild` —
 //! over one real data directory, with this test process standing in for a
 //! running exchange pass by holding `sync.lock` the way every pass does.
+//! The store-health case (B-8) upgrades a data directory the real pinned
+//! `v0.43.2` binary wrote, with the directory or the database made
+//! read-only, and kills upgrades part-way.
 
 #[path = "common/serve_bin.rs"]
 mod serve_bin;
 
 #[path = "common/mcp_bin.rs"]
 mod mcp_bin;
+
+#[path = "common/legacy_engine.rs"]
+mod legacy_engine;
 
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -392,4 +398,168 @@ fn killed_rebuilds_leave_a_valid_store() {
     );
     let ids = memory_ids(&data_dir);
     assert!(planted.iter().all(|p| ids.contains(&p.id)));
+}
+
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("chmod");
+}
+
+/// `comemory.db` and whichever of its `-wal`/`-shm` exist.
+fn db_files(data_dir: &Path) -> Vec<PathBuf> {
+    ["comemory.db", "comemory.db-wal", "comemory.db-shm"]
+        .iter()
+        .map(|name| data_dir.join(name))
+        .filter(|path| path.exists())
+        .collect()
+}
+
+fn marker_count(data_dir: &Path) -> i64 {
+    comemory::store::readiness::open_probe(&data_dir.join("comemory.db"))
+        .expect("probe open")
+        .query_row(
+            "SELECT COUNT(*) FROM schema_meta WHERE key GLOB '[0-9][0-9][0-9][0-9]_*'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("markers")
+}
+
+/// Start `comemory serve` on `data_dir` and report how it exited, or `None`
+/// when it came up (it is then stopped).
+fn serve_exit(data_dir: &Path) -> Option<(i32, String)> {
+    let mut child = Command::new(cargo_bin("comemory"))
+        .env("COMEMORY_DATA_DIR", data_dir)
+        .args(["--json", "serve", "--port", "0"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn comemory serve");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        if child.try_wait().expect("try_wait").is_some() {
+            let out = child.wait_with_output().expect("serve output");
+            return Some((
+                out.status.code().expect("exit code"),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+fn daemon_status(data_dir: &Path) -> Value {
+    let out = Command::new(cargo_bin("comemory"))
+        .env("COMEMORY_DATA_DIR", data_dir)
+        .env("COMEMORY_SYNC_DAEMON", "0")
+        .args(["--json", "sync", "daemon", "status"])
+        .output()
+        .expect("sync daemon status");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("status json")
+}
+
+fn assert_unhealthy(data_dir: &Path, state: &str) {
+    let status = daemon_status(data_dir);
+    assert_eq!(status["store"], json!(state), "{status}");
+    assert_eq!(status["healthy"], json!(false), "{status}");
+}
+
+#[test]
+fn failed_upgrades_are_never_healthy() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let data_dir = root.path().join(".comemory");
+    let empty = tempfile::tempdir().expect("tempdir");
+    let status = daemon_status(empty.path());
+    assert_eq!(status["store"], json!("absent"), "{status}");
+    assert_eq!(status["healthy"], json!(true), "{status}");
+    assert!(
+        !empty.path().join("comemory.db").exists(),
+        "a probe creates nothing"
+    );
+
+    for n in 0..5 {
+        legacy_engine::run_json(
+            &data_dir,
+            &[
+                "save",
+                &format!("legacy decision {n} before the upgrade"),
+                "--kind",
+                "decision",
+                "--repo",
+                REPO,
+            ],
+        );
+    }
+    let legacy_markers = marker_count(&data_dir);
+    assert_unhealthy(&data_dir, "migration_pending");
+
+    // The data directory read-only: nothing can migrate, nowhere to record
+    // the failure — still pending, never healthy.
+    set_mode(&data_dir, 0o555);
+    let refused = serve_exit(&data_dir);
+    let markers = marker_count(&data_dir);
+    let status = daemon_status(&data_dir);
+    set_mode(&data_dir, 0o755);
+    let (code, stderr) = refused.expect("serve must refuse a read-only data directory");
+    assert_ne!(code, 0);
+    assert!(
+        stderr.contains("Permission denied") && stderr.contains("pre-migration snapshot"),
+        "an actionable error names the cause: {stderr}"
+    );
+    assert_eq!(markers, legacy_markers, "a refused upgrade adds no marker");
+    assert_eq!(status["store"], json!("migration_pending"), "{status}");
+    assert_eq!(status["healthy"], json!(false), "{status}");
+    assert!(!data_dir.join("store-health.json").exists());
+
+    // Only the database read-only: the snapshot and the record can be
+    // written, the first migration cannot.
+    let files = db_files(&data_dir);
+    for file in &files {
+        set_mode(file, 0o444);
+    }
+    let refused = serve_exit(&data_dir);
+    for file in db_files(&data_dir) {
+        set_mode(&file, 0o644);
+    }
+    let (code, stderr) = refused.expect("serve must refuse a read-only database");
+    assert_ne!(code, 0, "{stderr}");
+    assert_eq!(marker_count(&data_dir), legacy_markers, "{stderr}");
+    let record: Value = serde_json::from_slice(
+        &std::fs::read(data_dir.join("store-health.json")).expect("the failure is recorded"),
+    )
+    .expect("record json");
+    assert_eq!(record["state"], json!("migration_failed"), "{record}");
+    assert_unhealthy(&data_dir, "migration_failed");
+
+    // Upgrades killed part-way: the next open completes the chain.
+    for delay in [20, 60, 120, 250, 500] {
+        let mut child = Command::new(cargo_bin("comemory"))
+            .env("COMEMORY_DATA_DIR", &data_dir)
+            .args(["--json", "serve", "--port", "0"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn comemory serve");
+        std::thread::sleep(Duration::from_millis(delay));
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    let srv = ServeHome::spawn_in(root, &[], &[]);
+    let status = daemon_status(&srv.data_dir());
+    assert_eq!(status["store"], json!("ready"), "{status}");
+    assert_eq!(status["healthy"], json!(true), "{status}");
+    assert!(
+        !srv.data_dir().join("store-health.json").exists(),
+        "a successful open clears the record"
+    );
+    let listed = srv.get("/memories");
+    assert!(listed.to_string().contains("legacy decision 0"), "{listed}");
 }

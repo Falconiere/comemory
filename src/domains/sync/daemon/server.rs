@@ -13,9 +13,10 @@ use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, mpsc};
 
+use crate::config::Paths;
 use crate::domains::sync::daemon::control::{Hello, MAX_FRAME, Op, PROTOCOL, Request, Response};
 use crate::domains::sync::daemon::handshake;
-use crate::domains::sync::daemon::readiness::Trigger;
+use crate::domains::sync::daemon::readiness::{Trigger, probe_store};
 use crate::domains::sync::daemon::state::State;
 use crate::domains::sync::daemon::worker::Queue;
 use crate::prelude::*;
@@ -37,6 +38,8 @@ pub struct Ctx {
     pub shutdown: Arc<Notify>,
     /// Raised by a `reload` op.
     pub reload: Arc<Notify>,
+    /// The data directory served, whose store `status` re-probes.
+    pub paths: Paths,
 }
 
 /// Accept until the process exits, swapping in a re-bound listener whenever
@@ -111,7 +114,10 @@ async fn greet(
 
 async fn dispatch(op: Op, write: &mut OwnedWriteHalf, ctx: &Ctx) -> Result<()> {
     match op {
-        Op::Status {} => reply(write, &ctx.state.readiness()).await,
+        Op::Status {} => {
+            ctx.state.set_store(probe_store(&ctx.paths));
+            reply(write, &ctx.state.readiness()).await
+        }
         Op::Wake(wake) => {
             ctx.queue.wake(wake.reason, wake.checkout);
             ctx.state.set_queued(true);

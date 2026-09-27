@@ -361,9 +361,13 @@ pub struct ExchangePause { /* the held gate; released on drop */ }
 pub fn pause(paths: &Paths, wait: Duration) -> Result<ExchangePause>; // Error::Busy after `wait`
 ```
 
-It is a bounded try-acquire of `sync.lock` until #257 lands; the coordinator
-then implements `pause` as pause-and-drain with the same signature, and resumes
-when the guard drops. `[sync] pause_wait` (default `"60s"`) bounds it.
+It is a `[sync] pause_wait`-bounded hold of `sync.lock` (default `"5s"`,
+shared with the markdown writers' wait). #257 kept `sync.lock` as the one
+serialization of every exchange pass — the coordinator's worker blocks on it,
+as do a manual sync, the channel follower and an `--action auto` pass — so
+holding it is the pause-and-drain: a running pass finishes before `pause`
+returns, and the coordinator's queued pass runs once the guard drops. No
+control-protocol op was added (decision 10).
 
 ### Rebuild and restore replace the content in place
 
@@ -414,12 +418,22 @@ step with `SQLITE_FULL` and leaves the old content. The server's post-rebuild co
 ### Store health
 
 ```rust
-pub enum StoreHealth { Ok, SchemaTooNew { detail: String }, MigrationPending,
-                       MigrationFailed { detail: String, at: String },
-                       Unavailable { detail: String }, RestoreUnverified }
-pub fn probe(paths: &Paths) -> StoreHealth;        // domains::maintenance::store_health
-pub fn open_recorded(paths: &Paths) -> Result<Connection>;
+// store::store_health
+pub fn open_recorded(db_path: &Path) -> Result<Connection>;
+pub fn failed_migration(db_path: &Path) -> Option<Record>;
+// store::readiness — StoreReadiness gains MigrationFailed
+// domains::sync::daemon::readiness
+pub enum StoreState { Absent, Ready, MigrationPending, MigrationFailed, TooNew,
+                      RestoreUnverified, Error }
+pub fn probe_store(paths: &Paths) -> StoreState;   // is_healthy(): Ready | Absent
 ```
+
+As delivered after #257 merged (decision 11): the record and the pending /
+failed split live in `store` (`store_health`, `readiness`), and the one
+composed probe — which adds the restore state — lives beside the
+coordinator's own `StoreState`, since `domains::sync` may not depend on
+`domains::maintenance`. The spec's `SchemaTooNew` is the existing `TooNew`,
+and `Unavailable` is `Error` (the probe itself failed).
 
 `open_recorded` is `connection::open` that records a failed migration in
 `<data_dir>/store-health.json` (`{state, detail, at, binary_version}`) and
@@ -429,14 +443,20 @@ preflight classification read-only, as `doctor` does — an unknown applied
 marker is `SchemaTooNew`, pending markers are `MigrationFailed` when the record
 names this binary's version and `MigrationPending` otherwise (a read-only data
 directory cannot hold the record, and still reads unhealthy), a set restore
-state is `RestoreUnverified`. Every state but `Ok` is unhealthy — including
-`MigrationPending` right after a binary upgrade, until the first open applies
-the chain.
+state is `RestoreUnverified`. Every state but `Ready` and `Absent` is
+unhealthy — including `MigrationPending` right after a binary upgrade, until
+the first open applies the chain; `Absent` (no store yet, the first write
+creates it) needs no operator. A WAL database in a directory the probe cannot
+write answers `SQLITE_READONLY_DIRECTORY` to a plain read-only open, so the
+probe reads it as immutable then — nothing can write it there either.
 
-At delivery, whatever reports daemon health reports the probe: `comemory sync
-daemon status` (text and `--json`: `store`, `healthy`) and, once #257 has
-merged, its coordinator health endpoint in place of that. `comemory doctor`
-reports it too. Forward-version refusal and the pre-migration `VACUUM INTO`
+At delivery, whatever reports daemon health reports the probe: the
+coordinator's `status` op re-probes it on every request, and `comemory sync
+daemon status` (text and `--json`: `store`, `healthy`) probes it from its own
+process, so it reads unhealthy even with no coordinator running. `comemory
+doctor` reports it as the `store health` check, beside a `replica identity`
+check (epoch, device, and whether the erasure manifest holds every erase the
+identity counts). Forward-version refusal and the pre-migration `VACUUM INTO`
 snapshot are unchanged, and an old executable still refuses a migrated
 database.
 
@@ -490,7 +510,7 @@ through `utilities::error_code::classify`. `Error::RestoreUnverified` — exit
 `75`, HTTP `503 restore_unverified`. The drain's `network` gains
 `restore_unverified`.
 
-Config: `[sync] pause_wait`, default `"60s"`. Cargo: `rusqlite` gains the
+Config: `[sync] pause_wait`, default `"5s"`. Cargo: `rusqlite` gains the
 `backup` feature.
 
 ## Failure modes and edge cases
@@ -719,7 +739,14 @@ None blocking. Decisions taken without a human, with the reason:
    `sync.lock` and `sync daemon status`. If #257 merges while this issue's PR
    is open, the PR rewires them to the coordinator after the rebase; if it has
    not merged when this PR is ready, #257 owns the rewire, since it replaces
-   both call sites.
+   both call sites. #257 merged first, so the rewire happened here (10, 11).
+10. **The exchange pause stays a bounded `sync.lock` hold after #257** (Jev
+    0.87 over a new pause op on the coordinator's control protocol, 0.12):
+    every exchange path, the coordinator's worker included, already blocks on
+    that lock, so holding it pauses and drains without a second protocol.
+11. **Store health lives in `store` plus the coordinator's `StoreState`**
+    (Jev 0.66 over a new `domains::sync` module, 0.29; 0.05 for the spec's
+    `domains::maintenance` placement, which the coordinator may not import).
 
 ## Review
 

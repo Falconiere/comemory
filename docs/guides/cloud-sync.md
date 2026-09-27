@@ -160,6 +160,14 @@ are hidden deprecated aliases of `repair`/`ensure`; `--daemon`/`--no-daemon`
 on `auth login` do nothing (the former warns; the latter is refused).
 Windows is not supported.
 
+`status` also reports the store's health, whatever the coordinator's state:
+`store` (`ready`, `absent`, `migration_pending`, `migration_failed`,
+`too_new`, `restore_unverified` or `error`) and `healthy`, false for anything
+but `ready` or `absent`. A `comemory serve` whose upgrade fails records
+`store-health.json` beside the database, so the state reads
+`migration_failed` rather than `migration_pending` until an open succeeds;
+`comemory doctor`'s `store health` check reports the same probe.
+
 Default interval: `[sync] daemon_interval = "5s"` — each tick is the
 [`--action auto`](#hooks) pass (refresh stale hooked repos, `pull`, `push`,
 push moved code) under the same lock, with an occasional `verify` per

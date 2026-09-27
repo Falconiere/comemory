@@ -112,6 +112,7 @@ fn spawn_tasks(
         queue: Arc::clone(&queue),
         shutdown: Arc::clone(&shutdown),
         reload: Arc::clone(&reload),
+        paths: paths.clone(),
     });
     tokio::spawn(server::serve(listener, ctx, rebind_rx));
     tokio::spawn(watchdog::tick(
@@ -211,10 +212,7 @@ fn initial_readiness(paths: &Paths, canonical: &Path, socket: &Path) -> Result<R
         socket: socket.to_path_buf(),
         supervisor: crate::config::env::daemon_supervisor_override()
             .unwrap_or_else(|| "foreground".into()),
-        store: crate::store::readiness::probe(&paths.db_path()).map_or(
-            crate::domains::sync::daemon::readiness::StoreState::Error,
-            Into::into,
-        ),
+        store: crate::domains::sync::daemon::readiness::probe_store(paths),
         auth: auth_view(paths),
         sync: SyncView {
             last_verify_at: worker::last_verify(paths).map(|(_, at)| at),
