@@ -19,10 +19,10 @@ mod install_rig;
 #[path = "common/release_server.rs"]
 mod release_server;
 
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
-use comemory::domains::sync::daemon::client::Probe;
 use install_rig::{Rig, current_tag, file_id, parts, sha256_of};
 
 const READY: Duration = Duration::from_secs(30);
@@ -186,10 +186,10 @@ fn pre_swap_failures_leave_the_previous_file_and_coordinator_untouched() {
     damaged(&rig, "v8.8.1", |archive, sidecar| {
         let bytes = std::fs::read(archive).unwrap();
         std::fs::write(archive, &bytes[..bytes.len() / 2]).unwrap();
-        let hash: String = sha256_of(archive)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let hash = sha256_of(archive).iter().fold(String::new(), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        });
         std::fs::write(sidecar, format!("{hash} *archive\n")).unwrap();
     });
     damaged(&rig, "v8.8.2", |_, sidecar| {
@@ -200,8 +200,7 @@ fn pre_swap_failures_leave_the_previous_file_and_coordinator_untouched() {
         assert_eq!(code, 1, "{tag}: {stdout}\n{stderr}");
         assert_eq!(sha256_of(&dir.join("comemory")), sha, "{tag}");
     }
-    let Probe::Healthy(after) = rig.home.probe() else {
-        panic!("the previous coordinator stopped answering");
-    };
+    // A loaded host can miss one 2 s probe; the instance is the proof.
+    let after = rig.home.wait_ready(READY);
     assert_eq!((after.pid, after.instance), (before.pid, before.instance));
 }

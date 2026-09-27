@@ -57,6 +57,22 @@ pub struct Ensured {
     pub error: Option<String>,
 }
 
+impl Ensured {
+    /// The `sync daemon ensure --json` document — also what installers and
+    /// `comemory upgrade` parse to verify the coordinator they started.
+    #[must_use]
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "ready": self.ready,
+            "action": self.action,
+            "supervisor": self.supervisor.as_str(),
+            "notes": self.notes,
+            "daemon": self.daemon,
+            "error": self.error,
+        })
+    }
+}
+
 /// Verify, and unless `intent` is a read-only preflight that already found a
 /// healthy coordinator, repair the coordinator for `paths`.
 ///
@@ -167,6 +183,27 @@ fn stop_if_healthy(paths: &Paths, deadline: Instant) {
                 Probe::Healthy(_)
             )
         {}
+        wait_for_lock_release(paths, deadline);
+    }
+}
+
+/// A stopping coordinator stops answering before it drops `daemon.lock`
+/// (its pass may still be reaching a boundary). A replacement started in
+/// that window exits 75 on the lock, so wait until the lock is free.
+fn wait_for_lock_release(paths: &Paths, deadline: Instant) {
+    let lock = paths
+        .data_dir()
+        .join(crate::domains::sync::daemon::coordinator::DAEMON_LOCK);
+    while Instant::now() < deadline {
+        match FileLock::try_acquire(&lock, "daemon") {
+            Ok(Some(_released)) => return,
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            // The start that follows reports the same filesystem problem.
+            Err(error) => {
+                tracing::debug!(%error, "daemon.lock unreadable while waiting for release");
+                return;
+            }
+        }
     }
 }
 
@@ -280,38 +317,35 @@ fn wait_or_fail(
     action: &'static str,
 ) -> Result<Ensured> {
     let current = identity::BinaryIdentity::current()?;
-    let mut stale = false;
+    // The last verified coordinator that was not this binary, if any.
+    let mut other: Option<String>;
     loop {
         if let Probe::Healthy(readiness) =
             client::probe(paths, remaining(deadline, client::PROBE_BOUND))
         {
-            if !fits(settled(intent), &readiness, &current) {
-                stale = true;
-                if Instant::now() >= deadline {
-                    return Ok(not_ready(
-                        supervisor,
-                        notes,
-                        "the previous coordinator did not stop in time".into(),
-                    ));
-                }
-                std::thread::sleep(Duration::from_millis(100));
-                continue;
+            if fits(settled(intent), &readiness, &current) {
+                return Ok(Ensured {
+                    ready: true,
+                    action,
+                    supervisor,
+                    notes,
+                    daemon: Some(*readiness),
+                    error: None,
+                });
             }
-            return Ok(Ensured {
-                ready: true,
-                action,
-                supervisor,
-                notes,
-                daemon: Some(*readiness),
-                error: None,
-            });
+            other = Some(format!(
+                "a coordinator (pid {}, {} at {}, file {}) answers instead of this binary (file {})",
+                readiness.pid,
+                readiness.version,
+                readiness.binary.display(),
+                readiness.binary_file.as_deref().unwrap_or("unknown"),
+                current.file.as_deref().unwrap_or("unknown"),
+            ));
+        } else {
+            other = None;
         }
         if Instant::now() >= deadline {
-            let error = if stale {
-                "the previous coordinator did not stop in time".into()
-            } else {
-                local_service_error(supervisor)
-            };
+            let error = other.unwrap_or_else(|| local_service_error(supervisor));
             return Ok(not_ready(supervisor, notes, error));
         }
         std::thread::sleep(Duration::from_millis(100));
