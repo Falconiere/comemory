@@ -404,7 +404,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli.rs | comemory::cli; preserve | none | none | delivery::cli | src/cli.rs | retain |
 | src/cli/architecture.rs | comemory::cli::architecture; preserve | none | none | delivery::cli | src/cli/architecture.rs | retain |
 | src/cli/ast.rs | comemory::cli::ast; preserve | none | none | delivery::cli | src/cli/ast.rs | retain |
-| src/cli/auth.rs | comemory::cli::auth; preserve | none | none | delivery::cli | src/cli/auth.rs | retain |
+| src/cli/auth.rs | comemory::cli::auth; preserve | src/cli/tests/auth.rs | none | delivery::cli | src/cli/auth.rs | retain |
 | src/cli/auth_render.rs | comemory::cli::auth_render; preserve | none | none | delivery::cli | src/cli/auth_render.rs | retain |
 | src/cli/bandit.rs | comemory::cli::bandit; preserve | none | none | delivery::cli | src/cli/bandit.rs | retain |
 | src/cli/benchmark.rs | comemory::cli::benchmark; preserve | none | none | delivery::cli | src/cli/benchmark.rs | retain |

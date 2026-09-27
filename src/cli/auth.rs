@@ -180,9 +180,22 @@ fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
 }
 
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
-    let cfg = load_config(paths).unwrap_or_else(|error| {
-        tracing::warn!(%error, "logout: unreadable config; using defaults");
-        crate::config::Config::defaults()
-    });
+    let cfg = logout_config(paths);
     write_logout(json_flag, &login::logout(paths, &cfg)?)
 }
+
+/// Keep logout available on corrupt configuration while preserving valid
+/// environment overrides independently of the file layer.
+fn logout_config(paths: &Paths) -> crate::config::Config {
+    load_config(paths).unwrap_or_else(|error| {
+        tracing::warn!(%error, "logout: unreadable config; using defaults with environment overrides");
+        crate::config::Config::defaults().with_env().unwrap_or_else(|error| {
+            tracing::warn!(%error, "logout: invalid environment overrides; using defaults");
+            crate::config::Config::defaults()
+        })
+    })
+}
+
+#[cfg(test)]
+#[path = "tests/auth.rs"]
+mod tests;

@@ -376,7 +376,8 @@ fn sigstop_and_sigcont_pause_and_resume_the_coordinator_cleanly() {
     home.json(&["sync", "daemon", "ensure"]);
     let before = home.wait_ready(READY);
 
-    daemon_support::signal(before.pid, "STOP");
+    assert!(home.coordinator_pids().contains(&before.pid));
+    stop_and_wait(before.pid);
     let stopped = client::probe(&home.paths(), Duration::from_secs(2));
     assert!(
         !matches!(stopped, Probe::Healthy(_)),
@@ -389,6 +390,34 @@ fn sigstop_and_sigcont_pause_and_resume_the_coordinator_cleanly() {
     home.wait_for(Duration::from_secs(10), |r| {
         r.sync.passes > resumed.sync.passes
     });
+}
+
+/// Signal delivery is asynchronous: wait for the kernel's stopped state,
+/// not merely for `kill` to return, before testing an unresponsive socket.
+fn stop_and_wait(pid: u32) {
+    let pid = pid.to_string();
+    let sent = std::process::Command::new("kill")
+        .args(["-STOP", &pid])
+        .status()
+        .expect("send SIGSTOP");
+    assert!(sent.success(), "SIGSTOP failed for {pid}: {sent}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid])
+            .output()
+            .expect("read coordinator process state");
+        assert!(output.status.success(), "coordinator {pid} disappeared");
+        let state = String::from_utf8(output.stdout).expect("process state");
+        if state.trim().starts_with('T') {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "coordinator {pid} never stopped: {state}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// AC-10: `verify_every` writes the stamp and reports `last_verify_at`; a
