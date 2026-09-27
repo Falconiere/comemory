@@ -199,8 +199,9 @@ Auto-merge is on, and no approving review is required: a PR armed with
   own follow-ups inside its threads do not count as replies. A resolved
   code-scanning alert thread needs no reply.
 
-`merge-gate` first runs as a job of `code-review.yml`, after the reviewer has
-posted. `merge-gate.yml` runs it again on each thread reply and each manual
+`merge-gate` is the shared `falconiere/toolu-ghactions/merge-gate@v8` action,
+the same check every Falconiere repo requires. It first runs as a job of
+`code-review.yml`, after the reviewer has posted. `merge-gate.yml` runs it again on each thread reply and each manual
 label change. Rerunning the review workflow runs it again too.
 
 Arm auto-merge with your own token, never from a workflow's `GITHUB_TOKEN`: a
