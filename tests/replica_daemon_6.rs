@@ -222,11 +222,50 @@ fn a_coordinator_draining_a_held_pass_is_still_replaced_within_ensure() {
     });
     std::thread::sleep(Duration::from_millis(2500));
     install_copy(&bin);
-    let after = ensure_from(&home, &bin, &[]);
+    // Two callers race: one holds the repair lock and drains; the other
+    // waits behind it and must still see the replacement, not give up.
+    let (after, waiter) = std::thread::scope(|s| {
+        let first = s.spawn(|| ensure_from(&home, &bin, &[]));
+        let second = s.spawn(|| ensure_from(&home, &bin, &[]));
+        (first.join().unwrap(), second.join().unwrap())
+    });
     hub.proxy.release();
+    assert_eq!(waiter["ready"], true, "{waiter}");
+    assert_eq!(
+        pid_of(&waiter),
+        pid_of(&after),
+        "both callers see one replacement"
+    );
 
     assert_eq!(after["ready"], true, "{after}");
     assert_ne!(pid_of(&after), old_pid, "{after}");
     assert_eq!(after["daemon"]["binary_file"], file_id(&bin), "{after}");
     wait_gone(old_pid);
+}
+
+#[test]
+fn a_stop_after_a_rebind_removes_the_rebound_socket() {
+    let home = DaemonHome::new();
+    let first = ensure_from(&home, &assert_cmd::cargo::cargo_bin("comemory"), &[]);
+    let pid = pid_of(&first);
+    let ready = home.wait_ready(READY);
+    std::fs::remove_file(&ready.socket).unwrap();
+    // The guard re-binds within a tick; the coordinator answers again.
+    let deadline = Instant::now() + READY;
+    while !ready.socket.exists()
+        || !matches!(
+            home.probe(),
+            comemory::domains::sync::daemon::client::Probe::Healthy(_)
+        )
+    {
+        assert!(Instant::now() < deadline, "the socket was never re-bound");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    home.json(&["sync", "daemon", "stop"]);
+    wait_gone(pid);
+    assert!(
+        !ready.socket.exists(),
+        "the rebound socket is this instance's own and is removed on stop"
+    );
 }

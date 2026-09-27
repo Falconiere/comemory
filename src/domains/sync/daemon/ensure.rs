@@ -35,7 +35,9 @@ pub enum Intent {
 }
 
 impl Intent {
-    /// Bound on the whole call, including any repair and readiness wait.
+    /// Bound on starting a coordinator and waiting for it to answer. A drain
+    /// of an evicted coordinator is bounded separately by [`EVICT_BOUND`],
+    /// before this window starts, so a call that evicts can take both.
     const fn bound(self) -> Duration {
         match self {
             Self::Preflight => Duration::from_secs(10),
@@ -86,12 +88,11 @@ impl Ensured {
 /// `Err`).
 pub fn ensure(paths: &Paths, intent: Intent) -> Result<Ensured> {
     std::fs::create_dir_all(paths.data_dir())?;
+    if matches!(intent, Intent::Restart) {
+        stop_if_healthy(paths, Instant::now() + EVICT_BOUND);
+    }
     let deadline = Instant::now() + intent.bound();
     let probe_bound = || remaining(deadline, client::PROBE_BOUND);
-
-    if matches!(intent, Intent::Restart) {
-        stop_if_healthy(paths, deadline);
-    }
 
     let probe = client::probe(paths, probe_bound());
     if let Some(result) = accept(intent, probe) {
@@ -176,6 +177,8 @@ fn wait_for_lock_release(paths: &Paths, deadline: Instant) {
 /// then write/start the backend `[`supervisor::detect`]` chooses.
 fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
     let lock_path = paths.data_dir().join(ENSURE_LOCK);
+    // Whatever intent the holder has, `Ensure`'s window is the longest.
+    let holder_worst_case = Instant::now() + EVICT_BOUND + Intent::Ensure.bound();
     let _lock = loop {
         if let Some(lock) = FileLock::try_acquire(&lock_path, "daemon-ensure")? {
             break lock;
@@ -189,7 +192,9 @@ fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
                 .push("a concurrent ensure already repaired the coordinator".into());
             return Ok(repaired);
         }
-        if Instant::now() >= deadline {
+        // The holder may be draining an evicted coordinator before its own
+        // start window; wait out its worst case, not just this call's bound.
+        if Instant::now() >= deadline.max(holder_worst_case) {
             let supervisor = supervisor::detect().unwrap_or(supervisor::Kind::Process);
             return Ok(not_ready(
                 supervisor,
@@ -197,9 +202,12 @@ fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
                 local_service_error(supervisor),
             ));
         }
+        std::thread::sleep(Duration::from_millis(100));
     };
 
-    repair_locked(paths, intent, deadline)
+    // Waiting for the lock may have used this call's window; the repair
+    // it now owns gets a full one.
+    repair_locked(paths, intent, deadline.max(Instant::now() + intent.bound()))
 }
 
 fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
