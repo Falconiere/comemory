@@ -271,3 +271,39 @@ fn a_stop_after_a_rebind_removes_the_rebound_socket() {
         "the rebound socket is this instance's own and is removed on stop"
     );
 }
+
+#[test]
+fn a_leaked_descriptor_numbered_near_the_limit_is_closed_too() {
+    let home = DaemonHome::new();
+    // bash (dash cannot redirect above fd 9) raises its soft limit as far
+    // as the hard limit allows — past 65,536 where the host permits — and
+    // leaks its stdout pipe onto the highest number under it.
+    // The highest number the host really lets it open is found by halving
+    // (macOS caps a process at kern.maxfilesperproc, below the hard limit).
+    let script = r#"
+        n=$(ulimit -Hn); [ "$n" = unlimited ] && n=1048576
+        [ "$n" -gt 1048576 ] && n=1048576
+        ulimit -n "$n" 2>/dev/null || n=$(ulimit -n)
+        until eval "exec $((n - 1))>&1" 2>/dev/null; do
+          n=$((n / 2)); [ "$n" -gt 10 ] || exit 3
+        done
+        exec "$0" --json sync daemon ensure
+    "#;
+    let mut cmd = home.command_with_binary(Path::new("bash"));
+    cmd.args(["-c", script])
+        .arg(assert_cmd::cargo::cargo_bin("comemory"));
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(cmd.output());
+    });
+    let out = rx
+        .recv_timeout(READY)
+        .expect("the caller's pipe reached EOF")
+        .expect("run ensure");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    home.wait_ready(READY);
+}
