@@ -46,6 +46,31 @@ fn no_coordinator_artifacts(home: &DaemonHome) {
 }
 
 #[test]
+fn stop_and_uninstall_refuse_to_claim_success_for_an_unverified_live_coordinator() {
+    use comemory::domains::sync::daemon::handshake;
+
+    let home = DaemonHome::new();
+    let _foreground = home.spawn_foreground(&[]);
+    let ready = home.wait_ready(Duration::from_secs(15));
+    let token_path = handshake::token_path(&home.paths());
+    let token = std::fs::read_to_string(&token_path).unwrap();
+    let wrong_token = if token.starts_with('0') { "1" } else { "0" }.repeat(64);
+    std::fs::write(&token_path, wrong_token).unwrap();
+    for verb in ["stop", "uninstall"] {
+        let (code, stdout, stderr) = home.run(&["--json", "sync", "daemon", verb]);
+        assert_eq!(code, 69, "{verb}: {stdout} {stderr}");
+        assert!(stderr.contains("identity proof"), "{stderr}");
+        assert!(!stdout.contains("true"), "{stdout}");
+    }
+    std::fs::write(&token_path, token).unwrap();
+    assert_eq!(
+        home.wait_ready(Duration::from_secs(5)).instance,
+        ready.instance
+    );
+    assert_eq!(home.run(&["sync", "daemon", "stop"]).0, 0);
+}
+
+#[test]
 fn every_exempt_command_starts_no_coordinator() {
     let home = DaemonHome::new();
     let (code, _, stderr) = home.run(&["completions", "zsh"]);

@@ -11,7 +11,7 @@ use crate::cli::off_runtime::off_runtime;
 use crate::cli::output::json;
 use crate::config::Paths;
 use crate::domains::sync::daemon::ensure::{self, Ensured, Intent};
-use crate::domains::sync::daemon::{status_view, supervisor};
+use crate::domains::sync::daemon::{client, status_view, supervisor};
 use crate::prelude::*;
 
 /// `install`/`uninstall`/`start`/`stop`/`status`/`run` predate the required
@@ -78,7 +78,7 @@ fn dispatch(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
 }
 
 fn stop(paths: &Paths, json_flag: bool) -> Result<()> {
-    stop_coordinator(paths);
+    stop_coordinator(paths)?;
     report(
         json_flag,
         "stopped",
@@ -86,24 +86,18 @@ fn stop(paths: &Paths, json_flag: bool) -> Result<()> {
     )
 }
 
-fn stop_coordinator(paths: &Paths) {
-    let running = matches!(
-        crate::domains::sync::daemon::client::probe(
-            paths,
-            crate::domains::sync::daemon::client::PROBE_BOUND
-        ),
-        crate::domains::sync::daemon::client::Probe::Healthy(_)
-    );
-    if running {
-        let _ = crate::domains::sync::daemon::client::shutdown(
-            paths,
-            std::time::Duration::from_secs(15),
-        );
+fn stop_coordinator(paths: &Paths) -> Result<()> {
+    match client::probe(paths, client::PROBE_BOUND) {
+        client::Probe::Healthy(_) => client::shutdown(paths, std::time::Duration::from_secs(15)),
+        client::Probe::NotRunning(_) => Ok(()),
+        client::Probe::Stale(why) => Err(Error::Unavailable(format!(
+            "cannot stop an unverified sync daemon: {why}"
+        ))),
     }
 }
 
 fn uninstall(paths: &Paths, json_flag: bool) -> Result<()> {
-    stop_coordinator(paths);
+    stop_coordinator(paths)?;
     let kind = supervisor::detect()?;
     let canonical = crate::domains::sync::daemon::identity::canonical_data_dir(paths)?;
     if kind != supervisor::Kind::Process && kind != supervisor::Kind::External {
