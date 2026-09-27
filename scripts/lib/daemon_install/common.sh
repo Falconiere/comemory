@@ -237,8 +237,6 @@ wait_one_coordinator() {
   done
 }
 
-# stop_root <root> — terminate every coordinator this root's data dir still
-# runs (a scenario's cleanup, best effort).
 # diagnose_root <root> — on a failed scenario, what a human needs to see:
 # the data directory, the coordinator's own logs, and (native) the service
 # manager's view of this data directory's unit. Never fails the run.
@@ -262,6 +260,8 @@ diagnose_root() {
   esac
 }
 
+# stop_root <root> — terminate every coordinator this root's data dir still
+# runs (a scenario's cleanup, best effort).
 stop_root() {
   local root=$1 canonical pid
   [ -d "$root/d" ] || return 0

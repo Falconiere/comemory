@@ -121,7 +121,7 @@ fn accept(intent: Intent, probe: Probe) -> Option<Ensured> {
 /// Whether a verified coordinator may stay for `intent`. `ensure`,
 /// `restart` and `repair` want exactly the caller's binary: version, path
 /// and file (#258 D3a). Preflight keeps any coordinator whose binary still
-/// exists unless [`preflight_replaces`] says the file under it was swapped.
+/// exists unless [`identity::preflight_replaces`] says the file under it was swapped.
 fn fits(intent: Intent, readiness: &Readiness, current: &identity::BinaryIdentity) -> bool {
     if matches!(intent, Intent::Preflight) {
         return identity::preflight_accepts(readiness, current);
