@@ -44,11 +44,12 @@ pub fn spawn(paths: &Paths) -> Result<()> {
 /// `exec` would keep (`CLOEXEC` ones close anyway, including std's own
 /// exec-error pipe, which must survive until `exec`).
 fn close_inherited_descriptors(command: &mut Command) {
-    use nix::libc::{F_GETFD, FD_CLOEXEC, close, fcntl, getdtablesize};
+    use nix::libc::{F_GETFD, FD_CLOEXEC, close, fcntl};
+    use nix::sys::resource::{Resource, getrlimit};
     use std::os::unix::process::CommandExt as _;
     // Read in the parent: only async-signal-safe calls run after `fork`.
-    // SAFETY: getdtablesize takes no arguments and only reads a limit.
-    let limit = unsafe { getdtablesize() }.clamp(3, 65_536);
+    let limit = getrlimit(Resource::RLIMIT_NOFILE).map_or(1024, |(soft, _)| soft);
+    let limit = i32::try_from(limit.clamp(3, 65_536)).unwrap_or(65_536);
     // SAFETY: the closure runs in the forked child before `exec` and only
     // calls `fcntl(F_GETFD)` and `close`, both async-signal-safe. A
     // descriptor that is not open makes `fcntl` return -1 and is skipped.

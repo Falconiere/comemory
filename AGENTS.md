@@ -822,11 +822,14 @@ the repository guidance, and `CLAUDE.md` points to it. None weakens the kit's
 intent; several make the local rule strictly stronger than the one it replaces.
 
 - **D1 — `unsafe_code = "forbid"` is NOT set.** The crate has 7 FFI-necessary
-  `unsafe` blocks and 3 `unsafe extern "C" fn` items, all in
+  `unsafe` blocks and 3 `unsafe extern "C" fn` items in
   `src/store/tokenizer/ffi.rs` and `src/store/connection.rs`: registering a
   custom FTS5 tokenizer through `libsqlite3-sys`'s C ABI and registering
   `sqlite-vec` as a SQLite auto-extension have no safe wrapper in the
-  ecosystem. `forbid` is a hard rustc error with no local override, so it
+  ecosystem. One more block is `Command::pre_exec` in
+  `src/domains/sync/daemon/spawn.rs`: closing descriptors a detached
+  coordinator inherited must run between `fork` and `exec`, which std only
+  exposes as an `unsafe` hook. `forbid` is a hard rustc error with no local override, so it
   cannot be applied. The key is omitted (rustc's default is `allow`) and
   replaced with a stronger, machine-enforced rule instead:
   `scripts/guardrails/patterns/rust/no-unsafe-without-safety.yml` fails the
