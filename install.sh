@@ -3,8 +3,10 @@
 #
 # Downloads the release archive built for this machine from GitHub Releases,
 # verifies it against the SHA-256 sidecar every release ships, checks the
-# binary actually runs here, drops it into a bin directory, and (unless told
-# not to) makes it reachable from your shell.
+# binary actually runs here, drops it into a bin directory, starts its
+# required sync daemon and proves the new binary answers, and (unless told
+# not to) makes it reachable from your shell. Exit 69: the binary was placed
+# but its daemon never became ready (the previous binary is restored).
 #
 #   curl -fsSL https://github.com/Falconiere/comemory/releases/latest/download/install.sh | sh
 #   sh install.sh [--version <tag>] [--dir <bin dir>] [--no-modify-path]
@@ -35,6 +37,8 @@ QUIET=0
 INSTALL_COMPLETIONS=1
 NEEDS_RESTART=0
 TMP=""
+LOCK=""
+PREV=""
 
 # ---------------------------------------------------------------- ui ----
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
@@ -53,12 +57,14 @@ say()  { [ "$QUIET" -eq 1 ] || printf '%s\n' "$*"; }
 step() { say "  ${GRN}${OK}${R} ${B}$1${R}  ${D}$2${R}"; }
 info() { say "  ${CYN}${ARROW}${R} ${B}$1${R}  ${D}$2${R}"; }
 warn() { printf '  %s%s%s %s\n' "$YLW" "$BAD" "$R" "$*" >&2; }
-# die <message> [hint] — red error line, optional indented hint, exit 1.
-die() {
+# fail <code> <message> [hint] — red error line, optional indented hint.
+fail() {
+  code="$1"; shift
   printf '\n  %s%s error:%s %s\n' "$RED" "$BAD" "$R" "$1" >&2
   [ $# -lt 2 ] || printf '    %s%s%s\n' "$D" "$2" "$R" >&2
-  exit 1
+  exit "$code"
 }
+die() { fail 1 "$@"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
@@ -95,11 +101,11 @@ detect_target() {
     Linux:x86_64)              TARGET=x86_64-unknown-linux-gnu;  PRETTY="Linux x86_64" ;;
     Linux:aarch64|Linux:arm64) TARGET=aarch64-unknown-linux-gnu; PRETTY="Linux aarch64" ;;
     *) die "no prebuilt $APP for $os $arch" \
-         "build from source: git clone $REPO_URL && cd $APP && cargo install --path ." ;;
+         "build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh" ;;
   esac
   if [ "$os" = Linux ] && ls /lib/ld-musl-* >/dev/null 2>&1; then
     die "this is a musl system; only glibc (>= 2.35) Linux builds are published" \
-      "build from source: git clone $REPO_URL && cd $APP && cargo install --path ."
+      "build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
   fi
 }
 
@@ -180,10 +186,43 @@ pick_dir() {
   fi
 }
 
+# ------------------------------------------------------------- lock ----
+# One install per directory: a symlink naming the owner pid (`ln -s` is
+# atomic and carries the pid). A dead owner's lock is reclaimed only by the
+# one racer that creates `.reclaim.<pid>`; a reclaimer that died mid-way
+# leaves a state no installer guesses about.
+alive() { ps -p "$1" >/dev/null 2>&1; }
+lock_dir() {
+  LOCK="$DIR/.$APP-install.lock"; waited=0
+  until ln -s "$$" "$LOCK" 2>/dev/null; do
+    owner="$(readlink "$LOCK" 2>/dev/null || true)"
+    if [ -n "$owner" ] && ! alive "$owner"; then
+      if ln -s "$$" "$LOCK.reclaim.$owner" 2>/dev/null; then
+        ln -sf "$$" "$LOCK.new.$$" && mv -f "$LOCK.new.$$" "$LOCK" && break
+      fi
+      by="$(readlink "$LOCK.reclaim.$owner" 2>/dev/null || true)"
+      [ -z "$by" ] || alive "$by" || die "a previous install into $DIR was interrupted while taking its lock" \
+        "remove $DIR/.$APP-install.lock* and retry"
+    fi
+    [ "$waited" -lt 60 ] || die "another install into $DIR is running (pid ${owner:-?})" "retry when it finishes"
+    waited=$((waited + 1)); sleep 1
+  done
+  for f in "$DIR/.$APP.new."* "$DIR/.$APP.prev."*; do
+    pid="${f##*.}"
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    alive "$pid" || rm -f "$f"
+  done
+}
+cleanup() {
+  rm -rf "$TMP"; rm -f "$DIR/.$APP.new.$$"
+  [ -z "$LOCK" ] || [ "$(readlink "$LOCK" 2>/dev/null)" != "$$" ] || rm -f "$LOCK" "$LOCK".reclaim.*
+}
+
 # Extract, prove the binary runs on this machine, then rename it into place.
 # The final step is a same-directory rename, so a running comemory (this is
 # what `comemory upgrade` calls) is swapped atomically rather than written
-# over.
+# over. The previous file is kept as a hard link until the daemon proves the
+# new one.
 install_bin() {
   tar -xJf "$TMP/$ARCHIVE" -C "$TMP" 2>/dev/null \
     || die "could not extract $ARCHIVE" "tar with xz support is required (tar -xJf)"
@@ -194,8 +233,48 @@ install_bin() {
     "Linux builds need glibc >= 2.35; older distros need the source install"
   mkdir -p "$DIR" 2>/dev/null || die "cannot create $DIR" "re-run with --dir <a directory you can write to>"
   [ -w "$DIR" ] || die "cannot write to $DIR" "re-run with --dir <a directory you can write to>"
+  lock_dir
   staged="$DIR/.$APP.new.$$"
-  mv -f "$bin" "$staged" && mv -f "$staged" "$DIR/$APP"
+  mv -f "$bin" "$staged" || die "cannot stage the binary in $DIR"
+  if [ -f "$DIR/$APP" ]; then
+    PREV="$DIR/.$APP.prev.$$"
+    ln "$DIR/$APP" "$PREV" 2>/dev/null || cp -p "$DIR/$APP" "$PREV" \
+      || die "cannot keep the previous $APP for rollback"
+    PREV_REPORTED="$("$DIR/$APP" --version 2>/dev/null || echo "the previous $APP")"
+  fi
+  mv -f "$staged" "$DIR/$APP"
+}
+
+# ----------------------------------------------------------- daemon ----
+# json_str <json> <key> — a `"key":"value"` string out of compact JSON.
+json_str() { printf '%s' "$1" | sed -n "s/.*\"$2\":[[:space:]]*\"\([^\"]*\)\".*/\\1/p"; }
+
+# The new binary's own `sync daemon ensure` must answer with this version at
+# this path. Otherwise the previous binary comes back and the install fails.
+ensure_daemon() {
+  want="${REPORTED#* }"; path="$(cd -P "$DIR" && pwd -P)/$APP"
+  out="$("$DIR/$APP" sync daemon ensure --json 2>"$TMP/ensure.err")" || true
+  got_v="$(json_str "$out" version)"; got_b="$(json_str "$out" binary)"
+  case "$out" in *'"ready":true'*)
+    if [ "$got_v" = "$want" ] && [ "$got_b" = "$path" ]; then
+      rm -f "$PREV"; PREV=""
+      pid="$(printf '%s' "$out" | sed -n 's/.*"pid":\([0-9]*\).*/\1/p')"
+      step "Sync daemon" "ready ($got_v, pid $pid, $(json_str "$out" supervisor)) $ARROW $(json_str "$out" data_dir)"
+      return 0
+    fi ;;
+  esac
+  cause="$(json_str "$out" error)"
+  [ -n "$cause" ] || cause="$(tail -n 1 "$TMP/ensure.err" 2>/dev/null)"
+  [ -n "$cause" ] || cause="it answered as ${got_v:-nothing} at ${got_b:-nowhere}, expected $want at $path"
+  what="sync daemon not ready after installing $APP $VERSION: $cause"
+  [ -n "$PREV" ] || fail 69 "$what" "$APP $VERSION is installed at $DIR/$APP; fix the cause, then run: $DIR/$APP sync daemon ensure"
+  mv -f "$PREV" "$DIR/$APP"; PREV=""
+  back="$("$DIR/$APP" sync daemon ensure --json 2>/dev/null)" || true
+  case "$back" in *'"ready":true'*) state=ready ;; *) state="not ready" ;; esac
+  case "$back" in *'"store":"too_new"'*)
+    state="$state; the store was written by a newer $APP: keep the newer one and run $APP doctor" ;;
+  esac
+  fail 69 "$what" "rolled back to $PREV_REPORTED at $DIR/$APP (sync daemon: $state)"
 }
 
 # Generate all supported completion scripts with the installed binary. A
@@ -277,7 +356,8 @@ pick_dir
 step "Install dir" "$DIR ($WHY)"
 
 TMP="$(mktemp -d 2>/dev/null || mktemp -d -t "$APP")"
-trap 'rm -rf "$TMP"' EXIT
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
 ARCHIVE="$APP-$TARGET.tar.xz"
 base="$RELEASES/download/$VERSION"
 
@@ -293,6 +373,7 @@ step "Checksum" "sha256 $(printf '%.12s' "$expected")... verified"
 
 install_bin
 step "Installed" "$DIR/$APP ($REPORTED)"
+ensure_daemon
 install_completions
 add_path
 summary
