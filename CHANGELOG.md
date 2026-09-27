@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-09-27
+
+### Added
+
+- make the sync daemon required, resident and self-healing ([#303](https://github.com/Falconiere/comemory/pull/303))
+
+### Changed
+
+- reduce test-suite turnaround ([#302](https://github.com/Falconiere/comemory/pull/302))
+
 ## [0.49.1] - 2026-09-25
 
 ### Fixed
