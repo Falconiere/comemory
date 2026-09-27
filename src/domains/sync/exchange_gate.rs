@@ -26,8 +26,10 @@ pub struct ExchangePause {
     _lock: FileLock,
 }
 
-/// Pause the exchange, waiting up to `wait` for a pass already running to
-/// finish.
+/// Pause the exchange: wait up to `wait` for a pass already running to
+/// finish, then hold the gate until the returned guard drops. Never blocks
+/// past `wait` — a pass still running then fails the pause with
+/// [`Error::Busy`].
 ///
 /// # Errors
 /// [`Error::Busy`] once `wait` elapses with a pass still holding the gate;

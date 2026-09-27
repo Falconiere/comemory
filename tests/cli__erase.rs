@@ -44,15 +44,21 @@ fn run(home: &CliHome, args: &[&str]) -> (i32, String, String) {
 /// Every file under `dir` whose bytes contain `needle`.
 fn files_holding(dir: &std::path::Path, needle: &str) -> Vec<std::path::PathBuf> {
     let mut found = Vec::new();
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let path = entry.path();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return found,
+        Err(e) => panic!("cannot list {}: {e}", dir.display()),
+    };
+    for entry in entries {
+        let path = entry.expect("directory entry").path();
         if path.is_dir() {
             found.extend(files_holding(&path, needle));
-        } else if std::fs::read(&path)
-            .unwrap_or_default()
-            .windows(needle.len())
-            .any(|w| w == needle.as_bytes())
-        {
+        } else if match std::fs::read(&path) {
+            Ok(bytes) => bytes.windows(needle.len()).any(|w| w == needle.as_bytes()),
+            // A sidecar a live engine removed after the listing holds nothing.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => panic!("cannot read {}: {e}", path.display()),
+        } {
             found.push(path);
         }
     }
