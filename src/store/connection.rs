@@ -49,7 +49,10 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     // Every delete zeroes what it frees (#256, B-5). A permanent erase can
     // only scrub the rows it still finds; a cell or page an earlier ordinary
     // write freed — a soft delete's FTS row, an update that moved a row —
-    // would otherwise keep the erased text in the file for good.
+    // would otherwise keep the erased text in the file for good. The cost is
+    // accepted: every ordinary DELETE and page-freeing update also writes the
+    // zeros (extra write I/O, no extra reads), with no opt-out, because
+    // turning it on only for the erase cannot reach pages freed before it.
     conn.pragma_update(None, "secure_delete", true)?;
     // Must precede migrate::run: bundled SQLite 3.46 resolves
     // `tokenize = 'identifier'` eagerly when FTS DDL is prepared.
