@@ -9,7 +9,7 @@
 use crate::config::Paths;
 use crate::config::env::env_parse;
 use crate::domains::memories::MemoryStore;
-use crate::domains::sync::{AuthFile, daemon};
+use crate::domains::sync::daemon::status_view::{self, State};
 use crate::prelude::*;
 use crate::store::{Connection, doctor_probes, vector};
 use crate::utilities::digest::sha256_hex;
@@ -359,17 +359,20 @@ fn data_dir_layout(paths: &Paths) -> Check {
     }
 }
 
-/// Check 11: when org credentials exist, the sync daemon should be running.
+/// Check 11: the required coordinator's own state (D12). Never runs
+/// `ensure` — this is introspection-only, matching `sync daemon status` —
+/// and its state is independent of whether this machine is logged in
+/// (a never-logged-in coordinator is still healthy, AC-4).
 fn sync_daemon_check(paths: &Paths) -> Check {
-    if !matches!(AuthFile::load_usable(paths), Ok(Some(_))) {
-        return ok("sync daemon", "not linked — daemon not required");
-    }
-    match daemon::status() {
-        Ok(st) if st.running => ok("sync daemon", st.detail),
-        Ok(st) => warn(
-            "sync daemon",
-            format!("{} — run `comemory sync daemon start`", st.detail),
-        ),
-        Err(e) => warn("sync daemon", format!("status unavailable: {e}")),
+    match status_view::view(paths) {
+        Ok(view) => match view.state {
+            State::Running => ok("sync daemon", view.detail),
+            State::Disabled => warn("sync daemon", view.detail),
+            State::NotRunning | State::Stale | State::Unsupported => fail(
+                "sync daemon",
+                format!("{} — run `comemory sync daemon ensure`", view.detail),
+            ),
+        },
+        Err(e) => fail("sync daemon", format!("status unavailable: {e}")),
     }
 }

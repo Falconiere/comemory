@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::env;
 use crate::config::paths::Paths;
+use crate::domains::sync::auth_barrier;
 use crate::prelude::*;
 
 /// Schema version this build writes and is willing to read.
@@ -109,13 +110,17 @@ struct VersionProbe {
 }
 
 impl AuthFile {
-    /// Load `auth.json` when present; missing file → `Ok(None)`.
+    /// Load `auth.json` when present; a missing file, or a standing logout
+    /// barrier ([`auth_barrier`]), is `Ok(None)`.
     ///
     /// # Errors
     /// [`Error::Usage`] when the file lacks organization scope, naming
     /// `comemory auth login` as the fix. Any other malformed file surfaces the
     /// underlying `serde_json` error.
     pub fn load(paths: &Paths) -> Result<Option<Self>> {
+        if auth_barrier::active(paths) {
+            return Ok(None);
+        }
         let path = paths.auth_file();
         let Some(raw) = read_if_present(&path)? else {
             return Ok(None);
@@ -149,6 +154,9 @@ impl AuthFile {
     /// any *future* usage error `load` grows, turning a real misconfiguration
     /// into a silent no-sync.
     pub fn load_usable(paths: &Paths) -> Result<Option<Self>> {
+        if auth_barrier::active(paths) {
+            return Ok(None);
+        }
         let path = paths.auth_file();
         let Some(raw) = read_if_present(&path)? else {
             return Ok(None);
@@ -159,7 +167,8 @@ impl AuthFile {
         Self::load(paths)
     }
 
-    /// Persist this bundle atomically with mode `0600` on unix.
+    /// Persist this bundle atomically with mode `0600` on unix, then clear
+    /// the logout barrier.
     pub fn save(&self, paths: &Paths) -> Result<()> {
         let rendered = serde_json::to_string_pretty(self)?;
         let final_path = paths.auth_file();
@@ -178,7 +187,8 @@ impl AuthFile {
             return Err(e.into());
         }
         set_private_mode(&final_path)?;
-        Ok(())
+        // An explicit login is what resumes exchange after a logout.
+        auth_barrier::clear(paths)
     }
 
     /// Effective API secret: `COMEMORY_API_KEY` env overrides the stored secret.

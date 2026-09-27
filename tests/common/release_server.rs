@@ -3,7 +3,8 @@
     clippy::expect_used,
     clippy::panic,
     clippy::float_cmp,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    dead_code
 )]
 //! A loopback stand-in for GitHub Releases, for the installer and
 //! `comemory upgrade` tests. It answers the three request shapes

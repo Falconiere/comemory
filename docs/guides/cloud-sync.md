@@ -26,22 +26,25 @@ before it returns** — pulling every remote page, then pushing every local page
 ```text
 ✓ logged in to Acme, Inc. (cmk_abcd)
   api https://api.comemory.io · credentials ~/.comemory/auth.json
-  daemon: not installed (saves push inline; `comemory watch` for live pulls)
+  daemon: running=true instance=cb234cd3885368e0
   synced: pulled 12 · pushed 3 · skip_repos=0 · blocked_repo=0
 ```
 
-There is no second step, and nothing resident is installed. After login:
+There is no second step, and nothing to install by hand — `login` is one of
+the commands preflight already ensures a coordinator for (see [Sync daemon
+(required)](#sync-daemon)). After login:
 
 - **Push is inline.** `comemory save` and `comemory delete` send the outbox
-  before they return, bounded by `[sync] push_on_save_timeout` (2s).
+  before they return, bounded by `[sync] push_on_save_timeout` (2s); if that
+  push does not fully drain, a best-effort wake tells the coordinator not to
+  wait for its next tick.
 - **Hooked repos sync themselves.** Every git operation that moves HEAD in a
   repo with comemory's hooks, and every agent session start, runs one
-  [`sync --action auto`](#hooks) pass from wherever it happens: stale hooked
-  repos are re-indexed, then pulled and pushed.
+  [`sync --action auto`](#hooks) pass — a wake to the coordinator, not a pass
+  this process runs itself.
 - **Pull is otherwise on demand:** `comemory sync`, or
-  [`comemory watch`](#watch) to follow changes live.
-- **The daemon is opt-in** (`comemory auth login --daemon`) for headless hosts
-  that want pulls without any of those.
+  [`comemory watch`](#watch) to follow changes live — both talk to the same
+  resident coordinator.
 
 If the platform is unreachable at that moment the login still succeeds — the
 key is already minted and useful — and says so on stderr:
@@ -50,10 +53,12 @@ key is already minted and useful — and says so on stderr:
 warning: first sync failed (…) — run `comemory sync` when the platform is reachable
 ```
 
-`comemory auth status` reports the bound organization and whether the daemon
-is running (it usually is not, and that is fine). `comemory auth logout` deletes the local credential and **stops**
-the daemon (the unit stays installed for the next login). `COMEMORY_API_KEY`
-overrides the stored secret without writing the file.
+`comemory auth status` reports the bound organization and the coordinator's
+own live status. `comemory auth logout` deletes the local credential and
+raises a durable barrier — every credential read answers logged out, even one
+made through an inherited `COMEMORY_API_KEY`, until the next login — but
+**never stops the coordinator**: it keeps running, idle, for the next login.
+`COMEMORY_API_KEY` overrides the stored secret without writing the file.
 
 ## Automatic sync from git hooks {#hooks}
 
@@ -73,7 +78,7 @@ commit. From then on, one pass runs whenever any of these fires:
 |---|---|---|
 | A commit, merge, pull, checkout, rebase or amend in any hooked repo | that repo's hook | `comemory sync --action auto --path <checkout>` |
 | An agent session start (comemory plugin for Claude Code / Codex) | the session, any cwd | `comemory sync --action auto` |
-| `comemory sync` (`run` / `push`), the opt-in daemon cycle | anywhere | the same refresh, before the code push |
+| `comemory sync` (`run` / `push`), the coordinator's own reconciliation tick | anywhere | the same refresh, before the code push |
 
 A pass:
 
@@ -108,48 +113,58 @@ exits 0 silently when none is found; a hook never fails a git operation.
 Hooks written by an older release keep working (they run `index-code`
 directly) until `comemory install-hooks` or `comemory setup` rewrites them.
 
-## `comemory watch` — live pulls, no daemon {#watch}
+## `comemory watch` — live pulls, attached to the coordinator {#watch}
 
 ```bash
 comemory watch            # follow until interrupted
-comemory watch --once     # pull once the channel greets, then exit
+comemory watch --once     # one catch-up, then exit
 ```
 
-`watch` mints a 60-second ticket (`POST /v1/ws/ticket`), opens the workspace
-channel (`GET /v1/ws`), and pulls whenever a frame arrives — on connect
-(`hello`) and after anyone writes (`change`).
+`watch` attaches to the required resident coordinator ([below](#sync-daemon))
+rather than talking to the platform itself: `--once` subscribes to its event
+stream, asks for one `catch_up`, prints the pull it reports, and exits — if
+the subscription or catch-up never completes, that is exit 69, not a retry.
+Following instead prints one `pulled` event per `pass_finished` the
+coordinator emits — its own ticks, hook wakes, and workspace-channel nudges
+all count — re-attaching with jittered backoff (1s → 30s) if the subscription
+drops, a coordinator restart included.
 
-The socket carries **nudges, never memories**: a frame names memory ids, ops
-and content hashes, and the pull it triggers is the same [exchange](#exchange)
-a manual sync runs — pull direction only, pass after pass until the upstream
-is drained — with your real credential. So a
-missed frame costs latency rather than data, a duplicate frame costs one empty
-pull, and a leaked ticket buys an id list rather than a corpus.
+The channel the coordinator itself holds still carries **nudges, never
+memories**: a frame names memory ids, ops and content hashes, and the pull it
+triggers is the same [exchange](#exchange) a manual sync runs — pull
+direction only, pass after pass until the upstream is drained. So a missed
+frame costs latency rather than data, a duplicate frame costs one empty pull,
+and a leaked ticket buys an id list rather than a corpus.
 
-A refused or dropped socket is not an error — `watch` reconnects with jittered
-backoff (1s → 30s) until you stop it.
+## Sync daemon (required) {#sync-daemon}
 
-## Sync daemon (opt-in)
+One coordinator per data directory, always running: every ordinary command's
+preflight verifies it and repairs it first, so `login`, `save`, `sync` and
+`watch` above never wait on you to start anything.
 
 | Command | Effect |
 |---------|--------|
-| `comemory sync daemon install` | Write LaunchAgent `io.comemory.sync` (macOS) or systemd `--user` `comemory-sync.service` (Linux) |
-| `comemory sync daemon start` / `stop` | Start or stop; stop leaves the unit installed |
-| `comemory sync daemon status` | installed / running |
-| `comemory sync daemon uninstall` | Remove the unit |
-| `comemory sync daemon run` | Foreground loop (what the supervisor runs) |
+| `comemory sync daemon ensure` | Verify, and if needed start or repair, the coordinator |
+| `comemory sync daemon status` | Live probe — starts nothing |
+| `comemory sync daemon restart` | Stop gracefully, then `ensure` a fresh one |
+| `comemory sync daemon repair` | Rewrite this directory's unit and restart, unless already verified current |
+| `comemory sync daemon stop` | Stop; the next ordinary command brings it back |
+| `comemory sync daemon uninstall` | Stop and remove this directory's unit; the next command reinstalls it |
+| `comemory sync daemon run` | Foreground coordinator — what the supervisor executes |
 
-Default interval: `[sync] daemon_interval = "5s"` — each cycle is the
+Backed by a macOS LaunchAgent (`io.comemory.sync.<id>`) or a Linux systemd
+`--user` unit (`comemory-sync-<id>.service`) when one is available, falling
+back to a plain detached process — with a note in `ensure`'s report — when it
+is not (containers, a headless host with no session bus). `install`/`start`
+are hidden deprecated aliases of `repair`/`ensure`; `--daemon`/`--no-daemon`
+on `auth login` do nothing (the former warns; the latter is refused).
+Windows is not supported.
+
+Default interval: `[sync] daemon_interval = "5s"` — each tick is the
 [`--action auto`](#hooks) pass (refresh stale hooked repos, `pull`, `push`,
 push moved code) under the same lock, with an occasional `verify` per
-`[sync] verify_every`. Windows is not
-supported.
-
-You probably do not need it. A save pushes itself and `comemory watch` covers
-pulls; what is left for a daemon is a headless host that wants pulls without a
-foreground process. Install it with `comemory auth login --daemon`, or
-`comemory sync daemon install` at any time. (The old `auth login --no-daemon`
-is gone — it opted out of an install that no longer happens.)
+`[sync] verify_every`; a changed interval takes effect on the coordinator's
+own next tick, no restart needed.
 
 ## What syncs
 

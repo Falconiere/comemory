@@ -95,6 +95,9 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/.comemory/memories"
 cp "$corpus_dir"/*.md "$work/.comemory/memories/"
 export COMEMORY_DATA_DIR="$work/.comemory"
+# This gate scores retrieval, not the required daemon (#257); the hermetic
+# switch keeps `rebuild`/`eval` from spawning one for a throwaway home.
+export COMEMORY_SYNC_DAEMON=0
 
 "$bin" rebuild >/dev/null
 

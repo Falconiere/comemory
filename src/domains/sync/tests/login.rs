@@ -24,7 +24,7 @@ fn http_tools() -> bool {
 }
 
 #[test]
-fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() {
+fn establish_persists_the_minted_credential_and_reports_no_coordinator_under_the_harness_switch() {
     if !http_tools() {
         return;
     }
@@ -33,11 +33,14 @@ fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() 
     paths.ensure_dirs().expect("ensure_dirs");
     let srv = DeviceAuthServer::start_default();
 
+    // `.cargo/config.toml` defaults `COMEMORY_SYNC_DAEMON=0` for every test
+    // binary, so `establish`'s best-effort reload/probe is a no-op here —
+    // it never itself starts a coordinator (that is preflight's job for
+    // `auth login`, exercised for real in `tests/replica_daemon_4.rs`).
     let mut progress = Vec::new();
     let established = login::establish(
         (&paths, &comemory::config::Config::defaults()),
         Some(&srv.base),
-        false,
         &mut progress,
     )
     .expect("establish");
@@ -51,9 +54,8 @@ fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() 
     assert_eq!(stored.workspace_id, srv.config.workspace_id);
     assert_eq!(stored.api_url, srv.base);
 
-    // Opt-in daemon: nothing was attempted, so there is nothing to report.
-    assert!(established.daemon_skipped);
-    assert_eq!(established.daemon_running, None);
+    assert!(!established.daemon_running);
+    assert_eq!(established.daemon_instance, None);
 
     // The device-code prompt must reach the writer it was handed rather than a
     // stream the domain chose — and it must be the prompt, not just any bytes.
@@ -158,4 +160,60 @@ fn logout_of_a_machine_with_no_store_creates_none() {
         "no store was created to stamp nothing"
     );
     assert!(AuthFile::load(&paths).expect("load").is_none());
+}
+
+#[test]
+fn logout_pass_lock_stays_exclusive_until_the_caller_finishes() {
+    use comemory::domains::sync::auto::PASS_LOCK;
+    use comemory::utilities::file_lock::FileLock;
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    let lock_path = home.path().join(PASS_LOCK);
+    {
+        let (in_flight, _held) =
+            super::wait_for_pass_lock(&paths, std::time::Duration::from_secs(1));
+        assert_eq!(in_flight, login::InFlight::None);
+        assert!(
+            FileLock::try_acquire(&lock_path, "competing pass")
+                .expect("probe")
+                .is_none(),
+            "logout must retain the lock while its caller stamps outgoing rows"
+        );
+    }
+    assert!(
+        FileLock::try_acquire(&lock_path, "next pass")
+            .expect("probe after logout")
+            .is_some()
+    );
+}
+
+#[test]
+fn logout_pass_lock_retains_a_lock_acquired_after_an_in_flight_pass() {
+    use comemory::domains::sync::auto::PASS_LOCK;
+    use comemory::utilities::file_lock::FileLock;
+    use std::time::Duration;
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    let lock_path = home.path().join(PASS_LOCK);
+    let running = FileLock::acquire(&lock_path, "running pass").expect("lock");
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        drop(running);
+    });
+    let (in_flight, held) = super::wait_for_pass_lock(&paths, Duration::from_secs(5));
+    release.join().expect("release running pass");
+    assert_eq!(in_flight, login::InFlight::Drained);
+    assert!(
+        FileLock::try_acquire(&lock_path, "competing pass")
+            .expect("probe")
+            .is_none()
+    );
+    drop(held);
+    assert!(
+        FileLock::try_acquire(&lock_path, "next pass")
+            .expect("probe after logout")
+            .is_some()
+    );
 }

@@ -70,6 +70,19 @@ pub fn backoff_delay(attempt: u32, fraction: f64) -> Duration {
     BACKOFF_MIN + spread.mul_f64(fraction.clamp(0.0, 1.0))
 }
 
+/// What the channel loop saw, for a caller that decides what a nudge means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Frame {
+    /// An attempt is starting: minting a ticket, opening the socket.
+    Connecting,
+    /// The channel accepted the ticket and is open.
+    Connected,
+    /// A `hello` or `change` frame arrived.
+    Nudge,
+    /// The attempt ended; the next one waits out a backoff.
+    Retrying,
+}
+
 /// Follow the workspace channel until interrupted (or, with `once`, until the
 /// first greeting has been acted on), reporting each event to `on_event`.
 ///
@@ -86,9 +99,32 @@ pub async fn follow<R: OffRuntime + Sync>(
     off: &R,
     on_event: &mut dyn FnMut(WatchEvent) -> Result<()>,
 ) -> Result<()> {
+    channel_loop(auth, once, off, &mut |frame| match frame {
+        Frame::Connected => on_event(WatchEvent::Connected).map(|()| false),
+        Frame::Nudge => {
+            let pulled = off.off(|| pull_now(paths, cfg, auth))?;
+            on_event(WatchEvent::Pulled(pulled)).map(|()| once)
+        }
+        Frame::Connecting | Frame::Retrying => Ok(false),
+    })
+    .await
+}
+
+/// Hold the channel and hand every frame to `on_frame`, reconnecting with
+/// full-jitter backoff. `on_frame` returns `Ok(true)` to finish (what `once`
+/// waits for); an `Err` ends the attempt like a dropped socket.
+///
+/// # Errors
+/// [`Error::Other`] when `once` is set and the attempt ended unfinished.
+pub async fn channel_loop<R: OffRuntime + Sync>(
+    auth: &AuthFile,
+    once: bool,
+    off: &R,
+    on_frame: &mut dyn FnMut(Frame) -> Result<bool>,
+) -> Result<()> {
     let mut attempt: u32 = 0;
     loop {
-        match follow_once(paths, cfg, auth, once, off, on_event).await {
+        match follow_once(auth, off, on_frame).await {
             Ok(true) => return Ok(()),
             Ok(false) => attempt = 0,
             Err(e) => tracing::debug!(error = %e, "workspace channel attempt failed"),
@@ -98,6 +134,8 @@ pub async fn follow<R: OffRuntime + Sync>(
                 "the workspace channel never greeted us".into(),
             ));
         }
+        // A callback failure here ends nothing: the loop is what retries.
+        let _ = on_frame(Frame::Retrying);
         // Randomly jittered inside a bounded window, per client: a platform
         // restart must not bring every watcher back on the same instant. The
         // window doubles per attempt and caps at BACKOFF_MAX; `attempt` is
@@ -116,7 +154,7 @@ pub async fn follow<R: OffRuntime + Sync>(
 /// without it the clock's sub-second remainder stands in, which is a weaker
 /// spread but still a spread — unlike a constant, which would line every
 /// client of a restarted platform up on the same reconnect instant.
-fn rand_fraction() -> f64 {
+pub(crate) fn rand_fraction() -> f64 {
     let mut bytes = [0_u8; 2];
     if std::fs::File::open("/dev/urandom")
         .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes))
@@ -130,15 +168,13 @@ fn rand_fraction() -> f64 {
     f64::from(nanos % 1_000) / 1_000.0
 }
 
-/// One connection's lifetime. `Ok(true)` means `once` has been satisfied.
+/// One connection's lifetime. `Ok(true)` means `on_frame` asked to finish.
 async fn follow_once<R: OffRuntime + Sync>(
-    paths: &Paths,
-    cfg: &Config,
     auth: &AuthFile,
-    once: bool,
     off: &R,
-    on_event: &mut dyn FnMut(WatchEvent) -> Result<()>,
+    on_frame: &mut dyn FnMut(Frame) -> Result<bool>,
 ) -> Result<bool> {
+    on_frame(Frame::Connecting)?;
     let api_url = auth.api_url.clone();
     let secret = auth.effective_secret();
     let ticket = off.off(move || client::ws_ticket(&api_url, &secret))?;
@@ -147,7 +183,9 @@ async fn follow_once<R: OffRuntime + Sync>(
     let (mut socket, _response) = connect_async(&url)
         .await
         .map_err(|e| Error::Other(format!("workspace channel: {e}")))?;
-    on_event(WatchEvent::Connected)?;
+    if on_frame(Frame::Connected)? {
+        return Ok(true);
+    }
 
     while let Some(frame) = socket.next().await {
         let frame = frame.map_err(|e| Error::Other(format!("workspace channel: {e}")))?;
@@ -155,12 +193,7 @@ async fn follow_once<R: OffRuntime + Sync>(
             // Ping/pong and close are the library's business, not ours.
             continue;
         };
-        if !is_nudge(&text) {
-            continue;
-        }
-        let pulled = off.off(|| pull_now(paths, cfg, auth))?;
-        on_event(WatchEvent::Pulled(pulled))?;
-        if once {
+        if is_nudge(&text) && on_frame(Frame::Nudge)? {
             return Ok(true);
         }
     }

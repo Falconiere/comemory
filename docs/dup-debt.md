@@ -3,10 +3,55 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**285 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 530 production `.rs` files under `src/`. That
+**289 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 621 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number rose from 288 (#257, `watch` attaches to the coordinator).**
+`cli::watch::{follow_coordinator, attach_once}` pair: `follow_coordinator` is
+the retry loop (attempt count, full-jitter backoff, `once` short-circuits on
+both `Ok`/`Err`) around one attempt; `attach_once` is that one attempt
+(subscribe, report `Connected`, then either one `catch_up` or an event-read
+loop). Splitting `attach_once` further — a bare `once`/`forever` function
+pair with no shared retry wrapper — was tried and made this *worse*, not
+better: the resulting three short functions (each opening with "subscribe,
+report `Connected`, then …") scored two pairs against each other instead of
+one, since `similarity-rs` compares shape, not the caller's actual retry
+semantics. Kept as the two-function form.
+
+**Why this number rose from 287 (#257, hook and save wakes).**
+`cli::sync_auto::{run, run_in_process}` pair: both end with "build a JSON
+report, or print nothing" once `json_flag` is checked, but `run` sends one
+wake and reports the coordinator's instance while `run_in_process` (only
+reachable under the `COMEMORY_SYNC_DAEMON=0` harness switch, where there is
+no coordinator to wake) runs the whole pass in-process and reports every
+leg. Merging them behind an `in_process: bool` would replace two short,
+readable functions with one long one branching on it throughout — the same
+bodies with a worse name.
+
+**Why this number rose from 285 (#257, the required resident daemon).**
+`domains::sync::daemon::supervisor` gives every lifecycle action one function
+dispatching on the four-variant `Kind` (launchd/systemd/process/external,
+each launchd/systemd arm doing real `launchctl`/`systemctl` work, the other
+two a no-op) — the raw increase was **nine** pairs and **seven were burned
+down**: `write` and `start` merged into one `activate` (every caller ran them
+back to back — issuing two native round trips per backend was never a real
+choice), `remove_legacy` stopped hand-rolling its own `launchctl`/`systemctl`
+calls and now builds a `Unit` for the legacy label through a new
+`legacy_unit` helper and calls the existing `remove`, and `cli::sync_daemon`'s
+`stop`/`uninstall` share one `report(json_flag, key, message)` for their
+`--json`-or-one-line-TTY tail.
+
+Two are inherited: `supervisor::stop` (terminate the running job, leaving the
+unit file) recorded against `remove` (which calls `stop` first, then deletes
+the file) and against `legacy_unit` (builds the pre-#257 label's `Unit`, no
+process involved). They cannot merge: `Intent::Restart` needs "stop, keep the
+definition," `uninstall` needs "stop and remove," and a legacy unit's path
+never touches a running process — collapsing any pair would need an
+`if remove_file` flag or a mixed action/lookup function, which is the same
+four-arm `match Kind` bodies with a worse name and a parameter that lies
+about what one call site or the other actually wants.
 
 **Why this number fell from 286 (hook-driven auto-sync).** The sync pass
 lock added ten raw pairs and all ten were burned before recording: the two

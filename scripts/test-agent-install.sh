@@ -17,6 +17,9 @@ mkdir -p "$TASK/bin"
 ln -s "$BIN" "$TASK/bin/comemory"
 export PATH="$TASK/bin:$PATH"
 export COMEMORY_DATA_DIR="$TASK/data with spaces"
+# This exercises installers and hooks, not the required daemon (#257); the
+# hermetic switch keeps every real-CLI call below from spawning one.
+export COMEMORY_SYNC_DAEMON=0
 unset TOOLU_CONFIG_DIR TOOLU_HOST_OVERRIDE PLUGIN_ROOT CLAUDE_PLUGIN_ROOT
 
 test_source_hook_regressions() {

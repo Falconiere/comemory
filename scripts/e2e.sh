@@ -11,6 +11,9 @@ QWICK_HOME=$(mktemp -d)
 trap 'rm -rf "$QWICK_HOME"' EXIT
 
 export COMEMORY_DATA_DIR="$QWICK_HOME/.comemory"
+# This smoke tests the command cores, not the required daemon (#257); the
+# hermetic switch keeps it from spawning one for a throwaway home.
+export COMEMORY_SYNC_DAEMON=0
 cd "$PROJECT_ROOT"
 cargo build --release --quiet
 BIN="$PROJECT_ROOT/target/release/comemory"
@@ -46,4 +49,28 @@ QUERY_ID=$(printf '%s' "$SEARCH_JSON" | sed -n 's/.*"query_id":"\([^"]*\)".*/\1/
 "$BIN" feedback "$QUERY_ID" --used-code "$SYMBOL_ID" --json >/dev/null \
   || die "e2e" "feedback --used-code failed"
 log_ok "e2e" "index-code → search-code → feedback round-trip passed"
+
+# ── required sync daemon smoke (#257) ─────────────────────────────────────
+# Everything above deliberately opts the daemon out (`COMEMORY_SYNC_DAEMON=0`)
+# to smoke the command cores in isolation; this section is the one place in
+# this script that exercises the required daemon itself — the release
+# binary, `process` supervision (never the developer's own launchd/systemd),
+# and an isolated `$HOME` so a real unit is never written outside `$QWICK_HOME`.
+export COMEMORY_DATA_DIR="$QWICK_HOME/.comemory-daemon"
+export HOME="$QWICK_HOME/daemon-home"
+mkdir -p "$HOME"
+export COMEMORY_DAEMON_SUPERVISOR=process
+unset COMEMORY_SYNC_DAEMON
+# Stop the isolated coordinator even when a later smoke assertion fails.
+trap '"$BIN" sync daemon stop --json >/dev/null 2>&1 || true; rm -rf "$QWICK_HOME"' EXIT
+
+"$BIN" sync daemon ensure --json | grep -q '"ready":true' \
+  || die "e2e" "sync daemon ensure failed"
+"$BIN" sync daemon status --json | grep -q '"state":"running"' \
+  || die "e2e" "sync daemon status did not report running"
+"$BIN" save --repo e2e-daemon-smoke \
+  "a decision made while the required daemon smoke was running" --json >/dev/null \
+  || die "e2e" "save failed with the daemon required"
+"$BIN" sync daemon stop --json >/dev/null || die "e2e" "sync daemon stop failed"
+log_ok "e2e" "required sync daemon smoke passed"
 

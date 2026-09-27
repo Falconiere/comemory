@@ -581,6 +581,7 @@ dependencies = [
  "ignore",
  "insta",
  "libsqlite3-sys",
+ "nix",
  "once_cell",
  "owo-colors",
  "predicates",

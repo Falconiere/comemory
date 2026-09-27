@@ -51,6 +51,8 @@ pub mod retry_after;
 pub mod session;
 /// The `exchange` block of `sync --action status`.
 pub mod status;
+/// Whether a drain must stop at its next boundary (logout, shutdown).
+pub mod stop;
 /// One request builder and one answer classification for upstream calls.
 pub mod transport;
 /// The first pass after a key selects `replica-v1`.
@@ -84,7 +86,8 @@ pub struct Drained {
 }
 
 /// Drain `auth`'s key: run passes until one ends without `more` (the inline
-/// push runs exactly one). A policy that changes under a pass is reloaded and
+/// push runs exactly one), or a logout or shutdown stops the run
+/// ([`stop::requested`], [`End::Cancelled`]). A policy that changes under a pass is reloaded and
 /// the pass run once more at once; a second change backs off.
 ///
 /// # Errors
@@ -103,6 +106,11 @@ pub fn drain(
     let mut drained = Drained::default();
     let mut reloaded = false;
     loop {
+        if stop::requested(paths) {
+            drained.exchange.end = End::Cancelled;
+            drained.exchange.more = true;
+            return Ok(drained);
+        }
         let mut session = match session::open(conn, cfg, auth, mode)? {
             Opened::Ready(session) => session,
             Opened::Skipped(row) => {
@@ -120,19 +128,17 @@ pub fn drain(
             continue;
         }
         if changed {
-            back_off_on_policy_churn(conn, &mut session)?;
-            drained
-                .exchange
-                .network
-                .clone_from(&session.row.network_state);
-            drained.error = session.row.last_error;
+            back_off_on_policy_churn(conn, *session, &mut drained)?;
             return Ok(drained);
         }
         if drained.exchange.end == End::Network {
             drained.error = session.row.last_error;
             return Ok(drained);
         }
-        if !drained.exchange.more || matches!(mode, Mode::Inline(_)) {
+        if !drained.exchange.more
+            || drained.exchange.end == End::Cancelled
+            || matches!(mode, Mode::Inline(_))
+        {
             return Ok(drained);
         }
     }
@@ -161,13 +167,20 @@ fn run_pass(
 
 /// A policy that changed again after a reload backs off like an
 /// unavailable upstream.
-fn back_off_on_policy_churn(conn: &Connection, session: &mut Session) -> Result<()> {
+fn back_off_on_policy_churn(
+    conn: &Connection,
+    mut session: Session,
+    drained: &mut Drained,
+) -> Result<()> {
     let failure = Failure::Unavailable(format!(
         "{}: the policy changed twice in one run",
         network::POLICY_CHANGED
     ));
     network::fail(&mut session.row, &failure, &session.fingerprint)?;
-    sync_exchange::save(conn, &session.row, &network::now()?)
+    sync_exchange::save(conn, &session.row, &network::now()?)?;
+    drained.exchange.network = session.row.network_state;
+    drained.error = session.row.last_error;
+    Ok(())
 }
 
 /// `full` on `replica-v1`; the old protocol carries memories and code only.

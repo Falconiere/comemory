@@ -1,5 +1,11 @@
 # Sync daemon + exhaustive post-login sync — Design
 
+> **Superseded by [`2026-09-25-required-sync-daemon.md`](2026-09-25-required-sync-daemon.md)
+> (#257).** That design replaces the opt-in single-instance daemon this
+> document describes with a required, always-resident, per-directory
+> coordinator behind an authenticated control socket. Kept for history; do
+> not implement against this file.
+
 **Date:** 2026-09-14   **Status:** Approved (amended near-RT)   **Author:** Auto
 **Topic:** Move continuous auto-sync onto a required user-level OS daemon
 (launchd / systemd --user), and make `auth login`'s first sync drain the

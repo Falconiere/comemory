@@ -393,18 +393,20 @@ fn a_save_still_succeeds_when_the_platform_is_unreachable() {
 }
 
 #[test]
-fn a_plain_login_installs_no_daemon_and_the_old_opt_out_is_gone() {
-    // AC-15/AC-20: the unit is opt-in now, so `--no-daemon` opts out of
-    // something that no longer happens and is refused rather than ignored.
+fn login_reports_skipped_false_and_the_removed_no_daemon_flag_is_refused() {
+    // AC-8: the daemon is always ensured now (#257), so `daemon.skipped` is
+    // always `false` — kept in the schema, not as a live opt-in switch — and
+    // `--no-daemon` (which opted out of the old opt-in install) is refused
+    // as an unknown argument, not ignored. `COMEMORY_SYNC_DAEMON=0` (this
+    // fixture's default) leaves `daemon.running` false: no coordinator ever
+    // ran for this sandboxed data dir.
     require_http_tools();
     let srv = SyncPlatformServer::start(SyncPlatformState::default());
     let home = Home::new();
 
     let plain = home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
-    assert_eq!(
-        plain["daemon"]["skipped"], true,
-        "a plain login must not install the daemon: {plain}"
-    );
+    assert_eq!(plain["daemon"]["skipped"], false, "{plain}");
+    assert_eq!(plain["daemon"]["running"], false, "{plain}");
 
     let refused = home.run(
         None,
@@ -423,18 +425,32 @@ fn a_plain_login_installs_no_daemon_and_the_old_opt_out_is_gone() {
 }
 
 #[test]
-fn login_with_the_daemon_flag_asks_for_the_unit() {
-    // The escape hatch for a headless host. `COMEMORY_SYNC_DAEMON=0` (set by
-    // this fixture) stops the install from touching the host's launchd, so the
-    // observable is the report: this login chose to install, the plain one did
-    // not.
+fn login_with_the_deprecated_daemon_flag_still_logs_in_and_warns() {
+    // AC-8: `--daemon` parses, warns that it is deprecated, and changes
+    // nothing — the coordinator is always ensured by preflight now, not by
+    // this flag.
     require_http_tools();
     let srv = SyncPlatformServer::start(SyncPlatformState::default());
     let home = Home::new();
 
-    let out = home.run_json(None, &["auth", "login", "--daemon", "--api-url", &srv.base]);
-    assert_eq!(
-        out["daemon"]["skipped"], false,
-        "--daemon must take the install path: {out}"
+    let out = home.run(
+        None,
+        &[
+            "--json",
+            "auth",
+            "login",
+            "--daemon",
+            "--api-url",
+            &srv.base,
+        ],
     );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["daemon"]["skipped"], false, "{report}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("deprecated"), "stderr={stderr}");
 }
