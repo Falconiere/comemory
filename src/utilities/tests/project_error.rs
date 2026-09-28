@@ -31,6 +31,23 @@ fn completion_details_carry_every_list_in_platform_order() {
     );
 }
 
+/// An id in both lists repeats in `criterionIds`, exactly as the platform's
+/// `completionRequirementsUnmetError` emits it (bytes captured by running
+/// that function at comemory.io `b86dec5` with `crit_a` in both lists):
+/// deduplicating would break byte parity with the console's parser.
+#[test]
+fn completion_criterion_ids_concatenate_like_the_platform_on_overlap() {
+    let e = ProjectError::CompletionRequirementsUnmet {
+        unmet_criterion_ids: vec!["crit_a".into()],
+        unverified_criterion_ids: vec!["crit_a".into()],
+        work_item_ids: vec![],
+    };
+    assert_eq!(
+        details_json(&e),
+        r#"{"code":"completion_requirements_unmet","criterionIds":["crit_a","crit_a"],"unmetCriterionIds":["crit_a"],"unverifiedCriterionIds":["crit_a"],"workItemIds":[]}"#
+    );
+}
+
 /// A bare refusal is `{code}`; a caller-reason refusal's message is the
 /// reason, and the reason never enters `details`.
 #[test]

@@ -226,6 +226,10 @@ impl ProjectError {
                 unverified_criterion_ids: unverified,
                 work_item_ids,
             } => vec![
+                // Plain concatenation, never deduplicated: the platform
+                // builds `[...unmet, ...unverified]` the same way (the two
+                // lists partition the criteria by construction), and an
+                // overlap must still produce the platform's exact bytes.
                 ("criterionIds", ids(&[&unmet[..], unverified].concat())),
                 ("unmetCriterionIds", ids(unmet)),
                 ("unverifiedCriterionIds", ids(unverified)),
