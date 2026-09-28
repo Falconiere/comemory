@@ -92,6 +92,14 @@ ahead of time:
   the binary. It removes only this data directory's service (unit file,
   socket, `daemon.json`) — never memories, `comemory.db`, or any other data
   directory's own service.
+- **Homebrew kegs.** When the binary is Homebrew's linked install (`opt`
+  resolves to it), the launchd/systemd unit runs the stable
+  `<prefix>/opt/comemory/bin/comemory` link instead of the versioned keg
+  file. This keeps the unit valid after `brew cleanup` deletes old kegs.
+  `brew upgrade` keeps the old keg on macOS, so its file still exists. Even
+  so, the next ordinary command replaces a coordinator still running any keg
+  that `opt` no longer names. A command run from an old keg never evicts the
+  linked one ([homebrew-tap#1](https://github.com/Falconiere/homebrew-tap/issues/1)).
 - **Unmanaged placement.** A bare `cargo install` or a binary copied into
   place by hand starts nothing: no installer ran `sync daemon ensure` for it.
   The next ordinary command's own startup preflight repairs the daemon
