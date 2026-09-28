@@ -61,6 +61,30 @@ pub fn shared_repos(conn: &Connection) -> Result<Vec<SharedRepo>> {
     Ok(rows)
 }
 
+/// Symbols in the active generation of every repo [`shared_repos`] reports,
+/// optionally scoped to one repo — the pulled half of `stats`'s
+/// `code_symbols`. Only a peer's generation counts: a locally built one is
+/// already in `code_symbols`, and a repo has one active generation at a time,
+/// so nothing is counted twice.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn shared_symbol_count(conn: &Connection, repo: Option<&str>) -> Result<u64> {
+    let mut total = 0_u64;
+    for shared in shared_repos(conn)?
+        .into_iter()
+        .filter(|s| repo.is_none_or(|r| r == s.repo))
+    {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM remote_code_symbol WHERE repo = ?1 AND generation_id = ?2",
+            [&shared.repo, &shared.generation_id],
+            |r| r.get(0),
+        )?;
+        total += count.max(0) as u64;
+    }
+    Ok(total)
+}
+
 /// The edges the shared side contributes, as file node ids, optionally scoped
 /// to one repo.
 ///

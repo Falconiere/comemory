@@ -13,7 +13,7 @@
 use comemory::store::code_generation::{self, Generation, State};
 use comemory::store::code_graph_edges::{self, EdgeQuery};
 use comemory::store::edges::{self, EdgeKey};
-use comemory::store::remote_code::{Edge, File, Projection};
+use comemory::store::remote_code::{Edge, File, Projection, Symbol};
 use comemory::store::replica_journal::ReplicaOrigin;
 use comemory::store::sync_exchange::ExchangeKey;
 use comemory::store::sync_policy_snapshot::{self, PolicySnapshot};
@@ -412,4 +412,99 @@ fn revocation_never_touches_a_local_edge_for_the_same_repo() {
 
     assert_eq!(total, 1, "the local edge answers regardless of policy");
     assert_eq!(rows[0].weight, 7);
+}
+
+/// `projection(weight)` carrying `n` symbols in its one file.
+fn with_symbols(weight: i64, n: i64) -> Projection {
+    Projection {
+        symbols: (1..=n)
+            .map(|i| Symbol {
+                path: "src/lib.rs".to_string(),
+                symbol: format!("item_{i}"),
+                kind: "function".to_string(),
+                lang: "rust".to_string(),
+                line_start: i,
+                line_end: i,
+            })
+            .collect(),
+        ..projection(weight)
+    }
+}
+
+#[test]
+fn a_peers_active_generation_counts_its_symbols() {
+    let (_dir, conn) = migrated_db();
+    activate(
+        &conn,
+        "a".repeat(32).as_str(),
+        ReplicaOrigin::Sync,
+        &with_symbols(1, 3),
+    );
+
+    assert_eq!(
+        remote_code_view::shared_symbol_count(&conn, None).unwrap(),
+        3
+    );
+    assert_eq!(
+        remote_code_view::shared_symbol_count(&conn, Some(REPO)).unwrap(),
+        3
+    );
+    assert_eq!(
+        remote_code_view::shared_symbol_count(&conn, Some("other/repo")).unwrap(),
+        0,
+        "the repo scope narrows the count"
+    );
+}
+
+#[test]
+fn only_the_current_shared_generation_counts_and_never_a_local_one() {
+    let (_dir, conn) = migrated_db();
+    activate(
+        &conn,
+        "a".repeat(32).as_str(),
+        ReplicaOrigin::Sync,
+        &with_symbols(1, 3),
+    );
+    activate_on(
+        &conn,
+        "c".repeat(32).as_str(),
+        Some("a".repeat(32).as_str()),
+        ReplicaOrigin::Sync,
+        &with_symbols(1, 5),
+    );
+    assert_eq!(
+        remote_code_view::shared_symbol_count(&conn, None).unwrap(),
+        5,
+        "the superseded generation's rows are not counted"
+    );
+
+    let (_dir, local) = migrated_db();
+    activate(
+        &local,
+        "b".repeat(32).as_str(),
+        ReplicaOrigin::Local,
+        &with_symbols(1, 4),
+    );
+    assert_eq!(
+        remote_code_view::shared_symbol_count(&local, None).unwrap(),
+        0,
+        "a locally built generation is already in code_symbols"
+    );
+}
+
+#[test]
+fn a_withheld_repo_contributes_no_symbols() {
+    let (_dir, conn) = migrated_db();
+    activate(
+        &conn,
+        "a".repeat(32).as_str(),
+        ReplicaOrigin::Sync,
+        &with_symbols(1, 3),
+    );
+    load_policy(&conn, &["someone/else"]);
+
+    assert_eq!(
+        remote_code_view::shared_symbol_count(&conn, None).unwrap(),
+        0
+    );
 }
