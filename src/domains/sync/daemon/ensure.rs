@@ -238,6 +238,11 @@ fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ens
         return wait_or_fail(paths, intent, kind, Vec::new(), deadline, "none");
     }
     let (chosen, notes) = start_backend(paths, &canonical, kind)?;
+    // Starting may have waited for launchd to finish removing a job whose
+    // coordinator would not exit (up to its `ExitTimeOut`); like a
+    // replacement after an eviction, the coordinator just started gets the
+    // intent's full window from now.
+    let deadline = deadline.max(Instant::now() + intent.bound());
     let action = if evicting {
         "replaced"
     } else {
