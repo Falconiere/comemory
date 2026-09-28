@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.2] - 2026-09-28
+
+### Fixed
+
+- count a peer's shared code symbols in code_symbols ([#373](https://github.com/Falconiere/comemory/pull/373))
+
 ## [0.53.1] - 2026-09-28
 
 ### Fixed
