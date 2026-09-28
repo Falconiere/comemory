@@ -195,6 +195,13 @@ pub enum Error {
     #[error("restore_unverified: {0}")]
     RestoreUnverified(String),
 
+    /// A project command's refusal — one of the twenty-two codes in
+    /// [`crate::utilities::project_error`]. Its message is the platform's,
+    /// unprefixed, and its code, HTTP status, exit code and MCP channel all
+    /// come from [`crate::utilities::error_code::classify`].
+    #[error(transparent)]
+    Project(#[from] crate::utilities::project_error::ProjectError),
+
     /// A catch-all for failures that don't fit another variant.
     #[error("other: {0}")]
     Other(String),

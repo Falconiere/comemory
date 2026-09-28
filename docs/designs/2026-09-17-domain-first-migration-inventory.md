@@ -1032,6 +1032,9 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/utilities/embed.rs | comemory::utilities::embed; crate-root-alias | src/utilities/tests/embed.rs | none | shared::utilities | src/utilities/embed.rs | retain |
 | src/utilities/embedding_input.rs | private | src/utilities/tests/embedding_input.rs | none | shared::utilities | src/utilities/embedding_input.rs | retain |
 | src/utilities/error_code.rs | comemory::utilities::error_code; preserve | src/utilities/tests/error_code.rs | none | shared::utilities | src/utilities/error_code.rs | retain |
+| src/utilities/exit_code.rs | comemory::utilities::exit_code; preserve | src/utilities/tests/exit_code.rs | none | shared::utilities | src/utilities/exit_code.rs | retain |
+| src/utilities/ordered_details.rs | comemory::utilities::ordered_details; preserve | src/utilities/tests/ordered_details.rs | none | shared::utilities | src/utilities/ordered_details.rs | retain |
+| src/utilities/project_error.rs | comemory::utilities::project_error; preserve | src/utilities/tests/project_error.rs | none | shared::utilities | src/utilities/project_error.rs | retain |
 | src/utilities/fetch.rs | comemory::utilities::fetch; crate-root-alias | none | none | shared::utilities | src/utilities/fetch.rs | retain |
 | src/utilities/file_lock.rs | comemory::utilities::file_lock; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/utilities/tests/file_lock.rs | none | shared::utilities | src/utilities/file_lock.rs | retain |
 | src/utilities/http_error.rs | comemory::utilities::http_error; crate-root-alias | none | none | shared::utilities | src/utilities/http_error.rs | retain |

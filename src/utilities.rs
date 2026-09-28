@@ -39,6 +39,8 @@ pub(crate) mod embedding_input;
 /// Transport-neutral `Error → (code, Class)` classification shared by
 /// `serve` and `mcp`.
 pub mod error_code;
+/// The sysexits code a returned `Error` exits the binary with.
+pub mod exit_code;
 /// Shell out to `curl` (falling back to `wget`) for HTTP.
 pub mod fetch;
 /// Exclusive advisory lock over a sibling lock file.
@@ -49,12 +51,16 @@ pub mod http_error;
 pub(crate) mod id_list;
 /// `op-<yyyymmdd>-<32 hex>` ids for replicated mutations, unique across a workspace.
 pub(crate) mod operation_id;
+/// An error `details` object serialized in insertion order.
+pub mod ordered_details;
 /// Page windows, the generic page envelope, and the retrieval page cursor.
 pub mod pagination;
 /// Canonicalize-and-contain path checks shared by every filesystem surface.
 pub mod path_containment;
 /// The progress / cancellation contract long-running jobs report through.
 pub mod progress;
+/// The twenty-two project refusal codes shared with the platform.
+pub mod project_error;
 /// The `q-<yyyymmdd>-<8hex>` retrieval-log query id: mint and validate.
 pub mod query_id;
 /// Collect the `--ref-file` / `--ref-symbol` values into a `References` block.

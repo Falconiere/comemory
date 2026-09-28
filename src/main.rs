@@ -1,10 +1,6 @@
 //! Binary entry point: parse args, run the command, and map a returned
-//! [`Error`] to a sysexits code (design §6.4): 0 success; 64 `EX_USAGE`
-//! (`NotFound`, `Usage`); 65 `EX_DATAERR` (`Yaml`, `Json`, `Toml`,
-//! `Frontmatter`, `VecDimMismatch`, `Document`); 69 `EX_UNAVAILABLE`
-//! (`Unavailable`); 70 `EX_SOFTWARE` (`Sqlite`, `Migration`, `SchemaTooNew`,
-//! `Ast`, `Git`, `Forbidden`, `BadRequest`, `ConfirmationRequired`, `Other`);
-//! 74 `EX_IOERR` (`Io`); 78 `EX_CONFIG` (`Config`).
+//! [`Error`] to a sysexits code (design §6.4) through
+//! [`comemory::utilities::exit_code::exit_code`], which owns the table.
 
 use std::io::Write as _;
 
@@ -12,6 +8,7 @@ use clap::Parser;
 
 use comemory::cli::{Cli, run};
 use comemory::errors::Error;
+use comemory::utilities::exit_code::exit_code;
 
 #[tokio::main]
 async fn main() {
@@ -41,42 +38,4 @@ fn report(err: Error) -> i32 {
         _ => writeln!(sink, "error: {err}"),
     };
     exit_code(&err)
-}
-
-/// Map an [`Error`] to its sysexits-style exit code (mapping per design §6.4).
-fn exit_code(err: &Error) -> i32 {
-    match err {
-        Error::Io(_) => 74,
-        Error::Config(_) => 78,
-        Error::Unavailable(_) | Error::Embedder(_) => 69,
-        // Retryable like a contended index run: the peer must re-read the
-        // stream it was replaced with, not treat the refusal as fatal. A
-        // contended `memory-save.lock` (`Error::Busy`) joins the same
-        // bucket: the other holder will release it. So does a restored
-        // engine refusing sync (`Error::RestoreUnverified`) until the
-        // operator merges its erasure manifest.
-        Error::IndexRunning { .. }
-        | Error::EpochMismatch(_)
-        | Error::Conflict(_)
-        | Error::Busy(_)
-        | Error::RestoreUnverified(_) => 75,
-        Error::NotFound(_) | Error::Usage(_) | Error::Unsupported(_) => 64,
-        Error::Yaml(_)
-        | Error::Json(_)
-        | Error::Toml(_)
-        | Error::VecDimMismatch { .. }
-        | Error::IdCollision { .. }
-        | Error::Frontmatter(_)
-        | Error::Document(_) => 65,
-        Error::Sqlite(_)
-        | Error::Ast(_)
-        | Error::Git(_)
-        | Error::Migration(_)
-        | Error::SchemaTooNew(_)
-        | Error::Forbidden(_)
-        | Error::BadRequest(_)
-        | Error::ConfirmationRequired(_)
-        | Error::Cancelled
-        | Error::Other(_) => 70,
-    }
 }
