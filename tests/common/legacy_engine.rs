@@ -6,12 +6,14 @@
     clippy::too_many_lines,
     dead_code
 )]
-//! The pinned pre-replication engine: the real `v0.43.2` release binary, the
-//! last release whose migrations end before `0022_replica_journal`.
+//! Pinned real release binaries an upgrade suite creates legacy data
+//! directories with: [`V0_43_2`], the pre-replication engine (the last release
+//! whose migrations end before `0022_replica_journal`), and [`V0_52_0`], the
+//! last release before the project tables (`0031_projects`).
 //!
 //! The asset for this host is downloaded once from the GitHub release into
-//! `target/legacy-engine/`, checked against the SHA-256 committed in
-//! `scripts/replication/legacy-engine.json`, and must print its own version.
+//! `target/legacy-engine/<tag>/`, checked against the SHA-256 committed in the
+//! pin's JSON file, and must print its own version.
 //! A host with no published asset, a missing network or a checksum mismatch
 //! FAILS the test with the command that would fetch it — the recovery suites
 //! never skip, and never fall back to whatever `comemory` is on `PATH`.
@@ -23,14 +25,34 @@ use comemory::utilities::file_lock::FileLock;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-/// The version the pinned binary must report.
-pub const VERSION: &str = "0.43.2";
+/// One pinned release: the version its binary must print, and the pin file
+/// holding its per-host assets, read at test time so each checksum lives in
+/// one place.
+pub struct Pin {
+    pub version: &'static str,
+    pub file: &'static str,
+}
 
-/// The pin file, read at test time so the checksum lives in one place.
-const PIN: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/scripts/replication/legacy-engine.json"
-);
+/// The pre-replication engine the recovery suites run.
+pub const V0_43_2: Pin = Pin {
+    version: "0.43.2",
+    file: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/scripts/replication/legacy-engine.json"
+    ),
+};
+
+/// The last release without the project tables.
+pub const V0_52_0: Pin = Pin {
+    version: "0.52.0",
+    file: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/scripts/projects/legacy-engine.json"
+    ),
+};
+
+/// The version the recovery suites' binary must report.
+pub const VERSION: &str = V0_43_2.version;
 
 /// The release target triple for this host, or a failure naming the host.
 fn host_target() -> &'static str {
@@ -39,7 +61,7 @@ fn host_target() -> &'static str {
         ("x86_64", "linux") => "x86_64-unknown-linux-gnu",
         ("aarch64", "linux") => "aarch64-unknown-linux-gnu",
         (arch, os) => panic!(
-            "no pinned v{VERSION} release asset for {arch}-{os}; the recovery suites run on \
+            "no pinned release asset for {arch}-{os}; the legacy-engine suites run on \
              aarch64-apple-darwin, x86_64-unknown-linux-gnu and aarch64-unknown-linux-gnu"
         ),
     }
@@ -74,12 +96,13 @@ struct Asset {
     tag: String,
 }
 
-/// Read this host's asset from the pin file.
-fn pinned_asset() -> Asset {
+/// Read this host's asset from `release`'s pin file.
+fn pinned_asset(release: &Pin) -> Asset {
     let pin: Value =
-        serde_json::from_str(&std::fs::read_to_string(PIN).expect("read pin")).expect("pin json");
+        serde_json::from_str(&std::fs::read_to_string(release.file).expect("read pin"))
+            .expect("pin json");
     assert_eq!(
-        pin["version"], VERSION,
+        pin["version"], release.version,
         "the pin names the expected version"
     );
     let asset = &pin["assets"][host_target()];
@@ -97,11 +120,16 @@ fn pinned_asset() -> Asset {
     }
 }
 
-/// The pinned binary, downloaded and verified on first use. Concurrent test
+/// The recovery suites' pinned binary; see [`binary_of`].
+pub fn binary() -> PathBuf {
+    binary_of(&V0_43_2)
+}
+
+/// `release`'s binary, downloaded and verified on first use. Concurrent test
 /// processes serialize on a lock beside the cache, so one download serves
 /// every suite.
-pub fn binary() -> PathBuf {
-    let asset = pinned_asset();
+pub fn binary_of(release: &Pin) -> PathBuf {
+    let asset = pinned_asset(release);
     let dir = cache_root().join(&asset.tag).join(host_target());
     std::fs::create_dir_all(&dir).expect("create legacy cache");
     let _lock = FileLock::acquire(&dir.join(".lock"), "legacy-engine").expect("lock cache");
@@ -110,7 +138,7 @@ pub fn binary() -> PathBuf {
         let archive = download(&dir, &asset);
         unpack(&dir, &archive, &asset.file, &bin);
     }
-    verified(bin)
+    verified(bin, release)
 }
 
 /// The verified archive in `dir`, fetched when absent or not the pinned bytes.
@@ -135,7 +163,7 @@ fn download(dir: &Path, asset: &Asset) -> PathBuf {
     assert_eq!(
         sha256_of(&archive),
         asset.sha256,
-        "{} does not match scripts/replication/legacy-engine.json",
+        "{} does not match its pin file",
         archive.display()
     );
     archive
@@ -165,7 +193,7 @@ fn unpack(dir: &Path, archive: &Path, file: &str, bin: &Path) {
 }
 
 /// `bin` after proving it is the pinned release, not whatever sat there.
-fn verified(bin: PathBuf) -> PathBuf {
+fn verified(bin: PathBuf, release: &Pin) -> PathBuf {
     let out = Command::new(&bin)
         .arg("--version")
         .output()
@@ -173,16 +201,21 @@ fn verified(bin: PathBuf) -> PathBuf {
     let printed = String::from_utf8_lossy(&out.stdout);
     assert_eq!(
         printed.trim(),
-        format!("comemory {VERSION}"),
+        format!("comemory {}", release.version),
         "{} is not the pinned release",
         bin.display()
     );
     bin
 }
 
-/// Run the legacy binary over `data_dir` with `args`, returning its output.
+/// Run the recovery suites' binary over `data_dir`; see [`run_of`].
 pub fn run(data_dir: &Path, args: &[&str]) -> Output {
-    Command::new(binary())
+    run_of(&V0_43_2, data_dir, args)
+}
+
+/// Run `release`'s binary over `data_dir` with `args`, returning its output.
+pub fn run_of(release: &Pin, data_dir: &Path, args: &[&str]) -> Output {
+    Command::new(binary_of(release))
         .env("COMEMORY_DATA_DIR", data_dir)
         .env("HOME", data_dir)
         .args(args)
@@ -190,12 +223,17 @@ pub fn run(data_dir: &Path, args: &[&str]) -> Output {
         .expect("run legacy comemory")
 }
 
-/// Run the legacy binary with `--json` and parse its stdout, failing loudly
-/// on a non-zero exit.
+/// The recovery suites' binary with `--json`; see [`run_json_of`].
 pub fn run_json(data_dir: &Path, args: &[&str]) -> Value {
+    run_json_of(&V0_43_2, data_dir, args)
+}
+
+/// Run `release`'s binary with `--json` and parse its stdout, failing loudly
+/// on a non-zero exit.
+pub fn run_json_of(release: &Pin, data_dir: &Path, args: &[&str]) -> Value {
     let mut full = vec!["--json"];
     full.extend_from_slice(args);
-    let out = run(data_dir, &full);
+    let out = run_of(release, data_dir, &full);
     assert!(
         out.status.success(),
         "legacy comemory {args:?} failed: {}",

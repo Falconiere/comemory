@@ -8,7 +8,7 @@ schema declarations and the migration runner.
 
 ## Execution and behavior
 
-The project resolves toolu-orm 0.10.1 with the `rusqlite` feature. Builders
+The project resolves toolu-orm 0.12.0 with the `rusqlite` feature. Builders
 return SQL and bound `Value` parameters through `to_sql()`.
 `src/store/orm.rs` executes those results on the existing connection using
 cached statements and the store's row decoders. This preserves native SQLite

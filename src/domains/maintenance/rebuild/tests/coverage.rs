@@ -143,14 +143,16 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// same reason — the file a revision describes may not exist on this machine
 /// at all — and `document_share` with them, being the only record of what a
 /// local document is called upstream; v27's exchange-client state is copied
-/// because it describes an upstream, not anything on this disk.
+/// because it describes an upstream, not anything on this disk; v31's
+/// fourteen project tables are copied because a charter, a plan and its
+/// evidence are operator-authored state no file re-derives.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_sixty_two_tables() {
+fn migration_integrity_derived_live_set_has_exactly_seventy_six_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        62,
-        "expected exactly 62 live tables, got {}: {live:?}",
+        76,
+        "expected exactly 76 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -329,4 +331,43 @@ fn migration_integrity_derived_live_set_matches_a_real_migrated_db() {
         "the SQL-derived live table set must match a real migrated database's sqlite_master, \
          once FTS5/vec0 shadow companions are filtered out"
     );
+}
+
+/// Every project table the schema declares is in `PROJECT_TABLES` — the
+/// registry hard deletion and transfer walk — and in `COPIED_TABLES`, and the
+/// registry names nothing `schema_projects` does not declare. A table missing
+/// from the registry would outlive its project's deletion; one missing from
+/// `COPIED_TABLES` would vanish on the next rebuild.
+#[test]
+fn migration_integrity_every_project_table_is_registered_and_copied() {
+    use comemory::store::schema::DECLARED_TABLES;
+    use comemory::store::schema_projects::{PROJECT_TABLES, table_defs};
+
+    let declared: BTreeSet<&str> = DECLARED_TABLES
+        .iter()
+        .copied()
+        .filter(|t| *t == "projects" || t.starts_with("project_"))
+        .collect();
+    let registry: BTreeSet<&str> = PROJECT_TABLES.iter().copied().collect();
+    assert_eq!(
+        registry.len(),
+        PROJECT_TABLES.len(),
+        "PROJECT_TABLES repeats a name"
+    );
+    assert_eq!(
+        declared, registry,
+        "declared project tables vs PROJECT_TABLES"
+    );
+    let defined: BTreeSet<String> = table_defs().into_iter().map(|d| d.name).collect();
+    assert_eq!(
+        defined,
+        registry.iter().map(ToString::to_string).collect(),
+        "table_defs() declares exactly PROJECT_TABLES"
+    );
+    for table in PROJECT_TABLES {
+        assert!(
+            COPIED_TABLES.contains(table),
+            "{table} is project state no file re-derives; it must be in COPIED_TABLES"
+        );
+    }
 }

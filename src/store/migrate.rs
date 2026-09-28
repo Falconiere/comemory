@@ -40,7 +40,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "30";
+pub const CURRENT_VERSION: &str = "31";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -168,6 +168,8 @@ pub const M_V29: &str = include_str!("../../migrations/0029_replica_recovery.sql
 /// v30: `sync_exchange` rebuilt so `network_state` admits
 /// `restore_unverified` — a key held by an unverified restore.
 pub const M_V30: &str = include_str!("../../migrations/0030_restore_unverified_network_state.sql");
+/// v31: the fourteen project tables (#325), declared in `store::schema_projects`.
+pub const M_V31: &str = include_str!("../../migrations/0031_projects.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply

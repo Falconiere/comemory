@@ -4,16 +4,20 @@
 //! attach/detach incorrectly and leave a database attached to a live
 //! connection on an early return.
 //!
-//! The three copy passes — code-index (`rebuild_copy_code`), learning-loop
-//! (`rebuild_copy_learning`, which itself calls `rebuild_copy_history`), and
-//! document-domain (`rebuild_copy_documents`) — are split into sibling
+//! The four copy passes — code-index (`rebuild_copy_code`), learning-loop
+//! (`rebuild_copy_learning`, which itself calls `rebuild_copy_history`),
+//! document-domain (`rebuild_copy_documents`) and project
+//! (`rebuild_copy_projects`) — are split into sibling
 //! files so none crosses the 300-line ceiling; this file is the entry point
 //! plus the two schema-probe helpers every pass shares.
 
 use std::path::Path;
 
 use crate::prelude::*;
-use crate::store::{Connection, rebuild_copy_code, rebuild_copy_documents, rebuild_copy_learning};
+use crate::store::{
+    Connection, rebuild_copy_code, rebuild_copy_documents, rebuild_copy_learning,
+    rebuild_copy_projects,
+};
 
 /// Attach `old_db` as `old` and copy the code-index, learning, and
 /// document-domain tables into `conn` (the freshly built tmp database).
@@ -31,7 +35,8 @@ pub fn copy_preserved_tables_from_old(conn: &mut Connection, old_db: &Path) -> R
     )?;
     let copy_result = rebuild_copy_code::copy_code_tables_inner(conn)
         .and_then(|()| rebuild_copy_learning::copy_learning_tables_inner(conn))
-        .and_then(|()| rebuild_copy_documents::copy_document_tables_inner(conn));
+        .and_then(|()| rebuild_copy_documents::copy_document_tables_inner(conn))
+        .and_then(|()| rebuild_copy_projects::copy_project_tables(conn));
     // Always attempt DETACH so the connection is reusable even if the copy
     // failed. A DETACH failure is logged, never propagated: the copy's own
     // outcome is what the caller acts on, and turning a SUCCESSFUL copy into
