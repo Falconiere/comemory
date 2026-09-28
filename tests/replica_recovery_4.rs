@@ -603,11 +603,13 @@ fn revocation_hides_pulled_caches_only() {
     let b = approved_client(&hub);
     let b_notes = workdir.path().join("b-notes");
     std::fs::create_dir_all(&b_notes).expect("b notes dir");
+    let local_excerpt = include_str!("../docs/guides/cloud-sync.md")
+        .split("\n\n")
+        .find(|paragraph| paragraph.contains(TERM))
+        .expect("the real guide has a paragraph containing the search term");
     std::fs::write(
         b_notes.join("local-notes.md"),
-        // n=50 is a real excerpt that happens to use TERM, same as the
-        // shared guides do.
-        format!("# Local notes\n\n{}", exchange_support::guide_body(50)),
+        format!("# Local notes\n\n{local_excerpt}"),
     )
     .expect("write local note");
     b.cli(&[

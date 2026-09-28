@@ -147,6 +147,27 @@ pub fn open(conn: &mut Connection, cfg: &Config, auth: &AuthFile, mode: Mode) ->
         Ok(read) => read,
         Err(failure) => return skip(conn, row, &failure, &fingerprint),
     };
+    finish_open(
+        conn,
+        key,
+        row,
+        fingerprint,
+        (replica, legacy),
+        policy,
+        (outcome, manifest),
+    )
+}
+
+/// Select the manifest's protocol, or record why negotiation refused it.
+fn finish_open(
+    conn: &Connection,
+    key: ExchangeKey,
+    row: ExchangeRow,
+    fingerprint: String,
+    (replica, legacy): (Transport, Transport),
+    policy: RepositoryPolicy,
+    (outcome, manifest): (Manifest, Option<ManifestResponse>),
+) -> Result<Opened> {
     let stored = Protocol::parse(row.protocol.as_deref());
     let failure = match negotiate::decide(stored, &outcome) {
         Decision::Select {
@@ -194,11 +215,12 @@ fn transport(cfg: &Config, key: &ExchangeKey, secret: &str, mode: Mode) -> Resul
 }
 
 /// The replica and legacy transports: managed at `revision` when the origin
-/// is, plain otherwise.
+/// is, plain otherwise. Both use the repository-policy protocol in headers;
+/// `REPLICA` identifies only the replica wire bodies and manifests.
 fn split(plain: Transport, revision: Option<i64>) -> (Transport, Transport) {
     match revision {
         Some(revision) => (
-            plain.clone().managed(REPLICA, revision),
+            plain.clone().managed(SYNC_PROTOCOL, revision),
             plain.managed(SYNC_PROTOCOL, revision),
         ),
         None => (plain.clone(), plain),
