@@ -267,6 +267,12 @@ jobs:
       # daemon onto the newly linked keg.
       - name: Run the real-brew keg upgrade
         run: bash scripts/test-brew-keg-upgrade.sh --${{ matrix.mode }}
+      # Falconiere/homebrew-tap#1 (F-4): a reinstall's eviction re-bootstraps
+      # the still-loaded launchd label; repeat that path until any
+      # bootout/bootstrap race shows.
+      - name: Run the launchd re-bootstrap rounds
+        if: runner.os == 'macOS'
+        run: bash scripts/test-launchd-rebootstrap.sh --rounds 25
 
   # The Homebrew publishing path (Falconiere/homebrew-tap#1): release.yml's
   # real "Commit formula files" step against a real tap clone and the latest

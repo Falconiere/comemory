@@ -10,7 +10,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::config::env;
 use crate::domains::sync::daemon::identity::{UNIT_ID_LEN, data_dir_id};
@@ -22,6 +23,10 @@ use crate::prelude::*;
 const LEGACY_LAUNCHD_LABEL: &str = "io.comemory.sync";
 /// A legacy (un-id'd) systemd unit this issue's per-directory scheme retires.
 const LEGACY_SYSTEMD_UNIT: &str = "comemory-sync.service";
+
+/// How long launchd may take to finish removing a booted-out job: it SIGKILLs
+/// a process that ignores SIGTERM only after its default 20 s `ExitTimeOut`.
+const BOOTOUT_BOUND: Duration = Duration::from_secs(25);
 
 /// Which backend keeps a coordinator running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,6 +201,12 @@ fn bootstrap_or_replace(unit: &Unit, domain: &str) -> Result<()> {
                 unit.name
             )));
         }
+        // `bootout` returns before launchd has finished removing the job — it
+        // may still be stopping the job's process. Bootstrapping the same
+        // label in that window fails with "5: Input/output error", and the
+        // process fallback then loses `daemon.lock` to the dying coordinator
+        // (homebrew-tap#1, F-4). Wait until the label is gone.
+        wait_until_unloaded(domain, &unit.name, BOOTOUT_BOUND)?;
         if !bootstrap_launchd(unit, domain)? {
             return Err(Error::Other(format!(
                 "launchctl bootstrap {} failed",
@@ -206,12 +217,45 @@ fn bootstrap_or_replace(unit: &Unit, domain: &str) -> Result<()> {
     Ok(())
 }
 
+/// Poll `launchctl print <domain>/<label>` until it fails (the job is gone),
+/// for at most `bound`.
+fn wait_until_unloaded(domain: &str, label: &str, bound: Duration) -> Result<()> {
+    let deadline = Instant::now() + bound;
+    while launchd_loaded(domain, label)? {
+        if Instant::now() >= deadline {
+            return Err(Error::Other(format!(
+                "launchctl bootout {label}: still loaded after {}s",
+                bound.as_secs()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Ok(())
+}
+
+/// Whether launchd still has `label` in `domain`.
+fn launchd_loaded(domain: &str, label: &str) -> Result<bool> {
+    launchctl(&["print", &format!("{domain}/{label}")], Stdio::null)
+}
+
 fn bootstrap_launchd(unit: &Unit, domain: &str) -> Result<bool> {
+    launchctl(
+        &["bootstrap", domain, &unit.path.display().to_string()],
+        Stdio::inherit,
+    )
+}
+
+/// Run `launchctl <args>` and report whether it succeeded. `output` decides
+/// where its stdout/stderr go: `print` is only a probe, while a failed
+/// `bootstrap` explains itself on the caller's stderr.
+fn launchctl(args: &[&str], output: fn() -> Stdio) -> Result<bool> {
     Command::new("launchctl")
-        .args(["bootstrap", domain, &unit.path.display().to_string()])
+        .args(args)
+        .stdout(output())
+        .stderr(output())
         .status()
         .map(|status| status.success())
-        .map_err(|e| Error::Other(format!("launchctl bootstrap: {e}")))
+        .map_err(|e| Error::Other(format!("launchctl {}: {e}", args.join(" "))))
 }
 
 /// Stop the unit without removing it; best-effort.
