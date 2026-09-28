@@ -51,27 +51,15 @@ impl Envelope {
     /// Error envelope built from a crate [`Error`]; status and `code` come
     /// from [`status_and_code`], and the optional structured `details`
     /// member from [`error_details`] — or, for a project refusal, its own
-    /// ordered details. Serialized through the private `ErrorEnvelope`, so the bytes
-    /// read `ok, error{code, message, details}, meta` in that order: the
-    /// platform's order, which a sorted `json!` map would not keep.
+    /// ordered details. Built by the same `error_response` every error
+    /// constructor uses.
     pub fn err(command: &str, e: &Error, elapsed_ms: u64) -> Response {
         let (status, code) = status_and_code(e);
         let details = match e {
             Error::Project(project) => Some(Details::Ordered(project.details())),
             _ => error_details(e).map(Details::Plain),
         };
-        respond(
-            status,
-            ErrorEnvelope {
-                ok: false,
-                error: ErrorObject {
-                    code,
-                    message: e.to_string(),
-                    details,
-                },
-                meta: meta(command, elapsed_ms),
-            },
-        )
+        error_response(command, status, code, e.to_string(), details, elapsed_ms)
     }
 
     /// `401`, `code:"unauthorized"` — the versioned surface's enveloped form
@@ -83,6 +71,7 @@ impl Envelope {
             StatusCode::UNAUTHORIZED,
             CODE_UNAUTHORIZED,
             "missing or invalid token".to_string(),
+            None,
             0,
         )
     }
@@ -97,6 +86,7 @@ impl Envelope {
             StatusCode::SERVICE_UNAVAILABLE,
             CODE_BUSY,
             "write permit held by another request; retry shortly".to_string(),
+            None,
             0,
         );
         res.headers_mut()
@@ -113,6 +103,7 @@ impl Envelope {
             StatusCode::METHOD_NOT_ALLOWED,
             CODE_READ_ONLY,
             "server is read-only".to_string(),
+            None,
             0,
         )
     }
@@ -130,6 +121,7 @@ impl Envelope {
             StatusCode::BAD_REQUEST,
             CODE_CONFIRMATION_REQUIRED,
             "this operation requires explicit confirmation".to_string(),
+            None,
             0,
         )
     }
@@ -188,10 +180,10 @@ pub fn error_details(e: &Error) -> Option<Value> {
 
 /// `{ok:false, error, meta}` in declaration order.
 #[derive(Serialize)]
-struct ErrorEnvelope {
+struct ErrorEnvelope<'a> {
     ok: bool,
     error: ErrorObject,
-    meta: Value,
+    meta: Meta<'a>,
 }
 
 /// `{code, message, details?}` in declaration order.
@@ -212,26 +204,45 @@ enum Details {
     Ordered(OrderedDetails),
 }
 
-/// `{command, elapsed_ms}` shared by every envelope shape.
-fn meta(command: &str, elapsed_ms: u64) -> Value {
-    json!({ "command": command, "elapsed_ms": elapsed_ms })
+/// `{command, elapsed_ms}` in declaration order, shared by every envelope
+/// shape.
+#[derive(Serialize)]
+struct Meta<'a> {
+    command: &'a str,
+    elapsed_ms: u64,
 }
 
-/// Build `{ok:false, error:{code, message}, meta}` at a given status.
+/// The `meta` member for `command`.
+fn meta(command: &str, elapsed_ms: u64) -> Meta<'_> {
+    Meta {
+        command,
+        elapsed_ms,
+    }
+}
+
+/// Build `{ok:false, error:{code, message, details?}, meta}` at a given
+/// status. Every error constructor funnels through here, so every error body
+/// serializes `ok, error{code, message, details}, meta` in that order — the
+/// platform's order, which a sorted `json!` map would not keep.
 fn error_response(
     command: &str,
     status: StatusCode,
     code: &'static str,
     message: String,
+    details: Option<Details>,
     elapsed_ms: u64,
 ) -> Response {
     respond(
         status,
-        json!({
-            "ok": false,
-            "error": { "code": code, "message": message },
-            "meta": meta(command, elapsed_ms),
-        }),
+        ErrorEnvelope {
+            ok: false,
+            error: ErrorObject {
+                code,
+                message,
+                details,
+            },
+            meta: meta(command, elapsed_ms),
+        },
     )
 }
 

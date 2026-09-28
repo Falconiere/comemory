@@ -130,8 +130,11 @@ it. The current table:
 
 The error object is `{code, message}`, plus a structured `details` member
 for the variants that carry one (`index_running`, `id_collision`, and every
-project refusal below). Keys serialize in the order shown —
-`ok, error{code, message, details}, meta`.
+project refusal below). Every error body — whichever constructor built
+it — serializes its keys in the order shown:
+`ok, error{code, message, details}, meta{command, elapsed_ms}`. A project
+refusal's `details` keep the platform's key order; the other variants'
+`details` are sorted.
 
 ### Project refusals
 

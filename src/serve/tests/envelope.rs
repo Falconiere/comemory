@@ -292,3 +292,29 @@ async fn unauthorized_envelope_is_401_with_its_code() {
     assert_eq!(body["error"]["code"], envelope::CODE_UNAUTHORIZED);
     assert_eq!(body["meta"]["command"], "auth");
 }
+
+/// Every error constructor — not only `Envelope::err` — serializes
+/// `ok, error{code, message}, meta{command, elapsed_ms}` in that order, the
+/// order `docs/guides/http-api.md` documents; a sorted `json!` map would
+/// emit `error, meta, ok`.
+#[tokio::test]
+async fn every_error_constructor_keeps_the_documented_key_order() {
+    let cases = [
+        (
+            Envelope::unauthorized("health"),
+            r#"{"ok":false,"error":{"code":"unauthorized","message":"missing or invalid token"},"meta":{"command":"health","elapsed_ms":0}}"#,
+        ),
+        (
+            Envelope::read_only("save"),
+            r#"{"ok":false,"error":{"code":"read_only","message":"server is read-only"},"meta":{"command":"save","elapsed_ms":0}}"#,
+        ),
+        (
+            Envelope::err("delete", &Error::NotFound("ab12cd34".into()), 3),
+            r#"{"ok":false,"error":{"code":"not_found","message":"memory not found: ab12cd34"},"meta":{"command":"delete","elapsed_ms":3}}"#,
+        ),
+    ];
+    for (response, expected) in cases {
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
+    }
+}
