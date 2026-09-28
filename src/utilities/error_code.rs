@@ -2,17 +2,21 @@
 //! `code` slug plus a [`Class`] a transport maps to its own failure shape.
 //! `serve::envelope::status_and_code` maps `Class` to an HTTP `StatusCode`;
 //! `mcp::result::into_tool_result` maps everything but `Class::Internal` to
-//! a tool-level error, `Internal` to the protocol's own error object. One
-//! [`classify`] keeps the two adapters from drifting on which error is which
-//! (Binding Rule 1).
+//! a tool-level error, `Internal` to the protocol's own error object;
+//! [`exit_code`] gives `main.rs` its sysexits code, deriving a project
+//! refusal's from its `Class`. One [`classify`] keeps the three adapters from
+//! drifting on which error is which (Binding Rule 1).
 
 use crate::prelude::*;
+use crate::utilities::project_error::{ProjectError, RequestEdge};
 
 /// A crate error's class, independent of any one transport's status vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
     /// The requested resource does not exist.
     NotFound,
+    /// The caller presented no valid credential.
+    Unauthorized,
     /// The caller is not allowed to perform the request.
     Forbidden,
     /// The request itself is malformed.
@@ -88,6 +92,45 @@ pub fn classify(e: &Error) -> (&'static str, Class) {
         // retryable once the operator merges the manifest, never the
         // caller's fault.
         Error::RestoreUnverified(_) => ("restore_unverified", Class::Unavailable),
+        Error::Project(project) => classify_project(project),
+    }
+}
+
+/// The `(code, class)` pair for a project refusal: the platform's code word
+/// and the class of the HTTP status it answers there. Exhaustive like
+/// [`classify`], so a new [`ProjectError`] variant is a compile error here.
+pub fn classify_project(e: &ProjectError) -> (&'static str, Class) {
+    match e {
+        ProjectError::ProjectNotFound { .. } => ("project_not_found", Class::NotFound),
+        ProjectError::WorkItemNotFound { .. } => ("work_item_not_found", Class::NotFound),
+        ProjectError::ProposalNotFound { .. } => ("proposal_not_found", Class::NotFound),
+        ProjectError::ExecutionNotFound { .. } => ("execution_not_found", Class::NotFound),
+        ProjectError::EvidenceNotFound { .. } => ("evidence_not_found", Class::NotFound),
+        // One code, two statuses: a request that never parsed is the
+        // caller's malformed input (400); one that parsed but breaks a rule
+        // is well-formed yet unprocessable (422).
+        ProjectError::InvalidRequest { edge, .. } => match edge {
+            RequestEdge::Schema => ("invalid_request", Class::BadRequest),
+            RequestEdge::Invariant => ("invalid_request", Class::Unprocessable),
+        },
+        ProjectError::DependencyCycle { .. } => ("dependency_cycle", Class::Unprocessable),
+        ProjectError::ProjectAgentScope { .. } => ("project_agent_scope", Class::Forbidden),
+        ProjectError::RepoNotAllowed { .. } => ("repo_not_allowed", Class::Forbidden),
+        ProjectError::ExecutionActorForbidden => ("forbidden", Class::Forbidden),
+        ProjectError::ProposalStale { .. } => ("proposal_stale", Class::Conflict),
+        ProjectError::ProposalAlreadyReviewed => ("proposal_already_reviewed", Class::Conflict),
+        ProjectError::VersionConflict { .. } => ("version_conflict", Class::Conflict),
+        ProjectError::IdempotencyConflict => ("idempotency_conflict", Class::Conflict),
+        ProjectError::InvalidTransition { .. } => ("invalid_transition", Class::Conflict),
+        ProjectError::DependencyBlocked { .. } => ("dependency_blocked", Class::Conflict),
+        ProjectError::CompletionRequirementsUnmet { .. } => {
+            ("completion_requirements_unmet", Class::Conflict)
+        }
+        ProjectError::EvidenceUnverified { .. } => ("evidence_unverified", Class::Conflict),
+        ProjectError::ExecutionActive => ("execution_active", Class::Conflict),
+        ProjectError::Unauthorized { .. } => ("unauthorized", Class::Unauthorized),
+        ProjectError::ContextUnavailable { .. } => ("context_unavailable", Class::Unavailable),
+        ProjectError::Invariant { .. } => ("internal_error", Class::Internal),
     }
 }
 

@@ -129,7 +129,51 @@ it. The current table:
 | anything else | 500 | `internal` |
 
 The error object is `{code, message}`, plus a structured `details` member
-for the variants that carry one (today: `index_running`).
+for the variants that carry one (`index_running`, `id_collision`, and every
+project refusal below). Keys serialize in the order shown —
+`ok, error{code, message, details}, meta`.
+
+### Project refusals
+
+`Error::Project` carries the platform's twenty-two project codes
+(`src/utilities/project_error.rs`). Each one's `error` member is the
+platform's `/v1` `error` member byte for byte — same `message`, same
+`details` keys in the same order — so the console parses an engine refusal
+without change. The CLI exit code and the MCP channel come from the same
+`classify` row.
+
+| `code` | HTTP | exit | `error.details` after `code` |
+|---|---|---|---|
+| `project_not_found` | 404 | 64 | `projectId` |
+| `work_item_not_found` | 404 | 64 | `workItemId` |
+| `proposal_not_found` | 404 | 64 | `proposalId` |
+| `execution_not_found` | 404 | 64 | `executionId` |
+| `evidence_not_found` | 404 | 64 | `evidenceId` |
+| `invalid_request` (schema edge, malformed cursor) | 400 | 64 | `{field, reason}` — no `code` member |
+| `invalid_request` (invariant: entity, cap, cross-reference) | 422 | 65 | caller-supplied, no `code` member |
+| `dependency_cycle` | 422 | 65 | `workItemIds` (cycle order) |
+| `project_agent_scope` | 403 | 70 | — |
+| `repo_not_allowed` | 403 | 70 | `repo` |
+| `forbidden` (another actor's execution) | 403 | 70 | — |
+| `proposal_stale` | 409 | 75 | `basePlanVersion`, `currentPlanVersion` |
+| `proposal_already_reviewed` | 409 | 75 | — |
+| `version_conflict` | 409 | 75 | `currentVersion` |
+| `idempotency_conflict` | 409 | 75 | — |
+| `invalid_transition` | 409 | 75 | — |
+| `dependency_blocked` | 409 | 75 | `blockerWorkItemIds` |
+| `completion_requirements_unmet` | 409 | 75 | `criterionIds`, `unmetCriterionIds`, `unverifiedCriterionIds`, `workItemIds` (all always present) |
+| `evidence_unverified` | 409 | 75 | `criterionIds` |
+| `execution_active` | 409 | 75 | — |
+| `unauthorized` (hosted mode: missing or invalid principal stamp) | 401 | 70 | — |
+| `context_unavailable` | 503 | 69 | — |
+| `internal_error` (a project invariant guard fired) | 500 | 70 | `invariant` |
+
+Over MCP every row is a tool-level error carrying `{code, message}` except
+`internal_error`, which is a protocol error carrying only the code word.
+`project_not_found` is one answer for an unknown project and one outside the
+caller's reach: the body names only the supplied id, so it is never an
+existence probe. No command raises these codes yet; each arrives with the
+command that needs it (#323 onward).
 
 One exemption, documented rather than papered over: axum's own `413` for an
 over-limit body stays plain text (framework-level, before any handler runs).

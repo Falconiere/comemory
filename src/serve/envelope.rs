@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 
 use crate::prelude::*;
 use crate::utilities::error_code::{self, Class};
+use crate::utilities::ordered_details::OrderedDetails;
 
 /// The single write permit (§Concurrency) is held by another mutating
 /// request or job.
@@ -49,20 +50,27 @@ impl Envelope {
 
     /// Error envelope built from a crate [`Error`]; status and `code` come
     /// from [`status_and_code`], and the optional structured `details`
-    /// member from [`error_details`].
+    /// member from [`error_details`] — or, for a project refusal, its own
+    /// ordered details. Serialized through [`ErrorEnvelope`], so the bytes
+    /// read `ok, error{code, message, details}, meta` in that order: the
+    /// platform's order, which a sorted `json!` map would not keep.
     pub fn err(command: &str, e: &Error, elapsed_ms: u64) -> Response {
         let (status, code) = status_and_code(e);
-        let mut error = json!({ "code": code, "message": e.to_string() });
-        if let (Some(details), Some(obj)) = (error_details(e), error.as_object_mut()) {
-            obj.insert("details".into(), details);
-        }
+        let details = match e {
+            Error::Project(project) => Some(Details::Ordered(project.details())),
+            _ => error_details(e).map(Details::Plain),
+        };
         respond(
             status,
-            json!({
-                "ok": false,
-                "error": error,
-                "meta": meta(command, elapsed_ms),
-            }),
+            ErrorEnvelope {
+                ok: false,
+                error: ErrorObject {
+                    code,
+                    message: e.to_string(),
+                    details,
+                },
+                meta: meta(command, elapsed_ms),
+            },
         )
     }
 
@@ -154,6 +162,7 @@ pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
     let (code, class) = error_code::classify(e);
     let status = match class {
         Class::NotFound => StatusCode::NOT_FOUND,
+        Class::Unauthorized => StatusCode::UNAUTHORIZED,
         Class::Forbidden => StatusCode::FORBIDDEN,
         Class::BadRequest => StatusCode::BAD_REQUEST,
         Class::Unprocessable => StatusCode::UNPROCESSABLE_ENTITY,
@@ -175,6 +184,32 @@ pub fn error_details(e: &Error) -> Option<Value> {
         Error::IdCollision { id } => Some(json!({ "id": id })),
         _ => None,
     }
+}
+
+/// `{ok:false, error, meta}` in declaration order.
+#[derive(Serialize)]
+struct ErrorEnvelope {
+    ok: bool,
+    error: ErrorObject,
+    meta: Value,
+}
+
+/// `{code, message, details?}` in declaration order.
+#[derive(Serialize)]
+struct ErrorObject {
+    code: &'static str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<Details>,
+}
+
+/// A `details` member: a crate variant's `Value`, or a project refusal's
+/// insertion-ordered pairs.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Details {
+    Plain(Value),
+    Ordered(OrderedDetails),
 }
 
 /// `{command, elapsed_ms}` shared by every envelope shape.
@@ -202,7 +237,7 @@ fn error_response(
 
 /// The one `IntoResponse` call site every envelope constructor funnels
 /// through, pairing the JSON body with its HTTP status.
-fn respond(status: StatusCode, body: Value) -> Response {
+fn respond<T: Serialize>(status: StatusCode, body: T) -> Response {
     (status, Json(body)).into_response()
 }
 
