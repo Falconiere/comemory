@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Opt-in regression against the real managed platform and its repository policy gate.
 //! Supply `COMEMORY_MANAGED_AUTH_FILE` and run this target with `--ignored`.
 
@@ -6,6 +13,7 @@ use std::fs;
 use std::time::Duration;
 
 use assert_cmd::Command;
+use comemory::config::Paths;
 use comemory::domains::sync::AuthFile;
 use comemory::domains::sync::client_protocol::{PROTOCOL_HEADER, REVISION_HEADER, SYNC_PROTOCOL};
 use reqwest::blocking::{Client, Response};
@@ -77,9 +85,9 @@ fn managed_replica_verify_obeys_the_repository_policy_contract() -> TestResult {
 
     // Only the credential is copied: no local outbox or test memories can be uploaded.
     let home = tempfile::tempdir()?;
-    fs::write(home.path().join("auth.json"), auth_bytes)?;
+    auth.save(&Paths::new(home.path().to_path_buf()))?;
     let output = Command::new(env!("CARGO_BIN_EXE_comemory"))
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_mins(2))
         .env("COMEMORY_SYNC_DAEMON", "0")
         .env("COMEMORY_INDEXING_AUTO_REINDEX", "off")
         .args(["--data-dir"])

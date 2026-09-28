@@ -16,7 +16,7 @@ Reproduce against the real API, correct the transport, verify real engine compat
 ```json
 [
   {"id":"fix","title":"Correct managed replica policy and verify real transports","ac_refs":["AC-1","AC-2","AC-3"],"paths":["src/","tests/","Cargo.toml","Cargo.lock",".cargo/"],"input":"Real org-scoped auth supplied through COMEMORY_MANAGED_AUTH_FILE; real loopback engines","check":"cargo test --all-features --test replica_managed -- --ignored && cargo nextest run --all-features --lib -E 'test(domains::sync::drain::session::tests) | test(domains::sync::drain::transport::tests)'"},
-  {"id":"gate","title":"Synchronize protocol docs and pass full quality gate","depends_on":["fix"],"ac_refs":["AC-1","AC-2","AC-3"],"paths":["."],"input":"Final repository sources, docs, and shipped migrations","check":"set -o pipefail; RUSTUP_TOOLCHAIN=1.95.0 bash scripts/check-all.sh | tee /tmp/comemory-issue356-gate.log"}
+  {"id":"gate","title":"Synchronize protocol docs and pass full quality gate","depends_on":["fix"],"ac_refs":["AC-1","AC-2","AC-3"],"paths":["."],"input":"Final repository sources, docs, and shipped migrations","check":"set -o pipefail; RUSTUP_TOOLCHAIN=1.95.0 bash scripts/check-all.sh 2>&1 | tee /tmp/comemory-issue356-gate.log"}
 ]
 ```
 
