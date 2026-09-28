@@ -81,6 +81,13 @@ pub fn classify(e: &Error) -> (&'static str, Class) {
         Error::Cancelled => ("cancelled", Class::Conflict),
         Error::Unsupported(_) => ("unsupported", Class::NotImplemented),
         Error::Embedder(_) => ("embedder_unavailable", Class::Unavailable),
+        // Contended `memory-save.lock`: retryable like `Embedder`, not a
+        // conflict over what to do — a save and a rebuild simply took turns.
+        Error::Busy(_) => ("busy", Class::Unavailable),
+        // A restored engine refusing sync until its erasures are verified:
+        // retryable once the operator merges the manifest, never the
+        // caller's fault.
+        Error::RestoreUnverified(_) => ("restore_unverified", Class::Unavailable),
     }
 }
 

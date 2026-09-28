@@ -47,6 +47,9 @@ pub mod drain;
 /// The server side of the protocol: wire models plus the changes, manifest,
 /// import and code-import cores `serve` routes call.
 pub mod exchange;
+/// The exchange pause `rebuild`, `backup restore` and `backup create` hold:
+/// the bounded `sync.lock` every exchange pass serializes on.
+pub mod exchange_gate;
 /// The exhaustive pull-then-push-then-code run `auth login` performs.
 pub mod initial;
 /// The `comemory auth` sequences: device login, status probe, logout.

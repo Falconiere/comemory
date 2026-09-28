@@ -15,6 +15,10 @@
 
 /// The activity feed's read side: one filtered page plus its rollups.
 pub mod activity;
+/// `comemory backup create|restore|merge-erasures`: snapshot the data
+/// directory, and install one under a new epoch with erasures merged.
+/// CLI-only.
+pub mod backup;
 /// `comemory consolidate`: the advisory near-duplicate cluster core.
 pub mod consolidate;
 /// Union-find clustering of live fingerprints and keeper ordering.
@@ -24,6 +28,9 @@ pub mod consolidation_report;
 /// `comemory doctor`: runtime health check, and the read-only probe setup
 /// detection consults once a database exists.
 pub mod doctor;
+/// `comemory erase`: permanently erase one memory or document, keeping the
+/// digests that refuse its bytes afterwards.
+pub mod erase;
 /// `comemory gc`: trash sweep plus the learning-telemetry retention purge.
 pub mod gc;
 /// `GET|PUT /gc/policy`: retention windows and the last gc run.

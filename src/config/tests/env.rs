@@ -516,3 +516,16 @@ fn env_sync_code_index_override_applies() {
     unsafe { std::env::remove_var("COMEMORY_SYNC_CODE_INDEX") };
     assert!(bad.is_err(), "a non-boolean must be refused, not defaulted");
 }
+
+#[test]
+fn env_sync_pause_wait_override_applies() {
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_SYNC_PAUSE_WAIT", "1s") };
+    let c = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_SYNC_PAUSE_WAIT") };
+    assert_eq!(
+        c.unwrap().sync.pause_wait_duration().expect("parse"),
+        std::time::Duration::from_secs(1)
+    );
+}

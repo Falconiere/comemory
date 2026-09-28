@@ -29,6 +29,8 @@ pub mod contract;
 pub mod contract_views;
 /// Acceptance for a pulled document revision: one transaction, no local row.
 pub mod document_accept;
+/// The hash-chained erasure manifest kept outside the database.
+pub mod erasure_manifest;
 /// Acceptance for a feedback or activity event: row, counter, position and
 /// receipt in one transaction.
 pub mod event_accept;
@@ -36,12 +38,21 @@ pub mod event_accept;
 pub mod event_capture;
 /// `GET /sync/replica/events` — notification-only frames.
 pub mod events;
+/// The stream identity kept outside the database, and `ensure`.
+pub mod identity;
 /// `GET /sync/replica/manifest` — holdings, capability and seeding progress.
 pub mod manifest;
 /// The write half of acceptance — markdown, mirror, journal and receipt.
 pub mod materialize;
 /// Apply one entry pulled from an upstream, in the upstream's order.
 pub mod pulled;
+/// Whether a restored engine may exchange yet: `restore.pending` and
+/// `replica_restore_state`, checked before every sync surface.
+pub mod restore_state;
+/// Journal seeding for documents indexed before the journal existed.
+pub mod seed_documents;
+/// Journal seeding for memories trashed before the journal existed.
+pub mod seed_trash;
 /// Staged parts of an oversized revision and their activation.
 pub mod staging;
 /// The acceptance decision, made before any state moves.

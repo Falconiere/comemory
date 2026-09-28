@@ -81,7 +81,7 @@ fn an_event_whose_row_is_about_to_be_evicted_expires_and_a_newer_one_does_not() 
         replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
             .expect("expire");
 
-    assert_eq!(expired, 1);
+    assert_eq!(expired.len(), 1);
     assert_eq!(
         comemory::store::replica_redaction::redaction_of(&conn, &old).expect("old"),
         Some(Redaction::Expired)
@@ -141,7 +141,7 @@ fn erasure_outranks_expiry_and_expiry_never_relabels_an_erasure() {
     let first =
         replica_redaction::redact(&conn, replica_redaction::Reach::VerdictsOn("a1b2c3d4"), NOW)
             .expect("erase");
-    assert_eq!(first, 1, "only the purged memory's verdict");
+    assert_eq!(first.len(), 1, "only the purged memory's verdict");
     replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
         .expect("expire");
     assert_eq!(
@@ -153,11 +153,58 @@ fn erasure_outranks_expiry_and_expiry_never_relabels_an_erasure() {
     let upgraded =
         replica_redaction::redact(&conn, replica_redaction::Reach::VerdictsOn("e5f6a7b8"), NOW)
             .expect("erase");
-    assert_eq!(upgraded, 1);
+    assert_eq!(upgraded.len(), 1);
     assert_eq!(
         comemory::store::replica_redaction::redaction_of(&conn, &expired).expect("expired"),
         Some(Redaction::Erased),
         "a purge is the stronger claim"
+    );
+}
+
+#[test]
+fn a_digest_a_pending_outbox_operation_owes_is_exempt_from_retention() {
+    let (_dir, conn) = migrated_db();
+    let owed = journal_event(&conn, "feedback_event", "ev-owed", NOW);
+    let unowed = journal_event(&conn, "feedback_event", "ev-unowed", NOW);
+    verdict_row(&conn, "ev-owed", "2026-01-01T00:00:00Z");
+    verdict_row(&conn, "ev-unowed", "2026-01-01T00:00:00Z");
+    comemory::store::replica_outbox::enqueue(
+        &conn,
+        &NewOperation {
+            operation_id: "op-owed",
+            entity_kind: "feedback_event",
+            entity_key: "ev-owed",
+            op: ReplicaOp::Upsert,
+            payload: Some(PayloadRef {
+                digest: &owed,
+                bytes: "unused: only the digest is read back",
+            }),
+            schema_version: 1,
+            repository: Some("Falconiere/comemory"),
+            origin: ReplicaOrigin::Local,
+            at: NOW,
+        },
+        None,
+    )
+    .expect("enqueue owed push");
+
+    let expired =
+        replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
+            .expect("expire");
+
+    assert_eq!(
+        expired,
+        vec![unowed.clone()],
+        "only the unowed digest expires"
+    );
+    assert_eq!(
+        comemory::store::replica_redaction::redaction_of(&conn, &owed).expect("owed"),
+        None,
+        "the outbox still has to send this digest's real bytes"
+    );
+    assert_eq!(
+        comemory::store::replica_redaction::redaction_of(&conn, &unowed).expect("unowed"),
+        Some(Redaction::Expired)
     );
 }
 
@@ -174,4 +221,231 @@ fn a_row_redacted_before_v26_reads_as_erased() {
         comemory::store::replica_redaction::redaction_of(&conn, &digest).expect("redaction"),
         Some(Redaction::Erased)
     );
+}
+
+/// Journal one payload of `kind` for `key` under `operation_id`, with `bytes`
+/// as given, and return its digest.
+fn journal_bytes(
+    conn: &Connection,
+    kind: &str,
+    key: &str,
+    operation_id: &str,
+    bytes: &str,
+) -> String {
+    let digest = comemory::utilities::digest::sha256_hex(bytes.as_bytes());
+    let epoch = stream_epoch(conn).expect("epoch");
+    replica_journal::append(
+        conn,
+        &epoch,
+        &NewOperation {
+            operation_id,
+            entity_kind: kind,
+            entity_key: key,
+            op: ReplicaOp::Upsert,
+            payload: Some(PayloadRef {
+                digest: &digest,
+                bytes,
+            }),
+            schema_version: 1,
+            repository: Some("Falconiere/comemory"),
+            origin: ReplicaOrigin::Local,
+            at: NOW,
+        },
+    )
+    .expect("append");
+    digest
+}
+
+#[test]
+fn an_entity_erase_reaches_every_revision_of_it_and_nothing_else() {
+    let (_dir, conn) = migrated_db();
+    let first = journal_bytes(&conn, "memory", "a1b2c3d4", "op-1", r#"{"body":"first"}"#);
+    let second = journal_bytes(&conn, "memory", "a1b2c3d4", "op-2", r#"{"body":"second"}"#);
+    let other = journal_bytes(&conn, "memory", "e5f6a7b8", "op-3", r#"{"body":"other"}"#);
+    let same_key_other_kind = journal_bytes(
+        &conn,
+        "document_revision",
+        "a1b2c3d4",
+        "op-4",
+        r#"{"doc":1}"#,
+    );
+    // An expired copy is upgraded: the erase is the stronger claim.
+    conn.execute(
+        "UPDATE replica_payload SET bytes = NULL, redacted_at = ?2, redaction = 'expired' \
+          WHERE digest = ?1",
+        [&first, NOW],
+    )
+    .expect("expire the first revision");
+
+    let mut erased = replica_redaction::redact(
+        &conn,
+        replica_redaction::Reach::Entity("memory", "a1b2c3d4"),
+        NOW,
+    )
+    .expect("erase");
+    erased.sort();
+    let mut expected = vec![first.clone(), second.clone()];
+    expected.sort();
+    assert_eq!(erased, expected, "every revision the entity's feed names");
+    for digest in [&first, &second] {
+        assert_eq!(
+            replica_redaction::redaction_of(&conn, digest).expect("redaction"),
+            Some(Redaction::Erased)
+        );
+    }
+    for untouched in [&other, &same_key_other_kind] {
+        assert_eq!(
+            replica_redaction::redaction_of(&conn, untouched).expect("redaction"),
+            None,
+            "another entity keeps its bytes"
+        );
+    }
+    assert!(
+        replica_redaction::redact(
+            &conn,
+            replica_redaction::Reach::Entity("memory", "a1b2c3d4"),
+            NOW,
+        )
+        .expect("again")
+        .is_empty(),
+        "a second erase finds nothing left to blank"
+    );
+    assert_eq!(
+        replica_read::page(&conn, 0, 10, None).expect("page").len(),
+        4,
+        "every position survives"
+    );
+}
+
+#[test]
+fn runs_naming_a_memory_are_erased_by_their_row_and_by_their_payload() {
+    let (_dir, conn) = migrated_db();
+    let by_row = journal_bytes(
+        &conn,
+        "activity_event",
+        "ev-save",
+        "op-save",
+        r#"{"command":"save","summary":{"id":"a1b2c3d4"}}"#,
+    );
+    conn.execute(
+        "INSERT INTO activity_log (at, command, source, duration_ms, ok, summary, event_id) \
+         VALUES (?1, 'save', 'cli', 1, 1, '{\"id\":\"a1b2c3d4\",\"title\":null}', 'ev-save')",
+        [NOW],
+    )
+    .expect("the save run's row");
+    // A run evicted locally: no row left, only its journal copy names the id.
+    let by_payload = journal_bytes(
+        &conn,
+        "activity_event",
+        "ev-evicted",
+        "op-evicted",
+        r#"{"command":"delete","summary":{"id":"a1b2c3d4"}}"#,
+    );
+    let unrelated = journal_bytes(
+        &conn,
+        "activity_event",
+        "ev-other",
+        "op-other",
+        r#"{"command":"save","summary":{"id":"e5f6a7b8"}}"#,
+    );
+    conn.execute(
+        "INSERT INTO activity_log (at, command, source, duration_ms, ok, summary, event_id) \
+         VALUES (?1, 'find', 'cli', 1, 1, 'not json', NULL)",
+        [NOW],
+    )
+    .expect("a malformed summary the reach must skip, not fail on");
+
+    let mut erased =
+        replica_redaction::redact(&conn, replica_redaction::Reach::RunsNaming("a1b2c3d4"), NOW)
+            .expect("erase");
+    erased.sort();
+    let mut expected = vec![by_row, by_payload];
+    expected.sort();
+    assert_eq!(erased, expected);
+    assert_eq!(
+        replica_redaction::redaction_of(&conn, &unrelated).expect("redaction"),
+        None
+    );
+}
+
+#[test]
+fn a_barrier_erases_a_held_digest_and_bars_one_never_stored() {
+    let (_dir, conn) = migrated_db();
+    let held = journal_event(&conn, "memory", "a1b2c3d4", NOW);
+    let expired = journal_event(&conn, "feedback_event", "ev-aged", NOW);
+    replica_redaction::redact(
+        &conn,
+        replica_redaction::Reach::Entity("feedback_event", "ev-aged"),
+        NOW,
+    )
+    .expect("erase first");
+    conn.execute(
+        "UPDATE replica_payload SET redaction = 'expired' WHERE digest = ?1",
+        [&expired],
+    )
+    .expect("age it to expired");
+    let never = "c".repeat(64);
+    let listed = vec![held.clone(), expired.clone(), never.clone()];
+
+    let barred = replica_redaction::bar(&conn, &listed, "memory", NOW).expect("bar");
+
+    assert_eq!(barred, 3, "one inserted, one blanked, one upgraded");
+    for digest in &listed {
+        assert_eq!(
+            replica_redaction::redaction_of(&conn, digest).expect("redaction"),
+            Some(Redaction::Erased),
+            "{digest}"
+        );
+    }
+    assert_eq!(
+        replica_redaction::bar(&conn, &listed, "memory", NOW).expect("again"),
+        0,
+        "idempotent"
+    );
+    assert_eq!(
+        replica_redaction::bar(&conn, &[], "memory", NOW).expect("none"),
+        0
+    );
+}
+
+#[test]
+fn erased_entities_group_every_erased_digest_under_the_entity_that_owns_it() {
+    let (_dir, conn) = migrated_db();
+    let first = journal_event(&conn, "memory", "a1b2c3d4", "2026-09-24T09:00:00Z");
+    journal_event(&conn, "memory", "e5f6a7b8", NOW);
+    let verdict = journal_event(&conn, "feedback_event", "ev-on-it", NOW);
+    replica_redaction::redact(
+        &conn,
+        replica_redaction::Reach::Entity("memory", "a1b2c3d4"),
+        NOW,
+    )
+    .expect("erase the memory");
+    replica_redaction::redact(
+        &conn,
+        replica_redaction::Reach::Entity("feedback_event", "ev-on-it"),
+        NOW,
+    )
+    .expect("erase the verdict");
+    let expired = journal_event(&conn, "activity_event", "ev-old", "2026-01-01T00:00:00Z");
+    replica_redaction::redact(&conn, replica_redaction::Reach::PastRetention(CUTOFF), NOW)
+        .expect("expire");
+    let orphan = "d".repeat(64);
+    replica_redaction::bar(&conn, std::slice::from_ref(&orphan), "memory", NOW).expect("bar");
+
+    let entities = replica_redaction::erased_entities(&conn).expect("entities");
+
+    let found: Vec<(&str, &str, &[String])> = entities
+        .iter()
+        .map(|e| (e.kind.as_str(), e.key.as_str(), e.digests.as_slice()))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            ("feedback_event", "ev-on-it", std::slice::from_ref(&verdict)),
+            ("memory", "a1b2c3d4", std::slice::from_ref(&first)),
+            ("memory", orphan.as_str(), std::slice::from_ref(&orphan)),
+        ],
+        "an expired payload is not erased; a digest nothing names keys itself"
+    );
+    assert!(entities.iter().all(|e| !e.digests.contains(&expired)));
 }

@@ -76,6 +76,7 @@ fn apply_tombstone(
         return Ok(out);
     }
     let paths = ctx.paths.clone();
+    let pause_wait = ctx.cfg.sync.pause_wait_duration()?;
     let conn = ctx.conn()?;
     // Journalled inside the delete's own transaction: a crash between the two
     // would otherwise leave the memory deleted with nothing recording it, and
@@ -86,6 +87,7 @@ fn apply_tombstone(
         &entry.id,
         Some(ReplicaOrigin::Sync),
         Some(&entry.at),
+        pause_wait,
     )?;
     let seq = removed
         .journalled

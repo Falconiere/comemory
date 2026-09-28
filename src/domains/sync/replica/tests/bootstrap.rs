@@ -146,3 +146,61 @@ fn seed_without_enqueue_leaves_the_seeding_engine_owing_nothing() {
          upload would make it refuse every import for those memories"
     );
 }
+
+#[test]
+fn a_save_between_load_and_commit_wins() {
+    let mut home = Home::new();
+    let id = home.save("Original text seeded from before the journal.", &["sync"]);
+    forget_the_journal(&home);
+
+    let mut ctx = home.ctx();
+    let loaded = bootstrap::load(&mut ctx, &id)
+        .expect("load")
+        .expect("nothing journalled yet");
+
+    // A real frontmatter patch commits while the seed is between its load
+    // and its commit — the window that split exists to close.
+    home.retag(&id, &["updated-mid-seed"]);
+
+    let mut ctx = home.ctx();
+    bootstrap::commit(&mut ctx, &loaded).expect("commit backs off");
+
+    assert_eq!(
+        replica_read::head(&home.conn).expect("head"),
+        1,
+        "only the retag's own operation is journalled; the stale seed backed off"
+    );
+    let revision = replica_read::revision(&home.conn, "memory", &id)
+        .expect("lookup")
+        .expect("revision exists");
+    let expected_digest = home.payload(&id).canonical().expect("canonical").1;
+    assert_eq!(
+        revision.payload_digest.as_deref(),
+        Some(expected_digest.as_str()),
+        "the revision carries the retag's payload, not the stale one the seed loaded"
+    );
+}
+
+#[test]
+fn a_client_keeps_the_outbox_row_a_non_client_would_discard() {
+    let mut home = Home::new();
+    let id = home.save(BODY, &["sync"]);
+    forget_the_journal(&home);
+    home.make_client();
+
+    let mut ctx = home.ctx();
+    bootstrap::advance(&mut ctx).expect("seed");
+
+    let rows = crate::store::replica_outbox::read(
+        &home.conn,
+        crate::store::replica_outbox::Scope::Entity("memory", &id),
+        1,
+    )
+    .expect("read");
+    assert_eq!(
+        rows.len(),
+        1,
+        "a replica client owes this upload; seeding must not discard it"
+    );
+    assert_eq!(rows[0].state, "pending");
+}

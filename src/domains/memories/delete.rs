@@ -7,7 +7,7 @@
 use serde::Serialize;
 use time::OffsetDateTime;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::config::paths::Paths;
 use crate::domains::memories::MemoryStore;
@@ -55,8 +55,16 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 /// once, outside the work it describes.
 fn delete_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let paths = ctx.paths;
+    let pause_wait = ctx.cfg.sync.pause_wait_duration()?;
     let conn = ctx.conn()?;
-    let removed = soft_delete(paths, conn, id, Some(ReplicaOrigin::Local), None)?;
+    let removed = soft_delete(
+        paths,
+        conn,
+        id,
+        Some(ReplicaOrigin::Local),
+        None,
+        pause_wait,
+    )?;
     Ok(Response {
         deleted: removed.id,
         derived_stale: removed.derived_stale,
@@ -80,6 +88,7 @@ pub(crate) fn soft_delete(
     id: &str,
     journal_as: Option<ReplicaOrigin>,
     at: Option<&str>,
+    pause_wait: Duration,
 ) -> Result<SoftDeleted> {
     let store = MemoryStore::new(paths.clone());
     // Resolved before the markdown moves, so the intent below names the
@@ -104,7 +113,8 @@ pub(crate) fn soft_delete(
             },
         )?;
     }
-    let removed = store.delete(id)?;
+    let guard = crate::domains::memories::save_lock::acquire_within(paths, pause_wait)?;
+    let removed = store.delete(&guard, id)?;
     let content_hash = removed.frontmatter.content_hash.clone();
     let repository = removed.frontmatter.repo.clone();
     let id = removed.frontmatter.id;

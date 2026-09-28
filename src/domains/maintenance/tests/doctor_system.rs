@@ -173,8 +173,15 @@ fn run_counts_trashed_files_and_names_a_migration_snapshot() {
             r.get::<_, String>(0)
         })
         .expect("read seeded id");
-    comemory::domains::memories::delete::soft_delete(&paths, &mut conn, &id, None, None)
-        .expect("soft delete");
+    comemory::domains::memories::delete::soft_delete(
+        &paths,
+        &mut conn,
+        &id,
+        None,
+        None,
+        std::time::Duration::from_secs(5),
+    )
+    .expect("soft delete");
     drop(conn);
 
     // A real pre-migration snapshot beside the live db.

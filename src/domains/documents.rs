@@ -15,8 +15,11 @@
 pub mod document;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
-/// The `replica-v1` feed positions a document mutation owes.
-mod journal;
+/// The `replica-v1` feed positions a document mutation owes. Crate-visible
+/// (not `mod`) so `domains::sync::replica::seed_documents` (#256) can re-run
+/// its capture for a document indexed before the journal or its approval
+/// existed.
+pub(crate) mod journal;
 /// The `document_revision` wire payload: its canonical bytes, its digest and
 /// the identity its repository and path earn.
 pub mod replica_payload;

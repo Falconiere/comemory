@@ -68,6 +68,12 @@ pub struct SyncConfig {
     /// staged parts. Lower it behind a proxy with a smaller body limit.
     #[serde(default = "default_max_request_bytes")]
     pub max_request_bytes: u64,
+    /// How long a `memory-save.lock` acquire waits for another holder before
+    /// giving up `Error::Busy` (#256, B-3/B-6): a save contending with an
+    /// in-place `comemory rebuild`, or a rebuild waiting for writers to
+    /// drain, share this one bound.
+    #[serde(default = "default_pause_wait")]
+    pub pause_wait: String,
 }
 
 /// `[sync]` keys kept only so an existing `config.toml` still loads.
@@ -124,6 +130,7 @@ pub struct PartialSyncConfig {
     request_timeout: Option<String>,
     pass_budget: Option<String>,
     max_request_bytes: Option<u64>,
+    pause_wait: Option<String>,
 }
 
 /// File-overlay partial for [`EmbedConfig`].
@@ -151,6 +158,7 @@ impl SyncConfig {
             request_timeout: default_request_timeout(),
             pass_budget: default_pass_budget(),
             max_request_bytes: default_max_request_bytes(),
+            pause_wait: default_pause_wait(),
         }
     }
 
@@ -203,6 +211,9 @@ impl SyncConfig {
         if let Some(v) = partial.max_request_bytes {
             self.max_request_bytes = v;
         }
+        if let Some(v) = partial.pause_wait {
+            self.pause_wait = v;
+        }
     }
 
     /// Compile [`Self::skip_repos`] into a matcher.
@@ -242,6 +253,11 @@ impl SyncConfig {
     /// Parse [`Self::push_on_save_timeout`] as a [`Duration`].
     pub fn push_on_save_timeout_duration(&self) -> Result<Duration> {
         parse_duration(&self.push_on_save_timeout)
+    }
+
+    /// Parse [`Self::pause_wait`] as a [`Duration`].
+    pub fn pause_wait_duration(&self) -> Result<Duration> {
+        parse_duration(&self.pause_wait)
     }
 }
 
@@ -294,6 +310,11 @@ const fn default_max_request_bytes() -> u64 {
     4 * 1024 * 1024
 }
 
+/// serde default for [`SyncConfig::pause_wait`].
+fn default_pause_wait() -> String {
+    "5s".into()
+}
+
 /// Warn that `key` is set but no longer does anything.
 ///
 /// Fires once per config load — so once per CLI invocation, and once at
@@ -310,17 +331,23 @@ fn warn_deprecated(key: &str) {
     );
 }
 
-/// Parse a compact duration string: `<n><s|m|h|d>` (e.g. `5m`, `7d`, `1h`).
+/// Parse a compact duration string: `<n><unit>` with the unit exactly one of
+/// `ms`, `s`, `m`, `h` or `d`, case-insensitive (e.g. `500ms`, `5m`, `7d`).
+/// Anything else after the number is refused rather than guessed: `5sec` or
+/// `300ms` read by its first letter would silently mean seconds or minutes.
+///
+/// # Errors
+/// [`Error::Config`] naming `raw` when it is empty, has no number or no
+/// unit, names another unit, or overflows.
 pub fn parse_duration(raw: &str) -> Result<Duration> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(Error::Config("duration must not be empty".into()));
     }
-    let (num, unit) = trimmed
-        .char_indices()
-        .find(|(_, c)| !c.is_ascii_digit())
-        .map(|(i, c)| (&trimmed[..i], c))
+    let split = trimmed
+        .find(|c: char| !c.is_ascii_digit())
         .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: missing unit")))?;
+    let (num, unit) = trimmed.split_at(split);
     if num.is_empty() {
         return Err(Error::Config(format!(
             "invalid duration `{raw}`: missing number"
@@ -329,24 +356,26 @@ pub fn parse_duration(raw: &str) -> Result<Duration> {
     let n: u64 = num
         .parse()
         .map_err(|_| Error::Config(format!("invalid duration `{raw}`: bad number")))?;
-    let secs = match unit {
-        's' | 'S' => n,
-        'm' | 'M' => n
+    let overflow = || Error::Config(format!("invalid duration `{raw}`: overflow"));
+    match unit.to_ascii_lowercase().as_str() {
+        "ms" => Ok(Duration::from_millis(n)),
+        "s" => Ok(Duration::from_secs(n)),
+        "m" => n
             .checked_mul(60)
-            .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: overflow")))?,
-        'h' | 'H' => n
+            .map(Duration::from_secs)
+            .ok_or_else(overflow),
+        "h" => n
             .checked_mul(3600)
-            .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: overflow")))?,
-        'd' | 'D' => n
+            .map(Duration::from_secs)
+            .ok_or_else(overflow),
+        "d" => n
             .checked_mul(86_400)
-            .ok_or_else(|| Error::Config(format!("invalid duration `{raw}`: overflow")))?,
-        _ => {
-            return Err(Error::Config(format!(
-                "invalid duration `{raw}`: unit must be s, m, h, or d"
-            )));
-        }
-    };
-    Ok(Duration::from_secs(secs))
+            .map(Duration::from_secs)
+            .ok_or_else(overflow),
+        _ => Err(Error::Config(format!(
+            "invalid duration `{raw}`: unit `{unit}` is not one of ms, s, m, h, or d"
+        ))),
+    }
 }
 
 /// When `[embed].model` is set, mirror it into `schema_meta.memory_vector_model`.

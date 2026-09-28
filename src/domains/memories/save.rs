@@ -226,9 +226,11 @@ pub fn run_with(
     // Hold across prior lookup, content-addressed markdown staging and mirror
     // commit. Concurrent replays otherwise share .<id>.tmp and can disagree
     // about creation or leave the markdown and SQLite metadata out of sync.
-    let _save_guard = crate::utilities::file_lock::FileLock::acquire(
-        &paths.data_dir().join("memory-save.lock"),
-        "memory-save",
+    // Bounded by `[sync] pause_wait` (#256, B-6): a save contending with an
+    // in-place `comemory rebuild` waits, not hangs.
+    let guard = crate::domains::memories::save_lock::acquire_within(
+        paths,
+        cfg.sync.pause_wait_duration()?,
     )?;
     let store = MemoryStore::new(paths.clone());
     // The replay contract (module doc): refuse a colliding body, carry the
@@ -242,7 +244,7 @@ pub fn run_with(
     let duplicate_of = near_duplicate(conn, &req.body, &new_id, cfg.rank.near_dup_hamming);
 
     let params = build_params(&req, relations, references, prior.as_ref());
-    let rec = save_persist::persist(conn, &store, params, vector.as_deref())?;
+    let rec = save_persist::persist(&guard, conn, &store, params, vector.as_deref())?;
     // No sync hook here on purpose: this function also runs inside `comemory
     // serve`, where `reqwest::blocking` panics on drop and where pushing a
     // tenant's memories outward would be wrong. The CLI pushes in `cli::save`

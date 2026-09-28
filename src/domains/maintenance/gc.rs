@@ -134,7 +134,13 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
         // An upload that never finished published nothing, so its rows are
         // debris on their own window rather than on the telemetry one.
         let staged = replica_sweep::run(conn, now)?;
-        record_run(conn, &sweep, counts, activity_rows, now)?;
+        record_run(
+            conn,
+            &sweep,
+            counts,
+            (activity_rows, staged.parts + staged.generations),
+            now,
+        )?;
         (counts, observation_rows, activity_rows, purge, staged)
     } else {
         (
@@ -244,12 +250,13 @@ struct Purge {
 
 /// Insert one `gc_runs` row for this completed sweep. Only reached when
 /// `comemory.db` already exists (the caller's `conn` came from [`Ctx::conn`]
-/// after that check). `counts` is `(log_rows, event_rows)`.
+/// after that check). `counts` is `(log_rows, event_rows)`; `swept` is
+/// `(activity_rows, staged_rows)`.
 fn record_run(
     conn: &Connection,
     sweep: &Sweep,
     counts: (u64, u64),
-    activity_rows: u64,
+    swept: (u64, u64),
     now: OffsetDateTime,
 ) -> Result<()> {
     let id = random_id::random_hex(RUN_ID_BYTES)?;
@@ -263,7 +270,8 @@ fn record_run(
             log_rows: counts.0,
             event_rows: counts.1,
             bytes_freed: sweep.bytes_freed,
-            activity_rows,
+            activity_rows: swept.0,
+            staged_rows: swept.1,
         },
     )
 }

@@ -1,7 +1,8 @@
 //! `GET /api/v1/doctor` (`maintenance::doctor`) and `GET /api/v1/consolidate`
 //! (`maintenance::consolidate`). `GET|POST /api/v1/prune` and `POST /api/v1/gc`
 //! live in [`prune`]; `POST /api/v1/mine` and `POST /api/v1/hooks/install`
-//! live in [`admin`] — both merged into this resource's [`router`].
+//! live in [`admin`]; `POST /api/v1/erase` lives in [`erase`] — all merged
+//! into this resource's [`router`].
 
 use std::time::Instant;
 
@@ -21,6 +22,8 @@ use crate::utilities::context::Ctx;
 pub mod admin;
 /// `GET /api/v1/doctor/system`, `POST /api/v1/doctor/rebuild`, `POST /api/v1/doctor/reembed`.
 pub mod doctor;
+/// `POST /api/v1/erase`.
+pub mod erase;
 /// `GET|PUT /api/v1/gc/policy`, `POST /api/v1/gc/run`.
 pub mod gc;
 /// `GET|POST /api/v1/prune`, `POST /api/v1/gc`.
@@ -52,6 +55,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .merge(prune::router(state.clone()))
         .merge(admin::router(state.clone()))
         .merge(doctor::router(state.clone()))
+        .merge(erase::router(state.clone()))
         .merge(gc::router(state))
 }
 

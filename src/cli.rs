@@ -16,6 +16,8 @@ pub mod ast;
 pub mod auth;
 /// TTY and JSON rendering for authentication commands.
 pub mod auth_render;
+/// `comemory backup`: create, restore and merge-erasures (CLI-only).
+pub mod backup;
 /// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
 /// `comemory benchmark` — the domain-aware offline retrieval benchmark.
@@ -41,6 +43,8 @@ pub mod distill;
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
 pub mod edges;
+/// `comemory erase`: permanently erase one memory or document.
+pub mod erase;
 /// `comemory eval`: score retrieval against a golden set.
 pub mod eval;
 /// `comemory export-dataset`: the reviewed relevance dataset export.
@@ -244,6 +248,9 @@ pub enum Cmd {
     Consolidate(consolidate::Args),
     /// Drop `comemory.db` and repopulate it from the markdown source of truth.
     Rebuild(rebuild::Args),
+    /// Back up the data directory, restore a backup under a new stream epoch,
+    /// or merge an erasure manifest a restore could not find (CLI-only).
+    Backup(backup::Args),
     /// Report tracked recalls awaiting a verdict, verdicts and saves since a
     /// bound.
     RecallStatus(recall_status::Args),
@@ -251,6 +258,10 @@ pub enum Cmd {
     /// retention.
     #[command(after_help = gc::EXAMPLES)]
     Gc,
+    /// Permanently erase one memory or document from every table, journal
+    /// copy and the markdown tree, keeping only the digests that refuse its
+    /// bytes afterwards.
+    Erase(erase::Args),
     /// Install git hooks that index and sync the repo on `post-commit`,
     /// `post-merge`, `post-checkout` and `post-rewrite`.
     InstallHooks(install_hooks::Args),
@@ -350,8 +361,10 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
         Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir),
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
+        Cmd::Backup(a) => backup::run(a, cli.json, cli.data_dir).await,
         Cmd::RecallStatus(a) => recall_status::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
+        Cmd::Erase(a) => erase::run(a, cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Install(a) => install::run(a, cli.json, cli.data_dir),
         Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,

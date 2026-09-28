@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange daemon install)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange daemon install recovery)
 
 case_name=""
 platform_root=""
@@ -210,6 +210,21 @@ run_install() {
   log_ok "replication" "managed install suite passed"
 }
 
+# Replica state recovery (#256): seeding survives a legacy upgrade and a
+# kill, rebuild and gc keep replica progress and an owed payload, erase
+# leaves only the digest barrier, and a revoked repository's pulled cache
+# hides without touching its local index; a rebuild waits for the exchange
+# gate and pauses writers, and a failed upgrade never reads healthy. Real
+# spawned engines, the real CLI and real HTTP, in-repo like the contract case.
+run_recovery() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_recovery --test replica_recovery_2 \
+      --test replica_recovery_3 --test replica_recovery_4 --test replica_recovery_5
+  )
+  log_ok "replication" "replica state recovery suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -299,5 +314,6 @@ case "$case_name" in
   exchange) run_exchange ;;
   daemon) run_daemon ;;
   install) run_install ;;
+  recovery) run_recovery ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

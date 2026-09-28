@@ -7,7 +7,7 @@
 use crate::domains::sync::replica::contract::{CursorRef, PROTOCOL};
 use crate::domains::sync::replica::contract_views::{ChangeEntry, ChangesResponse, PayloadState};
 use crate::domains::sync::replica::validate;
-use crate::domains::sync::replica::{bootstrap, event_capture};
+use crate::domains::sync::replica::{bootstrap, event_capture, seed_documents, seed_trash};
 use crate::prelude::*;
 use crate::store::replica_journal::stream_epoch;
 use crate::store::replica_read::{self, FeedRow, Redaction};
@@ -40,6 +40,8 @@ pub fn run(
     });
     validate::check_cursor(cursor.as_ref(), &stream)?;
     bootstrap::advance(ctx)?;
+    seed_trash::advance(ctx)?;
+    seed_documents::advance(ctx)?;
     event_capture::advance(ctx)?;
 
     let conn = ctx.conn()?;

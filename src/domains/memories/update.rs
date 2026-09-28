@@ -213,7 +213,11 @@ fn patch_in_place(
     // rewrite and the journal below leaves the edit recoverable rather than
     // stored locally and owed to nobody.
     let operation_id = record_write_intent(ctx, &id, &path)?;
-    store.rewrite(record)?;
+    let guard = crate::domains::memories::save_lock::acquire_within(
+        ctx.paths,
+        ctx.cfg.sync.pause_wait_duration()?,
+    )?;
+    store.rewrite(&guard, record)?;
     let derived_stale = if needs_derived_refresh(&changed) {
         mirror_record(ctx, record)?
     } else {

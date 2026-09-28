@@ -66,14 +66,19 @@ failure is in `error`).
 
 `--action status` reports `pending` — how many local writes are still owed to
 the platform — beside the two cursors, the coordinator's own live `daemon`
-status (state, detail, whether its version matches this binary — never an
-`ensure`, purely a read), and one `code` row per indexed repo (local head,
+status (state, detail, whether its version matches this binary, and the
+store's health — never an `ensure`, purely a read), and one `code` row per
+indexed repo (local head,
 last pushed head, `moved_since_push`, plus `withheld=worktree` /
 `withheld=missing_root` / `withheld=no_checkout` on a row the push never
 offers).
 
 Nested: `comemory sync daemon {ensure,status,restart,repair,stop,uninstall,run}`
-— see [cloud-sync.md](../guides/cloud-sync.md). `install`/`start` are hidden
+— see [cloud-sync.md](../guides/cloud-sync.md). `sync daemon status` (text and
+`--json`) always reports `store` — `absent`, `ready`, `migration_pending`,
+`migration_failed`, `too_new`, `restore_unverified` or `error`, probed
+read-only by this process whether or not a coordinator runs — and `healthy`,
+true only for `ready` or `absent` (#256, B-8). `install`/`start` are hidden
 deprecated aliases of `repair`/`ensure`.
 
 There is no `--workspace`: the org-scoped key names the only workspace it can

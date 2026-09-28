@@ -171,19 +171,6 @@ Only the newest two snapshots for a given database file are kept — older
 ones are pruned automatically before the next one is taken, so this doesn't
 grow without bound.
 
-To roll back to a snapshot, stop anything with the database open (see
-[the `serve` caveat](#restart-serve-after-upgrading) below), then replace
-the live file:
-
-```bash
-cp ~/.comemory/comemory.db.pre-v12.bak ~/.comemory/comemory.db
-rm -f ~/.comemory/comemory.db-wal ~/.comemory/comemory.db-shm
-```
-
-The `-wal` / `-shm` sidecars belong to the file you just replaced, so remove
-them too — otherwise the next open can try to replay WAL frames against a
-database they don't belong to.
-
 A snapshot is validated (`PRAGMA quick_check`) before comemory ever reuses
 or trusts it, so a snapshot left behind by a killed process won't silently
 stand in for a real one on your next upgrade — but that check doesn't run
@@ -193,6 +180,47 @@ before relying on it for a manual restore:
 ```bash
 sqlite3 ~/.comemory/comemory.db.pre-v12.bak "PRAGMA quick_check;"
 ```
+
+Copying one of these snapshots back over the live file by hand still works —
+stop anything with the database open (see
+[the `serve` caveat](#restart-serve-after-upgrading) below), replace the file,
+and remove its `-wal` / `-shm` sidecars, which belong to the database you just
+replaced and would otherwise try to replay WAL frames against a file they
+don't belong to — but it's no longer the recommended path: a raw copy skips
+identity and replication bookkeeping (see [Backup and
+restore](#backup-and-restore) below).
+
+## Backup and restore
+
+For a restore point that carries its own safety checks — rather than a bare
+file you copy by hand — take a full backup and restore it back with
+`comemory backup`:
+
+```bash
+comemory backup create                    # snapshots the db and memories/
+comemory backup restore <dir> --confirm   # restores one back into place
+```
+
+`backup restore` takes the same lock order every other writer does
+(`memory-save.lock`, then the identity lock), migrates an older snapshot
+forward through the ordinary schema-upgrade chain, and refuses outright —
+naming both sizes — a snapshot whose page size doesn't match the live file's.
+It mints a fresh stream epoch on every restore (a peer that already synced
+past this point rebootstraps, keeping and pushing whatever it owed), and
+merges the erasure manifest first, so permanently erased content can never
+come back through a restore. Every sync route answers `503 restore_unverified`
+until that merge completes — from a real erasure manifest, or from
+`comemory backup merge-erasures FILE` when the one alongside the backup went
+missing.
+
+The swap into place happens through the same in-place SQLite backup API
+`comemory rebuild` uses (see [Prune, rebuild, and
+gc](prune-and-gc.md#rebuild-from-markdown)): a restore killed mid-swap leaves
+the prior content in place, and simply re-running `backup restore` with the
+same directory finishes it. While either is running, writers wait — up to
+`[sync] pause_wait` for a CLI markdown write, 5 seconds for an HTTP or MCP
+one — and then fail `busy` rather than being silently dropped; nothing is
+acknowledged and left unrecorded.
 
 ## Skipping the snapshot
 
@@ -252,6 +280,19 @@ for the migration safety net — a long-running server holding a stale
 connection while a separate CLI invocation migrates the file underneath it
 is not something SQLite (or comemory) can detect for you.
 
+## When an upgrade fails
+
+An upgrade that cannot migrate — a read-only data directory, a read-only
+`comemory.db`, a full disk — refuses to start `comemory serve` with the
+reason, adds no migration marker, and leaves the database as the old binary
+wrote it. `serve` records the failure in `store-health.json` beside the
+database, so `comemory sync daemon status` reports `store:
+migration_failed` (`migration_pending` when the directory could not even hold
+the record) with `healthy: false`, and `comemory doctor`'s `store health`
+check fails with the recorded error. Fix the cause and start `serve` again:
+the next successful open applies the chain — also after an upgrade killed
+part-way — and removes the record.
+
 ## See also
 
 - [Architecture: schema migration & upgrade safety](../architecture.md#32-schema-migration--upgrade-safety)
@@ -259,5 +300,6 @@ is not something SQLite (or comemory) can detect for you.
 - [Configuration](../configuration.md) — `COMEMORY_SKIP_MIGRATION_BACKUP` and
   every other environment variable.
 - [Prune, rebuild, and gc](prune-and-gc.md) — `comemory rebuild`, which
-  shares the pre-swap snapshot mechanism described here.
-- [CLI reference](../cli-reference.md) — `comemory doctor`'s full flag list.
+  shares the pre-swap snapshot mechanism described here, and `comemory erase`.
+- [CLI reference](../cli-reference.md) — `comemory doctor` and `comemory
+  backup`'s full flag lists.

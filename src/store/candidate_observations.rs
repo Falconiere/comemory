@@ -268,19 +268,49 @@ pub fn fetch(
 ///
 /// The row and its pool position stay. Deleting it would corrupt a recorded
 /// pool's recall; keeping the body would resurrect deleted content.
-///
-/// A memory reference is `memory:<id>:<content_hash>`, so the rows are those
-/// prefixed `memory:<id>:`. `substr` rather than `LIKE` keeps the comparison
-/// literal by construction instead of by escaping.
 pub fn redact_memory(conn: &Connection, memory_id: &str) -> Result<u64> {
+    redact_memory_candidates(conn, memory_id, MemoryRedaction::Passage)
+}
+
+/// How much of a memory's captured candidates a redaction blanks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryRedaction {
+    /// A purge ([`redact_memory`]): the passage, its size, and resolvability.
+    Passage,
+    /// A permanent erase (#256): also the locator's `title` (the memory's
+    /// first line) and `path` (its slug-bearing markdown path). A locator
+    /// that is not JSON is left as it is.
+    Locator,
+}
+
+/// Apply `redaction` to every candidate of `memory_id`. A memory reference is
+/// `memory:<id>:<content_hash>`, so the rows are those prefixed
+/// `memory:<id>:`; `substr` rather than `LIKE` keeps the comparison literal
+/// by construction instead of by escaping. Returns rows changed.
+pub fn redact_memory_candidates(
+    conn: &Connection,
+    memory_id: &str,
+    redaction: MemoryRedaction,
+) -> Result<u64> {
+    let set = match redaction {
+        MemoryRedaction::Passage => {
+            "text = '', text_full_bytes = 0, text_truncated = 0, unresolved = 1"
+        }
+        MemoryRedaction::Locator => {
+            "locator_json = CASE WHEN json_valid(locator_json) \
+                THEN json_set(locator_json, '$.title', '', '$.path', NULL) \
+                ELSE locator_json END"
+        }
+    };
     let prefix = format!("memory:{memory_id}:");
     let changed = conn.execute(
-        "UPDATE candidate_observations \
-            SET text = '', text_full_bytes = 0, text_truncated = 0, unresolved = 1 \
-          WHERE domain = 'memory' AND substr(candidate_ref, 1, length(?1)) = ?1",
+        &format!(
+            "UPDATE candidate_observations SET {set} \
+              WHERE domain = 'memory' AND substr(candidate_ref, 1, length(?1)) = ?1"
+        ),
         [&prefix],
     )?;
-    Ok(changed as u64)
+    Ok(u64::try_from(changed).unwrap_or(u64::MAX))
 }
 
 /// Evict every observation older than `cutoff` that carries no judgment, with

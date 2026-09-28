@@ -81,6 +81,7 @@ fn get_reports_the_newest_recorded_run() {
             event_rows: 3,
             bytes_freed: 4,
             activity_rows: 0,
+            staged_rows: 0,
         },
     )
     .expect("insert older run");
@@ -94,6 +95,7 @@ fn get_reports_the_newest_recorded_run() {
             event_rows: 17,
             bytes_freed: 2048,
             activity_rows: 0,
+            staged_rows: 0,
         },
     )
     .expect("insert newer run");

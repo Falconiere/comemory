@@ -151,7 +151,8 @@ fn sql_demands_destructive(sql: &str) -> bool {
 /// 0005 (drops `search_stats`), 0006/0008/0013 (each rebuild `edges` via
 /// create-copy-drop-rename), 0017 (`UPDATE`s every `sync_state` cursor),
 /// 0018 (`DELETE`s the scheme-path junk references), 0027 (rebuilds
-/// `replica_cursor` via create-copy-drop-rename for its new key).
+/// `replica_cursor` via create-copy-drop-rename for its new key), 0030
+/// (rebuilds `sync_exchange` to widen its `network_state` CHECK).
 #[test]
 fn migration_integrity_destructive_sql_is_classed_destructive() {
     let destructive_keys: BTreeSet<&str> = list::MIGRATIONS
@@ -168,6 +169,7 @@ fn migration_integrity_destructive_sql_is_classed_destructive() {
         "0017_sync_repush",
         "0018_scheme_path_refs",
         "0027_replica_exchange",
+        "0030_restore_unverified_network_state",
     ]
     .into_iter()
     .collect();

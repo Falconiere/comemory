@@ -76,7 +76,11 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str, overrides: &RootOverrides) -> Result<Res
         repin(&mut refs.files, false)? + repin(&mut refs.symbols, true)?
     };
     if refreshed > 0 {
-        store.rewrite(&record)?;
+        let guard = crate::domains::memories::save_lock::acquire_within(
+            ctx.paths,
+            ctx.cfg.sync.pause_wait_duration()?,
+        )?;
+        store.rewrite(&guard, &record)?;
         // Re-mirroring re-materializes `code_ref` from the frontmatter, so
         // the freshness read below sees the new anchors.
         // The re-pin's own response reports the refreshed refs; a stale

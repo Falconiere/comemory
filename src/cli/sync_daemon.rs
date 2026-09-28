@@ -164,6 +164,12 @@ fn emit_status(json_flag: bool, view: status_view::StatusView) -> Result<()> {
     }
     let mut out = std::io::stdout().lock();
     writeln!(out, "{}", view.detail)?;
+    writeln!(
+        out,
+        "  store: {} ({})",
+        view.store.as_str(),
+        if view.healthy { "healthy" } else { "unhealthy" }
+    )?;
     if let Some(matches) = view.version_matches
         && !matches
     {

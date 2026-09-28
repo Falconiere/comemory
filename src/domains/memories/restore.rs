@@ -106,7 +106,11 @@ pub(crate) fn restore_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
             started_at,
         },
     )?;
-    let record = store.restore(id)?;
+    let guard = crate::domains::memories::save_lock::acquire_within(
+        ctx.paths,
+        ctx.cfg.sync.pause_wait_duration()?,
+    )?;
+    let record = store.restore(&guard, id)?;
     let derived_stale = mirror(ctx, &store, &record).map_err(|e| {
         Error::Other(format!(
             "restore: markdown at {} is back under memories/ but the SQLite mirror failed: {}; \

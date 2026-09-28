@@ -7,6 +7,8 @@
 
 /// Queueing local feed positions the outbox never saw.
 pub mod adopt;
+/// Adopting local-origin memory seed positions the outbox never saw.
+pub mod adopt_seeds;
 /// Whether the upstream still holds the entry the cursor was left on.
 pub mod anchor;
 /// Full-jitter delays between attempts.
@@ -87,12 +89,17 @@ pub struct Drained {
 
 /// Drain `auth`'s key: run passes until one ends without `more` (the inline
 /// push runs exactly one), or a logout or shutdown stops the run
-/// ([`stop::requested`], [`End::Cancelled`]). A policy that changes under a pass is reloaded and
-/// the pass run once more at once; a second change backs off.
+/// ([`stop::requested`], [`End::Cancelled`]). A policy that changes under a
+/// pass is reloaded and the pass run once more at once; a second change backs off. Before any
+/// session opens, the database is checked against the stream identity
+/// (`replica::identity::ensure`), so a replaced database never exchanges
+/// under the identity it copied — and while a restore of this engine is
+/// unverified the key records `restore_unverified` and nothing is sent.
 ///
 /// # Errors
-/// Configuration, clock, store and markdown failures; network failures are
-/// recorded on the key and reported as [`End::Network`].
+/// Configuration, clock, store and markdown failures, and
+/// [`Error::Busy`] when the identity locks are not granted in time; network
+/// failures are recorded on the key and reported as [`End::Network`].
 pub fn drain(
     paths: &Paths,
     cfg: &Config,
@@ -100,10 +107,14 @@ pub fn drain(
     auth: &AuthFile,
     (mode, legs): (Mode, Legs),
 ) -> Result<Drained> {
+    let mut drained = Drained::default();
+    // Before `ensure_dirs`: a restore mid-swap has moved `memories/` aside.
+    if let Some(row) = session::admit(paths, cfg, conn, auth)? {
+        return Ok(drained.skipped(&row));
+    }
     // A client that never saved anything has no memories directory yet, and
     // the first pulled memory is written there.
     paths.ensure_dirs()?;
-    let mut drained = Drained::default();
     let mut reloaded = false;
     loop {
         if stop::requested(paths) {
@@ -113,11 +124,7 @@ pub fn drain(
         }
         let mut session = match session::open(conn, cfg, auth, mode)? {
             Opened::Ready(session) => session,
-            Opened::Skipped(row) => {
-                drained.exchange.absorb(skipped(&row));
-                drained.error = row.last_error;
-                return Ok(drained);
-            }
+            Opened::Skipped(row) => return Ok(drained.skipped(&row)),
         };
         drained.managed = session.replica.is_managed();
         let pass = run_pass(paths, cfg, conn, &mut session, (mode, legs), &mut drained)?;
@@ -141,6 +148,15 @@ pub fn drain(
         {
             return Ok(drained);
         }
+    }
+}
+
+impl Drained {
+    /// This drain, ended by a pass that made no request: `row` says why.
+    fn skipped(mut self, row: &ExchangeRow) -> Self {
+        self.exchange.absorb(skipped(row));
+        self.error.clone_from(&row.last_error);
+        self
     }
 }
 

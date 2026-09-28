@@ -23,9 +23,9 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 use crate::prelude::*;
 
 /// Open (or create) the comemory.db file at `path` and prepare it for
-/// use: WAL mode, busy_timeout=5000ms, foreign_keys=ON, sqlite-vec
-/// registered as an auto-extension, and all pending schema migrations
-/// applied.
+/// use: WAL mode, busy_timeout=5000ms, foreign_keys=ON, secure_delete=ON,
+/// sqlite-vec registered as an auto-extension, and all pending schema
+/// migrations applied.
 pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     ensure_sqlite_vec_registered()?;
     let path = path.as_ref();
@@ -46,6 +46,14 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     conn.pragma_update(None, "busy_timeout", 5000_i64)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
+    // Every delete zeroes what it frees (#256, B-5). A permanent erase can
+    // only scrub the rows it still finds; a cell or page an earlier ordinary
+    // write freed — a soft delete's FTS row, an update that moved a row —
+    // would otherwise keep the erased text in the file for good. The cost is
+    // accepted: every ordinary DELETE and page-freeing update also writes the
+    // zeros (extra write I/O, no extra reads), with no opt-out, because
+    // turning it on only for the erase cannot reach pages freed before it.
+    conn.pragma_update(None, "secure_delete", true)?;
     // Must precede migrate::run: bundled SQLite 3.46 resolves
     // `tokenize = 'identifier'` eagerly when FTS DDL is prepared.
     crate::store::tokenizer::ffi::register(&conn)?;

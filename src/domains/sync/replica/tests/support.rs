@@ -88,6 +88,46 @@ impl Home {
             .expect("load record");
         MemoryPayloadV1::from_record(&record).expect("payload")
     }
+
+    /// Soft-delete one memory through the production core (moves its
+    /// markdown into `.trash/`).
+    pub fn delete(&mut self, id: &str) {
+        let mut ctx = self.ctx();
+        memories::delete::run(&mut ctx, id).expect("delete");
+    }
+
+    /// Patch one memory's tags through the production core — a real
+    /// frontmatter-only edit, the shape a race against seeding must respect.
+    pub fn retag(&mut self, id: &str, tags: &[&str]) {
+        let mut ctx = self.ctx();
+        memories::update::run(
+            &mut ctx,
+            id,
+            memories::update::Request {
+                kind: None,
+                repo: None,
+                tags: Some(tags.iter().map(|t| (*t).to_string()).collect()),
+                quality: None,
+                body: None,
+                title: None,
+            },
+        )
+        .expect("retag");
+    }
+}
+
+/// Remove every journal row and cursor, leaving the memories and their trash
+/// — the state a database upgraded from before the journal is in. Shared by
+/// every seeding suite in this folder.
+pub fn forget_the_journal(home: &Home) {
+    home.conn
+        .execute_batch(
+            "DELETE FROM replica_feed; DELETE FROM replica_revision; \
+             DELETE FROM replica_payload; DELETE FROM replica_operation; \
+             DELETE FROM sqlite_sequence WHERE name = 'replica_feed'; \
+             DELETE FROM schema_meta WHERE key LIKE 'replica_%';",
+        )
+        .expect("clear journal");
 }
 
 impl Home {

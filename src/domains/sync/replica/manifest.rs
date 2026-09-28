@@ -12,12 +12,12 @@ use crate::domains::sync::exchange::manifest::bucket_digests;
 use crate::domains::sync::replica::activity_payload::{
     ACTIVITY_ENTITY_KIND, ACTIVITY_PAYLOAD_VERSION,
 };
-use crate::domains::sync::replica::bootstrap::{self, Progress};
+use crate::domains::sync::replica::bootstrap;
 use crate::domains::sync::replica::contract::PROTOCOL;
 use crate::domains::sync::replica::contract_views::{
     BootstrapStatus, KindManifest, ManifestResponse,
 };
-use crate::domains::sync::replica::event_capture;
+use crate::domains::sync::replica::{event_capture, seed_documents, seed_trash};
 use crate::prelude::*;
 use crate::store::replica_journal::stream_epoch;
 use crate::store::{needs_embedding, replica_read};
@@ -28,7 +28,21 @@ use crate::utilities::context::Ctx;
 /// # Errors
 /// Propagates SQLite failures.
 pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
-    let progress = merged(&bootstrap::advance(ctx)?, &event_capture::advance(ctx)?);
+    let memory = bootstrap::advance(ctx)?;
+    let trash = seed_trash::advance(ctx)?;
+    let documents = seed_documents::advance(ctx)?;
+    let verdicts = event_capture::advance(ctx)?;
+    let complete =
+        memory.complete() && trash.complete() && documents.complete() && verdicts.complete();
+    let state = merged_state(
+        complete,
+        [
+            memory.state != "pending",
+            trash.state != "pending",
+            documents.state != "pending",
+            verdicts.state != "pending",
+        ],
+    );
     let conn = ctx.conn()?;
     let stream = stream_epoch(conn)?;
     let head_sequence = replica_read::head(conn)?;
@@ -46,34 +60,23 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
         protocol: PROTOCOL.to_string(),
         stream_epoch: stream,
         head_sequence,
-        capabilities: if progress.complete() {
-            advertised()
-        } else {
-            Vec::new()
-        },
+        capabilities: if complete { advertised() } else { Vec::new() },
         entity_kinds,
-        bootstrap: BootstrapStatus {
-            state: progress.state,
-            seeded,
-        },
+        bootstrap: BootstrapStatus { state, seeded },
         needs_embedding: i64::try_from(needs_embedding::pending(conn)?.len()).unwrap_or(i64::MAX),
     })
 }
 
-/// One seeding state out of two walks, in the wire's three values: the memory
-/// bootstrap's own state until it completes, then `seeding` until the verdict
-/// backfill completes too. The capability waits for both.
-fn merged(memories: &Progress, verdicts: &Progress) -> Progress {
-    let state = if !memories.complete() {
-        memories.state.clone()
-    } else if verdicts.complete() {
+/// One seeding state out of the memory, trash, document and verdict walks,
+/// in the wire's three values: `pending` until any has started, `seeding`
+/// until every one of them reports complete, `complete` only then.
+fn merged_state(all_complete: bool, started: [bool; 4]) -> String {
+    if all_complete {
         bootstrap::STATE_COMPLETE.to_string()
-    } else {
+    } else if started.into_iter().any(|s| s) {
         "seeding".to_string()
-    };
-    Progress {
-        state,
-        through: memories.through.clone(),
+    } else {
+        "pending".to_string()
     }
 }
 

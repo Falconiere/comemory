@@ -97,10 +97,18 @@ rest**, and only the ten below are inherited:
   walk moved back into `project` where the manifest it belongs to is built, and
   the two edge sources became one `edges_of`, since "every edge the local index
   can state" is one idea.
-- `store/rebuild_copy_code.rs` (2 burned). Every copy here was
+- `store/rebuild_copy_code.rs` (3 burned). Every copy here was
   `if old_table_exists(…) { execute_batch(…) }`; the guard is now stated once
   in `copy_if_present`, and `copy_code_generations` no longer reports against
-  any of its neighbours.
+  any of its neighbours. #256 gave `copy_code_generations` a second
+  `copy_if_present` call and a pending-outbox probe to keep an owed staged
+  generation, which paired it with `copy_code_index_tables`'s own leftover
+  `if old_table_exists(…) { … execute_batch(…) }` guard — the one case in this
+  file `copy_if_present` had not reached, since its two probed columns had to
+  run before the guard could exist. `old_column_exists` already tolerates a
+  missing table (an empty `pragma_table_info` scan, not an error), so the
+  guard was redundant with the one inside `copy_if_present`; dropping it also
+  stopped `copy_code_index_tables` reporting against `copy_code_markers`.
 - `sync/replica/validate.rs` (1 burned, 1 inherited — **the inherited pair was
   burned in #253**). `payload_shape` and `code_payload_shape` ran the same three
   checks — payload-vs-tombstone, digest-covers-bytes, decode — before diverging,
@@ -346,7 +354,6 @@ fresh and does not depend on these line numbers.
 | `src/store/repo_marker.rs:94-96` function `last_head` | `src/store/repo_marker.rs:120-122` function `root_path` | 89.51% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
 | `src/store/retrieval_log.rs:147-158` function `prefix_matches` | `src/store/retrieval_log.rs:163-181` function `distinct_prefix_matches` | 89.37% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
 | `src/store/fts_memory.rs:40-58` function `search_memory` | `src/store/fts_memory.rs:106-120` function `search_memory_expanded` | 89.24% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
-| `src/store/rebuild_copy_code.rs:28-58` function `copy_code_index_tables` | `src/store/rebuild_copy_code.rs:92-129` function `copy_code_markers` | 89.17% | one `copy_*` helper per table group in the rebuild copy step, enumerated per group by design rather than generalized |
 | `src/store/indexed_files.rs:22-28` function `delete_for_repo` | `src/store/indexed_files.rs:48-58` function `list_for_repo` | 89.12% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
 | `src/store/documents.rs:83-100` function `get_document` | `src/store/documents.rs:108-111` function `delete_document` | 89.03% | parallel document fetch helpers over twin lookups |
 | `src/store/fts_memory.rs:63-73` function `search_memory_relaxed` | `src/store/fts_memory.rs:106-120` function `search_memory_expanded` | 89.02% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
@@ -587,7 +594,6 @@ fresh and does not depend on these line numbers.
 
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
-| `src/serve.rs:145-151` method `swap_conn` | `src/serve.rs:162-171` method `reload_cfg` | 88.13% | trivial parallel getter methods on `AppState` |
 | `src/serve.rs:194-196` method `repo` | `src/serve.rs:219-221` method `embed_cmd` | 87.31% | trivial parallel getter methods on `AppState` |
 
 ### `src/cli/`
@@ -722,6 +728,8 @@ to 266 as the MCP transport added three architecture tools.
 | `src/store/activity_rollups.rs:43-61` function `rollups` | `src/store/activity_rollups.rs:90-104` function `sample_durations` | 85.14% | the aggregate and the sample it draws from: different columns, different ordering, different decode |
 | `src/store/activity_rollups.rs:64-76` function `distinct_commands` | `src/store/activity_rollups.rs:90-104` function `sample_durations` | 86.81% | two projections over the same filtered window; the shared half is already `activity::apply_filter` |
 | `src/serve/routes/activity_stream.rs:151-172` function `stream` | `src/serve/routes/activity_stream.rs:200-212` function `emit` | 87.34% | short route adapters: the unfold step and the event it yields, one owning the loop and the other the encoding |
+| `src/domains/sync/drain/adopt_seeds.rs` function `advance` | `src/domains/sync/drain/adopt_seeds.rs` function `page` | 85.34% | the cursor-persisting loop and the one-page worker it calls; the same split `adopt.rs`'s `from_cursor`/`page` uses, just shorter, so the two short bodies read closer together than that pair's do |
+| `src/store/replica_outbox.rs` function `has_pending_for` | `src/store/replica_outbox.rs` function `has_any_for` | high | both are one-line callers of the shared `count_for` helper, differing only in the `Option<&str>` state filter they pass — the shared logic is already extracted; a tool comparing two near-identical call expressions cannot see that |
 
 ## Continuing the cleanup
 

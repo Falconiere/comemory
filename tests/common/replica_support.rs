@@ -324,6 +324,11 @@ pub fn interrupted_save(data_dir: &std::path::Path, body: &str) -> (String, std:
     let paths = comemory::config::Paths::new(data_dir);
     paths.ensure_dirs().expect("ensure_dirs");
     let conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    let guard = comemory::domains::memories::save_lock::acquire_within(
+        &paths,
+        std::time::Duration::from_secs(5),
+    )
+    .expect("guard");
     let store = MemoryStore::new(paths);
     let entity_key = id::memory_id(body);
     let planned = store.planned_path(body);
@@ -339,17 +344,20 @@ pub fn interrupted_save(data_dir: &std::path::Path, body: &str) -> (String, std:
     )
     .expect("record intent");
     store
-        .save(SaveParams {
-            body,
-            kind: Kind::Decision,
-            repo: "Falconiere/comemory",
-            tags: &["sync".to_string()],
-            author: "tester",
-            quality: 4,
-            relations: Relations::default(),
-            references: References::default(),
-            created: None,
-        })
+        .save(
+            &guard,
+            SaveParams {
+                body,
+                kind: Kind::Decision,
+                repo: "Falconiere/comemory",
+                tags: &["sync".to_string()],
+                author: "tester",
+                quality: 4,
+                relations: Relations::default(),
+                references: References::default(),
+                created: None,
+            },
+        )
         .expect("markdown lands");
     (entity_key, planned)
 }

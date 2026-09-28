@@ -84,6 +84,9 @@ mod edges_neighbors;
 pub mod edges_retrieval;
 /// f32 ↔ `vec0` BLOB encoding plus the per-table dim guards.
 pub mod embed;
+/// The rows a permanent erase removes, plus `secure_delete`, FTS5
+/// `optimize` and the truncating WAL checkpoint that make it stick (#256).
+pub mod erase_rows;
 /// `eval_runs` row insert + newest-first read — one row per `comemory
 /// eval`/`tune`/`bandit` run.
 pub mod eval_runs;
@@ -170,6 +173,9 @@ pub mod remote_document;
 /// The shared half of document search, and the reads a pulled hit resolves
 /// through.
 pub mod remote_document_view;
+/// Replace a live database's content in place through SQLite's online
+/// backup API — how a rebuild installs its new mirror without a rename.
+pub mod replace_in_place;
 /// `replica_binding` CRUD — what the upstream last held for each exchanged entity.
 pub mod replica_binding;
 /// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
@@ -194,6 +200,9 @@ pub mod replica_read;
 pub mod replica_receipt;
 /// Retention expiry and purge erasure of shared events' journal copies.
 pub mod replica_redaction;
+/// Redaction reach beyond `replica_payload`: a killed replay's scratch copy
+/// of the same bytes.
+pub mod replica_redaction_copies;
 /// `replica_replay` CRUD — a compacting replay's scratch rows.
 pub mod replica_replay;
 /// `replica_staged_part` row CRUD — parts of an oversized revision and their
@@ -270,6 +279,9 @@ pub mod sources;
 /// The corpus counters behind `comemory stats`: a generic scoped
 /// `COUNT(*)`, a table-wide `COUNT(*)`, and the logical database size.
 pub mod stats_counts;
+/// The record a failed migration leaves beside `comemory.db`, and the open
+/// that writes and clears it (#256, B-8).
+pub mod store_health;
 /// First-push workspace binding + `--allow-secret` overrides.
 pub mod sync_binding;
 /// Per-`(api_url, workspace)` exchange state: protocol, network, resume markers.

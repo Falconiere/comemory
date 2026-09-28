@@ -1,0 +1,1 @@
+ALTER TABLE "gc_runs" ADD COLUMN "staged_rows" INTEGER NOT NULL DEFAULT (0);

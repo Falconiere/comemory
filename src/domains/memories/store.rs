@@ -11,6 +11,7 @@ use time::OffsetDateTime;
 use crate::config::paths::Paths;
 use crate::domains::memories::frontmatter::{Frontmatter, Kind, References, Relations};
 use crate::domains::memories::id::memory_id;
+use crate::domains::memories::save_lock::SaveGuard;
 use crate::domains::memories::slug::slug_from_body;
 use crate::prelude::*;
 use crate::utilities::digest::sha256_hex;
@@ -151,7 +152,10 @@ impl MemoryStore {
     /// `memories::save` promises. The three replay rules — refuse a same-id
     /// different-body collision, carry the prior `created`, report
     /// `created: bool` — are the caller's, over [`MemoryStore::prior`].
-    pub fn save(&self, p: SaveParams<'_>) -> Result<MemoryRecord> {
+    ///
+    /// `guard` (#256, B-6) is compiler-checked proof the caller holds
+    /// `memory-save.lock`, so forgetting to acquire one is a compile error.
+    pub fn save(&self, guard: &SaveGuard, p: SaveParams<'_>) -> Result<MemoryRecord> {
         let body = p.body;
         let id = memory_id(body);
         let slug = slug_from_body(body);
@@ -178,7 +182,7 @@ impl MemoryStore {
         // A re-save of a deleted body brings its id back to life: the stale
         // `.trash/` copy would otherwise keep shadowing it in the trash
         // listing (and gc accounting) even though the memory is live again.
-        self.purge_trash_copy(&id);
+        self.purge_trash_copy(guard, &id);
 
         // Warm the cache so a follow-up `load` for the same id hits without
         // a `read_dir` scan.
@@ -216,7 +220,7 @@ impl MemoryStore {
     /// reference-refresh re-pin) keeps the same path — this never renames and
     /// never re-derives the id. A caller changing the *body* must go through
     /// `save` instead, which mints the new content-derived id.
-    pub fn rewrite(&self, record: &MemoryRecord) -> Result<()> {
+    pub fn rewrite(&self, _guard: &SaveGuard, record: &MemoryRecord) -> Result<()> {
         let tmp_path = self
             .paths
             .memories_dir()

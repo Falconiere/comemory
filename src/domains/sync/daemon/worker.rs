@@ -18,12 +18,13 @@ use tokio::sync::oneshot;
 
 use crate::config::{Config, Paths};
 use crate::domains::code::hooked_refresh::{self, RefreshStats};
-use crate::domains::sync::daemon::readiness::{PassSummary, StoreState, Trigger};
+use crate::domains::sync::daemon::readiness::{PassSummary, StoreState, Trigger, probe_store};
 use crate::domains::sync::daemon::state::State;
 use crate::domains::sync::drain::network;
 use crate::domains::sync::{AuthFile, auto, verify};
 use crate::prelude::*;
-use crate::store::{connection, readiness};
+use crate::store::connection;
+use crate::store::readiness::{self, StoreReadiness};
 
 /// File whose mtime is the last successful verify.
 pub const VERIFY_STAMP: &str = "sync-verify.last";
@@ -167,8 +168,9 @@ pub fn pass(paths: &Paths, trigger: Trigger, checkouts: &[PathBuf]) -> PassSumma
 fn run(paths: &Paths, checkouts: &[PathBuf], summary: &mut PassSummary) -> Result<()> {
     let cfg = load_config(paths)?;
     let _pass = auto::hold_pass_lock(paths)?;
-    summary.store = readiness::probe(&paths.db_path())?.into();
-    if summary.store != StoreState::Ready {
+    let ready = readiness::probe(&paths.db_path())? == StoreReadiness::Ready;
+    summary.store = probe_store(paths);
+    if !ready {
         return Ok(());
     }
     let mut conn = connection::open(paths.db_path())?;

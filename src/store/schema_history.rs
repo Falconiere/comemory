@@ -71,6 +71,11 @@ pub struct GcRuns {
     /// back as "evicted nothing" rather than as a missing column.
     #[column(not_null, default = "0")]
     pub activity_rows: Integer,
+    /// Abandoned staged parts and staged code generations the sweep removed
+    /// (`store::replica_sweep`). Defaulted so a sweep recorded before it was
+    /// persisted reads back as "swept nothing".
+    #[column(not_null, default = "0")]
+    pub staged_rows: Integer,
 }
 
 /// `activity_log`: one row per instrumented command run, whatever surface ran

@@ -112,6 +112,7 @@ fn spawn_tasks(
         queue: Arc::clone(&queue),
         shutdown: Arc::clone(&shutdown),
         reload: Arc::clone(&reload),
+        paths: paths.clone(),
     });
     tokio::spawn(server::serve(listener, ctx, rebind_rx));
     tokio::spawn(watchdog::tick(
@@ -197,7 +198,11 @@ pub fn apply_reload(paths: &Paths, state: &State, generation: &generation::Sende
     generation.send_modify(|g| *g = g.wrapping_add(1) % channel::STOP);
 }
 
-fn initial_readiness(paths: &Paths, canonical: &Path, socket: &Path) -> Result<Readiness> {
+pub(super) fn initial_readiness(
+    paths: &Paths,
+    canonical: &Path,
+    socket: &Path,
+) -> Result<Readiness> {
     let me = identity::BinaryIdentity::current()?;
     Ok(Readiness {
         protocol: PROTOCOL,
@@ -211,10 +216,7 @@ fn initial_readiness(paths: &Paths, canonical: &Path, socket: &Path) -> Result<R
         socket: socket.to_path_buf(),
         supervisor: crate::config::env::daemon_supervisor_override()
             .unwrap_or_else(|| "foreground".into()),
-        store: crate::store::readiness::probe(&paths.db_path()).map_or(
-            crate::domains::sync::daemon::readiness::StoreState::Error,
-            Into::into,
-        ),
+        store: crate::domains::sync::daemon::readiness::probe_store(paths),
         auth: auth_view(paths),
         sync: SyncView {
             last_verify_at: worker::last_verify(paths).map(|(_, at)| at),

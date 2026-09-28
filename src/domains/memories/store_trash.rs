@@ -7,10 +7,12 @@
 //! live-before-trash ordering in [`MemoryStore::find_in_trash`] is the rule
 //! that keeps a stale trash copy from being renamed over a live file.
 
+use std::ffi::OsString;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::domains::memories::frontmatter::Frontmatter;
+use crate::domains::memories::save_lock::SaveGuard;
 use crate::domains::memories::slug::slug_from_body;
 use crate::domains::memories::store::{
     MemoryRecord, MemoryStore, matches_prefix, stamp_deleted_now,
@@ -53,17 +55,9 @@ impl MemoryStore {
     /// # Errors
     /// Propagates the trash lookup, the rename, the read and the frontmatter
     /// parse.
-    pub fn restore(&self, id: &str) -> Result<MemoryRecord> {
+    pub fn restore(&self, _guard: &SaveGuard, id: &str) -> Result<MemoryRecord> {
         let trash_path = self.find_in_trash(id)?;
-        let file_name = trash_path
-            .file_name()
-            .ok_or_else(|| {
-                Error::Other(format!(
-                    "trashed memory path has no file name: {}",
-                    trash_path.display()
-                ))
-            })?
-            .to_owned();
+        let file_name = file_name_of(&trash_path)?;
         let live_path = self.paths.memories_dir().join(file_name);
         fs::rename(&trash_path, &live_path)?;
         // Warm the cache at the restored path — `delete` evicted it.
@@ -113,7 +107,7 @@ impl MemoryStore {
     /// Remove a leftover `.trash/` copy of `id` once the id is live again
     /// (a re-save of a deleted body). Best-effort: the live file is already
     /// the source of truth, so a failure is logged rather than propagated.
-    pub(super) fn purge_trash_copy(&self, id: &str) {
+    pub(super) fn purge_trash_copy(&self, _guard: &SaveGuard, id: &str) {
         let Some(stale) = self.trash_entry(id) else {
             return;
         };
@@ -132,18 +126,9 @@ impl MemoryStore {
 
     /// Soft-delete a memory by moving it into `memories/.trash/`. Returns the
     /// record as it existed before deletion.
-    pub fn delete(&self, id: &str) -> Result<MemoryRecord> {
+    pub fn delete(&self, _guard: &SaveGuard, id: &str) -> Result<MemoryRecord> {
         let rec = self.load(id)?;
-        let file_name = rec
-            .path
-            .file_name()
-            .ok_or_else(|| {
-                Error::Other(format!(
-                    "memory path has no file name: {}",
-                    rec.path.display()
-                ))
-            })?
-            .to_owned();
+        let file_name = file_name_of(&rec.path)?;
         let trash_dir = self.paths.trash_dir();
         fs::create_dir_all(&trash_dir)?;
         let trash_path = trash_dir.join(&file_name);
@@ -153,4 +138,13 @@ impl MemoryStore {
         self.id_to_path.borrow_mut().remove(id);
         Ok(rec)
     }
+}
+
+/// `path`'s file name, or [`Error::Other`] naming the path — shared by
+/// [`MemoryStore::delete`] and [`MemoryStore::restore`], the two moves that
+/// must keep a file's name across `memories/` and `.trash/`.
+fn file_name_of(path: &Path) -> Result<OsString> {
+    path.file_name()
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| Error::Other(format!("memory path has no file name: {}", path.display())))
 }

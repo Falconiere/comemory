@@ -14,6 +14,7 @@ use super::schema_replica::{
     ReplicaFeed, ReplicaPayload, ReplicaRevision, replica_feed as feed_col,
     replica_payload as payload_col, replica_revision as revision_col,
 };
+use super::schema_replica_device::{ReplicaDevice, replica_device as device_col};
 use super::{orm, schema_replica};
 use crate::prelude::*;
 
@@ -236,6 +237,38 @@ pub fn stream_epoch(conn: &Connection) -> Result<String> {
         |r| r.get(0),
     )?;
     epoch.ok_or_else(|| Error::Other("replica_stream has no epoch row".to_string()))
+}
+
+/// Give this database the stream identity its data directory holds: a new
+/// `epoch` minted at `at`, and the `device_id` every event it records
+/// carries (#256, B-4). A database replaced from a copy must never keep the
+/// epoch its peers' cursors were taken under, nor another machine's device.
+///
+/// # Errors
+/// Returns [`Error::Other`] when either single-row table has no row — the
+/// migration post-passes mint both — and propagates SQLite failures.
+pub fn set_identity(conn: &Connection, epoch: &str, device_id: &str, at: &str) -> Result<()> {
+    let streams = orm::execute(
+        conn,
+        schema_replica::ReplicaStream::update()
+            .set(&schema_replica::replica_stream::epoch, epoch)
+            .set(&schema_replica::replica_stream::created_at, at)
+            .filter(schema_replica::replica_stream::id.eq(1_i64))
+            .to_sql(),
+    )?;
+    let devices = orm::execute(
+        conn,
+        ReplicaDevice::update()
+            .set(&device_col::device_id, device_id)
+            .filter(device_col::id.eq(1_i64))
+            .to_sql(),
+    )?;
+    if streams == 0 || devices == 0 {
+        return Err(Error::Other(
+            "replica_stream or replica_device has no row to carry the identity".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

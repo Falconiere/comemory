@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::config::Paths;
 use crate::domains::sync::daemon::client::{self, Probe};
-use crate::domains::sync::daemon::readiness::Readiness;
+use crate::domains::sync::daemon::readiness::{Readiness, StoreState, probe_store};
 use crate::domains::sync::daemon::supervisor;
 use crate::prelude::*;
 
@@ -38,6 +38,11 @@ pub struct StatusView {
     pub supervisor: &'static str,
     /// Full readiness, when [`State::Running`].
     pub daemon: Option<Readiness>,
+    /// The store's health, probed by this process whatever the coordinator's
+    /// state ([`probe_store`]).
+    pub store: StoreState,
+    /// Whether [`Self::store`] needs no operator ([`StoreState::is_healthy`]).
+    pub healthy: bool,
 }
 
 /// Probe the coordinator for `paths`.
@@ -46,6 +51,8 @@ pub struct StatusView {
 /// Propagates only `supervisor::detect`'s config error (an unrecognized
 /// `COMEMORY_DAEMON_SUPERVISOR` override).
 pub fn view(paths: &Paths) -> Result<StatusView> {
+    let store = probe_store(paths);
+    let healthy = store.is_healthy();
     if crate::config::sync::daemon_disabled() {
         return Ok(StatusView {
             state: State::Disabled,
@@ -53,6 +60,8 @@ pub fn view(paths: &Paths) -> Result<StatusView> {
             version_matches: None,
             supervisor: supervisor::Kind::External.as_str(),
             daemon: None,
+            store,
+            healthy,
         });
     }
     let kind = supervisor::detect()?;
@@ -63,6 +72,8 @@ pub fn view(paths: &Paths) -> Result<StatusView> {
             version_matches: None,
             supervisor: kind.as_str(),
             daemon: None,
+            store,
+            healthy,
         });
     }
     match client::probe(paths, client::PROBE_BOUND) {
@@ -74,6 +85,8 @@ pub fn view(paths: &Paths) -> Result<StatusView> {
                 version_matches: Some(matches),
                 supervisor: kind.as_str(),
                 daemon: Some(*readiness),
+                store,
+                healthy,
             })
         }
         Probe::NotRunning(why) => Ok(StatusView {
@@ -82,6 +95,8 @@ pub fn view(paths: &Paths) -> Result<StatusView> {
             version_matches: None,
             supervisor: kind.as_str(),
             daemon: None,
+            store,
+            healthy,
         }),
         Probe::Stale(why) => Ok(StatusView {
             state: State::Stale,
@@ -89,6 +104,8 @@ pub fn view(paths: &Paths) -> Result<StatusView> {
             version_matches: None,
             supervisor: kind.as_str(),
             daemon: None,
+            store,
+            healthy,
         }),
     }
 }

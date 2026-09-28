@@ -279,6 +279,20 @@ impl Config {
                 "sync.push_on_save_timeout must be greater than zero (use sync.push_on_save = false to disable the inline push)".into(),
             ));
         }
+        let pause_wait = self.sync.pause_wait_duration().map_err(|e| {
+            Error::Config(format!(
+                "invalid sync.pause_wait={}: {e}",
+                self.sync.pause_wait
+            ))
+        })?;
+        // A zero bound would make a save fail `Error::Busy` on any momentary
+        // contention with a rebuild, and a rebuild fail the same way waiting
+        // for a writer to finish — neither side ever gets a real chance.
+        if pause_wait.is_zero() {
+            return Err(Error::Config(
+                "sync.pause_wait must be greater than zero".into(),
+            ));
+        }
         // `sync.allowlist_ttl` is deprecated and ignored, so its value is no
         // longer validated: rejecting a config over a key nothing reads would
         // block an upgrade for no gain.

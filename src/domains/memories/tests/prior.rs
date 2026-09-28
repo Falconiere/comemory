@@ -10,11 +10,17 @@
 //! a live file, its trash copy, a revived file, and an unparsable file.
 
 use comemory::config::paths::Paths;
-use comemory::domains::memories::{Kind, MemoryStore, Prior, SaveParams};
+use comemory::domains::memories::save_lock;
+use comemory::domains::memories::{Kind, MemoryStore, Prior, SaveGuard, SaveParams};
 
 use crate::test_common as common;
 
 const BODY: &str = "prior probe body";
+
+/// A `SaveGuard` over `paths`' `memory-save.lock`, free in a fresh sandbox.
+fn guard(paths: &Paths) -> SaveGuard {
+    save_lock::acquire_within(paths, std::time::Duration::from_secs(5)).unwrap()
+}
 
 #[test]
 fn prior_is_none_on_an_empty_store() {
@@ -39,9 +45,12 @@ fn prior_reports_a_live_file_then_its_trash_copy_then_the_revived_file() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let store = MemoryStore::new(paths);
+    let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
-    let rec = store.save(SaveParams::new(BODY, Kind::Note)).unwrap();
+    let rec = store
+        .save(&guard, SaveParams::new(BODY, Kind::Note))
+        .unwrap();
     let id = rec.frontmatter.id.clone();
     let expected = Prior {
         created: rec.frontmatter.created,
@@ -50,7 +59,7 @@ fn prior_reports_a_live_file_then_its_trash_copy_then_the_revived_file() {
     };
     assert_eq!(store.prior(&id).unwrap(), Some(expected.clone()));
 
-    store.delete(&id).unwrap();
+    store.delete(&guard, &id).unwrap();
     assert_eq!(
         store.prior(&id).unwrap(),
         Some(Prior {
@@ -65,10 +74,13 @@ fn prior_reports_a_live_file_then_its_trash_copy_then_the_revived_file() {
     assert_eq!(fresh.prior(&id).unwrap().map(|p| p.trashed), Some(true));
 
     let revived = store
-        .save(SaveParams {
-            created: Some(rec.frontmatter.created),
-            ..SaveParams::new(BODY, Kind::Note)
-        })
+        .save(
+            &guard,
+            SaveParams {
+                created: Some(rec.frontmatter.created),
+                ..SaveParams::new(BODY, Kind::Note)
+            },
+        )
         .unwrap();
     assert_eq!(revived.frontmatter.id, id);
     assert_eq!(store.prior(&id).unwrap(), Some(expected));
@@ -79,8 +91,11 @@ fn collides_with_is_true_only_for_a_different_hash() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let store = MemoryStore::new(paths);
-    let rec = store.save(SaveParams::new(BODY, Kind::Note)).unwrap();
+    let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
+    let rec = store
+        .save(&guard, SaveParams::new(BODY, Kind::Note))
+        .unwrap();
     let prior = store.prior(&rec.frontmatter.id).unwrap().unwrap();
 
     assert!(!prior.collides_with(&rec.frontmatter.content_hash));

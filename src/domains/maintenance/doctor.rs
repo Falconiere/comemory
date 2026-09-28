@@ -46,6 +46,7 @@ pub mod backup;
 /// The individual health probes making up [`Report::checks`], plus the
 /// [`checks::run_all`] pass that runs every one of them.
 pub mod checks;
+pub mod checks_replica;
 pub mod checks_vector;
 /// `GET /doctor/system`: the probe-free facts read (versions, paths, file
 /// counts, vector dims) — never runs the embed command.
@@ -134,7 +135,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Report> {
     let paths = ctx.paths;
     let embed_hint = ctx.cfg.embed_hint.clone();
     if !probe_writable(paths) {
-        return Ok(unwritable_report(paths, embed_hint));
+        return unwritable_report(paths, embed_hint);
     }
     match writable_report(ctx, embed_hint.clone()) {
         Ok(report) if report.schema_version != migrate::CURRENT_VERSION => {
@@ -218,7 +219,7 @@ fn assemble(core: CoreFields, extras: checks::Extras) -> Report {
 /// The partial report emitted when `comemory.db` is not writable — no
 /// connection was opened, so schema/vec fields report their "unknown"
 /// defaults rather than lying about a DB that was never probed.
-fn unwritable_report(paths: &Paths, embed_hint: Option<String>) -> Report {
+fn unwritable_report(paths: &Paths, embed_hint: Option<String>) -> Result<Report> {
     let core = CoreFields {
         data_dir: paths.data_dir().to_string_lossy().into_owned(),
         db_writable: false,
@@ -227,7 +228,7 @@ fn unwritable_report(paths: &Paths, embed_hint: Option<String>) -> Report {
         embed_hint,
         unknown_migration_keys: Vec::new(),
     };
-    assemble(core, checks::Extras::unwritable())
+    Ok(assemble(core, checks::Extras::unwritable(paths)?))
 }
 
 /// The full report, opening the connection (and, on a brand-new writable

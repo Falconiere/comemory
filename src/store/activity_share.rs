@@ -54,6 +54,26 @@ pub fn stamp_event_id(conn: &Connection, id: i64, event_id: &str) -> Result<()> 
     Ok(())
 }
 
+/// Blank the title a run's summary recorded for `memory_id` (a `save`
+/// summary carries the caller's title beside the id) — a permanent erase
+/// removes the memory's text, not the record that the run happened. The
+/// title becomes JSON `null`, the shape an untitled save records. A summary
+/// that is not JSON is skipped. Returns rows changed.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn scrub_titles(conn: &Connection, memory_id: &str) -> Result<u64> {
+    let changed = conn.execute(
+        "UPDATE activity_log SET summary = json_set(summary, '$.title', NULL) \
+          WHERE CASE WHEN json_valid(summary) \
+                     THEN json_extract(summary, '$.id') = ?1 \
+                          AND json_type(summary, '$.title') <> 'null' \
+                     ELSE 0 END",
+        [memory_id],
+    )?;
+    Ok(u64::try_from(changed).unwrap_or(0))
+}
+
 #[cfg(test)]
 #[path = "tests/activity_share.rs"]
 mod tests;

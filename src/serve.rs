@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
-use crate::store::{Connection, connection, repo_marker_roots};
+use crate::store::{Connection, repo_marker_roots, store_health};
 use crate::utilities::activity::Origin;
 
 pub mod envelope;
@@ -66,7 +66,7 @@ pub struct AppState {
     conn: Arc<Mutex<Connection>>,
     /// The data-dir layout this session was started with. `crate::utilities::context::Ctx`
     /// (`src/utilities/context.rs`) needs it for the commands whose middle touches
-    /// the filesystem directly (`rebuild`'s atomic swap, `ast`, …).
+    /// the filesystem directly (`rebuild`'s staged database, `ast`, …).
     paths: Arc<Paths>,
     roots: Arc<RootOverrides>,
     token: Arc<str>,
@@ -106,7 +106,9 @@ impl AppState {
     /// the result to [`router::build_router`], skipping the socket bind.
     pub fn new(paths: &Paths, opts: ServeOptions) -> Result<Self> {
         paths.ensure_dirs()?;
-        let conn = connection::open(paths.db_path())?;
+        // Through `open_recorded`, so a failed migration leaves the record
+        // `sync daemon status` and `doctor` report (#256, B-8).
+        let conn = store_health::open_recorded(&paths.db_path())?;
         let token = security::generate_token()?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -131,24 +133,6 @@ impl AppState {
         self.conn
             .lock()
             .map_err(|_| Error::Other("serve: database lock poisoned".into()))
-    }
-
-    /// Reopen `comemory.db` at `paths` and swap it into the shared
-    /// connection in place — called by the rebuild job right after it
-    /// renames a freshly built DB over the live path (§Concurrency "Rebuild
-    /// connection swap", AC-16). In-flight requests holding the OLD guard
-    /// finish on the old (now-unlinked) inode; every later
-    /// [`AppState::conn`] call sees the new DB.
-    ///
-    /// A reopen failure is propagated as-is and the mutex keeps the stale
-    /// connection: the server then serves stale reads until restart — it
-    /// never panics, never retries, and never poisons the lock.
-    pub(crate) fn swap_conn(&self, paths: &Paths) -> Result<()> {
-        // Open first, lock second: a failed open must leave the shared
-        // connection exactly as it was, still usable by later requests.
-        let fresh = connection::open(paths.db_path())?;
-        *self.conn()? = fresh;
-        Ok(())
     }
 
     /// Reload `config.toml` and swap it into the shared `cfg` slot — called

@@ -189,15 +189,35 @@ fn decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<PendingOperation> {
 /// # Errors
 /// Propagates SQLite failures.
 pub fn has_pending_for(conn: &Connection, entity_kind: &str, entity_key: &str) -> Result<bool> {
-    let count: i64 = orm::query_one(
-        conn,
-        ReplicaOperation::select()
-            .filter(col::state.eq("pending"))
-            .filter(col::entity_kind.eq(entity_kind))
-            .filter(col::entity_key.eq(entity_key))
-            .to_count_sql(),
-        |r| r.get(0),
-    )?;
+    count_for(conn, entity_kind, entity_key, Some("pending"))
+}
+
+/// Whether the outbox holds any row for this entity, in any state — unlike
+/// [`has_pending_for`], which only counts `pending`. Adoption uses this: an
+/// entity with a `rejected` or already-`accepted` row still has one, and
+/// must not be adopted a second time under a different operation id.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn has_any_for(conn: &Connection, entity_kind: &str, entity_key: &str) -> Result<bool> {
+    count_for(conn, entity_kind, entity_key, None)
+}
+
+/// Rows for one entity, optionally narrowed to `state`, as `> 0`.
+fn count_for(
+    conn: &Connection,
+    entity_kind: &str,
+    entity_key: &str,
+    state: Option<&str>,
+) -> Result<bool> {
+    let query = ReplicaOperation::select()
+        .filter(col::entity_kind.eq(entity_kind))
+        .filter(col::entity_key.eq(entity_key));
+    let query = match state {
+        Some(state) => query.filter(col::state.eq(state)),
+        None => query,
+    };
+    let count: i64 = orm::query_one(conn, query.to_count_sql(), |r| r.get(0))?;
     Ok(count > 0)
 }
 

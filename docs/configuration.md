@@ -106,6 +106,13 @@ table.
 
 Set these in `config.toml`; they have **no** environment override.
 
+Every `sync.*` duration (`daemon_interval`, `verify_every`,
+`push_on_save_timeout`, `pause_wait`, `request_timeout`, `pass_budget`) is a
+number followed by exactly one unit — `ms`, `s`, `m`, `h` or `d`,
+case-insensitive (`500ms`, `5s`, `2m`, `1h`, `7d`). Any other suffix (`5sec`,
+`5min`, `5 s`) is refused with a config error rather than read by its first
+letter.
+
 | Knob | Purpose | Default |
 |------|---------|---------|
 | `prune.trash_retention_days` | Days a soft-deleted memory stays in `memories/.trash/` before `comemory gc` reaps it. Must be ≥ 1. Editable live through `PUT /api/v1/gc/policy`. | `30` |
@@ -125,6 +132,7 @@ Set these in `config.toml`; they have **no** environment override.
 | `sync.skip_repos` | Globs over the trimmed, lowercased local `repo` label; a match keeps that memory and code index local in addition to the platform's repository approval policy. An invalid glob fails at config load. | `[]` |
 | `sync.code_index` | Push the code index of every indexed repo alongside memories: file paths and blob OIDs, symbol names with kinds and line ranges, the `imports` and `co_changed` edges — never source text. On by default so the console's code graph fills in right after `comemory auth login`; `false` keeps every index on this machine. Env: `COMEMORY_SYNC_CODE_INDEX`. | `true` |
 | `sync.allowlist_ttl`, `sync.repos`, `sync.default_workspace` | **Deprecated, parsed and ignored**, each with a warning naming it. Kept declared for one release because `[sync]` is `deny_unknown_fields`, so deleting them outright would stop every existing `config.toml` that sets them from loading at all. Remove them. | — |
+| `sync.pause_wait` | How long a markdown write (`save`, `update`, `delete`, `restore`, a sync import or pull) waits for `memory-save.lock` — held by another writer, or by an in-place `comemory rebuild` pausing writers — before failing `Error::Busy` (HTTP `503 busy`, CLI exit 75). Validated `> 0`. Env: `COMEMORY_SYNC_PAUSE_WAIT`. | `"5s"` |
 | `embed.model` | Model id recorded for sync vector import compatibility. | `""` |
 
 ## Vector dimensions (not configurable)

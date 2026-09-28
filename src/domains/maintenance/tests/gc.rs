@@ -564,6 +564,28 @@ fn gc_sweeps_abandoned_uploads_and_spares_the_active_generation() {
     );
 }
 
+#[test]
+fn gc_persists_the_staged_rows_it_swept_with_its_run() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    seed_replica_debris(&home);
+    let cfg = Config::defaults();
+
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let resp = maintenance::gc::run(&mut ctx, maintenance::gc::Request {}).expect("gc run");
+
+    let conn = comemory::store::connection::open(db_path(&home)).expect("open db");
+    let last = comemory::store::gc_runs::newest(&conn)
+        .expect("newest")
+        .expect("the sweep recorded its run");
+    assert_eq!(resp.staged_rows, 2, "the fixture's two abandoned rows");
+    assert_eq!(
+        last.staged_rows, resp.staged_rows,
+        "the run history keeps what the sweep reported"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // AC-13: `gc` leaves the pulled document cache and the share mapping alone,
 // while still doing the sweeping it exists for. Both halves are asserted, or

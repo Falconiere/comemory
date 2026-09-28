@@ -90,6 +90,12 @@ fn classify_covers_every_unguarded_variant() {
             "unsupported",
             Class::NotImplemented,
         ),
+        (Error::Busy("x".into()), "busy", Class::Unavailable),
+        (
+            Error::RestoreUnverified("x".into()),
+            "restore_unverified",
+            Class::Unavailable,
+        ),
         // Every variant with no explicit code word falls to `internal` /
         // `Class::Internal` rather than to a wildcard arm the compiler could
         // silently accept for a future variant.

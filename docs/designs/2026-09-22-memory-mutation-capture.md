@@ -145,3 +145,17 @@ console and HTTP writes would otherwise freeze every client edit of the same
 memory. A client's own pull never applies a peer's entry over an owed edit
 either — it holds it `pending_local`
 ([the exchange client](2026-09-24-replica-exchange-client.md)).
+
+## Changed by #256
+
+Every `MemoryStore` write — `save`, `rewrite`, the move to and from
+`.trash/` — now takes a `&SaveGuard` the compiler enforces: only
+`memories::save_lock::acquire_within` can construct one, over
+`memory-save.lock`, bounded by `[sync] pause_wait`. A write that can't
+acquire it fails `Error::Busy` (`503 busy`) rather than racing a
+`comemory rebuild` or `backup restore` in progress. Separately, a memory's
+own erased digest becomes a hard barrier: `comemory erase --memory` removes
+its mirror row and every derived row while keeping its feed position,
+revision and receipts, so a replay of the original write and a peer's
+restore both answer `payload_erased` instead of recreating it. See
+[replica state recovery](2026-09-25-replica-state-recovery.md).

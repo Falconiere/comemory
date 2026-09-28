@@ -107,11 +107,14 @@ impl Extras {
     /// Degraded extras for `super::unwritable_report` — no connection was
     /// ever opened, so only the failing "data dir writable" check is real;
     /// every DB-derived field reports its zero/`None` default.
-    pub(crate) fn unwritable() -> Self {
-        Self {
-            checks: vec![data_dir_writable(false)],
+    pub(crate) fn unwritable(paths: &Paths) -> Result<Self> {
+        Ok(Self {
+            checks: vec![
+                data_dir_writable(false),
+                super::checks_replica::store_health(paths, None)?,
+            ],
             ..Self::default()
-        }
+        })
     }
 }
 
@@ -147,6 +150,8 @@ pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) ->
 
     checks.push(super::checks_vector::needs_embedding_check(conn)?);
     checks.push(sync_daemon_check(paths));
+    checks.push(super::checks_replica::store_health(paths, Some(conn))?);
+    checks.push(super::checks_replica::replica_identity(paths)?);
 
     Ok(Extras {
         checks,

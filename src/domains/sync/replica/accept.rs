@@ -142,6 +142,18 @@ pub(crate) fn replayed(
         }));
     }
     let disposition = if receipt.disposition == Disposition::Accepted.as_str() {
+        // An acceptance whose bytes were since permanently erased replays as
+        // the barrier, not as "already applied" (#256, B-5): the erasure is
+        // what the peer must learn, and nothing is materialized either way.
+        if erased(conn, receipt.payload_digest.as_deref())? {
+            return Ok(Some(OperationResult {
+                operation_id: operation.operation_id.clone(),
+                disposition: Disposition::PayloadErased,
+                sequence: None,
+                payload_digest: receipt.payload_digest,
+                reason: validate::reason(Disposition::PayloadErased),
+            }));
+        }
         Disposition::Duplicate
     } else {
         // A refusal replays as the same refusal: the peer must see the
@@ -155,6 +167,15 @@ pub(crate) fn replayed(
         payload_digest: receipt.payload_digest,
         reason: receipt.reason,
     }))
+}
+
+/// Whether `digest`'s bytes were permanently erased here.
+fn erased(conn: &Connection, digest: Option<&str>) -> Result<bool> {
+    let Some(digest) = digest else {
+        return Ok(false);
+    };
+    Ok(crate::store::replica_redaction::redaction_of(conn, digest)?
+        == Some(crate::store::replica_read::Redaction::Erased))
 }
 
 /// Persist a refusal so a replay reads the same answer, and return it.

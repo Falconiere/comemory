@@ -30,11 +30,10 @@ pub struct SharedRepo {
     pub activated_at: Option<String>,
 }
 
-/// Every repo whose active generation came from a peer, ascending by label.
-///
-/// A repo whose active generation this machine built is NOT listed: locally
-/// built state is already the inventory's own subject, and listing it twice
-/// would report one repo as two.
+/// Every repo whose active generation came from a peer, ascending by label —
+/// never one this machine built itself — and, once a policy is loaded, never
+/// a repo `repository_approval` currently withholds (hidden, not deleted;
+/// #256 B-7). A hub or bare `serve` has no snapshot and lists every share.
 ///
 /// # Errors
 /// Propagates SQLite failures.
@@ -43,6 +42,8 @@ pub fn shared_repos(conn: &Connection) -> Result<Vec<SharedRepo>> {
         "SELECT repo, generation_id, head, mined_commit, file_count, activated_at \
            FROM code_generation \
           WHERE state = 'active' AND origin = 'sync' \
+            AND (NOT EXISTS (SELECT 1 FROM sync_policy_snapshot) \
+                 OR repo IN (SELECT canonical FROM repository_approval)) \
           ORDER BY repo",
     )?;
     let rows = statement
@@ -99,19 +100,11 @@ pub fn shared_edges(conn: &Connection, repo: Option<&str>) -> Result<Vec<GraphEd
 }
 
 /// The shared half of the code graph: every ACTIVE generation's edges, keyed
-/// like a local edge (`file:<repo>:<path>`).
-///
-/// An edge the local index already states is left out, so a file pair both
-/// sides know appears once carrying the local weight. That is the precedence
-/// rule, expressed where it cannot be forgotten: both the direct read above
-/// and the paginated window in [`super::code_graph_edges::fetch_page`] select
-/// from this one definition.
-///
-/// The `NOT EXISTS` binds both node kinds to `'file'` — which every edge
-/// between two files carries — so the probe is a full primary-key lookup
-/// (`src_kind, src_id, dst_kind, dst_id, rel`) rather than a scan of `edges`
-/// for every shared row. It is also the narrower comparison: the shared side
-/// describes file pairs, so a memory edge was never a duplicate of one.
+/// like a local edge (`file:<repo>:<path>`), gated by policy exactly as
+/// [`shared_repos`] is, and with a local edge for the same pair left out so
+/// the pair appears once, at the local weight. Both the direct read above and
+/// the paginated window in [`super::code_graph_edges::fetch_page`] select
+/// from this one definition, so neither can disagree with the other.
 pub(crate) const SHARED_EDGES: &str = "SELECT \
          'file:' || e.repo || ':' || e.src_path AS src_id, \
          'file:' || e.repo || ':' || e.dst_path AS dst_id, \
@@ -120,6 +113,8 @@ pub(crate) const SHARED_EDGES: &str = "SELECT \
        JOIN code_generation g \
          ON g.repo = e.repo AND g.generation_id = e.generation_id \
       WHERE g.state = 'active' \
+        AND (NOT EXISTS (SELECT 1 FROM sync_policy_snapshot) \
+             OR e.repo IN (SELECT canonical FROM repository_approval)) \
         AND NOT EXISTS (SELECT 1 FROM edges l \
                          WHERE l.src_kind = 'file' \
                            AND l.src_id = 'file:' || e.repo || ':' || e.src_path \

@@ -8,10 +8,16 @@
 //! Test mirror for `src/domains/maintenance/retention/orphans.rs` — trashed-file orphan detection.
 
 use comemory::config::paths::Paths;
+use comemory::domains::memories::save_lock;
 use comemory::memory::{Kind, MemoryStore, SaveParams};
 use comemory::prune::orphans;
 
 use crate::test_common as common;
+
+/// A `SaveGuard` over `paths`' `memory-save.lock`, free in a fresh sandbox.
+fn guard(paths: &Paths) -> comemory::domains::memories::SaveGuard {
+    save_lock::acquire_within(paths, std::time::Duration::from_secs(5)).unwrap()
+}
 
 #[test]
 fn no_orphans_on_fresh_dir() {
@@ -27,15 +33,19 @@ fn trashed_memory_shows_up_as_orphan() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
 
     let rec = store
-        .save(SaveParams {
-            repo: "r",
-            author: "a",
-            ..SaveParams::new("to be trashed", Kind::Note)
-        })
+        .save(
+            &guard,
+            SaveParams {
+                repo: "r",
+                author: "a",
+                ..SaveParams::new("to be trashed", Kind::Note)
+            },
+        )
         .unwrap();
-    let _ = store.delete(&rec.frontmatter.id).unwrap();
+    let _ = store.delete(&guard, &rec.frontmatter.id).unwrap();
 
     let orphan_ids = orphans::detect(&paths).unwrap();
     assert_eq!(
@@ -51,12 +61,16 @@ fn live_memory_does_not_appear_as_orphan() {
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
+    let guard = guard(&paths);
     let _ = store
-        .save(SaveParams {
-            repo: "r",
-            author: "a",
-            ..SaveParams::new("still alive", Kind::Note)
-        })
+        .save(
+            &guard,
+            SaveParams {
+                repo: "r",
+                author: "a",
+                ..SaveParams::new("still alive", Kind::Note)
+            },
+        )
         .unwrap();
 
     // No trash entries exist — orphans must be empty.

@@ -72,6 +72,16 @@ impl McpHome {
         }
     }
 
+    /// A server over an existing data dir this handle does not own — one a
+    /// real `comemory serve` already runs on (#256's writer-pause journey).
+    pub async fn open(data_dir: &Path, cwd: &Path, extra_args: &[&str]) -> Self {
+        Self {
+            root: None,
+            data_dir: data_dir.to_path_buf(),
+            client: connect(data_dir, cwd, extra_args).await,
+        }
+    }
+
     /// `<temp>/.comemory` — the server's `COMEMORY_DATA_DIR`.
     pub fn data_dir(&self) -> &Path {
         &self.data_dir

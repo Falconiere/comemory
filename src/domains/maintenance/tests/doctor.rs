@@ -245,3 +245,62 @@ fn run_warns_with_a_remedy_when_memories_are_stored_without_a_usable_vector() {
         "and the route that drains it is offered"
     );
 }
+
+fn check_named<'a>(
+    report: &'a maintenance::doctor::Report,
+    name: &str,
+) -> &'a maintenance::doctor::checks::Check {
+    report
+        .checks
+        .iter()
+        .find(|c| c.name == name)
+        .unwrap_or_else(|| panic!("no `{name}` check in {:?}", report.checks))
+}
+
+#[test]
+fn run_reports_the_store_health_and_the_replica_identity() {
+    use comemory::domains::sync::replica::{identity, restore_state};
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    let cfg = Config::defaults();
+    let doctor = || {
+        maintenance::doctor::run(
+            &mut Ctx::lazy(&paths, &cfg),
+            maintenance::doctor::Request {},
+        )
+        .expect("doctor run")
+    };
+
+    let healthy = doctor();
+    assert_eq!(check_named(&healthy, "store health").status, "ok");
+    assert_eq!(check_named(&healthy, "replica identity").status, "ok");
+
+    let conn = comemory::store::connection::open(paths.db_path()).expect("open");
+    restore_state::set(&conn, restore_state::State::ErasureUnknown).expect("set state");
+    std::fs::create_dir_all(paths.data_dir().join(identity::DIR)).expect("replica dir");
+    std::fs::write(
+        identity::file(&paths, identity::IDENTITY_FILE),
+        serde_json::to_vec(&serde_json::json!({
+            "v": 1,
+            "epoch": "e-doctor",
+            "device_id": "d-doctor",
+            "epochs": [{ "epoch": "e-doctor", "since": "2026-09-27T00:00:00Z", "reason": "created" }],
+            "erasures": 2,
+        }))
+        .expect("json"),
+    )
+    .expect("identity");
+
+    let unverified = doctor();
+    let store = check_named(&unverified, "store health");
+    assert_eq!(store.status, "fail", "{store:?}");
+    assert!(store.detail.contains("erasure_unknown"), "{store:?}");
+    let replica = check_named(&unverified, "replica identity");
+    assert_eq!(
+        replica.status, "warn",
+        "a missing manifest the identity counts: {replica:?}"
+    );
+    assert!(replica.detail.contains("e-doctor"), "{replica:?}");
+}
