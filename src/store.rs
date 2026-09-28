@@ -161,6 +161,8 @@ pub mod rebuild_copy_learning;
 /// Rebuild preservation copy: `feedback_events`, `query_expansions`,
 /// `bandit_arms`.
 pub mod rebuild_copy_learning_events;
+/// Rebuild preservation copy: the fourteen project tables, parents first.
+pub mod rebuild_copy_projects;
 /// The three pulled-projection tables a peer's code generation writes:
 /// its manifest, its snippet-free symbols and its graph edges.
 pub mod remote_code;
@@ -262,6 +264,17 @@ pub mod schema_memory;
 /// `vector`'s dim guards, plus the generic keyed `get`/`upsert` behind
 /// `cli::lazy_reindex`'s debounce marker.
 pub mod schema_meta;
+/// Declared project records: `project_plan_proposals`, `project_approvals`,
+/// `project_evidence`, `project_evidence_criteria`, `project_activity_events`,
+/// `project_command_receipts`.
+pub mod schema_project_record;
+/// Declared project work graph: `project_work_items`,
+/// `project_work_item_dependencies`, `project_executions`,
+/// `project_work_packets`.
+pub mod schema_project_work;
+/// Declared project charter tables and `PROJECT_TABLES`, the leaf-first
+/// registry of all fourteen project-owned tables.
+pub mod schema_projects;
 /// Declared `replica-v1` journal tables: `replica_stream`, `replica_payload`,
 /// `replica_feed`, `replica_revision`, `replica_operation`, `replica_receipt`,
 /// `replica_cursor`, `replica_staged_part`.

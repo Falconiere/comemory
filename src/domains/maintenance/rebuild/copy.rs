@@ -113,6 +113,23 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "replica_pull_hold",
     "replica_binding",
     "replica_replay",
+    // Operator-authored project state (#325): charters, plans, evidence,
+    // activity and receipts exist nowhere but this database. Listed parents
+    // first, the order `rebuild_copy_projects` copies them in.
+    "projects",
+    "project_repositories",
+    "project_command_receipts",
+    "project_activity_events",
+    "project_plan_proposals",
+    "project_approvals",
+    "project_milestones",
+    "project_work_items",
+    "project_work_item_dependencies",
+    "project_criteria",
+    "project_executions",
+    "project_work_packets",
+    "project_evidence",
+    "project_evidence_criteria",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.

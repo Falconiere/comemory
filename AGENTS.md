@@ -42,9 +42,11 @@ file (`comemory.db`) backs FTS5 + `sqlite-vec` + edges.
   `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
   tables and — when candidate capture is enabled — the three
   candidate-observation tables `candidate_query_observations`,
-  `candidate_observations` and `candidate_judgments` (#209).
+  `candidate_observations` and `candidate_judgments` (#209), and the
+  fourteen project tables (`projects`, `project_work_items`, … — #325,
+  registered leaf first in `store::schema_projects::PROJECT_TABLES`).
   `rusqlite 0.40` with `bundled` + `load_extension` features.
-- **Declared schema (toolu-orm 0.10):** every table in `comemory.db` is a
+- **Declared schema (toolu-orm 0.12):** every table in `comemory.db` is a
   `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct in
   `src/store/schema_*.rs`, assembled by `store::schema::registry()`.
   `just migration <name>` diffs the structs against

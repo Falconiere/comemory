@@ -13,14 +13,30 @@
 use std::io::Write as _;
 
 use assert_cmd::Command;
+use tempfile::TempDir;
+
+/// `comemory` pointed at a throwaway data directory. `ast` opens the store
+/// (activity is recorded at the command core), so a bare invocation would
+/// open — and on a branch that adds a migration, migrate — the developer's
+/// real `~/.comemory`.
+fn comemory(home: &TempDir) -> Command {
+    let mut cmd = Command::cargo_bin("comemory").expect("cargo_bin comemory");
+    cmd.env("COMEMORY_DATA_DIR", home.path())
+        .env("HOME", home.path());
+    cmd
+}
+
+fn home() -> TempDir {
+    tempfile::tempdir().expect("home")
+}
 
 #[test]
 fn ast_rejects_unsupported_lang() {
     // `--file` is required by clap so we point at a non-existent path; the
     // `--lang` guard must fire before any file IO so the test stays hermetic.
     let bogus_file = std::env::temp_dir().join("comemory-ast-lang-guard.rs");
-    let assertion = Command::cargo_bin("comemory")
-        .expect("cargo_bin comemory")
+    let home = home();
+    let assertion = comemory(&home)
         .args(["ast", "pattern", "--lang", "ruby", "--file"])
         .arg(&bogus_file)
         .assert()
@@ -45,7 +61,8 @@ fn spawn_fixture(tag: &str, n: usize) -> std::path::PathBuf {
 }
 
 fn run_ast_json(file: &std::path::Path, extra: &[&str]) -> serde_json::Value {
-    let mut cmd = Command::cargo_bin("comemory").expect("cargo_bin comemory");
+    let home = home();
+    let mut cmd = comemory(&home);
     cmd.args(["ast", "tokio::spawn($$$)", "--lang", "rs", "--file"])
         .arg(file)
         .arg("--json")
@@ -107,8 +124,8 @@ fn ast_json_limit_zero_returns_all() {
 #[test]
 fn ast_tty_prints_pagination_footer() {
     let file = spawn_fixture("tty", 3);
-    let out = Command::cargo_bin("comemory")
-        .expect("cargo_bin comemory")
+    let home = home();
+    let out = comemory(&home)
         .args(["ast", "tokio::spawn($$$)", "--lang", "rs", "--file"])
         .arg(&file)
         .assert()

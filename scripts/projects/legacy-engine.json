@@ -1,0 +1,20 @@
+{
+  "version": "0.52.0",
+  "tag": "v0.52.0",
+  "why": "The last release whose migrations end before 0031_projects: #325's upgrade suite writes a real pre-projects data directory with it.",
+  "base_url": "https://github.com/Falconiere/comemory/releases/download",
+  "assets": {
+    "aarch64-apple-darwin": {
+      "file": "comemory-aarch64-apple-darwin.tar.xz",
+      "sha256": "24b5c0fd826ed77893389bc72792a2ca4721d770232b21ecbfe612b481d76730"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "file": "comemory-x86_64-unknown-linux-gnu.tar.xz",
+      "sha256": "224496097b5e23184c2c3863c3eb39eaacc9b27707d038371d6235062ee9c897"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "file": "comemory-aarch64-unknown-linux-gnu.tar.xz",
+      "sha256": "ca17d42cef2dcbf04824e3054c3a8d876e913d04a43de6fa833892c40c85ab0d"
+    }
+  }
+}

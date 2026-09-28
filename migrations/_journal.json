@@ -180,6 +180,12 @@
       "name": "0030_restore_unverified_network_state.sql",
       "hash": "sha256:5baf82d53ac0119cbd34b217c8eda95acc0533bed8da293aa943387ca1cb88e1",
       "created_at": 1790387053
+    },
+    {
+      "idx": 30,
+      "name": "0031_projects.sql",
+      "hash": "sha256:43496a9188885f1f4f51cd0f3f3ddc0d1e676b33cc965707a091b472741218e9",
+      "created_at": 1790624111
     }
   ]
 }

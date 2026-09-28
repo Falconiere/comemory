@@ -27,6 +27,7 @@ use super::schema_memory::{
     Memories, MemoryFts, MemoryNeedsEmbedding, MemorySubstring, MemoryTags, MemoryVec,
     MemoryWriteIntent,
 };
+use super::schema_projects;
 use super::schema_replica::{
     ReplicaCursor, ReplicaFeed, ReplicaOperation, ReplicaPayload, ReplicaReceipt, ReplicaRevision,
     ReplicaStagedPart, ReplicaStream,
@@ -69,6 +70,20 @@ pub const DECLARED_TABLES: &[&str] = &[
     "memory_tags",
     "memory_vec",
     "memory_write_intent",
+    "project_activity_events",
+    "project_approvals",
+    "project_command_receipts",
+    "project_criteria",
+    "project_evidence",
+    "project_evidence_criteria",
+    "project_executions",
+    "project_milestones",
+    "project_plan_proposals",
+    "project_repositories",
+    "project_work_item_dependencies",
+    "project_work_items",
+    "project_work_packets",
+    "projects",
     "query_expansions",
     "remote_code_edge",
     "remote_code_file",
@@ -107,7 +122,7 @@ pub const DECLARED_TABLES: &[&str] = &[
 /// `SchemaRegistry::from_tables`.
 #[must_use]
 pub fn registry() -> SchemaRegistry {
-    SchemaRegistry::from_tables(vec![
+    let mut tables = vec![
         ActivityLog::table_def(),
         BanditArms::table_def(),
         CandidateJudgments::table_def(),
@@ -170,7 +185,9 @@ pub fn registry() -> SchemaRegistry {
         SyncLog::table_def(),
         SyncPolicySnapshot::table_def(),
         SyncState::table_def(),
-    ])
+    ];
+    tables.extend(schema_projects::table_defs());
+    SchemaRegistry::from_tables(tables)
 }
 
 #[cfg(test)]

@@ -122,6 +122,7 @@ migrations stay idempotent.
 | `edge_fts` (FTS5) | Derived triplet index over `edges`: each row rendered as searchable `src —rel→ dst` text with the raw edge carried in UNINDEXED payload columns. Refresh-materialized (§5.3), never written incrementally |
 | `retrieval_log`, `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated memory + code-symbol feedback counters, mined expansions, indexing markers (incl. the v7 `repo_marker.root_path` working-tree root used by `serve` to resolve `file:<repo>:<path>` ids back to disk) |
 | `activity_log` | One row per instrumented command run (`save`, `search`, `find`, `feedback`, `sync.import`, `index-code`, …), whatever surface ran it: command, `source` (`cli`/`http`/`mcp`), the caller's self-declared `actor`, duration, outcome and a bounded JSON summary. Written best-effort at the command core (`utilities::activity::record`) and read by `GET /api/v1/activity` and its SSE twin; aged out by `gc` under `prune.learning_retention_days`. Since v26 a shared run carries a stable `event_id`, and an imported one the `device` that ran it |
+| `projects` and the thirteen `project_*` tables | The engine-owned project capability (v31, #325), ported from the platform's project schema: charter (`projects`, `project_repositories`, `project_milestones`, `project_criteria`), work graph (`project_work_items`, `project_work_item_dependencies`, `project_executions`, `project_work_packets`) and records (`project_plan_proposals`, `project_approvals`, `project_evidence`, `project_evidence_criteria`, `project_activity_events`, `project_command_receipts`). Composite `(id, project_id)` foreign keys keep every child inside its project; `store::schema_projects::PROJECT_TABLES` lists them leaf first: the rebuild copy walks it today, and hard deletion (#320) and transfer (#342) will walk it too |
 | `replica_device` | This database's device id (v26): the origin every shared verdict and activity event carries, minted once at migration and kept by `rebuild`. `feedback_events` gains `event_id`, `device`, `surface` and `actor`, and `replica_payload.redaction` records whether a blanked payload was `erased` (purge) or `expired` (retention) — see [feedback and activity replication](designs/2026-09-24-feedback-activity-replication.md) |
 
 Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
@@ -202,7 +203,7 @@ schema changes are always a new, appended, numbered file.
 
 Since v0.29 the schema is *declared*, not only migrated: every table in
 `comemory.db` is a `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct
-under `src/store/schema_*.rs` (toolu-orm 0.10), and
+under `src/store/schema_*.rs` (toolu-orm 0.12), and
 `store::schema::registry()` assembles them into a `SchemaRegistry`.
 `examples/migrations.rs` (`just migration <name>`) diffs that registry
 against `migrations/<newest>.snapshot.json` and, when something changed,
@@ -230,7 +231,7 @@ expects nothing. See [Schema migrations](guides/schema-migrations.md).
 Runtime queries also use the declared table builders. The private
 `store::orm` bridge executes generated SQL and bound values on the existing
 connection, preserving native errors, owned results, statement caching, and
-caller-owned transactions. Complex queries that toolu-orm 0.10 cannot express
+caller-owned transactions. Complex queries that toolu-orm 0.12 cannot express
 remain in the store, with upstream issues in the
 [runtime query inventory](guides/runtime-orm.md). Scoped statistics accept
 `stats_counts::Corpus` instead of a table/predicate SQL pair. Schema snapshots,
