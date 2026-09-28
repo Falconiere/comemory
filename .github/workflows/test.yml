@@ -275,6 +275,8 @@ jobs:
   release-formula:
     if: ${{ !github.event.pull_request.draft && !startsWith(github.head_ref, 'release-plz-') }}
     runs-on: ubuntu-22.04
+    # One real release step (brew update + style) takes about a minute.
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
       TAP_REFS: "main"
