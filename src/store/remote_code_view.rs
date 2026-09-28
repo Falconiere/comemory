@@ -70,24 +70,19 @@ pub fn shared_repos(conn: &Connection) -> Result<Vec<SharedRepo>> {
 /// # Errors
 /// Propagates SQLite failures.
 pub fn shared_symbol_count(conn: &Connection, repo: Option<&str>) -> Result<u64> {
-    let scope = if repo.is_some() {
-        " AND s.repo = ?1"
-    } else {
-        ""
-    };
-    let sql = format!(
-        "SELECT COUNT(*) FROM remote_code_symbol s \
-           JOIN code_generation g \
-             ON g.repo = s.repo AND g.generation_id = s.generation_id \
-          WHERE g.state = 'active' AND g.origin = 'sync' \
-            AND (NOT EXISTS (SELECT 1 FROM sync_policy_snapshot) \
-                 OR s.repo IN (SELECT canonical FROM repository_approval)){scope}"
-    );
-    let count: i64 = match repo {
-        Some(repo) => conn.query_row(&sql, [repo], |r| r.get(0))?,
-        None => conn.query_row(&sql, [], |r| r.get(0))?,
-    };
-    Ok(count.max(0) as u64)
+    let mut total = 0_u64;
+    for shared in shared_repos(conn)?
+        .into_iter()
+        .filter(|s| repo.is_none_or(|r| r == s.repo))
+    {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM remote_code_symbol WHERE repo = ?1 AND generation_id = ?2",
+            [&shared.repo, &shared.generation_id],
+            |r| r.get(0),
+        )?;
+        total += count.max(0) as u64;
+    }
+    Ok(total)
 }
 
 /// The edges the shared side contributes, as file node ids, optionally scoped
