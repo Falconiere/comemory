@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Paths;
 use crate::prelude::*;
-use crate::store::{schema_meta, stats_counts};
+use crate::store::{remote_code_view, schema_meta, stats_counts};
 use crate::utilities::context::Ctx;
 
 /// `comemory stats` / `GET /api/v1/stats` request.
@@ -43,7 +43,8 @@ pub struct Response {
     /// `*.md` files directly under `memories/` (the `.trash/` subdirectory
     /// is not counted — those are the `trashed` rows' files).
     pub markdown_files: u64,
-    /// Rows in `code_symbols`, including cAST child chunks.
+    /// Rows in `code_symbols`, including cAST child chunks, plus the symbols
+    /// of every repo a peer shared (its active pulled generation).
     pub code_symbols: u64,
     /// Rows in `documents`.
     pub documents: u64,
@@ -83,7 +84,8 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         memories: stats_counts::scoped_count(conn, stats_counts::Corpus::LiveMemories, repo)?,
         trashed: stats_counts::scoped_count(conn, stats_counts::Corpus::TrashedMemories, repo)?,
         markdown_files,
-        code_symbols: stats_counts::scoped_count(conn, stats_counts::Corpus::CodeSymbols, repo)?,
+        code_symbols: stats_counts::scoped_count(conn, stats_counts::Corpus::CodeSymbols, repo)?
+            + remote_code_view::shared_symbol_count(conn, repo)?,
         documents: stats_counts::scoped_count(conn, stats_counts::Corpus::Documents, repo)?,
         edges: stats_counts::count_table(conn, "edges")?,
         db_bytes: stats_counts::db_bytes(conn)?,

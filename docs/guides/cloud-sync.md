@@ -226,8 +226,10 @@ What that buys you:
 
 - **A machine with no checkout is still useful.** It lists the repository
   (`comemory repos` shows `status: "shared"` and a `shared_head`) and answers
-  the code graph for it. `search-code` returns nothing, because a generation
-  carries no source — that is the same rule as above, not a new one.
+  the code graph for it. `stats`' `code_symbols` counts its active shared
+  generation's symbols alongside what you indexed. `search-code` returns
+  nothing, because a generation carries no source — that is the same rule as
+  above, not a new one.
 - **Connecting a real checkout later adds to it.** The repository stays ONE
   row, now carrying both revisions, and local snippets start answering search.
   An edge both sides know is shown once, at the local weight.
