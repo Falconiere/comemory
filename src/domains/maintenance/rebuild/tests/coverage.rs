@@ -335,7 +335,7 @@ fn migration_integrity_derived_live_set_matches_a_real_migrated_db() {
 
 /// Every project table the schema declares is in `PROJECT_TABLES` — the
 /// registry the rebuild copy walks, and hard deletion (#320) and transfer
-/// (#342) are to walk — and in `COPIED_TABLES`, and the registry names nothing
+/// (#342) will walk — and in `COPIED_TABLES`, and the registry names nothing
 /// `schema_projects` does not declare. A table missing from the registry would
 /// be skipped by every walk; one missing from `COPIED_TABLES` would vanish on
 /// the next rebuild.

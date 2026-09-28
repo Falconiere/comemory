@@ -37,7 +37,7 @@ use super::schema_project_work::{
 /// Every project-owned table, leaf first: a table precedes every table its
 /// foreign keys point at, so deleting in this order never trips a key, and
 /// copying in reverse inserts parents before children. The rebuild copy walks
-/// it today; hard deletion (#320) and transfer (#342) are to walk it rather
+/// it today; hard deletion (#320) and transfer (#342) will walk it rather
 /// than keep their own.
 pub const PROJECT_TABLES: &[&str] = &[
     "project_evidence_criteria",
