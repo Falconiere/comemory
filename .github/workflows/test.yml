@@ -256,6 +256,7 @@ jobs:
         run: systemctl --user show-environment >/dev/null
       - name: Run the lifecycle suite
         run: bash scripts/test-daemon-install.sh --${{ matrix.mode }}
+      # GitHub's ubuntu images ship Homebrew under /home/linuxbrew, off PATH.
       - name: Put Homebrew on PATH (Linux)
         if: runner.os == 'Linux'
         run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"

@@ -103,16 +103,27 @@ end
 EOF
 }
 
-# unit_names_opt: every unit for this data dir runs the stable opt link.
-unit_names_opt() {
-  local glob f found=0
+# unit_program <unit-file>: the executable a unit starts, exactly (the
+# plist's first ProgramArguments string / the first ExecStart word).
+unit_program() {
+  case "$(uname -s)" in
+    Darwin) plutil -extract ProgramArguments.0 raw -o - "$1" ;;
+    Linux) sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' "$1" | head -1 ;;
+  esac
+}
+
+# unit_runs_opt <canonical-data-dir>: this data dir has exactly one unit,
+# and it starts the stable opt link itself, not a keg file.
+unit_runs_opt() {
+  local data=$1 glob f program units=0
   glob="$(native_unit_glob "$HOME")"
   while IFS= read -r f; do
-    grep -qF "$DATA" "$f" || continue
-    found=1
-    grep -qF "$OPT_BIN" "$f" || return 1
+    grep -qF "$data" "$f" || continue
+    units=$((units + 1))
+    program="$(unit_program "$f")"
+    [ "$program" = "$OPT_BIN" ] || { echo "unit $f starts $program" >&2; return 1; }
   done < <(find "$(dirname "$glob")" -maxdepth 1 -type f -name "$(basename "$glob")")
-  [ "$found" -eq 1 ]
+  [ "$units" -eq 1 ]
 }
 
 brew tap-new --no-git "$TAP" >/dev/null
@@ -130,7 +141,7 @@ wait_running "$MODE" "$ROOT" "$OPT_BIN" 30 || die_keg "the ${L1_TAG#v} coordinat
 OLD_PID="$(json_num "$RUN_OUT" pid)"
 [ "$(json_field "$RUN_OUT" binary)" = "$KEG1" ] || die_keg "coordinator runs $(json_field "$RUN_OUT" binary), not $KEG1"
 if [ "$MODE" = native ]; then
-  unit_names_opt || die_keg "the unit does not run $OPT_BIN"
+  unit_runs_opt "$DATA" || die_keg "the unit does not start $OPT_BIN"
 fi
 
 run_bin "$MODE" "$ROOT" "$LINK_BIN" -- save "Queued before a Homebrew keg upgrade." --json
@@ -151,7 +162,7 @@ wait_replaced "$MODE" "$ROOT" "$LINK_BIN" "$OLD_PID" "${L2_TAG#v}" 60 \
 wait_gone "$OLD_PID" 30 || die_keg "old coordinator $OLD_PID still runs"
 wait_one_coordinator "$DATA" 30 >/dev/null || die_keg "want one coordinator, have: $(coordinator_pids "$DATA" | tr '\n' ' ')"
 if [ "$MODE" = native ]; then
-  unit_names_opt || die_keg "after the upgrade the unit does not run $OPT_BIN"
+  unit_runs_opt "$DATA" || die_keg "after the upgrade the unit does not start $OPT_BIN"
 fi
 [ "$(dump_tables "$DATA/comemory.db")" = "$BEFORE" ] || die_keg "the memories/outbox/cursor tables changed across the upgrade"
 

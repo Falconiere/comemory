@@ -118,6 +118,11 @@ fn keg_file(path: &Path) -> Option<KegFile> {
 /// `exe` now, i.e. `exe` is the formula's linked install. A unit that runs
 /// this path follows `brew upgrade` instead of pinning one keg, which
 /// `brew cleanup` later deletes.
+///
+/// The returned path is the link itself, deliberately not canonicalized.
+/// Identity checks never compare against it: the coordinator the unit starts
+/// canonicalizes its own executable ([`BinaryIdentity::current`]) and so
+/// reports the keg file, exactly like a caller that ran the keg directly.
 #[must_use]
 pub fn homebrew_opt_link(exe: &Path) -> Option<PathBuf> {
     let keg = keg_file(exe)?;
