@@ -11,11 +11,12 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange daemon install recovery)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract memories code documents events exchange daemon install recovery homebrew release-formula)
 
 case_name=""
 platform_root=""
 engine_bin=""
+tap_root=""
 
 runtime_fail() {
   printf 'replication: runtime: %s\n' "$1" >&2
@@ -34,6 +35,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --engine-bin)
       engine_bin="$2"
+      shift 2
+      ;;
+    --tap-root)
+      tap_root="$2"
       shift 2
       ;;
     *)
@@ -225,6 +230,31 @@ run_recovery() {
   log_ok "replication" "replica state recovery suite passed"
 }
 
+# Homebrew channel (Falconiere/homebrew-tap#1): the tap owns its suites. The
+# formula contract runs against the latest release's real formula; the
+# lifecycle suite drives real brew install/reinstall/upgrade/uninstall and
+# refuses (exit 2) off a disposable machine, which fails this case rather than
+# skipping it. The tap's lifecycle workflow runs the native launchd/systemd
+# and headless modes on every push.
+run_homebrew() {
+  [[ -n "$tap_root" ]] || runtime_fail "--tap-root is required for homebrew"
+  [[ -f "$tap_root/scripts/test-brew-lifecycle.sh" ]] \
+    || runtime_fail "not a homebrew-tap checkout with the lifecycle suite: $tap_root"
+  local mode=--headless
+  [[ "$(uname -s)" == Darwin ]] && mode=--native
+  bash "$tap_root/scripts/test-formula-contract.sh"
+  bash "$tap_root/scripts/test-brew-lifecycle.sh" "$mode"
+  log_ok "replication" "homebrew channel suite passed ($mode)"
+}
+
+# The Homebrew publishing path (homebrew-tap#1, H-4): release.yml's real
+# "Commit formula files" step, run against a real tap clone and a real release,
+# must publish a formula that keeps the tap's lifecycle contract.
+run_release_formula() {
+  bash "$HERE/test-release-formula-step.sh"
+  log_ok "replication" "release formula step suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -315,5 +345,7 @@ case "$case_name" in
   daemon) run_daemon ;;
   install) run_install ;;
   recovery) run_recovery ;;
+  homebrew) run_homebrew ;;
+  release-formula) run_release_formula ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

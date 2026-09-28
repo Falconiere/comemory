@@ -361,10 +361,20 @@ jobs:
             name=$(echo "$filename" | sed "s/\.rb$//")
             version=$(echo "$release" | jq .app_version --raw-output)
 
-            # dist owns the formula shape but does not expose a completion
-            # hook. Add Homebrew-managed scripts before style/commit so every
-            # brew install and upgrade refreshes all four supported shells.
-            ruby - "Formula/${filename}" <<'RUBY'
+            # dist owns the formula shape; the tap owns the hand-maintained
+            # parts, shell completions and the required-daemon lifecycle
+            # caveats, in scripts/comemory_formula.rb (Falconiere/homebrew-tap#1).
+            # This job runs in the tap checkout, so apply the tap's own script
+            # here, and run its `check` below before anything is committed.
+            # Transitional: before that script lands on the tap's main, keep
+            # the old inline completion patch and warn that the lifecycle
+            # contract was not applied. Remove this branch once the tap ships
+            # the script.
+            if [ -f scripts/comemory_formula.rb ]; then
+              ruby scripts/comemory_formula.rb apply "Formula/${filename}"
+            else
+              echo "::warning::tap has no scripts/comemory_formula.rb; publishing ${filename} without the required-daemon caveats"
+              ruby - "Formula/${filename}" <<'RUBY'
             path = ARGV.fetch(0)
             formula = File.read(path)
             anchor = "    install_binary_aliases!\n"
@@ -378,11 +388,17 @@ jobs:
             FORMULA
             File.write(path, formula.sub(anchor, "#{anchor}\n#{completion}"))
           RUBY
+            fi
 
             export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
             brew update
             # We avoid reformatting user-provided data such as the app description and homepage.
             brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
+            # Refuse to publish a formula that lost the lifecycle contract
+            # (for example, after a cargo-dist shape change).
+            if [ -f scripts/comemory_formula.rb ]; then
+              ruby scripts/comemory_formula.rb check "Formula/${filename}"
+            fi
 
             git add "Formula/${filename}"
             git commit -m "${name} ${version}"

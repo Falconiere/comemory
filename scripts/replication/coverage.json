@@ -247,6 +247,25 @@
     ],
     "B-8": [
       "recovery"
+    ],
+    "H-1": [
+      "homebrew"
+    ],
+    "H-2": [
+      "homebrew"
+    ],
+    "H-3": [
+      "homebrew"
+    ],
+    "H-4": [
+      "homebrew",
+      "release-formula"
+    ],
+    "H-5": [
+      "homebrew"
+    ],
+    "H-6": [
+      "homebrew"
     ]
   }
 }

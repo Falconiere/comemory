@@ -99,11 +99,21 @@ latest. Completion installation is independent of PATH setup; pass
 `--no-completions` in containers or managed environments that do not want
 per-user completion files.
 
-Homebrew is as quick, on macOS and Linuxbrew:
+Homebrew works too, on macOS and Linuxbrew. Homebrew cannot start the
+required sync daemon itself, because formula hooks run sandboxed with a
+temporary `HOME`. So start and verify it yourself, as the formula's caveats
+say:
 
 ```bash
+brew tap Falconiere/tap
+brew trust --formula falconiere/tap/comemory   # Homebrew 7 loads third-party formulae only once trusted
 brew install Falconiere/tap/comemory
+"$(brew --prefix)/opt/comemory/bin/comemory" sync daemon ensure
 ```
+
+The [tap README](https://github.com/Falconiere/homebrew-tap#comemory) covers
+upgrading and uninstalling (`comemory sync daemon uninstall` before
+`brew uninstall`).
 
 From a local checkout (comemory is **not** published to crates.io, so this
 builds from source). `scripts/dev-install.sh` is the finalizing wrapper —
