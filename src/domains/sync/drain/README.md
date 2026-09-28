@@ -42,3 +42,9 @@ under, push, pull, holds, replay, verification and workspace keying. Design:
 
 Tests live beside the modules under `tests/`. When you add a file here, add its
 row above.
+
+Managed requests use `repository-policy-v1` and the loaded policy revision in
+headers on both transports; `replica-v1` identifies the replica wire bodies
+and manifests. `transport.rs` refuses a mismatched protocol or revision echo.
+The real-platform CLI regression lives in `tests/replica_managed.rs`; see
+[managed replica testing](../../../../docs/guides/managed-replica-testing.md).

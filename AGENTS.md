@@ -85,6 +85,12 @@ literal `LIKE` verification and a scan fallback for queries under three characte
 The external-content FTS5 table stores trigram postings and reads body text from
 `memories.body`, without storing another body copy.
 
+Managed sync uses `repository-policy-v1` in `X-Comemory-Sync-Protocol` for
+both legacy and replica transports. `replica-v1` belongs to replica bodies
+and manifests; never substitute it for the policy header. Response protocol
+and policy revision echoes remain mandatory. The opt-in real-platform
+regression is documented in `docs/guides/managed-replica-testing.md`.
+
 ## Key Commands
 
 ```bash

@@ -520,6 +520,10 @@ Mints a **workspace-bound** `cmk_` (not a sync device key). Credentials live at
 `$COMEMORY_DATA_DIR/auth.json` (mode `0600`). `COMEMORY_API_KEY` overrides the
 file secret for scripting/CI.
 
+Managed sync negotiates `repository-policy-v1` in its policy headers, including
+for `replica-v1` transfers. The replica wire version remains in the body; both
+policy protocol and revision must be echoed by the server.
+
 Once logged in, a small resident coordinator (`comemory sync daemon`, one per
 data directory) keeps that data directory synced — every ordinary command
 verifies and repairs it first, so there is nothing to install by hand.
