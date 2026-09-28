@@ -54,12 +54,19 @@ gh release download ${release:+"$release"} --repo Falconiere/comemory \
   --pattern comemory.rb --pattern dist-manifest.json --dir "$work/release"
 version="$(jq -r '.releases[] | select(.app_name == "comemory") | .app_version' "$work/release/dist-manifest.json")"
 
-# fresh_tap NAME: a clone of the tap whose `origin` is a local bare repository.
+# fresh_tap NAME: a clone of the tap, minus its formula, whose `origin` is a
+# local bare repository.
 fresh_tap() {
   local name="$1"
   git clone -q --branch "$tap_ref" "$tap_url" "$work/$name"
   git init -q --bare "$work/$name.git"
   git -C "$work/$name" remote set-url origin "$work/$name.git"
+  # The tap as it stood before this release: the step publishes a formula the
+  # tap does not carry yet (else it has nothing to commit, as when the tap
+  # already holds this very release).
+  git -C "$work/$name" rm -q Formula/comemory.rb
+  git -C "$work/$name" -c user.name=release-test -c user.email=release-test@localhost \
+    commit -q -m "before the release under test"
   git -C "$work/$name" push -q -u origin "HEAD:refs/heads/$tap_ref"
 }
 
