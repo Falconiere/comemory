@@ -263,8 +263,11 @@ fn start_backend(
     if kind != supervisor::Kind::Process {
         let unit = supervisor::plan(canonical, kind)?;
         let me = identity::BinaryIdentity::current()?;
+        // A Homebrew install's unit runs the stable opt link, so the
+        // supervisor restarts whatever keg `brew` links now (homebrew-tap#1).
+        let exe = identity::homebrew_opt_link(&me.path).unwrap_or(me.path);
         supervisor::remove_legacy(kind);
-        match supervisor::activate(kind, &unit, &me.path, canonical) {
+        match supervisor::activate(kind, &unit, &exe, canonical) {
             Ok(()) => return Ok((kind, Vec::new())),
             Err(e) => {
                 spawn::spawn(paths)?;

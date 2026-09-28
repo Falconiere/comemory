@@ -90,6 +90,60 @@ fn running_file() -> Option<&'static String> {
         .as_ref()
 }
 
+/// A Homebrew keg file `<prefix>/Cellar/<formula>/<keg>/<rel>`, split up.
+struct KegFile {
+    prefix: PathBuf,
+    formula: std::ffi::OsString,
+    keg: std::ffi::OsString,
+    rel: PathBuf,
+}
+
+fn keg_file(path: &Path) -> Option<KegFile> {
+    let parts: Vec<_> = path.components().collect();
+    let cellar = parts.iter().rposition(|c| c.as_os_str() == "Cellar")?;
+    let rel: PathBuf = parts.get(cellar + 3..)?.iter().collect();
+    if rel.as_os_str().is_empty() {
+        return None;
+    }
+    Some(KegFile {
+        prefix: parts.get(..cellar)?.iter().collect(),
+        formula: parts.get(cellar + 1)?.as_os_str().to_os_string(),
+        keg: parts.get(cellar + 2)?.as_os_str().to_os_string(),
+        rel,
+    })
+}
+
+/// homebrew-tap#1: for a Homebrew keg file `exe`, the stable
+/// `<prefix>/opt/<formula>/<rel>` link — only when that link resolves to
+/// `exe` now, i.e. `exe` is the formula's linked install. A unit that runs
+/// this path follows `brew upgrade` instead of pinning one keg, which
+/// `brew cleanup` later deletes.
+///
+/// The returned path is the link itself, deliberately not canonicalized.
+/// Identity checks never compare against it: the coordinator the unit starts
+/// canonicalizes its own executable ([`BinaryIdentity::current`]) and so
+/// reports the keg file, exactly like a caller that ran the keg directly.
+#[must_use]
+pub fn homebrew_opt_link(exe: &Path) -> Option<PathBuf> {
+    let keg = keg_file(exe)?;
+    let link = keg.prefix.join("opt").join(&keg.formula).join(&keg.rel);
+    (std::fs::canonicalize(&link).ok()? == exe).then_some(link)
+}
+
+/// Whether `running` is another keg of the Homebrew formula whose linked
+/// install `caller` is. `brew upgrade` keeps the old keg on macOS, so its
+/// file still exists and would otherwise keep the old coordinator alive.
+fn superseded_keg(running: &Path, caller: &Path) -> bool {
+    let (Some(old), Some(new)) = (keg_file(running), keg_file(caller)) else {
+        return false;
+    };
+    old.prefix == new.prefix
+        && old.formula == new.formula
+        && old.rel == new.rel
+        && old.keg != new.keg
+        && homebrew_opt_link(caller).is_some()
+}
+
 /// Preflight's verdict on a verified coordinator: keep it unless its binary
 /// is gone or [`preflight_replaces`] holds.
 #[must_use]
@@ -104,12 +158,20 @@ pub fn preflight_accepts(readiness: &Readiness, current: &BinaryIdentity) -> boo
 /// over it and died before `ensure`. A coordinator predating `binary_file`
 /// is compared by version instead. A caller still running an older file
 /// (its own file is not the one on disk) never evicts.
+///
+/// homebrew-tap#1: a coordinator on another keg of the Homebrew formula the
+/// caller is the linked (`opt`) install of is replaced too — `brew upgrade`
+/// switched the link and kept the old keg. A caller on an old keg is not the
+/// linked install, so it never evicts.
 #[must_use]
 pub fn preflight_replaces(
     readiness: &Readiness,
     caller: &BinaryIdentity,
     on_disk: Option<&str>,
 ) -> bool {
+    if superseded_keg(&readiness.binary, &caller.path) {
+        return true;
+    }
     if readiness.binary != caller.path {
         return false;
     }

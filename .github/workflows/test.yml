@@ -256,6 +256,17 @@ jobs:
         run: systemctl --user show-environment >/dev/null
       - name: Run the lifecycle suite
         run: bash scripts/test-daemon-install.sh --${{ matrix.mode }}
+      # GitHub's ubuntu images ship Homebrew under /home/linuxbrew, off PATH.
+      - name: Put Homebrew on PATH (Linux)
+        if: runner.os == 'Linux'
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+      - name: Update Homebrew to current
+        run: brew update
+      # Falconiere/homebrew-tap#1: real brew keeps the old keg after an
+      # upgrade (macOS); the next ordinary command must still move the
+      # daemon onto the newly linked keg.
+      - name: Run the real-brew keg upgrade
+        run: bash scripts/test-brew-keg-upgrade.sh --${{ matrix.mode }}
 
   # Required-check facade. Branch protection requires the check name `test`.
   # When `test-suite` and `daemon-install` are each skipped (release-plz PR)

@@ -63,7 +63,7 @@ fn the_current_binary_is_this_build() {
 
 use std::path::{Path, PathBuf};
 
-use super::{file_id, preflight_replaces};
+use super::{file_id, homebrew_opt_link, preflight_replaces};
 use crate::domains::sync::daemon::readiness::Readiness;
 
 /// A real file at `dir/name` with its `<dev>:<ino>`.
@@ -154,4 +154,114 @@ fn a_coordinator_predating_binary_file_is_compared_by_version() {
         &me,
         Some(&id)
     ));
+}
+
+// ---------------------------------------------------------------------------
+// homebrew-tap#1: Homebrew keeps the old keg after `brew upgrade` (macOS), so
+// preflight replaces a coordinator on a keg the `opt` link no longer names.
+// Real directories, real files and a real `opt` symlink, laid out as brew does.
+// ---------------------------------------------------------------------------
+
+/// `<prefix>/Cellar/comemory/<keg>/bin/comemory` for each keg, `opt/comemory`
+/// linked to `linked`; returns the canonical prefix.
+fn brew_prefix(root: &Path, kegs: &[&str], linked: &str) -> PathBuf {
+    let prefix = root.join("homebrew");
+    for keg in kegs {
+        let bin = prefix.join("Cellar/comemory").join(keg).join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("comemory"), keg).unwrap();
+    }
+    std::fs::create_dir_all(prefix.join("opt")).unwrap();
+    std::os::unix::fs::symlink(
+        Path::new("../Cellar/comemory").join(linked),
+        prefix.join("opt/comemory"),
+    )
+    .unwrap();
+    std::fs::canonicalize(prefix).unwrap()
+}
+
+fn keg_bin(prefix: &Path, keg: &str) -> PathBuf {
+    prefix
+        .join("Cellar/comemory")
+        .join(keg)
+        .join("bin/comemory")
+}
+
+fn keg_caller(prefix: &Path, keg: &str, version: &str) -> BinaryIdentity {
+    let path = keg_bin(prefix, keg);
+    let id = file_id(&path).unwrap();
+    caller(&path, version, &id)
+}
+
+#[test]
+fn the_linked_keg_replaces_a_coordinator_on_the_keg_brew_kept() {
+    let root = tempfile::tempdir().unwrap();
+    let prefix = brew_prefix(root.path(), &["0.51.0", "0.52.0"], "0.52.0");
+    let old = keg_bin(&prefix, "0.51.0");
+    let running = readiness(&old, "0.51.0", file_id(&old).as_deref());
+    let me = keg_caller(&prefix, "0.52.0", "0.52.0");
+    assert!(preflight_replaces(&running, &me, me.file.as_deref()));
+    // A revision bump is a new keg of the same version: replaced too.
+    let root = tempfile::tempdir().unwrap();
+    let prefix = brew_prefix(root.path(), &["0.51.0", "0.51.0_1"], "0.51.0_1");
+    let old = keg_bin(&prefix, "0.51.0");
+    let running = readiness(&old, "0.51.0", file_id(&old).as_deref());
+    let me = keg_caller(&prefix, "0.51.0_1", "0.51.0");
+    assert!(preflight_replaces(&running, &me, me.file.as_deref()));
+}
+
+#[test]
+fn a_caller_on_a_keg_brew_no_longer_links_never_evicts() {
+    let root = tempfile::tempdir().unwrap();
+    let prefix = brew_prefix(root.path(), &["0.51.0", "0.52.0"], "0.52.0");
+    let new = keg_bin(&prefix, "0.52.0");
+    let running = readiness(&new, "0.52.0", file_id(&new).as_deref());
+    let old_caller = keg_caller(&prefix, "0.51.0", "0.51.0");
+    assert!(!preflight_replaces(
+        &running,
+        &old_caller,
+        old_caller.file.as_deref()
+    ));
+}
+
+#[test]
+fn another_formula_prefix_or_a_non_keg_path_is_kept() {
+    let root = tempfile::tempdir().unwrap();
+    let prefix = brew_prefix(root.path(), &["0.51.0", "0.52.0"], "0.52.0");
+    let me = keg_caller(&prefix, "0.52.0", "0.52.0");
+    let other = tempfile::tempdir().unwrap();
+    let other_prefix = brew_prefix(other.path(), &["0.51.0"], "0.51.0");
+    let elsewhere = keg_bin(&other_prefix, "0.51.0");
+    assert!(!preflight_replaces(
+        &readiness(&elsewhere, "0.51.0", file_id(&elsewhere).as_deref()),
+        &me,
+        me.file.as_deref()
+    ));
+    let other_formula = prefix.join("Cellar/comemory-dev/0.51.0/bin/comemory");
+    std::fs::create_dir_all(other_formula.parent().unwrap()).unwrap();
+    std::fs::write(&other_formula, "dev").unwrap();
+    assert!(!preflight_replaces(
+        &readiness(&other_formula, "0.51.0", file_id(&other_formula).as_deref()),
+        &me,
+        me.file.as_deref()
+    ));
+    let (plain, plain_id) = real_file(root.path(), "comemory");
+    assert!(!preflight_replaces(
+        &readiness(&plain, "0.51.0", Some(&plain_id)),
+        &me,
+        me.file.as_deref()
+    ));
+}
+
+#[test]
+fn the_opt_link_is_named_only_for_the_linked_keg() {
+    let root = tempfile::tempdir().unwrap();
+    let prefix = brew_prefix(root.path(), &["0.51.0", "0.52.0"], "0.52.0");
+    assert_eq!(
+        homebrew_opt_link(&keg_bin(&prefix, "0.52.0")),
+        Some(prefix.join("opt/comemory/bin/comemory"))
+    );
+    assert_eq!(homebrew_opt_link(&keg_bin(&prefix, "0.51.0")), None);
+    let (plain, _) = real_file(root.path(), "comemory");
+    assert_eq!(homebrew_opt_link(&plain), None);
 }
