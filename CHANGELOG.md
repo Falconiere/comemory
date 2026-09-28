@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-09-28
+
+### Added
+
+- preserve replica state through bootstrap, rebuild, purge and recovery ([#307](https://github.com/Falconiere/comemory/pull/307))
+
+### Fixed
+
+- wait for launchd to drop a booted-out job before re-bootstrapping ([#314](https://github.com/Falconiere/comemory/pull/314))
+- follow the linked Homebrew keg after brew upgrade ([#312](https://github.com/Falconiere/comemory/pull/312))
+
 ## [0.51.0] - 2026-09-27
 
 ### Added
