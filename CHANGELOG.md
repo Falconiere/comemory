@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-09-27
+
+### Added
+
+- start and verify the required daemon after every managed install or update ([#308](https://github.com/Falconiere/comemory/pull/308))
+
 ## [0.50.0] - 2026-09-27
 
 ### Added
