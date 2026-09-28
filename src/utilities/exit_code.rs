@@ -13,7 +13,7 @@
 //! library, not `main.rs`, so a test can assert it.
 
 use crate::prelude::*;
-use crate::utilities::error_code::{Class, classify};
+use crate::utilities::error_code::{Class, classify_project};
 
 /// Map an [`Error`] to its sysexits-style exit code (see the module header).
 pub fn exit_code(err: &Error) -> i32 {
@@ -50,7 +50,7 @@ pub fn exit_code(err: &Error) -> i32 {
         | Error::ConfirmationRequired(_)
         | Error::Cancelled
         | Error::Other(_) => 70,
-        Error::Project(_) => exit_for_class(classify(err).1),
+        Error::Project(project) => exit_for_class(classify_project(project).1),
     }
 }
 
