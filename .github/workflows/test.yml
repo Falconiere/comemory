@@ -268,6 +268,29 @@ jobs:
       - name: Run the real-brew keg upgrade
         run: bash scripts/test-brew-keg-upgrade.sh --${{ matrix.mode }}
 
+  # The Homebrew publishing path (Falconiere/homebrew-tap#1): release.yml's
+  # real "Commit formula files" step against a real tap clone and the latest
+  # release's real formula and manifest, pushing to a local bare remote.
+  # TAP_REFS lists the tap branches to publish into.
+  release-formula:
+    if: ${{ !github.event.pull_request.draft && !startsWith(github.head_ref, 'release-plz-') }}
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAP_REFS: "main feat/1-keep-the-required-daemon-running"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - name: Run the release formula step
+        run: |
+          set -euo pipefail
+          for ref in $TAP_REFS; do
+            echo "::group::tap $ref"
+            bash scripts/test-release-formula-step.sh --tap-ref "$ref"
+            echo "::endgroup::"
+          done
+
   # Required-check facade. Branch protection requires the check name `test`.
   # When `test-suite` and `daemon-install` are each skipped (release-plz PR)
   # or succeed, this job is green; when either fails or is cancelled, this
@@ -275,7 +298,7 @@ jobs:
   # `always()` (not `!cancelled()`): a cancelled suite must still turn the
   # required `test` check red rather than leaving it missing.
   test:
-    needs: [test-suite, daemon-install]
+    needs: [test-suite, daemon-install, release-formula]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     steps:
@@ -283,7 +306,8 @@ jobs:
         run: |
           fail=0
           for pair in "test-suite=${{ needs.test-suite.result }}" \
-                      "daemon-install=${{ needs.daemon-install.result }}"; do
+                      "daemon-install=${{ needs.daemon-install.result }}" \
+                      "release-formula=${{ needs.release-formula.result }}"; do
             case "${pair#*=}" in
               success|skipped) ;;
               *)

@@ -134,11 +134,14 @@ install`, which is why it's the way to finish a source install rather than a
 bare `cargo install --path .`. A bare `cargo install` or a binary copied into
 place by hand is **unmanaged placement** — nothing runs `sync daemon ensure`
 for you, so either the next ordinary command's own startup preflight repairs
-it, or run `comemory sync daemon ensure` yourself right after. Homebrew's own
-`post_install` hook is pending
-[homebrew-tap#1](https://github.com/Falconiere/homebrew-tap/issues/1); until
-it ships, `brew install` / `brew upgrade` do not by themselves guarantee an
-immediately ready daemon (`comemory upgrade` already covers that channel).
+it, or run `comemory sync daemon ensure` yourself right after. Homebrew cannot
+start the daemon at all. Its formula hooks run sandboxed with a temporary
+`HOME`, and it has no uninstall hook. So the formula's caveats name the steps
+instead: `sync daemon ensure` after `brew install` / `brew upgrade`, and
+`sync daemon uninstall` before `brew uninstall`. `comemory upgrade` runs
+`ensure` for you on that channel. Homebrew therefore does not fully support
+immediate required-daemon start; see
+[homebrew-tap#1](https://github.com/Falconiere/homebrew-tap/issues/1).
 See [docs/guides/upgrading.md](docs/guides/upgrading.md) and
 [docs/configuration.md](docs/configuration.md) for the failure modes.
 
