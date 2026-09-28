@@ -19,6 +19,9 @@
 #                    cursor type)
 #   typos-check      typos.toml
 #   cli-docs-check   docs/cli-reference.md vs the real --help output
+#   http-docs-check  docs/guides/http-api.md's Route map vs the live
+#                    comemory::serve::routes::table() (presence-only, the doc
+#                    is hand-authored, not regenerated)
 #   migration-check  every already-released migrations/*.sql file is
 #                    byte-identical to its content at the first release tag
 #                    that shipped it (git-dependent, requires unshallow tags)
@@ -54,6 +57,7 @@ GATES=(
   store-chokepoint-check
   typos-check
   cli-docs-check
+  http-docs-check
   migration-check
   replication-coverage-check
 )

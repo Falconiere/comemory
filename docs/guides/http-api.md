@@ -171,6 +171,31 @@ disagree, trust the running server.
 | ● `POST /sources` | `index` | **job**; every `path` entry contained first |
 | ● `DELETE /sources?target=<id\|path>&confirm=true` | `unindex` | **confirm** |
 
+**Repos** (`serve/routes/repos.rs`)
+
+| Method + path | CLI command | Notes |
+|---|---|---|
+| ○ `GET /repos` | `repos` | connected repo list; distinct from the `POST`/`PATCH`/`DELETE` admin verbs below (Console additions) |
+
+**Stats** (`serve/routes/stats.rs`)
+
+| Method + path | CLI command | Notes |
+|---|---|---|
+| ○ `GET /stats` | `stats` | store-wide counters |
+
+**Find** (`serve/routes/find.rs`)
+
+| Method + path | CLI command | Notes |
+|---|---|---|
+| ○ `GET\|POST /find` | `find` | `GET` = no vector; `POST` = vector-capable, same split as `/memories/search` |
+
+**Hooks** (`serve/routes/hooks.rs`)
+
+| Method + path | CLI command | Notes |
+|---|---|---|
+| ○ `GET /hooks` | `hooks` | list configured git hooks |
+| ● `POST /hooks` | `hooks` | bulk set; see `PUT /hooks/{name}` (Console additions) for a single hook |
+
 **Graph** (`serve/routes/graph.rs`)
 
 | Method + path | CLI command | Notes |
@@ -183,6 +208,7 @@ disagree, trust the running server.
 | Method + path | CLI command | Notes |
 |---|---|---|
 | ○ `POST /eval` | `eval` | **job**, read-class — no read-only gate, no confirm |
+| ○ `GET /eval/history` | `eval.history` | past eval runs |
 | ● `POST /tune` | `tune` | **job**; confirm only when `"apply":true` |
 | ● `POST /bandit` | `bandit` | **job**; always mutating (upserts `bandit_arms`); confirm only when `"apply":true` |
 
@@ -197,6 +223,7 @@ disagree, trust the running server.
 | ● `POST /gc` | `gc` | **confirm** |
 | ● `POST /mine` | `mine` | not confirm-gated — a bounded scan, mutates only with `"apply":true` |
 | ● `POST /hooks/install` | `install-hooks` | **confirm**; `repo` contained |
+| ● `POST /erase` | `erase` | **confirm** |
 | ● `POST /rebuild` | `rebuild` | **job**, **confirm**; swaps the server's shared DB connection on success |
 
 **Cloud sync** (`serve/routes/sync.rs`) — engine half of Slice 2, memories
@@ -264,7 +291,7 @@ view over the same cores; ◇ = a job-creating route)
 | ○ `POST /jobs/{id}/cancel` | cooperative cancel (see Jobs). Read-class despite the `POST`: its route-table entry is `mutating: false`, because stopping a job writes nothing to the store — so it works on a `--read-only` server |
 | ● `PUT /hooks/{name}?repo=` | `{enabled}`; `post_commit` and `post-commit` both accepted; `repo` is contained like `POST /hooks/install`'s (`403` outside every allowed root) |
 | ●✓ `DELETE /sources/{target}?confirm=true` | path form of `DELETE /sources?target=` |
-| ○ `GET /learning/summary`, `GET /learning/evals?limit=`, `GET /learning/golden-set?golden=`, `GET /learning/proposals`, `GET /learning/expansions` | learning-loop reads; `summary.implicit_share` is the share of `feedback_events` whose provenance is not `manual` — the `auto_*` rewards and every route-written `source: implicit` verdict; `evals` rows carry derived `delta`/`is_baseline`/`is_best` |
+| ○ `GET /learning/summary`, `GET /learning/evals?limit=`, `GET /learning/golden-set?golden=`, `GET /learning/proposals`, `GET /learning/expansions`, `GET /learning/recall-status` | learning-loop reads; `summary.implicit_share` is the share of `feedback_events` whose provenance is not `manual` — the `auto_*` rewards and every route-written `source: implicit` verdict; `evals` rows carry derived `delta`/`is_baseline`/`is_best` |
 | ◇ `POST /learning/evals` | alias of the `eval` job; `golden_set` alias, optional `knobs` override |
 | ●✓ `POST /learning/proposals/{id}/apply`, ● `POST /learning/proposals/{id}/discard` | write the proposal's knobs into `config.toml` (and reload) / dismiss it |
 | ○ `GET /config/retrieval`, ● `PUT /config/retrieval` | live ranking knobs with ranges; a partial update is validated before the file is touched (`400` on an out-of-range knob) |
