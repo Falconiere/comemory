@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-09-28
+
+### Added
+
+- port the 22-code project error vocabulary through classify ([#358](https://github.com/Falconiere/comemory/pull/358))
+
 ## [0.52.1] - 2026-09-28
 
 ### Added
