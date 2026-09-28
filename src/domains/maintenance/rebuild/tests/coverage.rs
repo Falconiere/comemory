@@ -334,10 +334,11 @@ fn migration_integrity_derived_live_set_matches_a_real_migrated_db() {
 }
 
 /// Every project table the schema declares is in `PROJECT_TABLES` — the
-/// registry hard deletion and transfer walk — and in `COPIED_TABLES`, and the
-/// registry names nothing `schema_projects` does not declare. A table missing
-/// from the registry would outlive its project's deletion; one missing from
-/// `COPIED_TABLES` would vanish on the next rebuild.
+/// registry the rebuild copy walks, and hard deletion (#320) and transfer
+/// (#342) are to walk — and in `COPIED_TABLES`, and the registry names nothing
+/// `schema_projects` does not declare. A table missing from the registry would
+/// be skipped by every walk; one missing from `COPIED_TABLES` would vanish on
+/// the next rebuild.
 #[test]
 fn migration_integrity_every_project_table_is_registered_and_copied() {
     use comemory::store::schema::DECLARED_TABLES;
