@@ -13,10 +13,16 @@ use tempfile::TempDir;
 const BLOCK_START: &str = "# >>> comemory completions >>>";
 const BLOCK_END: &str = "# <<< comemory completions <<<";
 
+/// `completions` opens an existing store, so a bare invocation would open —
+/// and on a branch that adds a migration, migrate — the developer's real
+/// `~/.comemory`. Every run gets a throwaway data directory.
 fn run_completions(shell: &str) -> assert_cmd::assert::Assert {
+    let home = TempDir::new().expect("home");
     Command::cargo_bin("comemory")
         .expect("cargo_bin comemory")
         .args(["completions", shell])
+        .env("COMEMORY_DATA_DIR", home.path())
+        .env("HOME", home.path())
         .assert()
 }
 
@@ -307,9 +313,12 @@ fn install_updates_a_symlinked_profile_without_replacing_the_link() {
 
 #[test]
 fn install_rejects_a_shell_positional() {
+    let home = TempDir::new().expect("home");
     Command::cargo_bin("comemory")
         .expect("cargo_bin comemory")
         .args(["completions", "--install", "bash"])
+        .env("COMEMORY_DATA_DIR", home.path())
+        .env("HOME", home.path())
         .assert()
         .failure();
 }
