@@ -76,7 +76,7 @@ run_step() {
   cp "$formula" "$work/$name/Formula/comemory.rb"
   (
     cd "$work/$name"
-    PLAN="$(cat "$work/release/dist-manifest.json")" GITHUB_USER="axo bot" GITHUB_EMAIL="admin+bot@axo.dev" \
+    PLAN="$(cat "$work/release/dist-manifest.json")" GITHUB_USER="release-formula-test" GITHUB_EMAIL="release-formula-test@comemory.local" \
       bash --noprofile --norc -eo pipefail "$work/step.sh"
   ) >"$work/$name.log" 2>&1
 }
@@ -113,8 +113,19 @@ if [[ -f "$work/published/scripts/comemory_formula.rb" ]]; then
     cat "$work/broken.log"
     die "release-formula" "the release step accepted a formula with post_install"
   fi
-  grep -q 'contract: post_install is forbidden' "$work/broken.log" \
-    || { cat "$work/broken.log"; die "release-formula" "the step failed for another reason"; }
+  # The rejection must be the contract's, judged by the tap's own `check`
+  # rather than its wording: the formula the step left behind fails `check`,
+  # and passes once the injected post_install alone is removed, so `apply`
+  # ran and post_install is the only violation.
+  local_formula="$work/broken/Formula/comemory.rb"
+  if ruby "$work/broken/scripts/comemory_formula.rb" check "$local_formula" 2>/dev/null; then
+    cat "$work/broken.log"
+    die "release-formula" "the step failed although its formula passes the contract"
+  fi
+  ruby -e 'p = ARGV[0]; s = File.read(p); s.sub!(/^  def post_install\n.*?^  end\n\n/m, "") || abort("no post_install"); File.write(p, s)' \
+    "$local_formula"
+  ruby "$work/broken/scripts/comemory_formula.rb" check "$local_formula" \
+    || { cat "$work/broken.log"; die "release-formula" "the step failed for another reason than the injected post_install"; }
   [[ "$(remote_head broken)" == "$before" ]] || die "release-formula" "a rejected formula reached the remote"
   log_ok "release-formula" "a contract-breaking formula stopped the step before its commit"
 else
