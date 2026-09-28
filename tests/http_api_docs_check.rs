@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use comemory::serve::routes;
+use comemory::serve::routes::{self, RouteEntry};
 use regex::Regex;
 
 const HTTP_METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -65,6 +65,38 @@ fn extract_documented_routes(section: &str) -> HashSet<(String, String)> {
     routes
 }
 
+/// Every live route absent from `documented`, formatted `"METHOD path"`.
+/// Pure diff, no I/O — lets the gate's failure branch be proven by a unit
+/// test instead of only by the manual flip-and-revert transcript.
+fn missing_routes(live: &[RouteEntry], documented: &HashSet<(String, String)>) -> Vec<String> {
+    live.iter()
+        .filter(|r| !documented.contains(&(r.method.to_string(), r.path.to_string())))
+        .map(|r| format!("{} {}", r.method, r.path))
+        .collect()
+}
+
+#[test]
+fn missing_routes_reports_only_undocumented_entries() {
+    let documented = extract_documented_routes("○ `GET /memories`");
+    let live = [
+        RouteEntry {
+            method: "GET",
+            path: "/memories",
+            command: "list",
+            mutating: false,
+        },
+        RouteEntry {
+            method: "POST",
+            path: "/memories",
+            command: "save",
+            mutating: true,
+        },
+    ];
+
+    assert_eq!(missing_routes(&live, &documented), vec!["POST /memories"]);
+    assert!(missing_routes(&live[..1], &documented).is_empty());
+}
+
 #[test]
 fn extract_documented_routes_handles_every_doc_format_variant() {
     let single = extract_documented_routes("○ `GET /memories`");
@@ -118,11 +150,7 @@ fn http_api_guide_documents_every_live_route() {
         "comemory::serve::routes::table() is empty"
     );
 
-    let missing: Vec<String> = live
-        .iter()
-        .filter(|r| !documented.contains(&(r.method.to_string(), r.path.to_string())))
-        .map(|r| format!("{} {}", r.method, r.path))
-        .collect();
+    let missing = missing_routes(&live, &documented);
 
     assert!(
         missing.is_empty(),
