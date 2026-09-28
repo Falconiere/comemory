@@ -255,7 +255,7 @@ fn launchctl(args: &[&str], output: fn() -> Stdio) -> Result<bool> {
         .stderr(output())
         .status()
         .map(|status| status.success())
-        .map_err(|e| Error::Other(format!("launchctl {}: {e}", args.first().unwrap_or(&""))))
+        .map_err(|e| Error::Other(format!("launchctl {}: {e}", args.join(" "))))
 }
 
 /// Stop the unit without removing it; best-effort.

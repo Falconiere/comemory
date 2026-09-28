@@ -108,12 +108,19 @@ ensure_round() {
     || die_round "$n" "label $(basename "$unit" .plist) is not loaded"
 }
 
+# read_old_pid <round>: OLD_PID = the coordinator running now, from its own status.
+read_old_pid() {
+  run_bin "$MODE" "$ROOT" "$EXE" -- sync daemon status --json
+  OLD_PID="$(jq -r '.daemon.pid // empty' <<<"$RUN_OUT")"
+  [ -n "$OLD_PID" ] || die_round "$1" "no running coordinator before the swap: $RUN_OUT"
+}
+
 cp "$BIN" "$EXE"
 chmod 755 "$EXE"
 DATA="$(cd -P "$ROOT/d" && pwd -P)"
 ensure_round 0 "$DATA"
 for n in $(seq 1 "$ROUNDS"); do
-  OLD_PID="$(jq -r .daemon.pid <<<"$RUN_OUT")"
+  read_old_pid "$n"
   swap_in
   ensure_round "$n" "$DATA"
   [ "$(jq -r .daemon.pid <<<"$RUN_OUT")" != "$OLD_PID" ] || die_round "$n" "coordinator $OLD_PID was not replaced"
@@ -126,7 +133,7 @@ done
 # `bootstrap` of the label must wait for that instead of failing into a
 # process fallback that loses daemon.lock to the stuck coordinator.
 for n in $(seq 1 "$STUCK_ROUNDS"); do
-  OLD_PID="$(jq -r .daemon.pid <<<"$RUN_OUT")"
+  read_old_pid "stuck-$n"
   swap_in
   kill -STOP "$OLD_PID"
   ensure_round "stuck-$n" "$DATA"
