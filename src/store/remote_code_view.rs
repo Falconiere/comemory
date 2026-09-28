@@ -70,14 +70,23 @@ pub fn shared_repos(conn: &Connection) -> Result<Vec<SharedRepo>> {
 /// # Errors
 /// Propagates SQLite failures.
 pub fn shared_symbol_count(conn: &Connection, repo: Option<&str>) -> Result<u64> {
-    let sql = "SELECT COUNT(*) FROM remote_code_symbol s \
-                 JOIN code_generation g \
-                   ON g.repo = s.repo AND g.generation_id = s.generation_id \
-                WHERE g.state = 'active' AND g.origin = 'sync' \
-                  AND (?1 IS NULL OR s.repo = ?1) \
-                  AND (NOT EXISTS (SELECT 1 FROM sync_policy_snapshot) \
-                       OR s.repo IN (SELECT canonical FROM repository_approval))";
-    let count: i64 = conn.query_row(sql, [repo], |r| r.get(0))?;
+    let scope = if repo.is_some() {
+        " AND s.repo = ?1"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "SELECT COUNT(*) FROM remote_code_symbol s \
+           JOIN code_generation g \
+             ON g.repo = s.repo AND g.generation_id = s.generation_id \
+          WHERE g.state = 'active' AND g.origin = 'sync' \
+            AND (NOT EXISTS (SELECT 1 FROM sync_policy_snapshot) \
+                 OR s.repo IN (SELECT canonical FROM repository_approval)){scope}"
+    );
+    let count: i64 = match repo {
+        Some(repo) => conn.query_row(&sql, [repo], |r| r.get(0))?,
+        None => conn.query_row(&sql, [], |r| r.get(0))?,
+    };
     Ok(count.max(0) as u64)
 }
 
