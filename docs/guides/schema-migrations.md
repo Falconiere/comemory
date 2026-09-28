@@ -23,21 +23,21 @@ applies a hand-written one.
 
 ## Which tables are declared
 
-Since toolu-orm 0.12.0 ([#264](https://github.com/Falconiere/toolu-orm/issues/264)), a table-level
-`#[foreign_key(columns(a, b), references = "t(x, y)", on_delete = "…")]` declares a
-composite foreign key. The v31 project tables use ten of them, each against a
-`#[unique_index]` on the target's `(id, project_id)`, so nothing about their
-referential shape is hand-written SQL.
-
 All of them. `store::schema::DECLARED_TABLES` is the authoritative list —
-35 tables as of v20 on toolu-orm 0.10.1, one struct per table across
-`src/store/schema_{core,memory,code,documents,graph,learning,history,sync}.rs`.
+76 tables as of v31 on toolu-orm 0.12.0, one struct per table across the
+`src/store/schema_*.rs` declaration files.
 The six gaps filed against toolu-orm while adopting it
 ([#64](https://github.com/Falconiere/toolu-orm/issues/64) … [#70](https://github.com/Falconiere/toolu-orm/issues/70))
 all shipped the same day: composite primary keys and `AUTOINCREMENT`
 (`#[primary_key(a, b)]`, `#[column(primary_key, autoincrement)]`), raw
 `CHECK`s (`#[column(check = "…")]`), partial indexes
 (`#[index(…, where = "…")]`) and `DESC` index columns (`desc(col)`).
+
+Since toolu-orm 0.12.0 ([#264](https://github.com/Falconiere/toolu-orm/issues/264)), a table-level
+`#[foreign_key(columns(a, b), references = "t(x, y)", on_delete = "…")]` declares a
+composite foreign key. The v31 project tables use ten of them, each against a
+`#[unique_index]` on the target's `(id, project_id)`, so nothing about their
+referential shape is hand-written SQL.
 
 Two shapes are stand-ins, proven equivalent by the fidelity test: a
 table-level `UNIQUE (…)` (`code_symbols`, `source_files`) is declared as
