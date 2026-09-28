@@ -3,9 +3,10 @@
 //! `serve::envelope::status_and_code` maps `Class` to an HTTP `StatusCode`;
 //! `mcp::result::into_tool_result` maps everything but `Class::Internal` to
 //! a tool-level error, `Internal` to the protocol's own error object;
-//! [`exit_code`] gives `main.rs` its sysexits code, deriving a project
-//! refusal's from its `Class`. One [`classify`] keeps the three adapters from
-//! drifting on which error is which (Binding Rule 1).
+//! [`crate::utilities::exit_code::exit_code`] gives `main.rs` its sysexits
+//! code, deriving a project refusal's from its `Class`. One [`classify`]
+//! keeps the three adapters from drifting on which error is which (Binding
+//! Rule 1).
 
 use crate::prelude::*;
 use crate::utilities::project_error::{ProjectError, RequestEdge};

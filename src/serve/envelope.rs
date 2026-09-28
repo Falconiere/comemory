@@ -51,7 +51,7 @@ impl Envelope {
     /// Error envelope built from a crate [`Error`]; status and `code` come
     /// from [`status_and_code`], and the optional structured `details`
     /// member from [`error_details`] — or, for a project refusal, its own
-    /// ordered details. Serialized through [`ErrorEnvelope`], so the bytes
+    /// ordered details. Serialized through the private `ErrorEnvelope`, so the bytes
     /// read `ok, error{code, message, details}, meta` in that order: the
     /// platform's order, which a sorted `json!` map would not keep.
     pub fn err(command: &str, e: &Error, elapsed_ms: u64) -> Response {

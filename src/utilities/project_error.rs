@@ -33,7 +33,7 @@ pub enum RequestEdge {
     Invariant,
 }
 
-/// A project refusal. Variant order follows the HTTP status it answers.
+/// A project refusal. Variants are grouped by the HTTP status they answer.
 #[derive(Debug, Error)]
 pub enum ProjectError {
     /// `404` — one answer for an unknown project and one outside the
