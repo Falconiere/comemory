@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.1] - 2026-09-28
+
+### Added
+
+- gate the HTTP API guide against the route table ([#355](https://github.com/Falconiere/comemory/pull/355))
+
 ## [0.52.0] - 2026-09-28
 
 ### Added
