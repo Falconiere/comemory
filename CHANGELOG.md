@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.1] - 2026-09-28
+
+### Fixed
+
+- use repository policy protocol for managed replica requests ([#359](https://github.com/Falconiere/comemory/pull/359))
+
 ## [0.53.0] - 2026-09-28
 
 ### Added
