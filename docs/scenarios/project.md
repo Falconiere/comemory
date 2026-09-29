@@ -263,9 +263,10 @@ warning never logs the value.
     both levels by `(position, id)` (`workItemId` null for a project-level
     one), and every `blocks` edge.
   - An archived milestone, work item or criterion is absent, and so is every
-    edge that names an archived item. As on the platform, a live item keeps a
-    `milestoneId` whose milestone is archived, and a live criterion a
-    `workItemId` whose item is archived.
+    edge that names an archived item. Archiving a milestone or item archives
+    nothing under it, so, as on the platform, a live item can name an
+    archived `milestoneId` and a live criterion an archived `workItemId`;
+    both are kept.
   - The TTY view prints `plan vN of <id>`, then one line per milestone, item
     (`#n [status] title`), criterion (`[resolution] text (scope)`) and edge.
   - A malformed id exits 64 (`400 invalid_request`, `projectId is invalid`),

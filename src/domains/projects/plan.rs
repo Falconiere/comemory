@@ -7,9 +7,11 @@
 //! approved proposal removes something, so listing them would contradict the
 //! diff the reviewer approved. An edge naming an archived item is dropped
 //! too, so every edge names two items the same response lists. The platform
-//! filters nothing else: a live item keeps a `milestoneId` whose milestone is
-//! archived, and a live item-level criterion keeps a `workItemId` whose item
-//! is archived (approval archives an item's criteria with it, #338).
+//! filters on each row's own `archived_at` and nothing else: archiving a
+//! milestone or a work item archives neither the items in it nor the item's
+//! criteria (`writeMilestoneArchive`, `writeWorkItemArchive`), so a live item
+//! can name an archived `milestoneId` and a live criterion an archived
+//! `workItemId`. Both are kept, as the platform keeps them.
 //!
 //! A project before its first approval reads plan version `0` with no
 //! milestones, work items or dependencies; its `criteria` are the charter's
