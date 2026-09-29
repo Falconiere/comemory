@@ -29,3 +29,31 @@ fn writes_whole_owner_only_replaces_and_leaves_nothing_on_failure() {
         .collect();
     assert_eq!(left, vec![std::ffi::OsString::from("bundle.json")]);
 }
+
+/// Two writers of one path at once — threads of one process — each get their
+/// own temp file: both succeed, the file holds one whole write, and no temp
+/// file is left behind.
+#[test]
+fn concurrent_writers_of_one_path_never_share_a_temp_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bundle.json");
+    let writers: Vec<_> = (0..8)
+        .map(|i| {
+            let path = path.clone();
+            std::thread::spawn(move || write_atomically(&path, format!("writer {i}").as_bytes()))
+        })
+        .collect();
+    for writer in writers {
+        writer.join().unwrap().unwrap();
+    }
+    let body = String::from_utf8(std::fs::read(&path).unwrap()).unwrap();
+    assert!(
+        body.starts_with("writer ") && body.len() <= "writer 7".len(),
+        "{body}"
+    );
+    let left: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(left, vec![std::ffi::OsString::from("bundle.json")]);
+}
