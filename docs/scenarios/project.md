@@ -60,8 +60,11 @@ a limit or rule breach answers `422` (exit 65) naming field, reason and limit
 answers `400` (exit 64). A refused create writes nothing — no project, no
 repository, no criterion, no activity event.
 
-Authority refusals come first, before validation and before any store
-access, and write nothing — not even the `activity_log` row:
+Authority refusals come before validation and before the core touches the
+store, and they write nothing, not even the `activity_log` row. The CLI
+never even opens its database for one. Over HTTP a malformed body still
+answers `400` first, and HTTP and MCP open their connection before the core
+runs. The refusals are:
 
 - an agent on a human-only verb: `403 project_agent_scope` (`This command
   requires a signed-in human`);

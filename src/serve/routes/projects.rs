@@ -1,8 +1,9 @@
 //! `POST|GET /api/v1/projects` and `GET /api/v1/projects/{id}` — the
 //! `domains::projects` create, list and show cores, on the platform's REST
-//! paths so a hosted cutover forwards without remapping. `POST` answers
-//! `201`, as the platform does. Every core runs under [`caller`]'s envelope;
-//! no header can change it.
+//! paths so a hosted cutover forwards without remapping. Every core runs
+//! under [`caller`]'s envelope, which no header can change: in local mode
+//! the local agent, so `POST` answers `403 project_agent_scope`, and an
+//! admitted create answers `201`, as the platform does.
 //!
 //! Bodies and queries are parsed here rather than by axum's extractors,
 //! whose rejections are plain text: every malformed input answers the
@@ -87,9 +88,12 @@ async fn create_project(State(state): State<AppState>, headers: HeaderMap, raw: 
         authority::run(&mut ctx, &caller(), req)
     })
     .await;
-    let mut response = respond(CREATE, result, started);
+    created(respond(CREATE, result, started))
+}
+
+/// The platform's `201` for a created project; a refusal passes through.
+fn created(mut response: Response) -> Response {
     if response.status() == StatusCode::OK {
-        // The platform answers a created project with `201`.
         *response.status_mut() = StatusCode::CREATED;
     }
     response
@@ -117,3 +121,7 @@ async fn show_project(State(state): State<AppState>, Path(id): Path<String>) -> 
     })
     .await
 }
+
+#[cfg(test)]
+#[path = "tests/projects.rs"]
+mod tests;

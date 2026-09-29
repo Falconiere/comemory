@@ -18,7 +18,7 @@
 //! `false` before the env is ever consulted.
 
 use comemory::config::{Config, Paths, env};
-use comemory::domains::projects::authority::Verb;
+use comemory::domains::projects::authority::{Envelope, Verb};
 use comemory::domains::projects::principal::{LOCAL_AGENT_ID, Principal, PrincipalType};
 use comemory::mcp::McpOptions;
 use comemory::mcp::state::McpState;
@@ -126,6 +126,7 @@ fn the_project_envelope_holds_every_capability_and_no_human_verb() {
     let dir = tempdir().expect("tempdir");
     let state = state_in(&dir, false);
     let envelope = state.project_envelope();
+    assert_eq!(envelope, &Envelope::local_agent());
     assert_eq!(
         envelope.principal(),
         &Principal::new(PrincipalType::ProjectAgent, LOCAL_AGENT_ID)

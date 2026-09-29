@@ -137,6 +137,8 @@ fn captured<T>(f: impl FnOnce() -> T) -> (T, String) {
     let subscriber = tracing_subscriber::fmt()
         .with_writer(move || writer.clone())
         .with_ansi(false)
+        .without_time()
+        .with_target(false)
         .finish();
     let out = tracing::subscriber::with_default(subscriber, f);
     let log = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
@@ -170,13 +172,12 @@ fn an_unrecognised_capability_empties_the_whole_list_and_logs_no_value() {
     let source = "projects.agent_capabilities";
     let (parsed, log) = captured(|| Capabilities::parse(source, &["project.read", UNKNOWN]));
     assert_eq!(parsed, Capabilities::none(), "project.read survived");
-    assert_eq!(log.lines().count(), 1, "{log}");
-    assert!(log.contains("WARN"), "{log}");
-    assert!(log.contains("unrecognised capability"), "{log}");
-    assert!(log.contains(source), "{log}");
-    assert!(
-        log.contains("position=1") && log.contains("count=2"),
-        "{log}"
+    assert_eq!(
+        log.trim_end(),
+        format!(
+            " WARN project envelope: unrecognised capability; the list grants nothing \
+             source=\"{source}\" position=1 count=2"
+        )
     );
     assert!(!log.contains(UNKNOWN), "the value reached the log: {log}");
 
@@ -283,7 +284,14 @@ fn an_agent_reaches_exactly_the_verbs_its_capabilities_name() {
                 ),
                 "{verb:?}"
             ),
-            Rule::HumanOnly(_) => assert_eq!(refusal(outcome).0, "project_agent_scope", "{verb:?}"),
+            Rule::HumanOnly(_) => assert_eq!(
+                refusal(outcome),
+                (
+                    "project_agent_scope",
+                    "This command requires a signed-in human".to_string()
+                ),
+                "{verb:?}"
+            ),
         }
     }
 }

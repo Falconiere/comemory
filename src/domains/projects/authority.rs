@@ -2,7 +2,8 @@
 //! platform's `project-principal.ts`, `project-workspace-role.ts` and
 //! `rpc/projects/README.md`. Every core is a sealed [`Command`] whose
 //! `execute` needs an [`Actor`], and only [`run`] mints one — after the
-//! [`Envelope`] admits the verb, so a refusal comes before any store access.
+//! [`Envelope`] admits the verb, so a refusal comes before the core touches
+//! the store.
 //! The actor is never `Origin.actor`, a self-declared telemetry label.
 
 use crate::domains::projects::principal::{
@@ -414,9 +415,10 @@ pub trait Command: sealed::Sealed {
     fn execute(self, ctx: &mut Ctx<'_>, actor: &Actor) -> Result<Self::Response>;
 }
 
-/// Run `command` under `envelope`. A refusal returns before `execute` — so
-/// before any store access: a lazy [`Ctx`] never opens its database, and no
-/// project row, project activity event or `activity_log` row is written.
+/// Run `command` under `envelope`. A refusal returns before `execute`, so
+/// before the core touches the store: no project row, project activity event
+/// or `activity_log` row is written, and a lazy [`Ctx`] never opens its
+/// database.
 pub fn run<C: Command>(ctx: &mut Ctx<'_>, envelope: &Envelope, command: C) -> Result<C::Response> {
     envelope.authorize(command.verb())?;
     let actor = Actor {

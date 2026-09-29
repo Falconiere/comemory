@@ -48,8 +48,8 @@ fn seed(home: &ServeHome, key: &str) -> Value {
     created["project"].clone()
 }
 
-/// `[projects, project_activity_events, project.create telemetry rows]`,
-/// read straight from the server's database.
+/// `[projects, project_activity_events, activity_log]` rows, read straight
+/// from the server's database.
 fn rows(home: &ServeHome) -> [i64; 3] {
     let db = rusqlite::Connection::open_with_flags(
         home.data_dir().join("comemory.db"),
@@ -59,7 +59,7 @@ fn rows(home: &ServeHome) -> [i64; 3] {
     [
         "SELECT COUNT(*) FROM projects",
         "SELECT COUNT(*) FROM project_activity_events",
-        "SELECT COUNT(*) FROM activity_log WHERE command = 'project.create'",
+        "SELECT COUNT(*) FROM activity_log",
     ]
     .map(|sql| db.query_row(sql, [], |r| r.get(0)).unwrap())
 }
