@@ -20,6 +20,15 @@ pub mod changes;
 pub mod charter;
 /// `project create`: a draft charter and its `project.created` event.
 pub mod create;
+/// Typed evidence: the kind and trust vocabularies, the claim shape and its
+/// initial trust, the stored metadata and the wire view (#346).
+pub mod evidence;
+/// `project evidence add`: one evidence row on a project or work item.
+pub mod evidence_add;
+/// The checks an evidence attach runs before any store access.
+pub mod evidence_check;
+/// `project evidence list`: a filtered keyset page of a project's evidence.
+pub mod evidence_page;
 /// The epoch-millisecond `<ms>:<uuid>` keyset cursor every project page uses.
 pub mod keyset;
 /// `project archive|restore|pause|resume`: the four lifecycle commands.

@@ -13,14 +13,14 @@ use std::collections::BTreeSet;
 use comemory::mcp::catalog::{self, TOOLS};
 
 #[test]
-fn catalog_holds_seventeen_uniquely_named_tools() {
-    assert_eq!(TOOLS.len(), 17, "catalog size");
+fn catalog_holds_eighteen_uniquely_named_tools() {
+    assert_eq!(TOOLS.len(), 18, "catalog size");
     let names: BTreeSet<&str> = TOOLS.iter().map(|t| t.name).collect();
-    assert_eq!(names.len(), 17, "duplicate tool name in {names:?}");
+    assert_eq!(names.len(), 18, "duplicate tool name in {names:?}");
 }
 
 #[test]
-fn exactly_three_tools_mutate() {
+fn exactly_four_tools_mutate() {
     let mutating: Vec<&str> = TOOLS
         .iter()
         .filter(|t| t.mutating)
@@ -28,12 +28,13 @@ fn exactly_three_tools_mutate() {
         .collect();
     assert_eq!(
         mutating,
-        vec!["save", "architecture_save", "feedback"],
+        vec!["save", "architecture_save", "project_evidence", "feedback"],
         "mutating tools"
     );
     assert!(catalog::is_mutating("save"));
     assert!(catalog::is_mutating("feedback"));
     assert!(catalog::is_mutating("architecture_save"));
+    assert!(catalog::is_mutating("project_evidence"));
     assert!(!catalog::is_mutating("find"));
     // An unknown name is not dispatchable at all, so it is not "mutating".
     assert!(!catalog::is_mutating("delete-everything"));

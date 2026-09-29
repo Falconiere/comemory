@@ -1,10 +1,10 @@
 //! The two project read tools (#326), as their own `#[tool_router]` block:
-//! the `domains::projects` list core, and the show, plan (#335) and
-//! activity-page (#331) cores behind `project_show`'s `view`, with no repo
-//! scope — a
-//! project is not repo-scoped — each run under the session's envelope
-//! ([`McpState::project_envelope`]). The epic's six project writers (#261)
-//! join them in later tasks.
+//! the `domains::projects` list core, and the show, plan (#335),
+//! activity-page (#331) and evidence-page (#346) cores behind
+//! `project_show`'s `view`, with no repo scope — a project is not
+//! repo-scoped — each run under the session's envelope
+//! ([`McpState::project_envelope`]). The project writers live in
+//! [`crate::mcp::tools_project_writes`].
 //!
 //! [`McpState::project_envelope`]: crate::mcp::state::McpState::project_envelope
 //!
@@ -40,10 +40,11 @@ impl ComemoryServer {
         read_tool(self, move |c, s| enveloped(c, s, req)).await
     }
 
-    /// One project's charter, committed plan or activity page by id.
+    /// One project's charter, committed plan, activity page or evidence
+    /// page by id.
     #[tool(
         name = "project_show",
-        description = "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies. view activity: one keyset page of its activity events; limit 1-200, order desc (default) or asc, and nextCursor back as cursor."
+        description = "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies. view activity: one keyset page of its activity events; limit 1-200, order desc (default) or asc, and nextCursor back as cursor. view evidence: one page of its evidence newest first; filter by kind, trust or workItemId, limit 1-100, nextCursor back as cursor."
     )]
     async fn project_show(
         &self,
@@ -67,6 +68,17 @@ impl ComemoryServer {
                     };
                     enveloped(c, s, page).map(Shown::Activity)
                 }
+                ProjectShowView::Evidence => {
+                    let page = projects::evidence_page::Request {
+                        project_id: id,
+                        limit: req.limit,
+                        cursor: req.cursor,
+                        kind: req.kind,
+                        trust: req.trust,
+                        work_item_id: req.work_item_id,
+                    };
+                    enveloped(c, s, page).map(Shown::Evidence)
+                }
             }
         })
         .await
@@ -83,9 +95,15 @@ enum Shown {
     Plan(projects::plan::Response),
     /// `{events, nextCursor}`.
     Activity(projects::activity_page::Response),
+    /// `{evidence, nextCursor}`.
+    Evidence(projects::evidence_page::Response),
 }
 
 /// Run a project core under the session's envelope.
-fn enveloped<C: Command>(ctx: &mut Ctx<'_>, state: &McpState, req: C) -> Result<C::Response> {
+pub(crate) fn enveloped<C: Command>(
+    ctx: &mut Ctx<'_>,
+    state: &McpState,
+    req: C,
+) -> Result<C::Response> {
     authority::run(ctx, state.project_envelope(), req)
 }

@@ -331,9 +331,10 @@ warning never logs the value.
     1)` / `too_large (limit 200)`). 1 and 200 are accepted.
   - An agent without `project.read` is refused `403 project_agent_scope`
     before the store opens.
-  - Over MCP, `limit`, `cursor` or `order` on the `charter` or `plan` view
-    is refused `400 invalid_request` naming the field (`limit is activity_only`), so a caller never
-    believes it paged a charter.
+  - Over MCP, `limit` or `cursor` on the `charter` or `plan` view is
+    refused `400 invalid_request` naming the field (`limit is page_only`),
+    and `order` on any view but `activity` (`order is activity_only`), so a
+    caller never believes it paged a charter.
 - **Covered by:** `tests/cli__project_activity.rs::a_walk_returns_every_earlier_event_once_while_another_process_writes`,
   `tests/cli__project_activity.rs::json_and_tty_views_page_one_project_and_refusals_exit_by_edge`,
   `src/store/tests/project_activity.rs::both_orders_walk_the_same_set_in_reverse_at_every_page_size`,
@@ -383,3 +384,53 @@ warning never logs the value.
   `src/domains/projects/tests/lifecycle.rs::a_replay_writes_nothing_and_any_other_reuse_of_the_key_conflicts`,
   `src/store/tests/projects.rs::a_lifecycle_patch_lands_only_at_the_version_it_names`,
   `tests/serve__routes__project_lifecycle.rs`
+
+### project-12 Attach and page typed evidence
+
+- **Flags:** `add`: `--kind`, `--source`, `--work-item`, `--external-id`,
+  `--url`, `--repo`, `--commit-sha`, `--metadata`, `--criterion`,
+  `--idempotency-key`; `list`: `--kind`, `--trust`, `--work-item`,
+  `--cursor`, `--limit`; both `--json`
+- **Setup:** a project chartered with `--id` and `--repository
+  falconiere/comemory`, its committed plan seeded from
+  `tests/fixtures/projects/plan_seed.sql` (work items and criteria)
+- **Command:** `comemory project evidence add <ID> --kind commit --source git
+  --repo falconiere/comemory --commit-sha <sha> --work-item <item>`, then
+  `comemory project evidence list <ID> --trust pending --json`; over HTTP
+  `POST|GET /api/v1/projects/<ID>/evidence`, over MCP `project_evidence` and
+  `project_show` with `view: "evidence"`
+- **Expect:**
+  - An attach without `--work-item` is project-level (`workItemId: null`);
+    with it, the row names that item. Each attach writes one row, its
+    criterion links, one `project.evidence.recorded` event and one change
+    frame, and prints the platform's evidence view.
+  - Nothing is verified yet (#348): a `commit`, `pull_request`, a `test_run`
+    naming a repository, and a `session`, `decision` or `memory` with an
+    external id are stored `pending`; a `test_run` without a repository, a
+    `deployment` and an `external_url` are `self_reported`.
+  - `list` pages newest first; `--kind`, `--trust` and `--work-item` filter
+    alone or together, a `--limit` walk visits every row once and ends with
+    `nextCursor: null`, and the page is identical over the CLI, HTTP `data`
+    and MCP.
+  - A stored trust this build does not know reads as `invalid`, and
+    `--trust invalid` returns it.
+  - A malformed `--repo` or `--commit-sha` exits 65 (`422 … invalid_format`,
+    or `too_long (limit 256)`), a claim missing what its kind needs exits 65
+    (`repo is required_for_commit`, …), an unknown `--kind` exits 64, a
+    repository outside the project's exits 70 (`403 repo_not_allowed`), an
+    unknown `--work-item` or project exits 64 (`404`) — each storing
+    nothing, not even a receipt.
+  - Rerunning with the same `--idempotency-key` and flags prints the first
+    answer; the key with another body exits 75 (`409
+    idempotency_conflict`).
+  - Over MCP, a `--read-only` session refuses `project_evidence` with
+    `read_only` and still pages through `project_show`; `kind`, `trust` or
+    `workItemId` on another view is `400` (`kind is evidence_only`).
+- **Covered by:** `tests/cli__project_evidence.rs::evidence_attaches_at_both_levels_and_every_filter_pages_the_right_rows`,
+  `tests/cli__project_evidence.rs::a_retried_key_prints_the_first_answer_and_a_reused_one_conflicts`,
+  `tests/cli__project_evidence.rs::every_refusal_exits_by_its_edge_and_stores_nothing`,
+  `tests/cli__project_evidence.rs::tty_views_print_an_empty_page_and_an_attached_record`,
+  `src/store/tests/project_evidence.rs`,
+  `src/domains/projects/tests/{evidence,evidence_check,evidence_add,evidence_page}.rs`,
+  `tests/serve__routes__projects.rs::evidence_attaches_and_pages_over_http_and_refuses_by_code`,
+  `tests/cli_scenario_mcp.rs::mcp_11_project_evidence_attaches_and_pages`

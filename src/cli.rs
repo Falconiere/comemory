@@ -92,6 +92,9 @@ pub mod project;
 /// `comemory project activity` — the flags and TTY view of one project's
 /// activity page.
 pub mod project_activity;
+/// `comemory project evidence add|list` — the flags and TTY views of typed
+/// evidence.
+pub mod project_evidence;
 /// `comemory project archive|restore|pause|resume` — the flags the four
 /// lifecycle verbs share.
 pub mod project_lifecycle;

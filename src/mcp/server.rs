@@ -47,11 +47,15 @@ pub struct ComemoryServer {
 }
 
 impl ComemoryServer {
-    /// Compose the read, project and write routers over `state`.
+    /// Compose the read, project, project-writer and write routers over
+    /// `state`.
     pub fn new(state: McpState) -> Self {
         Self {
             state,
-            tool_router: Self::read_router() + Self::project_router() + Self::write_router(),
+            tool_router: Self::read_router()
+                + Self::project_router()
+                + Self::project_write_router()
+                + Self::write_router(),
         }
     }
 

@@ -8,7 +8,7 @@ change feed, and the command cores the CLI, the loopback HTTP server and the
 MCP catalog all call.
 
 **What does NOT belong here:** SQL (every project statement lives in
-`store::{projects,project_read,project_plan,project_activity,project_changes}`, the
+`store::{projects,project_read,project_plan,project_activity,project_changes,project_evidence}`, the
 declared tables in `store::schema_projects`), delivery (no file here imports `cli`, `serve` or
 `mcp`), and the refusal vocabulary, which is `utilities::project_error`.
 
@@ -24,7 +24,11 @@ One line per file, named after its primary item:
 | `changes.rs` | `Request` | `project changes` / `GET /projects/changes` (`Verb::ProjectChanges`, a `project.read` reader): body-free frames `{seq, entity, project_id, event_id, op}` after a cursor, refusing a cursor past the head or below the oldest retained row; `record_deletion`, the `deleted` row #320 appends in its delete transaction |
 | `charter.rs` | `validate` | A create request checked against every charter rule before any store access, in the platform's field order, and normalized for storage (lowercase id, canonical de-duplicated repositories, the lead) |
 | `create.rs` | `Request` | `project create` / `POST /projects`: the draft charter, its repositories, its project-level criteria and one `project.created` event in one immediate transaction; the slug retried with `-2`, `-3`, … on a real collision |
-| `keyset.rs` | `decode` | The platform's `<epochMillis>:<uuid>` keyset cursor over `(created_at, id)`: encode, and decode with a `400 invalid_request` for anything outside `^\d{1,15}:[0-9a-f-]{36}$`; later pages reuse it |
+| `evidence.rs` | `EvidenceView` | Typed evidence shared by attach and page (#346): the closed `KINDS` and `TRUSTS`, `read_trust` (a stored value outside `TRUSTS` reads as `invalid`) and `trust_filter` (`invalid` also keeps those values), `Claim::check_shape` (the platform's claim shape, `commitSha` hex 1–256) and `Claim::initial` (the trust matrix), `StoredMetadata` (`{repo, commitSha, reason, claim, provider}`, ≤ 16 KiB encoded) and the platform's view key for key |
+| `evidence_add.rs` | `Request` | `project evidence add` / `POST /projects/{id}/evidence` / MCP `project_evidence` (`Verb::EvidenceCreate`): under the receipt, one transaction checks the project, the repository gate (`403 repo_not_allowed`), the criteria (`422 … reason: unknown`) and the work item (`404 work_item_not_found`), then writes the row, its criterion links and one `project.evidence.recorded` event |
+| `evidence_check.rs` | `validate` | The attach's checks before any store access, in the platform's schema order: UUIDs and the kind vocabulary (`400`), the text caps (`422` with the limit), the absolute URL, the canonical `repo`, the hex `commitSha` and at most 20 criterion ids |
+| `evidence_page.rs` | `Request` | `project evidence list` / `GET /projects/{id}/evidence` / `project_show` with `view: "evidence"` (`Verb::EvidenceRead`): a keyset page newest first over `(created_at, id)`, `kind`, `trust` and `workItemId` alone or together, `limit` 1–100 (default 50); an unknown project `404`, an unknown item filter an empty page |
+| `keyset.rs` | `decode` | The platform's `<epochMillis>:<uuid>` keyset cursor over `(created_at, id)`: encode, and decode with a `400 invalid_request` for anything outside `^\d{1,15}:[0-9a-f-]{36}$`; `Positioned`, the `(created_at, id)` of a row `activity_page::split` pages; later pages reuse it |
 | `lifecycle.rs` | `Request` | `project archive\|restore\|pause\|resume` / `POST /projects/{id}/{archive,restore,pause,resume}` (#328): the platform's one lifecycle command with a four-way `Kind`, human-only at lead tier. Loads the row, checks `expectedVersion` (`409 version_conflict`), then the ported transition (`409 invalid_transition`), writes a version-guarded patch and one `project.<verb>d` event under the receipt; a pause reason must be non-blank (`422`) |
 | `limits.rs` | `text` | The platform's charter and paging caps (`project-limits.ts`), counted in UTF-16 units, each breach a `422 invalid_request` naming field, reason and limit |
 | `list.rs` | `Request` | `project list` / `GET /projects`: a keyset page newest first, filtered by status, health and `includeArchived` |
@@ -88,9 +92,44 @@ One line per file, named after its primary item:
   id, because receipts are scoped to principal and key only. One key reused
   on another project is a conflict, never a replay of the first project.
 
+## Evidence
+
+`evidence_add` and `evidence_page` port the platform's
+`createProjectEvidence` (outside an execution) and `listProjectEvidence`
+(comemory.io `b86dec5`), minus verification, which is #348's.
+
+| Kind | Claim | Stored trust |
+| --- | --- | --- |
+| `commit` | `repo` + `commitSha`, both required | `pending` |
+| `pull_request` | `repo` + a numeric `externalId`, both required | `pending` |
+| `test_run` | with a `repo` (then `commitSha` and `externalId` required) | `pending` |
+| `test_run` | no `repo` | `self_reported` |
+| `session`, `decision`, `memory` | `externalId` required | `pending` |
+| `deployment`, `external_url` | — | `self_reported` |
+
+- **Initial trust** is the platform's matrix without its verifier: a claim a
+  verifier could check is `pending` (`metadata.reason:
+  verification_pending`) until #348 resolves it; anything else is the
+  principal's word, `self_reported`. Nothing writes `verified` or `invalid`
+  yet.
+- **Unknown stored trust** reads as `invalid`, the least trusted state, and
+  the `trust=invalid` filter keeps it, so the filter agrees with the view.
+- **The repository gate is ported:** a `repo` outside the project's own
+  repositories is `403 repo_not_allowed`, and nothing is stored.
+- **Criterion links:** every id must be a criterion of this project, at
+  either level, as the platform checks; repeats link once.
+- **The digest includes `projectId`.** The platform's principal is scoped to
+  one project, so its body omits it; the engine's local agent reaches every
+  project, and one key on two projects would otherwise replay the first.
+- **`evidence_not_found`** is not reached here: no attach or list path names
+  an evidence id. #348's verify retry is its first caller.
+- **No index:** the platform's table has none, and one project's evidence is
+  small.
+
 ## Idempotency
 
-Every mutation except hard deletion (#320) runs through `receipt::run`
+Every mutation except hard deletion (#320) — `create`, `lifecycle` and `evidence_add`
+today — runs through `receipt::run`
 (`receipt.rs`, #327), ported from the platform's
 `project-command-receipt-service.ts`:
 
@@ -197,7 +236,7 @@ comemory project
   item …          (ready, start, …)         #351
   execution …     (heartbeat, block, resume, request-review)  #352
   packet …                                  packets slice (#266)
-  evidence …      (add, list)               #346
+  evidence add | list                       #346
   approvals …                               approval inbox
   changes                                   #324 (read-only; HTTP for the relay)
 ```
@@ -207,13 +246,15 @@ comemory project
 The curated catalog held 15 tools before this epic; projects add eight, and
 human-only verbs get none:
 
-- readers: `project_list`, `project_show` (the catalog is 17). The plan is a
-  `view: "plan"` of `project_show` (#335) and one activity page a
-  `view: "activity"` with `limit`, `cursor` and `order` (#331), neither a
-  row of its own;
+- readers: `project_list`, `project_show`. The plan is a `view: "plan"` of
+  `project_show` (#335), one activity page a `view: "activity"` with
+  `limit`, `cursor` and `order` (#331), and one evidence page a
+  `view: "evidence"` with `limit`, `cursor`, `kind`, `trust` and
+  `workItemId` (#346), none a row of its own;
 - writers: `project_propose`, `project_work` (ready, start),
   `project_execution` (heartbeat, block, resume, request review),
-  `project_work_packet`, `project_evidence`, `project_health`.
+  `project_work_packet`, `project_evidence` (#346; the catalog is now 18),
+  `project_health`.
 
 ## One MCP tool, many verbs: the `action` rule
 
@@ -228,5 +269,7 @@ an `action` binds to a clap **group** instead:
   probes that leaf's argument ids against the tool request with `action` set.
 - One tool name keeps one catalog row.
 
-#351 implements this with `project_work`; #352 (`project_execution`) and #346
-(`project_evidence`) follow it.
+#351 implements this with `project_work`; #352 (`project_execution`) follows
+it. `project_evidence` (#346) is a leaf bound to `project evidence add`: its
+group has one writer verb, and the list is `project_show`'s evidence view, so
+a `--read-only` session can still read it.

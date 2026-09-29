@@ -105,46 +105,71 @@ pub enum ProjectShowView {
     Plan,
     /// One page of the activity log, as `project activity` reads it.
     Activity,
+    /// One page of evidence, as `project evidence list` reads it.
+    Evidence,
 }
 
 /// `project_show` tool parameters: the `project show` / `project plan show` /
-/// `project activity` request plus the view choosing between them. The page
-/// fields belong to the activity view; any other view refuses them.
+/// `project activity` / `project evidence list` request plus the view
+/// choosing between them. `limit` and `cursor` belong to the two paged views,
+/// `order` to `activity`, and `kind`, `trust` and `workItemId` to
+/// `evidence`; any other view refuses them.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectShowParams {
     /// The project's UUID.
     pub id: String,
-    /// `charter` (default), `plan` or `activity`.
+    /// `charter` (default), `plan`, `activity` or `evidence`.
     #[serde(default)]
     pub view: ProjectShowView,
-    /// Activity page size, 1–200; 50 when absent.
+    /// Page size: activity 1–200 (default 50), evidence 1–100 (default 50).
     #[serde(default)]
     pub limit: Option<i64>,
-    /// The previous activity page's `nextCursor`.
+    /// The previous page's `nextCursor`.
     #[serde(default)]
     pub cursor: Option<String>,
-    /// `desc` (newest first, the default) or `asc` (oldest first).
+    /// Activity: `desc` (newest first, the default) or `asc` (oldest first).
     #[serde(default)]
     pub order: Option<String>,
+    /// Evidence: only this kind.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Evidence: only this trust (`verified`, `self_reported`, `pending`,
+    /// `invalid`).
+    #[serde(default)]
+    pub trust: Option<String>,
+    /// Evidence: only evidence on this work item.
+    #[serde(default, rename = "workItemId")]
+    pub work_item_id: Option<String>,
 }
 
 impl ProjectShowParams {
-    /// Refuse a page field (`limit`, `cursor`, `order`) on any view but
-    /// `activity`, naming the first one set, so a caller never believes it
-    /// paged a charter or a plan: the schema-edge `400 invalid_request`
-    /// `<field> is activity_only`.
+    /// Refuse a field the chosen view does not read, naming the first one
+    /// set, so a caller never believes it paged a charter or filtered an
+    /// activity page: the schema-edge `400 invalid_request` `<field> is
+    /// page_only` (`limit`, `cursor`), `activity_only` (`order`) or
+    /// `evidence_only` (`kind`, `trust`, `workItemId`).
     pub fn page_fields_fit_the_view(&self) -> Result<()> {
-        if self.view == ProjectShowView::Activity {
-            return Ok(());
-        }
-        let set = [
-            ("limit", self.limit.is_some()),
-            ("cursor", self.cursor.is_some()),
-            ("order", self.order.is_some()),
+        use ProjectShowView::{Activity, Evidence};
+        let paged: &[ProjectShowView] = &[Activity, Evidence];
+        let fields: [(&str, bool, &[ProjectShowView], &str); 6] = [
+            ("limit", self.limit.is_some(), paged, "page_only"),
+            ("cursor", self.cursor.is_some(), paged, "page_only"),
+            ("order", self.order.is_some(), &[Activity], "activity_only"),
+            ("kind", self.kind.is_some(), &[Evidence], "evidence_only"),
+            ("trust", self.trust.is_some(), &[Evidence], "evidence_only"),
+            (
+                "workItemId",
+                self.work_item_id.is_some(),
+                &[Evidence],
+                "evidence_only",
+            ),
         ];
-        match set.iter().find(|(_, present)| *present) {
-            Some((field, _)) => Err(ProjectError::invalid_field(field, "activity_only").into()),
+        let misplaced = fields
+            .iter()
+            .find(|(_, set, views, _)| *set && !views.contains(&self.view));
+        match misplaced {
+            Some((field, _, _, reason)) => Err(ProjectError::invalid_field(field, reason).into()),
             None => Ok(()),
         }
     }

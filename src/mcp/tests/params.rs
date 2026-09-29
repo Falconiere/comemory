@@ -125,16 +125,31 @@ fn a_page_field_on_a_view_that_does_not_page_is_refused_naming_it() {
     use comemory::mcp::params::ProjectShowParams;
     use comemory::utilities::error_code::{Class, classify};
     let id = "11111111-1111-4111-8111-111111111111";
-    for (view, field, value) in [
-        ("charter", "limit", json!(5)),
-        ("charter", "cursor", json!("c")),
-        ("plan", "order", json!("asc")),
+    for (view, field, value, reason) in [
+        ("charter", "limit", json!(5), "page_only"),
+        ("plan", "cursor", json!("c"), "page_only"),
+        ("plan", "order", json!("asc"), "activity_only"),
+        ("evidence", "order", json!("asc"), "activity_only"),
+        ("activity", "kind", json!("commit"), "evidence_only"),
+        ("charter", "trust", json!("pending"), "evidence_only"),
+        ("activity", "workItemId", json!(id), "evidence_only"),
     ] {
         let params: ProjectShowParams =
             serde_json::from_value(json!({"id": id, "view": view, field: value})).unwrap();
         let e = params.page_fields_fit_the_view().unwrap_err();
         assert_eq!(classify(&e), ("invalid_request", Class::BadRequest), "{e}");
-        assert_eq!(e.to_string(), format!("{field} is activity_only"));
+        assert_eq!(e.to_string(), format!("{field} is {reason}"));
+    }
+    // Each paged view accepts its own fields.
+    for fields in [
+        json!({"view": "activity", "limit": 5, "cursor": "c", "order": "asc"}),
+        json!({"view": "evidence", "limit": 5, "cursor": "c", "kind": "commit",
+               "trust": "pending", "workItemId": id}),
+    ] {
+        let mut args = fields;
+        args["id"] = json!(id);
+        let params: ProjectShowParams = serde_json::from_value(args).unwrap();
+        params.page_fields_fit_the_view().unwrap();
     }
     // The default view is the charter, so a bare page field is refused too.
     let bare: ProjectShowParams = serde_json::from_value(json!({"id": id, "limit": 5})).unwrap();

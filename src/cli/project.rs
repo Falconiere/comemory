@@ -13,6 +13,7 @@ use clap::{Args as ClapArgs, Subcommand};
 
 use crate::cli::load_config;
 use crate::cli::output::json;
+use crate::cli::project_evidence::{self, EvidenceCmd};
 use crate::cli::{project_activity, project_lifecycle};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
@@ -58,6 +59,12 @@ Examples:
   # Walk one project's activity, oldest first
   comemory project activity 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --order asc --limit 50
 
+  # Record evidence on a work item, then page the project's pending evidence
+  comemory project evidence add 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --kind commit --source git \\
+    --repo falconiere/comemory --commit-sha 4b825dc642cb6eb9a060e54bf8d69288fbee4904 \\
+    --work-item 7c1d2e3f-4a5b-4c6d-8e7f-8a9b0c1d2e3f
+  comemory project evidence list 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --trust pending
+
   # Poll the body-free change feed from a cursor
   comemory project changes --after 0 --limit 100 --json";
 
@@ -93,6 +100,8 @@ pub enum ProjectCmd {
     Changes(ChangesArgs),
     /// Read a project's committed plan.
     Plan(PlanArgs),
+    /// Record and page typed evidence on a project or its work items.
+    Evidence(project_evidence::Args),
 }
 
 /// Args for `project plan` — nested verb required.
@@ -232,6 +241,20 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             let resp = authority::run(&mut ctx, &operator, plan::Request { id: s.id })?;
             emit(json_flag, &resp, |out| render_plan(out, &resp.plan))
         }
+        ProjectCmd::Evidence(project_evidence::Args { cmd }) => match cmd {
+            EvidenceCmd::Add(a) => {
+                let resp = authority::run(&mut ctx, &operator, a.request()?)?;
+                emit(json_flag, &resp, |out| {
+                    project_evidence::render_one(out, &resp.evidence)
+                })
+            }
+            EvidenceCmd::List(l) => {
+                let resp = authority::run(&mut ctx, &operator, l.request())?;
+                emit(json_flag, &resp, |out| {
+                    project_evidence::render_page(out, &resp)
+                })
+            }
+        },
     }
 }
 
