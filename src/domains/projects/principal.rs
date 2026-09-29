@@ -1,9 +1,7 @@
 //! Who a project command acts as: the platform's two principal kinds plus an
 //! id, stored as the `*_principal_type` / `*_principal_id` column pairs.
-//!
-//! Every core takes the actor as an argument. Until the capability envelope
-//! (#315) wraps it, every adapter passes [`Principal::local_operator`]; the
-//! transfer import (#342) remaps that id to the platform user on migrate.
+//! The capability envelope (`authority`) wraps it; the transfer import (#342)
+//! remaps the local operator's id to the platform user on migrate.
 
 use serde::Serialize;
 
@@ -41,6 +39,10 @@ pub struct Principal {
 /// identity behind it.
 pub const LOCAL_OPERATOR_ID: &str = "local-operator";
 
+/// The id a local agent session (MCP, local-mode HTTP) carries: one stable
+/// id, as a platform agent's key id is stable across its connections.
+pub const LOCAL_AGENT_ID: &str = "local-agent";
+
 impl Principal {
     /// A human principal with `id`.
     #[must_use]
@@ -51,9 +53,12 @@ impl Principal {
         }
     }
 
-    /// The person running this engine: a `user` with [`LOCAL_OPERATOR_ID`].
+    /// An agent principal with `id`.
     #[must_use]
-    pub fn local_operator() -> Self {
-        Self::user(LOCAL_OPERATOR_ID)
+    pub fn agent(id: &str) -> Self {
+        Self {
+            principal_type: PrincipalType::ProjectAgent,
+            id: id.to_string(),
+        }
     }
 }

@@ -4,7 +4,7 @@
 //! the representable range is an `internal_error`, never an empty date.
 
 use comemory::config::{Config, Paths};
-use comemory::domains::projects::principal::Principal;
+use comemory::domains::projects::authority::{self, Envelope};
 use comemory::domains::projects::{create, show};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -23,7 +23,7 @@ fn corrupt_stored_values_degrade_or_refuse_as_the_platform_would() {
             "name": "Corrupt", "keyPrefix": "BAD", "outcome": "o", "constraints": ["kept?"]
         }))
         .unwrap();
-        create::run(&mut ctx, &Principal::local_operator(), req)
+        authority::run(&mut ctx, &Envelope::local_operator(), req)
             .unwrap()
             .project
             .id
@@ -33,9 +33,13 @@ fn corrupt_stored_values_degrade_or_refuse_as_the_platform_would() {
         .unwrap();
     let project = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        show::run(&mut ctx, show::Request { id: id.clone() })
-            .unwrap()
-            .project
+        authority::run(
+            &mut ctx,
+            &Envelope::local_operator(),
+            show::Request { id: id.clone() },
+        )
+        .unwrap()
+        .project
     };
     assert_eq!(project.constraints, Vec::<String>::new());
     assert_eq!(project.non_goals, Vec::<String>::new());
@@ -43,7 +47,8 @@ fn corrupt_stored_values_degrade_or_refuse_as_the_platform_would() {
     conn.execute_batch(&format!("UPDATE projects SET created_at = {}", i64::MAX))
         .unwrap();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let e = show::run(&mut ctx, show::Request { id }).unwrap_err();
+    let e =
+        authority::run(&mut ctx, &Envelope::local_operator(), show::Request { id }).unwrap_err();
     assert_eq!(classify(&e), ("internal_error", Class::Internal));
     assert!(e.to_string().contains("projects.created_at"), "{e}");
 }

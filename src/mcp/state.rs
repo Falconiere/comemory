@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::config::paths::Paths;
 use crate::config::{Config, env};
+use crate::domains::projects::authority::Envelope;
 use crate::mcp::{McpOptions, scope};
 use crate::prelude::*;
 use crate::store::{Connection, connection};
@@ -102,6 +103,13 @@ impl McpState {
     /// Whether every mutating tool is refused for this session.
     pub fn read_only(&self) -> bool {
         self.read_only
+    }
+
+    /// The envelope every project tool runs under: the local agent, holding
+    /// all six capabilities and, by principal kind, no human verb (#315).
+    /// #316 narrows it by configuration and flag.
+    pub fn project_envelope(&self) -> Envelope {
+        Envelope::local_agent()
     }
 
     /// Whether a read should log a `retrieval_log` row. A `--read-only`

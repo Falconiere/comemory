@@ -1,7 +1,7 @@
 //! `comemory project` — engine-owned project management (epic #261). Each
 //! verb is a thin shell around a `domains::projects` core: this file owns the
-//! flags and the TTY rendering, nothing else. The CLI acts as the local
-//! operator; the capability envelope (#315) replaces that argument.
+//! flags and the TTY rendering, nothing else. The CLI runs every core under
+//! the local operator's envelope: a `user` at `owner` tier (#315).
 //!
 //! Clap argument ids equal the core request's serde names (`keyPrefix`,
 //! `includeArchived`, …), so the MCP parity probe maps a flag onto the field
@@ -14,7 +14,7 @@ use clap::{Args as ClapArgs, Subcommand};
 use crate::cli::load_config;
 use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::domains::projects::principal::Principal;
+use crate::domains::projects::authority::{self, Envelope};
 use crate::domains::projects::view::ProjectView;
 use crate::domains::projects::{create, list, show};
 use crate::prelude::*;
@@ -123,17 +123,18 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;
     let mut ctx = Ctx::lazy(&paths, &cfg);
+    let operator = Envelope::local_operator();
     match a.cmd {
         ProjectCmd::Create(c) => {
-            let resp = create::run(&mut ctx, &Principal::local_operator(), create_request(c))?;
+            let resp = authority::run(&mut ctx, &operator, create_request(c))?;
             emit(json_flag, &resp, |out| render_project(out, &resp.project))
         }
         ProjectCmd::Show(s) => {
-            let resp = show::run(&mut ctx, show::Request { id: s.id })?;
+            let resp = authority::run(&mut ctx, &operator, show::Request { id: s.id })?;
             emit(json_flag, &resp, |out| render_project(out, &resp.project))
         }
         ProjectCmd::List(l) => {
-            let resp = list::run(&mut ctx, list_request(l))?;
+            let resp = authority::run(&mut ctx, &operator, list_request(l))?;
             emit(json_flag, &resp, |out| render_page(out, &resp))
         }
     }

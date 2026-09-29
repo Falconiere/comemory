@@ -695,6 +695,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/memories/update.rs | comemory::domains::memories::update; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/memories/tests/update.rs | none | domains::memories | src/domains/memories/update.rs | retain |
 | src/domains/projects.rs | comemory::domains::projects; preserve | none | none | domains::projects | src/domains/projects.rs | retain |
 | src/domains/projects/activity.rs | comemory::domains::projects::activity; preserve | none | none | domains::projects | src/domains/projects/activity.rs | retain |
+| src/domains/projects/authority.rs | comemory::domains::projects::authority; preserve | src/domains/projects/tests/authority.rs | none | domains::projects | src/domains/projects/authority.rs | retain |
 | src/domains/projects/charter.rs | comemory::domains::projects::charter; preserve | none | none | domains::projects | src/domains/projects/charter.rs | retain |
 | src/domains/projects/create.rs | comemory::domains::projects::create; preserve | src/domains/projects/tests/create.rs | none | domains::projects | src/domains/projects/create.rs | retain |
 | src/domains/projects/keyset.rs | comemory::domains::projects::keyset; preserve | src/domains/projects/tests/keyset.rs | none | domains::projects | src/domains/projects/keyset.rs | retain |

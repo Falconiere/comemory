@@ -5,9 +5,9 @@
 //! projects stay out unless asked for.
 
 use comemory::config::{Config, Paths};
+use comemory::domains::projects::authority::{self, Envelope};
 use comemory::domains::projects::create;
 use comemory::domains::projects::list::{self, Request};
-use comemory::domains::projects::principal::Principal;
 use comemory::store::{Connection, connection};
 use comemory::utilities::context::Ctx;
 use comemory::utilities::error_code::{Class, classify};
@@ -36,7 +36,7 @@ impl Seeded {
                     "name": format!("P{k}"), "keyPrefix": format!("P{k}"), "outcome": "o"
                 }))
                 .unwrap();
-                let created = create::run(&mut ctx, &Principal::local_operator(), req).unwrap();
+                let created = authority::run(&mut ctx, &Envelope::local_operator(), req).unwrap();
                 ids.push(created.project.id);
             }
         }
@@ -51,7 +51,7 @@ impl Seeded {
 
     fn list(&mut self, req: Request) -> comemory::errors::Result<list::Response> {
         let mut ctx = Ctx::borrowed(&self.paths, &self.cfg, &mut self.conn);
-        list::run(&mut ctx, req)
+        authority::run(&mut ctx, &Envelope::local_operator(), req)
     }
 }
 
