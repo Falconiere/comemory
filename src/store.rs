@@ -133,6 +133,12 @@ pub mod migrate;
 pub mod needs_embedding;
 /// Execute schema-generated statements while retaining store error semantics.
 mod orm;
+/// `project_activity_events` writes: the append-only project event.
+pub mod project_activity;
+/// `projects` charter reads: one row, a keyset page, and a page's relations.
+pub mod project_read;
+/// `projects` charter writes: the row with its unique-index outcome, repositories and criteria.
+pub mod projects;
 /// `maintenance::prune`'s own scan (orphan-edge count, stale-code-file list, one
 /// memory's display fields) and apply-time cleanup deletes.
 pub mod prune_apply;

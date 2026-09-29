@@ -1016,6 +1016,9 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/replace_in_place.rs | comemory::store::replace_in_place; preserve | src/store/tests/replace_in_place.rs | none | infrastructure::store | src/store/replace_in_place.rs | retain |
 | src/store/memory_intent.rs | comemory::store::memory_intent; preserve | src/store/tests/memory_intent.rs | none | infrastructure::store | src/store/memory_intent.rs | retain |
 | src/store/needs_embedding.rs | comemory::store::needs_embedding; preserve | src/store/tests/needs_embedding.rs | none | infrastructure::store | src/store/needs_embedding.rs | retain |
+| src/store/project_activity.rs | comemory::store::project_activity; preserve | none | none | infrastructure::store | src/store/project_activity.rs | retain |
+| src/store/project_read.rs | comemory::store::project_read; preserve | src/store/tests/project_read.rs | none | infrastructure::store | src/store/project_read.rs | retain |
+| src/store/projects.rs | comemory::store::projects; preserve | src/store/tests/projects.rs | none | infrastructure::store | src/store/projects.rs | retain |
 | src/store/readiness.rs | comemory::store::readiness; preserve | src/store/tests/readiness.rs | none | infrastructure::store | src/store/readiness.rs | retain |
 | src/store/store_health.rs | comemory::store::store_health; preserve | src/store/tests/store_health.rs | none | infrastructure::store | src/store/store_health.rs | retain |
 | src/store/sources.rs | comemory::store::sources; preserve | src/store/tests/sources.rs | none | infrastructure::store | src/store/sources.rs | retain |
