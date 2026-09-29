@@ -86,6 +86,8 @@ pub mod off_runtime;
 pub mod output;
 /// Shared `--k` / `--offset` window resolution.
 pub mod pagination;
+/// `comemory project` — engine-owned project management (create, show, list).
+pub mod project;
 /// `comemory prune`: orphan / low-value / stale-code candidates.
 pub mod prune;
 /// `comemory rebuild`: reconstruct the store from markdown.
@@ -169,6 +171,9 @@ pub enum Cmd {
     Architecture(architecture::Args),
     /// Save a memory (body via arg, `-`, or stdin).
     Save(save::Args),
+    /// Engine-owned project management: create, show and list project
+    /// charters, offline.
+    Project(project::Args),
     /// Search the memory index by natural-language query.
     Search(search::Args),
     /// Search the code index by natural-language or identifier query.
@@ -326,6 +331,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     match prepare_command(cli.cmd, cli.data_dir.as_deref())? {
         Cmd::Architecture(a) => architecture::run(a, cli.json, cli.data_dir).await,
         Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,
+        Cmd::Project(a) => project::run(a, cli.json, cli.data_dir).await,
         Cmd::Search(a) => search::run(a, cli.json, cli.data_dir).await,
         Cmd::SearchCode(a) => search_code::run(a, cli.json, cli.data_dir).await,
         Cmd::List(a) => list::run(a, cli.json, cli.data_dir).await,

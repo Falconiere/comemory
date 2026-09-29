@@ -64,6 +64,7 @@ One line per file, named after its primary item:
 | `mine.rs` | `Args` | `comemory mine` — distill query reformulations from `retrieval_log` into expansions |
 | `pagination.rs` | `PaginationArgs` | Shared `--k` / `--offset` window flags, flattened into paginated commands |
 | `prune.rs` | `Args` | `comemory prune` — surface deletion candidates against the SQLite mirror |
+| `project.rs` | `Args` | `comemory project create\|show\|list` — engine-owned project charters, offline; the CLI acts as the local operator |
 | `rebuild.rs` | `Args` | `comemory rebuild` — atomically rebuild the SQLite mirror from markdown |
 | `recall_status.rs` | `Args` | `comemory recall-status` — tracked queries, verdicts, saves and pending recalls for a repo + lower time bound; core in `domains::learning::recall_status` |
 | `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |

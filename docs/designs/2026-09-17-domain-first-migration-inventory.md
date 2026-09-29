@@ -451,6 +451,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/output/search_code.rs | comemory::cli::output::search_code; crate-root-alias | none | none | delivery::cli | src/cli/output/search_code.rs | retain |
 | src/cli/output/tty.rs | comemory::cli::output::tty; crate-root-alias | src/cli/output/tests/tty.rs | none | delivery::cli | src/cli/output/tty.rs | retain |
 | src/cli/pagination.rs | comemory::cli::pagination; preserve | none | none | delivery::cli | src/cli/pagination.rs | retain |
+| src/cli/project.rs | comemory::cli::project; preserve | none | none | delivery::cli | src/cli/project.rs | retain |
 | src/cli/prune.rs | comemory::cli::prune; preserve | none | none | delivery::cli | src/cli/prune.rs | retain |
 | src/cli/rebuild.rs | comemory::cli::rebuild; preserve | none | none | delivery::cli | src/cli/rebuild.rs | retain |
 | src/cli/recall_status.rs | comemory::cli::recall_status; preserve | none | none | delivery::cli | src/cli/recall_status.rs | retain |
