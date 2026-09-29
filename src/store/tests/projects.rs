@@ -7,7 +7,8 @@
 use comemory::store::connection;
 use comemory::store::project_read;
 use comemory::store::projects::{
-    LifecyclePatch, NewProject, ProjectInsert, insert_project, insert_relations, update_lifecycle,
+    ArchivedAt, LifecyclePatch, NewProject, ProjectInsert, insert_project, insert_relations,
+    update_lifecycle,
 };
 use tempfile::tempdir;
 
@@ -120,7 +121,7 @@ fn a_lifecycle_patch_lands_only_at_the_version_it_names() {
     insert_project(&conn, &charter(A, "ship-it", "SHIP")).unwrap();
     let pause = LifecyclePatch {
         status: Some("paused"),
-        archived_at: None,
+        archived_at: ArchivedAt::Keep,
         at_ms: 1_727_481_700_000,
     };
     assert!(update_lifecycle(&conn, A, 1, &pause).unwrap());
@@ -138,7 +139,7 @@ fn a_lifecycle_patch_lands_only_at_the_version_it_names() {
     // A writer still holding version 1 lost the race: nothing changes.
     let stale = LifecyclePatch {
         status: Some("active"),
-        archived_at: Some(Some(1)),
+        archived_at: ArchivedAt::Set(1),
         at_ms: 1_727_481_800_000,
     };
     assert!(!update_lifecycle(&conn, A, 1, &stale).unwrap());
@@ -146,7 +147,7 @@ fn a_lifecycle_patch_lands_only_at_the_version_it_names() {
 
     let archive = LifecyclePatch {
         status: None,
-        archived_at: Some(Some(1_727_481_900_000)),
+        archived_at: ArchivedAt::Set(1_727_481_900_000),
         at_ms: 1_727_481_900_000,
     };
     assert!(update_lifecycle(&conn, A, 2, &archive).unwrap());
@@ -162,7 +163,7 @@ fn a_lifecycle_patch_lands_only_at_the_version_it_names() {
 
     let restore = LifecyclePatch {
         status: None,
-        archived_at: Some(None),
+        archived_at: ArchivedAt::Clear,
         at_ms: 1_727_482_000_000,
     };
     assert!(update_lifecycle(&conn, A, 3, &restore).unwrap());

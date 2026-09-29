@@ -161,14 +161,24 @@ pub fn insert_relations(
     Ok(())
 }
 
+/// What a lifecycle patch does to `archived_at`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchivedAt {
+    /// Leave it as it is.
+    Keep,
+    /// Set it to these epoch milliseconds.
+    Set(i64),
+    /// Clear it to `NULL`.
+    Clear,
+}
+
 /// A lifecycle command's change to one `projects` row: the new status when
-/// it moves, the new `archived_at` when it moves (`Some(None)` clears it),
-/// and the `updated_at` stamp.
+/// it moves, what happens to `archived_at`, and the `updated_at` stamp.
 pub struct LifecyclePatch<'a> {
     /// New `status`, or `None` to leave it.
     pub status: Option<&'a str>,
-    /// New `archived_at`, or `None` to leave it.
-    pub archived_at: Option<Option<i64>>,
+    /// The `archived_at` change.
+    pub archived_at: ArchivedAt,
     /// Epoch milliseconds for `updated_at`.
     pub at_ms: i64,
 }
@@ -190,8 +200,10 @@ pub fn update_lifecycle(
     if let Some(status) = patch.status {
         query = query.set(&col::status, status);
     }
-    if let Some(archived_at) = patch.archived_at {
-        query = query.set(&col::archived_at, archived_at);
+    match patch.archived_at {
+        ArchivedAt::Keep => {}
+        ArchivedAt::Set(at) => query = query.set(&col::archived_at, Some(at)),
+        ArchivedAt::Clear => query = query.set(&col::archived_at, None::<i64>),
     }
     Ok(orm::execute(conn, query.to_sql())? == 1)
 }

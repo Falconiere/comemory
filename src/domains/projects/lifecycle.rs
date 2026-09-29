@@ -22,7 +22,7 @@ use crate::domains::projects::view::{self, ProjectView};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::project_read::{self, ProjectRow};
-use crate::store::projects::{LifecyclePatch, update_lifecycle};
+use crate::store::projects::{ArchivedAt, LifecyclePatch, update_lifecycle};
 use crate::utilities::activity::command;
 use crate::utilities::context::Ctx;
 use crate::utilities::project_error::ProjectError;
@@ -247,17 +247,17 @@ fn patch(kind: Kind, row: &ProjectRow, at_ms: i64) -> Result<LifecyclePatch<'sta
         Kind::Restore if terminal => {
             return refuse("A completed or canceled project cannot be restored");
         }
-        Kind::Restore => (None, Some(None)),
+        Kind::Restore => (None, ArchivedAt::Clear),
         _ if archived => return refuse("This project is archived"),
-        Kind::Archive => (None, Some(Some(at_ms))),
+        Kind::Archive => (None, ArchivedAt::Set(at_ms)),
         Kind::Pause if row.status != "active" => {
             return refuse("Only an active project can be paused");
         }
-        Kind::Pause => (Some("paused"), None),
+        Kind::Pause => (Some("paused"), ArchivedAt::Keep),
         Kind::Resume if row.status != "paused" => {
             return refuse("Only a paused project can be resumed");
         }
-        Kind::Resume => (Some("active"), None),
+        Kind::Resume => (Some("active"), ArchivedAt::Keep),
     };
     Ok(LifecyclePatch {
         status,

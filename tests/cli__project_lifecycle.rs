@@ -117,7 +117,7 @@ fn a_project_walks_its_lifecycle_offline() {
     assert_eq!(archived["version"], 4);
     assert!(archived["archivedAt"].is_string(), "{archived}");
     assert!(listed(&home, false).is_empty());
-    assert_eq!(listed(&home, true), [id.clone()]);
+    assert_eq!(listed(&home, true), std::slice::from_ref(&id));
 
     let (code, stderr) = refused(
         &home,
@@ -139,7 +139,7 @@ fn a_project_walks_its_lifecycle_offline() {
         (restored["version"].as_i64(), &restored["archivedAt"]),
         (Some(5), &Value::Null)
     );
-    assert_eq!(listed(&home, false), [id.clone()]);
+    assert_eq!(listed(&home, false), std::slice::from_ref(&id));
 
     assert_eq!(
         events(&home, &id),
