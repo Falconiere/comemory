@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-09-29
+
+### Added
+
+- archive, restore, pause and resume a project over CLI and HTTP ([#391](https://github.com/Falconiere/comemory/pull/391))
+- page a project's activity log over CLI, HTTP and MCP ([#389](https://github.com/Falconiere/comemory/pull/389))
+- read a project's committed plan over CLI, HTTP and MCP ([#387](https://github.com/Falconiere/comemory/pull/387))
+- make every project mutation idempotent with command receipts ([#388](https://github.com/Falconiere/comemory/pull/388))
+- emit body-free project change notifications from a durable change feed ([#386](https://github.com/Falconiere/comemory/pull/386))
+- require an actor and capability envelope at every project core ([#385](https://github.com/Falconiere/comemory/pull/385))
+- create, show and list a project charter offline over CLI, HTTP and MCP ([#383](https://github.com/Falconiere/comemory/pull/383))
+
 ## [0.53.3] - 2026-09-28
 
 ### Added
