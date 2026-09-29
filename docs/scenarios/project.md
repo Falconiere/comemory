@@ -22,12 +22,14 @@ The actor is stored on every row and activity event and reads back as
 changes only through an approved `project.update` proposal (#338).
 
 Every mutation except hard deletion (#320) is idempotent (#327): `create`
-and the four lifecycle verbs today. It carries an idempotency key, scoped to the principal, and its
-first answer is stored as a command receipt in the same transaction. A retry
-with the same key and body returns that answer and writes nothing — no row,
-no activity event, no change-feed frame, no `activity_log` row. The body is
-compared exactly as sent, before normalization. The same key with another
-body or command is refused with `idempotency_conflict`. A failed command
+and the four lifecycle verbs today. Each carries an idempotency key, scoped
+to the principal, and its first answer is stored as a command receipt in the
+same transaction. A retry with the same key and body returns that answer and
+writes nothing — no row, no activity event, no change-feed frame, no
+`activity_log` row. The body is compared exactly as sent, before
+normalization; a lifecycle verb also digests its project id, lowercased, so
+the id's case never matters but another project does. The same key with
+another body, command or project is refused with `idempotency_conflict`. A failed command
 stores no receipt, so a retry runs again. Receipts have no TTL: they live
 until their project is hard-deleted.
 

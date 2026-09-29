@@ -19,7 +19,7 @@ pub struct Args {
     /// with `version_conflict`.
     #[arg(long = "expected-version", id = "expectedVersion")]
     pub expected_version: i64,
-    /// Why, up to 4000 characters. Required and non-blank for `pause`.
+    /// Why, up to 4000 UTF-16 units. Required and non-blank for `pause`.
     #[arg(long)]
     pub reason: Option<String>,
     /// Retry key (1–200 UTF-16 units): rerunning with the same key and flags
