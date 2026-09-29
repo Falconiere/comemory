@@ -1,11 +1,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Coverage for `src/store/projects.rs` against a real migrated
 //! `comemory.db`: each unique index a charter can hit is reported as its own
-//! outcome, and repository and criterion rows land beside the project.
+//! outcome, repository and criterion rows land beside the project, and a
+//! lifecycle patch lands only at the version it names.
 
 use comemory::store::connection;
 use comemory::store::project_read;
-use comemory::store::projects::{NewProject, ProjectInsert, insert_project, insert_relations};
+use comemory::store::projects::{
+    LifecyclePatch, NewProject, ProjectInsert, insert_project, insert_relations, update_lifecycle,
+};
 use tempfile::tempdir;
 
 fn charter<'a>(id: &'a str, slug: &'a str, key_prefix: &'a str) -> NewProject<'a> {
@@ -108,4 +111,64 @@ fn repositories_and_criteria_are_written_beside_the_project() {
     assert_eq!(criteria[0].evidence_requirement, "reported");
     assert_eq!(criteria[0].resolution, "open");
     assert_eq!(criteria[0].resolution_rationale, None);
+}
+
+#[test]
+fn a_lifecycle_patch_lands_only_at_the_version_it_names() {
+    let dir = tempdir().unwrap();
+    let conn = connection::open(dir.path().join("comemory.db")).unwrap();
+    insert_project(&conn, &charter(A, "ship-it", "SHIP")).unwrap();
+    let pause = LifecyclePatch {
+        status: Some("paused"),
+        archived_at: None,
+        at_ms: 1_727_481_700_000,
+    };
+    assert!(update_lifecycle(&conn, A, 1, &pause).unwrap());
+    let row = project_read::project(&conn, A).unwrap().unwrap();
+    assert_eq!(
+        (
+            row.status.as_str(),
+            row.version,
+            row.updated_at,
+            row.archived_at
+        ),
+        ("paused", 2, 1_727_481_700_000, None)
+    );
+
+    // A writer still holding version 1 lost the race: nothing changes.
+    let stale = LifecyclePatch {
+        status: Some("active"),
+        archived_at: Some(Some(1)),
+        at_ms: 1_727_481_800_000,
+    };
+    assert!(!update_lifecycle(&conn, A, 1, &stale).unwrap());
+    assert_eq!(project_read::project(&conn, A).unwrap().unwrap(), row);
+
+    let archive = LifecyclePatch {
+        status: None,
+        archived_at: Some(Some(1_727_481_900_000)),
+        at_ms: 1_727_481_900_000,
+    };
+    assert!(update_lifecycle(&conn, A, 2, &archive).unwrap());
+    let archived = project_read::project(&conn, A).unwrap().unwrap();
+    assert_eq!(
+        (
+            archived.status.as_str(),
+            archived.version,
+            archived.archived_at
+        ),
+        ("paused", 3, Some(1_727_481_900_000))
+    );
+
+    let restore = LifecyclePatch {
+        status: None,
+        archived_at: Some(None),
+        at_ms: 1_727_482_000_000,
+    };
+    assert!(update_lifecycle(&conn, A, 3, &restore).unwrap());
+    let restored = project_read::project(&conn, A).unwrap().unwrap();
+    assert_eq!((restored.version, restored.archived_at), (4, None));
+
+    // An unknown id matches nothing either.
+    assert!(!update_lifecycle(&conn, B, 1, &restore).unwrap());
 }

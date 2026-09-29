@@ -106,6 +106,21 @@ pub fn load(conn: &Connection, rows: Vec<ProjectRow>) -> Result<Vec<ProjectView>
         .collect()
 }
 
+/// The view of project `id` as the running `command` transaction just
+/// wrote it (`creation`, `lifecycle`, …). Its absence is a server-side
+/// invariant breach, never a caller error.
+pub fn written(conn: &Connection, id: &str, command: &str) -> Result<ProjectView> {
+    let row = project_read::project(conn, id)?;
+    let view = row.map(|row| load(conn, vec![row])).transpose()?;
+    view.and_then(|mut views| views.pop()).ok_or_else(|| {
+        ProjectError::Invariant {
+            invariant: "project_written_row".to_string(),
+            message: format!("project {id} vanished inside its own {command} transaction"),
+        }
+        .into()
+    })
+}
+
 /// One stored criterion as its view.
 pub(super) fn criterion(row: CriterionRow) -> CriterionView {
     CriterionView {

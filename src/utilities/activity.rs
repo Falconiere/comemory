@@ -61,6 +61,14 @@ pub mod command {
     pub const INDEX_CODE: &str = "index-code";
     /// `domains::projects::create`.
     pub const PROJECT_CREATE: &str = "project.create";
+    /// `domains::projects::lifecycle`, `archive`.
+    pub const PROJECT_ARCHIVE: &str = "project.archive";
+    /// `domains::projects::lifecycle`, `restore`.
+    pub const PROJECT_RESTORE: &str = "project.restore";
+    /// `domains::projects::lifecycle`, `pause`.
+    pub const PROJECT_PAUSE: &str = "project.pause";
+    /// `domains::projects::lifecycle`, `resume`.
+    pub const PROJECT_RESUME: &str = "project.resume";
 }
 
 /// Who is running this command, and whether their runs are recorded at all.

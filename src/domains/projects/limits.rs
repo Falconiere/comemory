@@ -24,6 +24,9 @@ pub const REPOSITORIES_MAX: usize = 50;
 pub const CRITERIA_MAX: usize = 50;
 /// One criterion description's length cap.
 pub const CRITERION_DESCRIPTION_MAX: usize = 500;
+/// A lifecycle, review or cancellation reason's length cap: the platform's
+/// `PROJECT_RATIONALE_MAX`.
+pub const RATIONALE_MAX: usize = 4000;
 /// Shortest key prefix.
 pub const KEY_PREFIX_MIN: usize = 2;
 /// Longest key prefix.

@@ -1,10 +1,12 @@
 //! `projects` charter writes (#326): the project row with its unique-index
-//! outcome classified, and the repository and project-level criterion rows
-//! written beside it. The caller owns the transaction, so a later failure in
-//! the same command rolls all of them back. Reads are
+//! outcome classified, the repository and project-level criterion rows
+//! written beside it, and the version-guarded lifecycle patch (#328). The
+//! caller owns the transaction, so a later failure in the same command rolls
+//! all of them back. Reads are
 //! [`super::project_read`]; activity events [`super::project_activity`].
 
 use rusqlite::Connection;
+use toolu_orm::core::query_column::CommonOps;
 
 use super::orm;
 use super::schema_projects::{
@@ -157,6 +159,41 @@ pub fn insert_relations(
             }),
     )?;
     Ok(())
+}
+
+/// A lifecycle command's change to one `projects` row: the new status when
+/// it moves, the new `archived_at` when it moves (`Some(None)` clears it),
+/// and the `updated_at` stamp.
+pub struct LifecyclePatch<'a> {
+    /// New `status`, or `None` to leave it.
+    pub status: Option<&'a str>,
+    /// New `archived_at`, or `None` to leave it.
+    pub archived_at: Option<Option<i64>>,
+    /// Epoch milliseconds for `updated_at`.
+    pub at_ms: i64,
+}
+
+/// Apply `patch` to project `id` only while it is still at `version`, moving
+/// it to `version + 1`. `false` when nothing matched: the id is gone or
+/// another writer moved the row since it was read, so the caller answers
+/// `version_conflict` instead of overwriting the winner.
+pub fn update_lifecycle(
+    conn: &Connection,
+    id: &str,
+    version: i64,
+    patch: &LifecyclePatch<'_>,
+) -> Result<bool> {
+    let mut query = Projects::update()
+        .set(&col::version, version + 1)
+        .set(&col::updated_at, patch.at_ms)
+        .filter(col::id.eq(id).and(col::version.eq(version)));
+    if let Some(status) = patch.status {
+        query = query.set(&col::status, status);
+    }
+    if let Some(archived_at) = patch.archived_at {
+        query = query.set(&col::archived_at, archived_at);
+    }
+    Ok(orm::execute(conn, query.to_sql())? == 1)
 }
 
 #[cfg(test)]

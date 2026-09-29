@@ -25,6 +25,7 @@ One line per file, named after its primary item:
 | `charter.rs` | `validate` | A create request checked against every charter rule before any store access, in the platform's field order, and normalized for storage (lowercase id, canonical de-duplicated repositories, the lead) |
 | `create.rs` | `Request` | `project create` / `POST /projects`: the draft charter, its repositories, its project-level criteria and one `project.created` event in one immediate transaction; the slug retried with `-2`, `-3`, … on a real collision |
 | `keyset.rs` | `decode` | The platform's `<epochMillis>:<uuid>` keyset cursor over `(created_at, id)`: encode, and decode with a `400 invalid_request` for anything outside `^\d{1,15}:[0-9a-f-]{36}$`; later pages reuse it |
+| `lifecycle.rs` | `Request` | `project archive\|restore\|pause\|resume` / `POST /projects/{id}/{archive,restore,pause,resume}` (#328): the platform's one lifecycle command with a four-way `Kind`, human-only at lead tier. Loads the row, checks `expectedVersion` (`409 version_conflict`), then the ported transition (`409 invalid_transition`), writes a version-guarded patch and one `project.<verb>d` event under the receipt; a pause reason must be non-blank (`422`) |
 | `limits.rs` | `text` | The platform's charter and paging caps (`project-limits.ts`), counted in UTF-16 units, each breach a `422 invalid_request` naming field, reason and limit |
 | `list.rs` | `Request` | `project list` / `GET /projects`: a keyset page newest first, filtered by status, health and `includeArchived` |
 | `plan.rs` | `Request` | `project plan show` / `GET /projects/{id}/plan` / `project_show` with `view: "plan"` (`Verb::PlanRead`): the platform's `ProjectPlanResponse` at the current version; `plan_view` drops archived milestones, items and criteria and every edge naming an archived item, the projection later plan tasks reuse |
@@ -33,7 +34,7 @@ One line per file, named after its primary item:
 | `show.rs` | `Request` | `project show` / `GET /projects/{id}`: one charter; a malformed id is `400`, an unknown one `404 project_not_found` |
 | `slug.rs` | `base_slug` | `projects.slug` from the charter name, and the `-2`, `-3`, … disambiguator |
 | `timestamp.rs` | `iso` | Epoch milliseconds rendered as `toISOString()`, and `targetDate` parsing (calendar date = UTC midnight, RFC 3339 converted to UTC) |
-| `view.rs` | `ProjectView` | The platform's charter view key for key minus `workspaceId`, and the batched load of a page's repositories and criteria |
+| `view.rs` | `ProjectView` | The platform's charter view key for key minus `workspaceId`, the batched load of a page's repositories and criteria, and `written`, the view a mutation re-reads inside its own transaction |
 
 ## Rules this capability keeps
 
@@ -55,6 +56,37 @@ One line per file, named after its primary item:
 - **Identities are client-generated UUIDs**, minted when absent, stored lowercase.
 - **Repositories are shape-checked only** (canonical `owner/name`); the allow-list
   rule is #337's.
+
+## Lifecycle
+
+`lifecycle.rs` ports `project-lifecycle-service.ts` (#328). `terminal` means
+`completed` or `canceled`; `archived` means `archived_at` is set.
+
+| Verb | Refused when, in order | Patch |
+| --- | --- | --- |
+| `archive` | archived | `archived_at` = now |
+| `restore` | not archived; terminal | `archived_at` = `NULL` |
+| `pause` | archived; status is not `active` | `status` = `paused` |
+| `resume` | archived; status is not `paused` | `status` = `active` |
+
+- **Version first.** A stale `expectedVersion` is `409 version_conflict`
+  with `currentVersion`, before the transition is judged. The `UPDATE`
+  repeats the version in its `WHERE`, so a writer that lost a race changes
+  nothing.
+- **A terminal project can be archived.** The issue text says a terminal
+  project refuses all four verbs, but the platform code has no status check
+  on `archive`, and the code wins. Its design's AC-13 archives finished
+  projects to hide them from the index. So a terminal project refuses
+  `restore`, `pause` and `resume`, and `archive` still succeeds.
+- **Reasons.** `reason` is optional (≤ 4000 UTF-16 units, `422` past it)
+  except on `pause`. There a missing reason is `400` (schema edge) and an
+  empty or whitespace-only one `422` (invariant edge). The event payload
+  `{reason}` keeps the caller's text untrimmed.
+- **Unknown project** is `404 project_not_found`, as for the readers. The
+  platform's `invalid_transition` for a vanished row is unreachable there.
+- **Digest** is the platform's `{expectedVersion, reason}` plus the project
+  id, because receipts are scoped to principal and key only. One key reused
+  on another project is a conflict, never a replay of the first project.
 
 ## Idempotency
 

@@ -22,6 +22,8 @@ pub mod charter;
 pub mod create;
 /// The epoch-millisecond `<ms>:<uuid>` keyset cursor every project page uses.
 pub mod keyset;
+/// `project archive|restore|pause|resume`: the four lifecycle commands.
+pub mod lifecycle;
 /// The platform's charter and paging caps and their `422` refusals.
 pub mod limits;
 /// `project list`: a keyset page of charters.

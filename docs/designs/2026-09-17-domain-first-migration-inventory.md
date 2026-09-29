@@ -453,6 +453,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/pagination.rs | comemory::cli::pagination; preserve | none | none | delivery::cli | src/cli/pagination.rs | retain |
 | src/cli/project.rs | comemory::cli::project; preserve | none | none | delivery::cli | src/cli/project.rs | retain |
 | src/cli/project_activity.rs | comemory::cli::project_activity; preserve | none | none | delivery::cli | src/cli/project_activity.rs | retain |
+| src/cli/project_lifecycle.rs | comemory::cli::project_lifecycle; preserve | none | none | delivery::cli | src/cli/project_lifecycle.rs | retain |
 | src/cli/prune.rs | comemory::cli::prune; preserve | none | none | delivery::cli | src/cli/prune.rs | retain |
 | src/cli/rebuild.rs | comemory::cli::rebuild; preserve | none | none | delivery::cli | src/cli/rebuild.rs | retain |
 | src/cli/recall_status.rs | comemory::cli::recall_status; preserve | none | none | delivery::cli | src/cli/recall_status.rs | retain |
@@ -702,6 +703,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/projects/changes.rs | comemory::domains::projects::changes; preserve | src/domains/projects/tests/changes.rs | none | domains::projects | src/domains/projects/changes.rs | retain |
 | src/domains/projects/create.rs | comemory::domains::projects::create; preserve | src/domains/projects/tests/create.rs | none | domains::projects | src/domains/projects/create.rs | retain |
 | src/domains/projects/keyset.rs | comemory::domains::projects::keyset; preserve | src/domains/projects/tests/keyset.rs | none | domains::projects | src/domains/projects/keyset.rs | retain |
+| src/domains/projects/lifecycle.rs | comemory::domains::projects::lifecycle; preserve | src/domains/projects/tests/lifecycle.rs | none | domains::projects | src/domains/projects/lifecycle.rs | retain |
 | src/domains/projects/limits.rs | comemory::domains::projects::limits; preserve | src/domains/projects/tests/limits.rs | none | domains::projects | src/domains/projects/limits.rs | retain |
 | src/domains/projects/list.rs | comemory::domains::projects::list; preserve | src/domains/projects/tests/list.rs | none | domains::projects | src/domains/projects/list.rs | retain |
 | src/domains/projects/plan.rs | comemory::domains::projects::plan; preserve | src/domains/projects/tests/plan.rs | none | domains::projects | src/domains/projects/plan.rs | retain |
@@ -908,6 +910,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/routes/meta.rs | comemory::serve::routes::meta; preserve | none | none | delivery::serve | src/serve/routes/meta.rs | retain |
 | src/serve/routes/overview.rs | comemory::serve::routes::overview; preserve | src/serve/routes/tests/overview.rs | none | delivery::serve | src/serve/routes/overview.rs | retain |
 | src/serve/routes/project_activity.rs | comemory::serve::routes::project_activity; preserve | src/serve/routes/tests/project_activity.rs | none | delivery::serve | src/serve/routes/project_activity.rs | retain |
+| src/serve/routes/project_lifecycle.rs | comemory::serve::routes::project_lifecycle; preserve | src/serve/routes/tests/project_lifecycle.rs | none | delivery::serve | src/serve/routes/project_lifecycle.rs | retain |
 | src/serve/routes/project_request.rs | comemory::serve::routes::project_request; preserve | src/serve/routes/tests/project_request.rs | none | delivery::serve | src/serve/routes/project_request.rs | retain |
 | src/serve/routes/projects.rs | comemory::serve::routes::projects; preserve | src/serve/routes/tests/projects.rs | none | delivery::serve | src/serve/routes/projects.rs | retain |
 | src/serve/routes/repos.rs | comemory::serve::routes::repos; preserve | src/serve/routes/tests/repos.rs | none | delivery::serve | src/serve/routes/repos.rs | retain |

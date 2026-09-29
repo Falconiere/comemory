@@ -340,6 +340,8 @@ fn the_tty_views_render_every_charter_line_and_the_next_page() {
         "slug          render-me".to_string(),
         "name          Render me".to_string(),
         "status        draft (unknown)".to_string(),
+        "version       1".to_string(),
+        "archived      -".to_string(),
         "lead          local-operator".to_string(),
         "target        2026-10-01T00:00:00.000Z".to_string(),
         "outcome       Rendered".to_string(),
