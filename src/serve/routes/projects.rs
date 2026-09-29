@@ -1,6 +1,8 @@
 //! `POST|GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
-//! `GET /api/v1/projects/{id}/plan` and `GET /api/v1/projects/changes` — the
-//! `domains::projects` create, list, show, plan and change-feed cores, on the platform's REST paths so a hosted cutover
+//! `GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/{id}/activity` and
+//! `GET /api/v1/projects/changes` — the `domains::projects` create, list,
+//! show, plan, activity-page and change-feed cores, on the platform's REST
+//! paths so a hosted cutover
 //! forwards without remapping. Every core runs under [`caller`]'s envelope,
 //! which no header can change: in local mode the local agent, so `POST`
 //! answers `403 project_agent_scope`, and an admitted create answers `201`,
@@ -23,6 +25,7 @@ use axum::routing::get;
 use crate::domains::projects::authority::{self, Command, Envelope};
 use crate::domains::projects::{changes, create, plan, show};
 use crate::serve::AppState;
+use crate::serve::routes::project_activity::{self, ACTIVITY};
 use crate::serve::routes::project_request::{body, list_field, query};
 use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
 use crate::utilities::blocking::run_blocking;
@@ -66,6 +69,12 @@ pub fn table_entries() -> &'static [RouteEntry] {
         },
         RouteEntry {
             method: "GET",
+            path: "/projects/{id}/activity",
+            command: ACTIVITY,
+            mutating: false,
+        },
+        RouteEntry {
+            method: "GET",
             path: "/projects/changes",
             command: CHANGES,
             mutating: false,
@@ -78,12 +87,13 @@ pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
         .route(
             "/api/v1/projects",
-            get(|State(state), q| read(state, "project", q, list_field)).post(create_project),
+            get(|State(state), q| read(state, "project", parsed(q, list_field)))
+                .post(create_project),
         )
         // The static segment wins over `{id}`: `changes` is never a project id.
         .route(
             "/api/v1/projects/changes",
-            get(|State(state), q| read(state, CHANGES, q, changes_field)),
+            get(|State(state), q| read(state, CHANGES, parsed(q, changes_field))),
         )
         .route(
             "/api/v1/projects/{id}",
@@ -92,6 +102,10 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/projects/{id}/plan",
             get(|State(state), Path(id)| by_id(state, PLAN_SHOW, plan::Request { id })),
+        )
+        .route(
+            "/api/v1/projects/{id}/activity",
+            get(project_activity::page),
         )
 }
 
@@ -131,21 +145,29 @@ fn created(mut response: Response) -> Response {
     response
 }
 
-/// A query-string read under [`caller`]'s envelope: `GET /projects` (a keyset
-/// page, newest first) and `GET /projects/changes` (body-free frames after a
-/// cursor). The query is parsed before any store access, so a malformed one
-/// never opens the database.
-async fn read<R>(
-    state: AppState,
-    command: &'static str,
+/// A query string as `R`, each pair stored by `field`.
+pub(super) fn parsed<R: Default>(
     raw: std::result::Result<Query<Vec<(String, String)>>, QueryRejection>,
     field: fn(&mut R, &str, String) -> Option<()>,
+) -> crate::errors::Result<R> {
+    query(raw.map(|Query(pairs)| pairs), field)
+}
+
+/// A query-string read under [`caller`]'s envelope: `GET /projects` (a keyset
+/// page, newest first), `GET /projects/{id}/activity` (one project's events)
+/// and `GET /projects/changes` (body-free frames after a cursor). The query
+/// is parsed before any store access, so a malformed one never opens the
+/// database.
+pub(super) async fn read<R>(
+    state: AppState,
+    command: &'static str,
+    req: crate::errors::Result<R>,
 ) -> Response
 where
-    R: Command + Default + Send + 'static,
+    R: Command + Send + 'static,
     R::Response: serde::Serialize + Send + 'static,
 {
-    match query(raw.map(|Query(pairs)| pairs), field) {
+    match req {
         Ok(req) => {
             query_response(state, command, move |ctx| {
                 authority::run(ctx, &caller(), req)

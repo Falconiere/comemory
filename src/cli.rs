@@ -88,6 +88,9 @@ pub mod output;
 pub mod pagination;
 /// `comemory project` — engine-owned project management (create, show, list).
 pub mod project;
+/// `comemory project activity` — the flags and TTY view of one project's
+/// activity page.
+pub mod project_activity;
 /// `comemory prune`: orphan / low-value / stale-code candidates.
 pub mod prune;
 /// `comemory rebuild`: reconstruct the store from markdown.
