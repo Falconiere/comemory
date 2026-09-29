@@ -134,7 +134,7 @@ fn a_page_field_on_a_view_that_does_not_page_is_refused_naming_it() {
             serde_json::from_value(json!({"id": id, "view": view, field: value})).unwrap();
         let e = params.page_fields_fit_the_view().unwrap_err();
         assert_eq!(classify(&e), ("invalid_request", Class::BadRequest), "{e}");
-        assert_eq!(e.to_string(), format!("{field} is invalid"));
+        assert_eq!(e.to_string(), format!("{field} is activity_only"));
     }
     // The default view is the charter, so a bare page field is refused too.
     let bare: ProjectShowParams = serde_json::from_value(json!({"id": id, "limit": 5})).unwrap();

@@ -776,12 +776,12 @@ async fn mcp_10_project_activity_view_reads_read_only() {
         (
             json!({"id": id, "limit": 5}),
             "invalid_request",
-            json!({"field": "limit", "reason": "invalid"}),
+            json!({"field": "limit", "reason": "activity_only"}),
         ),
         (
             json!({"id": id, "view": "plan", "order": "asc"}),
             "invalid_request",
-            json!({"field": "order", "reason": "invalid"}),
+            json!({"field": "order", "reason": "activity_only"}),
         ),
     ];
     for (args, code, details) in refusals {

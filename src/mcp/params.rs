@@ -132,7 +132,8 @@ pub struct ProjectShowParams {
 impl ProjectShowParams {
     /// Refuse a page field (`limit`, `cursor`, `order`) on any view but
     /// `activity`, naming the first one set, so a caller never believes it
-    /// paged a charter or a plan: the schema-edge `400 invalid_request`.
+    /// paged a charter or a plan: the schema-edge `400 invalid_request`
+    /// `<field> is activity_only`.
     pub fn page_fields_fit_the_view(&self) -> Result<()> {
         if self.view == ProjectShowView::Activity {
             return Ok(());
@@ -143,7 +144,7 @@ impl ProjectShowParams {
             ("order", self.order.is_some()),
         ];
         match set.iter().find(|(_, present)| *present) {
-            Some((field, _)) => Err(ProjectError::invalid_field(field, "invalid").into()),
+            Some((field, _)) => Err(ProjectError::invalid_field(field, "activity_only").into()),
             None => Ok(()),
         }
     }
