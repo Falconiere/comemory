@@ -204,6 +204,21 @@ fn a_patch_identity_a_stale_base_and_an_unknown_proposal_answer_their_codes() {
     let (status, body) = home.get_raw("/projects/99999999-9999-4999-8999-999999999999/proposals");
     assert_eq!(status, 404, "{body}");
     assert_eq!(body["error"]["code"], "project_not_found");
+    // A malformed path id is the schema edge's `400` naming `projectId`, on
+    // the submission (the core validates the id it is given) and the reads.
+    let archive = json!([{"op": "work_item.archive", "workItemId": id}]);
+    let bad = "/projects/not-a-uuid/proposals";
+    for (status, body) in [
+        home.post_raw(bad, &submission("bad-path", archive)),
+        home.get_raw(bad),
+        home.get_raw(&format!("{bad}/33333333-3333-4333-8333-333333333333")),
+    ] {
+        assert_eq!(status, 400, "{body}");
+        assert_eq!(
+            body["error"]["details"],
+            json!({"field": "projectId", "reason": "invalid"})
+        );
+    }
     assert_eq!(proposals(&home), 0);
 }
 
