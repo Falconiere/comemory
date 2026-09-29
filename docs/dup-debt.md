@@ -4,9 +4,17 @@ Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
 **284 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 681 production `.rs` files under `src/`. That
+**`similarity-rs 0.5.0`** over the 684 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number held at 284 (#331, project activity page).**
+The activity page adds no pair. Its CLI verb and its route each live in
+their own module (`cli::project_activity`, `serve::routes::project_activity`).
+Kept in `cli::project` and `serve::routes::project_request`, they paired with
+`render_page` and `list_field`, and a shared TTY rows helper tried first made
+the count worse. `serve::routes::projects::read` now serves the path-only
+reads too (`Ok(request)`), so it and #335's `by_id` no longer pair.
 
 **Why this number fell from 289 (#326, projects foundation).** The four
 fixed refusal constructors in `serve::envelope` (`unauthorized`, `busy`,

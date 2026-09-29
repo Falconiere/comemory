@@ -1,7 +1,8 @@
 //! The `<epochMillis>:<uuid>` keyset cursor every project page uses, ported
 //! exactly from the platform's `keyset-cursor.ts`. It encodes the
-//! `(<timestamp> DESC, id DESC)` sort key of a page's last row, so a walk
-//! stays stable under concurrent inserts where an offset would shift.
+//! `(<timestamp>, id)` sort key of a page's last row — read `DESC` by every
+//! page, and `ASC` too by `project activity --order asc` — so a walk stays
+//! stable under concurrent inserts where an offset would shift.
 //!
 //! A malformed cursor is a schema-edge refusal: `400 invalid_request`,
 //! `cursor is invalid`, distinct from the `422` invariant refusals.

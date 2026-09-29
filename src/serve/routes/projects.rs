@@ -97,11 +97,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/projects/{id}",
-            get(|State(state), Path(id)| by_id(state, "project.show", show::Request { id })),
+            get(|State(state), Path(id)| read(state, "project.show", Ok(show::Request { id }))),
         )
         .route(
             "/api/v1/projects/{id}/plan",
-            get(|State(state), Path(id)| by_id(state, PLAN_SHOW, plan::Request { id })),
+            get(|State(state), Path(id)| read(state, PLAN_SHOW, Ok(plan::Request { id }))),
         )
         .route(
             "/api/v1/projects/{id}/activity",
@@ -153,11 +153,14 @@ pub(super) fn parsed<R: Default>(
     query(raw.map(|Query(pairs)| pairs), field)
 }
 
-/// A query-string read under [`caller`]'s envelope: `GET /projects` (a keyset
-/// page, newest first), `GET /projects/{id}/activity` (one project's events)
-/// and `GET /projects/changes` (body-free frames after a cursor). The query
-/// is parsed before any store access, so a malformed one never opens the
-/// database.
+/// A read under [`caller`]'s envelope of a request parsed before any store
+/// access, so a malformed one never opens the database: the query-string
+/// reads `GET /projects` (a keyset page, newest first),
+/// `GET /projects/{id}/activity` (one project's events) and
+/// `GET /projects/changes` (body-free frames after a cursor), and the
+/// path-only reads `GET /projects/{id}` (the charter) and
+/// `GET /projects/{id}/plan` (the committed plan), which cannot be malformed
+/// before the core.
 pub(super) async fn read<R>(
     state: AppState,
     command: &'static str,
@@ -186,20 +189,6 @@ pub fn changes_field(req: &mut changes::Request, key: &str, value: String) -> Op
         .find_map(|(name, slot)| (name == key).then_some(slot))?;
     *slot = Some(value.parse().ok()?);
     Some(())
-}
-
-/// A read of the project the path's `{id}` names, under [`caller`]'s
-/// envelope: `GET /projects/{id}` (its charter) and `GET /projects/{id}/plan`
-/// (its committed plan).
-async fn by_id<R>(state: AppState, command: &'static str, req: R) -> Response
-where
-    R: Command + Send + 'static,
-    R::Response: serde::Serialize + Send + 'static,
-{
-    query_response(state, command, move |ctx| {
-        authority::run(ctx, &caller(), req)
-    })
-    .await
 }
 
 #[cfg(test)]

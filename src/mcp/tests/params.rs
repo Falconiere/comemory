@@ -87,6 +87,7 @@ fn project_show_defaults_to_the_charter_and_carries_the_activity_page() {
     let id = "11111111-1111-4111-8111-111111111111";
     let parse = |value| serde_json::from_value::<ProjectShowParams>(value);
     let bare = parse(json!({"id": id})).unwrap();
+    bare.page_fields_fit_the_view().unwrap();
     assert_eq!(
         (
             bare.id.as_str(),
@@ -97,13 +98,13 @@ fn project_show_defaults_to_the_charter_and_carries_the_activity_page() {
         ),
         (id, ProjectShowView::Charter, None, None, None)
     );
-    bare.page_fields_fit_the_view().unwrap();
     let plan = parse(json!({"id": id, "view": "plan"})).unwrap();
     assert_eq!(plan.view, ProjectShowView::Plan);
     let page = parse(json!({
         "id": id, "view": "activity", "limit": 7, "cursor": "c", "order": "asc"
     }))
     .unwrap();
+    page.page_fields_fit_the_view().unwrap();
     assert_eq!(
         (
             page.view,
@@ -113,7 +114,6 @@ fn project_show_defaults_to_the_charter_and_carries_the_activity_page() {
         ),
         (ProjectShowView::Activity, Some(7), Some("c"), Some("asc"))
     );
-    page.page_fields_fit_the_view().unwrap();
     let e = parse(json!({"id": id, "view": "roadmap"})).unwrap_err();
     assert!(e.to_string().contains("unknown variant `roadmap`"), "{e}");
     let e = parse(json!({"id": id, "after": 0})).unwrap_err();

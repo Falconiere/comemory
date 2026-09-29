@@ -68,7 +68,6 @@ impl ComemoryServer {
                     enveloped(c, s, page).map(Shown::Activity)
                 }
             }
-            }
         })
         .await
     }
