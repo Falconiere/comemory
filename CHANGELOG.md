@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.3] - 2026-09-28
+
+### Added
+
+- declare the fourteen project tables, migration 0031 and their rebuild copy ([#381](https://github.com/Falconiere/comemory/pull/381))
+
 ## [0.53.2] - 2026-09-28
 
 ### Fixed
