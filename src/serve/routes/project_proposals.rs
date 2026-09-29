@@ -17,7 +17,7 @@ use axum::extract::rejection::QueryRejection;
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde_json::{Map, Value};
 
 use crate::domains::projects::authority;
@@ -67,9 +67,9 @@ pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
         .route(
             "/api/v1/projects/{id}/proposals",
-            get(list)
-                .post(submit)
-                .layer(DefaultBodyLimit::max(SUBMIT_BODY_LIMIT)),
+            // The raised limit is the submission's alone; the read keeps
+            // the server-wide default.
+            get(list).merge(post(submit).layer(DefaultBodyLimit::max(SUBMIT_BODY_LIMIT))),
         )
         .route("/api/v1/projects/{id}/proposals/{proposalId}", get(show))
 }
