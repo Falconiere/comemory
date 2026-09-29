@@ -71,7 +71,7 @@ fn counts(home: &CliHome) -> Vec<(&'static str, i64)> {
     let db = db(home);
     PROJECT_TABLES
         .iter()
-        .chain(&["activity_log"])
+        .chain(&["project_changes", "activity_log"])
         .map(|t| {
             let n = db
                 .query_row(&format!("SELECT COUNT(*) FROM {t}"), [], |r| r.get(0))
@@ -98,6 +98,7 @@ fn a_replay_prints_the_first_answer_and_writes_nothing() {
         "projects",
         "project_command_receipts",
         "project_activity_events",
+        "project_changes",
     ] {
         assert_eq!(count(&home, table), 1, "{table}");
     }

@@ -61,7 +61,7 @@ impl Home {
     fn counts(&self) -> Vec<i64> {
         PROJECT_TABLES
             .iter()
-            .chain(&["activity_log"])
+            .chain(&["project_changes", "activity_log"])
             .map(|t| {
                 self.conn
                     .query_row(&format!("SELECT COUNT(*) FROM {t}"), [], |r| r.get(0))

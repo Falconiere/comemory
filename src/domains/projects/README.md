@@ -70,8 +70,9 @@ Every mutation except hard deletion (#320) runs through `receipt::run`
   Create's body includes `id`, because the engine accepts a client id.
 - **Replay:** same command type and digest → the stored core response,
   parsed back into the typed response. Nothing runs and nothing is written:
-  no state change, no activity event, no `activity_log` row, and (once #324
-  lands) no change notification.
+  no state change, no activity event, no `project_changes` frame (the feed
+  row is written only by `activity::record`, inside `apply`), and no
+  `activity_log` row.
 - **Conflict:** another command type or digest under the key → `409
   idempotency_conflict`, before the command runs.
 - **Failure:** the receipt is written in the command's transaction, so a

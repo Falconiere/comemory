@@ -385,7 +385,7 @@ principals may reuse one key. The first run stores its response as a command
 receipt in the same transaction as the change. A retry with the same key and
 the same body — the digest covers the command type and every body field
 except `idempotencyKey` and `workspaceId` — returns that response and writes
-nothing. Any other reuse answers `409 idempotency_conflict`. A failed command
+nothing, not even a `project_changes` frame. Any other reuse answers `409 idempotency_conflict`. A failed command
 stores no receipt, so its retry runs again. Receipts live until their project
 is hard-deleted; there is no TTL. The receipt holds the core response, so a
 key first used through the CLI replays over HTTP with the same `data`.
