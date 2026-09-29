@@ -5,7 +5,7 @@
 
 use crate::domains::projects::create::Request;
 use crate::domains::projects::limits::{self, key_prefix, list, text};
-use crate::domains::projects::principal::Principal;
+use crate::domains::projects::principal::{Principal, PrincipalType};
 use crate::domains::projects::timestamp::parse_target_date;
 use crate::domains::sync::repository_identity::canonical_github_name;
 use crate::prelude::*;
@@ -70,9 +70,9 @@ pub fn validate(req: Request, actor: &Principal) -> Result<Charter> {
     let lead = match req.lead_user_id.as_deref() {
         Some(lead) => {
             text("leadUserId", lead, 1, usize::MAX)?;
-            Principal::user(lead)
+            Principal::new(PrincipalType::User, lead)
         }
-        None => Principal::user(&actor.id),
+        None => Principal::new(PrincipalType::User, &actor.id),
     };
     let target_date = req
         .target_date

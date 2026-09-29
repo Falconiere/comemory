@@ -19,7 +19,7 @@
 
 use comemory::config::{Config, Paths, env};
 use comemory::domains::projects::authority::Verb;
-use comemory::domains::projects::principal::{LOCAL_AGENT_ID, Principal};
+use comemory::domains::projects::principal::{LOCAL_AGENT_ID, Principal, PrincipalType};
 use comemory::mcp::McpOptions;
 use comemory::mcp::state::McpState;
 use comemory::store::memory_list::{ListFilter, SortBy, list_memories};
@@ -124,8 +124,12 @@ fn track_delegates_to_the_shared_access_tracking_setting() {
 fn the_project_envelope_holds_every_capability_and_no_human_verb() {
     use Verb as V;
     let dir = tempdir().expect("tempdir");
-    let envelope = state_in(&dir, false).project_envelope();
-    assert_eq!(envelope.principal(), &Principal::agent(LOCAL_AGENT_ID));
+    let state = state_in(&dir, false);
+    let envelope = state.project_envelope();
+    assert_eq!(
+        envelope.principal(),
+        &Principal::new(PrincipalType::ProjectAgent, LOCAL_AGENT_ID)
+    );
     for verb in [
         V::ProjectShow,
         V::ProjectList,

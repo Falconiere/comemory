@@ -5,7 +5,9 @@
 //! [`Envelope`] admits the verb, so a refusal comes before any store access.
 //! The actor is never `Origin.actor`, a self-declared telemetry label.
 
-use crate::domains::projects::principal::{LOCAL_AGENT_ID, LOCAL_OPERATOR_ID, Principal};
+use crate::domains::projects::principal::{
+    LOCAL_AGENT_ID, LOCAL_OPERATOR_ID, Principal, PrincipalType,
+};
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 use crate::utilities::project_error::ProjectError;
@@ -152,7 +154,7 @@ impl Envelope {
     #[must_use]
     pub fn user(id: &str, tier: Tier) -> Self {
         Self {
-            principal: Principal::user(id),
+            principal: Principal::new(PrincipalType::User, id),
             reach: Reach::Human(tier),
         }
     }
@@ -161,7 +163,7 @@ impl Envelope {
     #[must_use]
     pub fn agent(id: &str, capabilities: Capabilities) -> Self {
         Self {
-            principal: Principal::agent(id),
+            principal: Principal::new(PrincipalType::ProjectAgent, id),
             reach: Reach::Agent(capabilities),
         }
     }

@@ -25,6 +25,8 @@ pub struct McpState {
     cfg: Arc<Config>,
     repo: Option<String>,
     read_only: bool,
+    /// The envelope every project tool runs under.
+    project_envelope: Arc<Envelope>,
     /// `"<clientInfo.name>/<version>"`, recorded once at `initialize` and
     /// reported as the `actor` of every row this session's calls write. A
     /// `OnceLock` rather than a `Mutex`: a session initializes exactly once,
@@ -48,6 +50,7 @@ impl McpState {
             cfg: Arc::new(opts.cfg),
             repo: scope::default_repo(opts.repo, cwd),
             read_only: opts.read_only,
+            project_envelope: Arc::new(Envelope::local_agent()),
             client: Arc::new(OnceLock::new()),
         })
     }
@@ -108,8 +111,8 @@ impl McpState {
     /// The envelope every project tool runs under: the local agent, holding
     /// all six capabilities and, by principal kind, no human verb (#315).
     /// #316 narrows it by configuration and flag.
-    pub fn project_envelope(&self) -> Envelope {
-        Envelope::local_agent()
+    pub fn project_envelope(&self) -> &Envelope {
+        &self.project_envelope
     }
 
     /// Whether a read should log a `retrieval_log` row. A `--read-only`

@@ -44,20 +44,11 @@ pub const LOCAL_OPERATOR_ID: &str = "local-operator";
 pub const LOCAL_AGENT_ID: &str = "local-agent";
 
 impl Principal {
-    /// A human principal with `id`.
+    /// A `principal_type` principal with `id`.
     #[must_use]
-    pub fn user(id: &str) -> Self {
+    pub fn new(principal_type: PrincipalType, id: &str) -> Self {
         Self {
-            principal_type: PrincipalType::User,
-            id: id.to_string(),
-        }
-    }
-
-    /// An agent principal with `id`.
-    #[must_use]
-    pub fn agent(id: &str) -> Self {
-        Self {
-            principal_type: PrincipalType::ProjectAgent,
+            principal_type,
             id: id.to_string(),
         }
     }
