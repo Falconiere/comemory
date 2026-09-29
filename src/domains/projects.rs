@@ -10,6 +10,8 @@
 
 /// The one `project_activity_events` writer every mutation shares.
 pub mod activity;
+/// `project activity`: a keyset page of one project's activity events.
+pub mod activity_page;
 /// The capability envelope every core runs under, and the verb table.
 pub mod authority;
 /// `project changes`: the body-free change feed and its writers.
