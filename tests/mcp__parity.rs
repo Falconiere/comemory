@@ -114,6 +114,10 @@ const PROBES: &[(&str, ProbeFn)] = &[
     ),
     ("project_list", is_unknown_field::<projects::list::Request>),
     ("project_show", is_unknown_field::<ProjectShowParams>),
+    (
+        "project_evidence",
+        is_unknown_field::<projects::evidence_add::Request>,
+    ),
 ];
 
 /// Resolve a root or nested clap path such as `architecture scaffold`.

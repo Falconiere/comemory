@@ -179,7 +179,7 @@ fn stored_events(data_dir: &Path, query_id: &str) -> Vec<(String, String, String
 
 /// AC-1: `initialize` succeeds and `tools/list` is exactly the catalog —
 /// every name, every description, an object `inputSchema` on each — and
-/// `--read-only` advertises the same seventeen.
+/// `--read-only` advertises the same eighteen.
 #[tokio::test]
 async fn mcp_01_lists_catalog() {
     let tmp = tempfile::TempDir::new().expect("cwd");
@@ -776,7 +776,7 @@ async fn mcp_10_project_activity_view_reads_read_only() {
         (
             json!({"id": id, "limit": 5}),
             "invalid_request",
-            json!({"field": "limit", "reason": "activity_only"}),
+            json!({"field": "limit", "reason": "page_only"}),
         ),
         (
             json!({"id": id, "view": "plan", "order": "asc"}),
@@ -804,4 +804,135 @@ async fn mcp_10_project_activity_view_reads_read_only() {
         unknown.structured_content.expect("a refusal")["code"],
         "project_not_found"
     );
+}
+
+/// #346: `project_evidence` attaches evidence to a work item in a read-write
+/// session, `project_show`'s evidence view pages it key for key as the CLI's
+/// `project evidence list`, each refusal carries its project code, and a
+/// `--read-only` session refuses the writer while still paging.
+#[tokio::test]
+async fn mcp_11_project_evidence_attaches_and_pages() {
+    const PROJECT: &str = "11111111-1111-4111-8111-111111111111";
+    const ITEM: &str = "b0000000-0000-4000-8000-000000000002";
+    const SHA: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    let tmp = tempfile::TempDir::new().expect("cwd");
+    let home = McpHome::spawn(tmp.path(), &[]).await;
+    let cli = |args: &[&str]| -> Value {
+        let out = Command::new(assert_cmd::cargo::cargo_bin("comemory"))
+            .arg("--json")
+            .args(args)
+            .env("COMEMORY_DATA_DIR", home.data_dir())
+            .output()
+            .expect("run comemory");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).expect("--json")
+    };
+    cli(&[
+        "project",
+        "create",
+        "--id",
+        PROJECT,
+        "--name",
+        "Evidence",
+        "--key-prefix",
+        "EVID",
+        "--outcome",
+        "Evidence lands",
+        "--repository",
+        "falconiere/comemory",
+    ]);
+    connection::open(home.data_dir().join("comemory.db"))
+        .expect("open the session database")
+        .execute_batch(include_str!("fixtures/projects/plan_seed.sql"))
+        .expect("seed the plan");
+
+    let attach = json!({
+        "projectId": PROJECT, "idempotencyKey": "mcp-1", "workItemId": ITEM,
+        "kind": "commit", "source": "git", "repo": "falconiere/comemory", "commitSha": SHA
+    });
+    let attached = home.data("project_evidence", attach.clone()).await;
+    assert_eq!(attached["evidence"]["workItemId"], ITEM);
+    assert_eq!(attached["evidence"]["trust"], "pending");
+    assert_eq!(attached["evidence"]["creatorPrincipalId"], "local-agent");
+    assert_eq!(home.data("project_evidence", attach).await, attached);
+
+    let page = home
+        .data(
+            "project_show",
+            json!({"id": PROJECT, "view": "evidence", "kind": "commit", "workItemId": ITEM}),
+        )
+        .await;
+    assert_eq!(page["evidence"], json!([attached["evidence"]]));
+    assert_eq!(
+        page,
+        cli(&[
+            "project",
+            "evidence",
+            "list",
+            PROJECT,
+            "--kind",
+            "commit",
+            "--work-item",
+            ITEM
+        ])
+    );
+
+    let claim = |extra: Value| -> Value {
+        let mut body = json!({"projectId": PROJECT, "idempotencyKey": "mcp-2",
+                              "kind": "external_url", "source": "ci"});
+        body.as_object_mut()
+            .expect("an object")
+            .extend(extra.as_object().expect("an object").clone());
+        body
+    };
+    let refusals = [
+        (
+            claim(json!({"projectId": "00000000-0000-4000-8000-000000000000"})),
+            "project_not_found",
+        ),
+        (
+            claim(json!({"workItemId": "b0000000-0000-4000-8000-000000000099"})),
+            "work_item_not_found",
+        ),
+        (
+            claim(json!({"kind": "commit", "repo": "someone/else", "commitSha": SHA})),
+            "repo_not_allowed",
+        ),
+        (claim(json!({"kind": "screenshot"})), "invalid_request"),
+        (
+            claim(json!({"kind": "commit", "repo": "falconiere/comemory", "commitSha": "xyz"})),
+            "invalid_request",
+        ),
+    ];
+    for (args, code) in refusals {
+        let refusal = home.error("project_evidence", args.clone()).await;
+        assert_eq!(refusal["code"], code, "{args}: {refusal}");
+    }
+    let misplaced = home
+        .error(
+            "project_show",
+            json!({"id": PROJECT, "view": "activity", "kind": "commit"}),
+        )
+        .await;
+    assert_eq!(
+        misplaced["details"],
+        json!({"field": "kind", "reason": "evidence_only"})
+    );
+
+    let read_only = home.attach(tmp.path(), &["--read-only"]).await;
+    let refused = read_only
+        .error(
+            "project_evidence",
+            claim(json!({"idempotencyKey": "mcp-3"})),
+        )
+        .await;
+    assert_eq!(refused["code"], "read_only");
+    let still = read_only
+        .data("project_show", json!({"id": PROJECT, "view": "evidence"}))
+        .await;
+    assert_eq!(still["evidence"].as_array().map(Vec::len), Some(1));
 }

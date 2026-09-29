@@ -25,6 +25,12 @@ pub fn encode(at_ms: i64, id: &str) -> String {
     format!("{at_ms}:{id}")
 }
 
+/// A row a keyset page walks, by its `(created_at, id)` position.
+pub trait Positioned {
+    /// The row's `created_at` epoch milliseconds and id.
+    fn position(&self) -> (i64, &str);
+}
+
 /// Split `cursor`, refusing anything outside `^\d{1,15}:[0-9a-f-]{36}$`
 /// (ASCII digits, lowercase hex).
 pub fn decode(cursor: &str) -> Result<Cursor> {

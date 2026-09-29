@@ -95,7 +95,7 @@ impl ComemoryServer {
 /// The one line every write tool above ends in: refuse `tool` outright when
 /// the session is `--read-only`, otherwise run `f` on the blocking pool and
 /// shape the outcome into a protocol result.
-async fn write_tool<T, F>(
+pub(crate) async fn write_tool<T, F>(
     state: McpState,
     tool: &'static str,
     f: F,

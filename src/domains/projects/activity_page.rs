@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
-use crate::domains::projects::keyset;
+use crate::domains::projects::keyset::{self, Positioned};
 use crate::domains::projects::limits;
 use crate::domains::projects::list::vocabulary;
 use crate::domains::projects::timestamp::iso;
@@ -129,15 +129,21 @@ impl Command for Request {
 /// continues it: `None` when the extra row was not there. A negative `limit`
 /// yields an empty page with no cursor.
 #[must_use]
-pub fn split(mut rows: Vec<ActivityRow>, limit: i64) -> (Vec<ActivityRow>, Option<String>) {
+pub fn split<R: Positioned>(mut rows: Vec<R>, limit: i64) -> (Vec<R>, Option<String>) {
     let has_more = rows.len() as i64 > limit;
     // A non-positive limit is refused upstream; here it reads as an empty page.
     rows.truncate(usize::try_from(limit).unwrap_or(0));
-    let next_cursor = rows
-        .last()
-        .filter(|_| has_more)
-        .map(|last| keyset::encode(last.created_at, &last.id));
+    let next_cursor = rows.last().filter(|_| has_more).map(|last| {
+        let (at_ms, id) = last.position();
+        keyset::encode(at_ms, id)
+    });
     (rows, next_cursor)
+}
+
+impl Positioned for ActivityRow {
+    fn position(&self) -> (i64, &str) {
+        (self.created_at, &self.id)
+    }
 }
 
 /// One stored event as its view. A payload that is not a JSON object reads

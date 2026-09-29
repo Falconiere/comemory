@@ -1,6 +1,6 @@
 //! The curated MCP tool table.
 //!
-//! Seventeen entries keep tool discovery compact beside the much larger HTTP
+//! Eighteen entries keep tool discovery compact beside the much larger HTTP
 //! route table. Each row names the clap subcommand whose
 //! core the tool runs, which is what `tests/mcp__parity.rs` walks to prove no
 //! tool invents a command or a parameter the CLI does not have.
@@ -106,7 +106,7 @@ pub const TOOLS: &[ToolEntry] = &[
         name: "project_show",
         command: "project show",
         mutating: false,
-        description: "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies. view activity: one keyset page of its activity events; limit 1-200, order desc (default) or asc, and nextCursor back as cursor.",
+        description: "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies. view activity: one keyset page of its activity events; limit 1-200, order desc (default) or asc, and nextCursor back as cursor. view evidence: one page of its evidence newest first; filter by kind, trust or workItemId, limit 1-100, nextCursor back as cursor.",
     },
     ToolEntry {
         name: "save",
@@ -119,6 +119,12 @@ pub const TOOLS: &[ToolEntry] = &[
         command: "architecture save",
         mutating: true,
         description: "Validate and store an enriched architecture model. Supersedes the current model only after every member path validates against the code index.",
+    },
+    ToolEntry {
+        name: "project_evidence",
+        command: "project evidence add",
+        mutating: true,
+        description: "Attach typed evidence to a project, or to one work item with workItemId: kind (commit, pull_request, test_run, deployment, session, decision, memory, external_url), source, and externalId, url, repo, commitSha, metadata, criterionIds as the kind needs. Returns the evidence with its trust; reuse idempotencyKey to retry safely.",
     },
     ToolEntry {
         name: "feedback",

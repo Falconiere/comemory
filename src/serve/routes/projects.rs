@@ -1,8 +1,9 @@
 //! `POST|GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
 //! `GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/{id}/activity`,
-//! `POST /api/v1/projects/{id}/{archive,restore,pause,resume}` and
+//! `POST /api/v1/projects/{id}/{archive,restore,pause,resume}`,
+//! `POST|GET /api/v1/projects/{id}/evidence` and
 //! `GET /api/v1/projects/changes` — the `domains::projects` create, list,
-//! show, plan, activity-page, lifecycle and change-feed cores, on the platform's REST
+//! show, plan, activity-page, lifecycle, evidence and change-feed cores, on the platform's REST
 //! paths so a hosted cutover
 //! forwards without remapping. Every core runs under [`caller`]'s envelope,
 //! which no header can change: in local mode the local agent, so `POST`
@@ -28,6 +29,7 @@ use crate::domains::projects::lifecycle::Kind;
 use crate::domains::projects::{changes, create, plan, show};
 use crate::serve::AppState;
 use crate::serve::routes::project_activity::{self, ACTIVITY};
+use crate::serve::routes::project_evidence;
 use crate::serve::routes::project_lifecycle;
 use crate::serve::routes::project_request::{body, list_field, query};
 use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
@@ -102,6 +104,18 @@ pub fn table_entries() -> &'static [RouteEntry] {
             mutating: true,
         },
         RouteEntry {
+            method: "POST",
+            path: "/projects/{id}/evidence",
+            command: project_evidence::ADD,
+            mutating: true,
+        },
+        RouteEntry {
+            method: "GET",
+            path: "/projects/{id}/evidence",
+            command: project_evidence::LIST,
+            mutating: false,
+        },
+        RouteEntry {
             method: "GET",
             path: "/projects/changes",
             command: CHANGES,
@@ -140,6 +154,10 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/projects/{id}/activity",
             get(project_activity::page),
+        )
+        .route(
+            "/api/v1/projects/{id}/evidence",
+            get(project_evidence::list).post(project_evidence::add),
         )
 }
 

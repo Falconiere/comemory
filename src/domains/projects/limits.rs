@@ -31,6 +31,17 @@ pub const RATIONALE_MAX: usize = 4000;
 pub const KEY_PREFIX_MIN: usize = 2;
 /// Longest key prefix.
 pub const KEY_PREFIX_MAX: usize = 10;
+/// Evidence `source` length cap.
+pub const EVIDENCE_SOURCE_MAX: usize = 120;
+/// Evidence `externalId` and `commitSha` length cap.
+pub const EVIDENCE_EXTERNAL_ID_MAX: usize = 256;
+/// Evidence `url` length cap.
+pub const EVIDENCE_URL_MAX: usize = 2048;
+/// Encoded evidence `metadata` cap, in bytes.
+pub const EVIDENCE_METADATA_BYTES_MAX: usize = 16 * 1024;
+/// Criteria one piece of evidence may link (the platform's
+/// `WORK_ITEM_CRITERIA_MAX`).
+pub const EVIDENCE_CRITERIA_MAX: usize = 20;
 /// Largest page a list may ask for.
 pub const PAGE_MAX: i64 = 100;
 /// The page size when a list names none.

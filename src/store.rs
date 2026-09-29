@@ -137,6 +137,9 @@ mod orm;
 pub mod project_activity;
 /// `project_changes`: the body-free change feed, appended and paged by `seq`.
 pub mod project_changes;
+/// `project_evidence` and its criterion links: the attach writes, the two
+/// membership reads it checks, and the filtered keyset page.
+pub mod project_evidence;
 /// A project's plan rows: milestones, work items, criteria and dependencies.
 pub mod project_plan;
 /// `projects` charter reads: one row, a keyset page, and a page's relations.

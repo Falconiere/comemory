@@ -2,7 +2,7 @@
 
 Stdio Model Context Protocol server for agent hosts (Claude Code, Codex,
 Cursor, Gemini CLI, Windsurf). Speaks JSON-RPC on stdin/stdout and offers a
-curated seventeen-tool catalog over the same command cores the CLI and
+curated eighteen-tool catalog over the same command cores the CLI and
 `comemory serve` call. Diagnostics go to stderr; stdout carries the protocol
 and nothing else.
 
@@ -37,10 +37,10 @@ _None._
 - **Flags:** `--read-only`
 - **Setup:** throwaway `COMEMORY_DATA_DIR`, no corpus
 - **Command:** `comemory mcp` (spawned by the rmcp client over child stdio)
-- **Expect:** `initialize` succeeds; `tools/list` is exactly the seventeen
+- **Expect:** `initialize` succeeds; `tools/list` is exactly the eighteen
   `comemory::mcp::catalog::TOOLS` names, each with its catalog description
   verbatim and an object `inputSchema`; `instructions` names `find` and
-  `feedback`; `--read-only` lists the same seventeen.
+  `feedback`; `--read-only` lists the same eighteen.
 - **Covered by:** `tests/cli_scenario_mcp.rs::mcp_01_lists_catalog`
 
 ### mcp-02 Recall returns hits and a judgeable query id

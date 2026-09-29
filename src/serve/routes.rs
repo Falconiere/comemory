@@ -72,6 +72,9 @@ pub mod memory_stores;
 pub mod overview;
 /// `GET /projects/{id}/activity` (`domains::projects::activity_page`).
 pub mod project_activity;
+/// `POST|GET /projects/{id}/evidence` (`domains::projects::evidence_add`,
+/// `evidence_page`).
+pub mod project_evidence;
 /// `POST /projects/{id}/{archive,restore,pause,resume}`
 /// (`domains::projects::lifecycle`).
 pub mod project_lifecycle;

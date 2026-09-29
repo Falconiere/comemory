@@ -331,3 +331,103 @@ fn the_activity_page_matches_the_cli_and_refuses_by_edge() {
     assert_eq!(body["error"]["code"], "project_not_found");
     assert_eq!(rows(&home)[..2], before[..2], "a read wrote a row");
 }
+
+#[test]
+fn evidence_attaches_and_pages_over_http_and_refuses_by_code() {
+    const PROJECT: &str = "11111111-1111-4111-8111-111111111111";
+    const ITEM: &str = "b0000000-0000-4000-8000-000000000002";
+    const SHA: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    let home = ServeHome::new();
+    cli(
+        &home,
+        &["project", "create", "--id", PROJECT, "--name", "Evidence"]
+            .into_iter()
+            .chain(["--key-prefix", "EVID", "--outcome", "o"])
+            .chain(["--repository", "falconiere/comemory"])
+            .collect::<Vec<_>>(),
+    );
+    rusqlite::Connection::open(home.data_dir().join("comemory.db"))
+        .unwrap()
+        .execute_batch(include_str!("fixtures/projects/plan_seed.sql"))
+        .unwrap();
+    let path = format!("/projects/{PROJECT}/evidence");
+    let commit = json!({
+        "projectId": "overwritten-by-the-path", "idempotencyKey": "http-1",
+        "workItemId": ITEM, "kind": "commit", "source": "git",
+        "repo": "falconiere/comemory", "commitSha": SHA,
+        "criterionIds": ["c0000000-0000-4000-8000-000000000002"]
+    });
+    let (status, body) = home.post_raw(&path, &commit);
+    assert_eq!(status, 200, "{body}");
+    let attached = &body["data"]["evidence"];
+    assert_eq!(attached["workItemId"], ITEM);
+    assert_eq!(attached["trust"], "pending");
+    assert_eq!(attached["creatorPrincipalType"], "project_agent");
+    // A retry replays the first answer.
+    assert_eq!(home.post(&path, &commit)["evidence"], *attached);
+
+    let page = home.get_q(&path, &[("workItemId", ITEM), ("kind", "commit")]);
+    assert_eq!(page["evidence"], json!([attached]));
+    assert_eq!(page["nextCursor"], Value::Null);
+    let cli_page = cli(
+        &home,
+        &["project", "evidence", "list", PROJECT, "--work-item", ITEM],
+    );
+    assert_eq!(page, cli_page);
+    assert_eq!(
+        home.get_q(&path, &[("trust", "self_reported")])["evidence"],
+        json!([])
+    );
+
+    let attach = |extra: Value| -> Value {
+        let mut body = json!({"idempotencyKey": "http-2", "kind": "external_url", "source": "ci"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        body
+    };
+    let unknown_project = "/projects/00000000-0000-4000-8000-000000000000/evidence";
+    let refusals: [(&str, Value, u16, &str); 6] = [
+        (unknown_project, attach(json!({})), 404, "project_not_found"),
+        (
+            &path,
+            attach(json!({"workItemId": "b0000000-0000-4000-8000-000000000099"})),
+            404,
+            "work_item_not_found",
+        ),
+        (
+            &path,
+            attach(json!({"kind": "commit", "repo": "someone/else", "commitSha": SHA})),
+            403,
+            "repo_not_allowed",
+        ),
+        (
+            &path,
+            attach(json!({"kind": "screenshot"})),
+            400,
+            "invalid_request",
+        ),
+        (
+            &path,
+            attach(json!({"kind": "commit", "repo": "not-a-repo", "commitSha": SHA})),
+            422,
+            "invalid_request",
+        ),
+        (&path, json!({"kind": "commit"}), 400, "invalid_request"),
+    ];
+    for (route, body, status, code) in refusals {
+        let (got, answer) = home.post_raw(route, &body);
+        assert_eq!(got, status, "{route} {body}: {answer}");
+        assert_eq!(answer["error"]["code"], code, "{answer}");
+    }
+    let (status, body) = home.get_q_raw(&path, &[("limit", "101")]);
+    assert_eq!(status, 422, "{body}");
+    let (status, body) = home.get_raw(unknown_project);
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(body["error"]["code"], "project_not_found");
+    let stored: i64 = rusqlite::Connection::open(home.data_dir().join("comemory.db"))
+        .unwrap()
+        .query_row("SELECT count(*) FROM project_evidence", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stored, 1, "a refusal stored evidence");
+}
