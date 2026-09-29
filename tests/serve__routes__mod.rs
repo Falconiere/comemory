@@ -198,8 +198,13 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
         // names no entity, and nothing is erased.
         | "erase"
         // `project.create` answers `400 name is required` to an empty body,
-        // so no project is chartered.
-        | "project.create" => (serde_json::json!({}), vec![]),
+        // so no project is chartered; each lifecycle verb answers `400` for
+        // its missing `idempotencyKey`, so no project moves.
+        | "project.create"
+        | "project.archive"
+        | "project.restore"
+        | "project.pause"
+        | "project.resume" => (serde_json::json!({}), vec![]),
         // `PUT /hooks/{name}` needs a body and, like `hooks`, a repo path the
         // gate is checked before touching.
         "hooks.set" => (

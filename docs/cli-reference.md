@@ -31,7 +31,7 @@ Usage: comemory [OPTIONS] <COMMAND>
 Commands:
   architecture    Scaffold, store, draw and drift-check the architecture model of an indexed repository (CLI-only)
   save            Save a memory (body via arg, `-`, or stdin)
-  project         Engine-owned project management: create, show and list project charters, page a project's activity log and read the body-free change feed, offline
+  project         Engine-owned project management: create, show and list project charters, archive, restore, pause and resume them, page a project's activity log and read the body-free change feed, offline
   search          Search the memory index by natural-language query
   search-code     Search the code index by natural-language or identifier query
   list            List memories with optional repo/kind filters
@@ -238,7 +238,7 @@ Examples:
 ## comemory project
 
 ```
-Engine-owned project management: create, show and list project charters, page a project's activity log and read the body-free change feed, offline
+Engine-owned project management: create, show and list project charters, archive, restore, pause and resume them, page a project's activity log and read the body-free change feed, offline
 
 Usage: comemory project [OPTIONS] <COMMAND>
 
@@ -246,6 +246,10 @@ Commands:
   create    Charter a draft project and record its `project.created` event
   show      Show one project's charter by id
   list      List projects newest first, one keyset page at a time
+  archive   Archive a project: hide it from the default list, keep its history
+  restore   Restore an archived project that is not completed or canceled
+  pause     Pause an active project, with a reason
+  resume    Resume a paused project
   activity  Page one project's activity log, newest first or oldest first
   changes   Read the body-free change feed: one frame per committed mutation
   plan      Read a project's committed plan
@@ -275,6 +279,15 @@ Examples:
   # Page through active projects, newest first
   comemory project list --status active --limit 10
   comemory project list --cursor '<nextCursor from the previous page>'
+
+  # Pause an active project, then resume it (each bumps its version)
+  comemory project pause 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 3 \
+    --reason 'Waiting on the design review'
+  comemory project resume 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 4
+
+  # Archive it out of the default list, and restore it
+  comemory project archive 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 5
+  comemory project restore 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 6
 
   # Walk one project's activity, oldest first
   comemory project activity 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --order asc --limit 50

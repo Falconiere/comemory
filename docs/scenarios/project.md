@@ -2,8 +2,9 @@
 
 Engine-owned project management (epic #261): charter a project, read it back
 and page through the charters — offline, in a fresh data directory, with no
-account, read a project's committed plan, page its activity log, and poll
-the body-free change feed. Nested: `create` / `show` / `list` / `activity` /
+account — archive, restore, pause and resume it, read its committed plan,
+page its activity log, and poll the body-free change feed. Nested: `create` /
+`show` / `list` / `archive` / `restore` / `pause` / `resume` / `activity` /
 `changes` / `plan show`. Each verb is a thin shell over a
 `domains::projects` core that the HTTP routes and the MCP readers
 (`project_list`, `project_show`, whose `view: "activity"` reads the
@@ -20,13 +21,15 @@ The actor is stored on every row and activity event and reads back as
 `createdBy` / `leadUserId`. A charter has no update verb: after creation it
 changes only through an approved `project.update` proposal (#338).
 
-Every mutation except hard deletion (#320) is idempotent (#327); `create` is
-the first. It carries an idempotency key, scoped to the principal, and its
-first answer is stored as a command receipt in the same transaction. A retry
-with the same key and body returns that answer and writes nothing — no row,
-no activity event, no change-feed frame, no `activity_log` row. The body is
-compared exactly as sent, before normalization. The same key with another
-body or command is refused with `idempotency_conflict`. A failed command
+Every mutation except hard deletion (#320) is idempotent (#327): `create`
+and the four lifecycle verbs today. Each carries an idempotency key, scoped
+to the principal, and its first answer is stored as a command receipt in the
+same transaction. A retry with the same key and body returns that answer and
+writes nothing — no row, no activity event, no change-feed frame, no
+`activity_log` row. The body is compared exactly as sent, before
+normalization; a lifecycle verb also digests its project id, lowercased, so
+the id's case never matters but another project does. The same key with
+another body, command or project is refused with `idempotency_conflict`. A failed command
 stores no receipt, so a retry runs again. Receipts have no TTL: they live
 until their project is hard-deleted.
 
@@ -36,19 +39,23 @@ until their project is hard-deleted.
 `src/store/tests/projects.rs`, `src/store/tests/project_read.rs`,
 `tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`,
 `tests/cli__project_plan.rs`, `src/store/tests/project_plan.rs`,
-`tests/cli__project_activity.rs`, `src/store/tests/project_activity.rs`
+`tests/cli__project_activity.rs`, `src/store/tests/project_activity.rs`,
+`tests/cli__project_lifecycle.rs`, `tests/serve__routes__project_lifecycle.rs`
 
 **HTTP:** `POST /api/v1/projects` (`403 project_agent_scope` for the local
 agent), `GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
 `GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/{id}/activity`,
-`GET /api/v1/projects/changes` — see the
+`POST /api/v1/projects/{id}/{archive,restore,pause,resume}` (`403
+project_agent_scope` for the local agent), `GET /api/v1/projects/changes` —
+see the
 [HTTP API guide](../guides/http-api.md#route-map).
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
 ## Positionals
 
-`show <ID>`, `activity <ID>` and `plan show <ID>` — the project's UUID, in either case.
+`show <ID>`, `archive <ID>`, `restore <ID>`, `pause <ID>`, `resume <ID>`,
+`activity <ID>` and `plan show <ID>` — the project's UUID, in either case.
 
 ## Flags
 
@@ -65,6 +72,9 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | `--target-date` | `create` | none | `YYYY-MM-DD` (UTC midnight) or an RFC 3339 timestamp |
 | `--id` | `create` | minted | Use this UUID as the project id (stored lowercase) |
 | `--idempotency-key` | `create` | minted | Retry key, 1–200 UTF-16 units: rerunning with the same key and exactly the same flags prints the first answer and writes nothing; the same key with other flags exits 75 (`idempotency_conflict`). Omitted, a fresh UUID is minted, so that run is not retry-safe |
+| `--expected-version` | `archive`, `restore`, `pause`, `resume` | required | The `version` last read (`project show`); a stale one exits 75 (`version_conflict`) |
+| `--reason` | `archive`, `restore`, `pause`, `resume` | none | Why, up to 4000 UTF-16 units, stored untrimmed in the event payload. Required for `pause`: missing exits 64 (`reason is required`), empty or whitespace-only exits 65 (`reason is blank`) |
+| `--idempotency-key` | `archive`, `restore`, `pause`, `resume` | minted | As for `create`: the same key and flags print the first answer and write nothing; the same key for another verb, version, reason or project exits 75 |
 | `--status` | `list` | all | `draft`, `planning`, `active`, `paused`, `completed` or `canceled` |
 | `--health` | `list` | all | `unknown`, `on_track`, `at_risk` or `off_track` |
 | `--include-archived` | `list` | false | Include archived projects |
@@ -330,3 +340,46 @@ warning never logs the value.
   `src/domains/projects/tests/activity_page.rs`,
   `tests/serve__routes__projects.rs::the_activity_page_matches_the_cli_and_refuses_by_edge`,
   `tests/cli_scenario_mcp.rs::mcp_10_project_activity_view_reads_read_only`
+
+### project-11 Archive, restore, pause and resume
+
+- **Flags:** `--expected-version`, `--reason`, `--idempotency-key`, `--json`
+- **Setup:** a fresh `COMEMORY_DATA_DIR`; a project chartered with `create`.
+  No verb reaches `active` yet (plan approval, #338, will), so the tests seed
+  the status straight into `comemory.db`.
+- **Command:** `comemory project pause <ID> --expected-version 1 --reason
+  'Design review'`, then `resume`, `archive` and `restore`, each at the
+  version the previous answer printed
+- **Expect:**
+  - Each success prints the project at `version + 1` and writes one
+    `project.paused` / `resumed` / `archived` / `restored` event (payload
+    `{reason}`) and one change-feed frame in the same transaction. The TTY
+    view prints `version` and `archived` lines, so the next
+    `--expected-version` needs no `--json`.
+  - The legal source states are the platform's
+    (`project-lifecycle-service.ts`): `archive` any unarchived project,
+    `restore` an archived one that is not `completed` or `canceled`, `pause`
+    an unarchived `active` one, `resume` an unarchived `paused` one. Every
+    other pair exits 75 (`invalid_transition`) with the platform's sentence
+    and changes nothing. A terminal project can still be archived, because
+    the platform code allows it, but never restored, paused or resumed.
+  - A stale `--expected-version` exits 75 (`The project has changed since it
+    was last read`); a missing pause reason exits 64 and a blank one 65; an
+    unknown id exits 64 (`Project not found`).
+  - The archived project leaves `project list` and returns with
+    `--include-archived` or after `restore`.
+  - A named key replays; the same key with another verb exits 75
+    (`idempotency_conflict`).
+  - Over HTTP the local agent is refused every verb with `403
+    project_agent_scope` and nothing written; a read-only server answers
+    `405`. An agent envelope is refused before the database is opened, and a
+    `member` with `403 forbidden`.
+- **Covered by:** `tests/cli__project_lifecycle.rs::a_project_walks_its_lifecycle_offline`,
+  `tests/cli__project_lifecycle.rs::a_named_key_replays_and_an_unknown_project_is_not_found`,
+  `src/domains/projects/tests/lifecycle.rs::every_source_state_against_every_verb`,
+  `src/domains/projects/tests/lifecycle.rs::a_blank_missing_or_over_long_reason_is_refused_and_changes_nothing`,
+  `src/domains/projects/tests/lifecycle.rs::a_stale_version_is_a_conflict_carrying_the_current_version`,
+  `src/domains/projects/tests/lifecycle.rs::an_agent_is_refused_before_the_store_is_opened`,
+  `src/domains/projects/tests/lifecycle.rs::a_replay_writes_nothing_and_any_other_reuse_of_the_key_conflicts`,
+  `src/store/tests/projects.rs::a_lifecycle_patch_lands_only_at_the_version_it_names`,
+  `tests/serve__routes__project_lifecycle.rs`

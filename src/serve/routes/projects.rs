@@ -1,7 +1,8 @@
 //! `POST|GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
-//! `GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/{id}/activity` and
+//! `GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/{id}/activity`,
+//! `POST /api/v1/projects/{id}/{archive,restore,pause,resume}` and
 //! `GET /api/v1/projects/changes` — the `domains::projects` create, list,
-//! show, plan, activity-page and change-feed cores, on the platform's REST
+//! show, plan, activity-page, lifecycle and change-feed cores, on the platform's REST
 //! paths so a hosted cutover
 //! forwards without remapping. Every core runs under [`caller`]'s envelope,
 //! which no header can change: in local mode the local agent, so `POST`
@@ -23,11 +24,14 @@ use axum::response::Response;
 use axum::routing::get;
 
 use crate::domains::projects::authority::{self, Command, Envelope};
+use crate::domains::projects::lifecycle::Kind;
 use crate::domains::projects::{changes, create, plan, show};
 use crate::serve::AppState;
 use crate::serve::routes::project_activity::{self, ACTIVITY};
+use crate::serve::routes::project_lifecycle;
 use crate::serve::routes::project_request::{body, list_field, query};
 use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
+use crate::utilities::activity::command;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -74,6 +78,30 @@ pub fn table_entries() -> &'static [RouteEntry] {
             mutating: false,
         },
         RouteEntry {
+            method: "POST",
+            path: "/projects/{id}/archive",
+            command: command::PROJECT_ARCHIVE,
+            mutating: true,
+        },
+        RouteEntry {
+            method: "POST",
+            path: "/projects/{id}/restore",
+            command: command::PROJECT_RESTORE,
+            mutating: true,
+        },
+        RouteEntry {
+            method: "POST",
+            path: "/projects/{id}/pause",
+            command: command::PROJECT_PAUSE,
+            mutating: true,
+        },
+        RouteEntry {
+            method: "POST",
+            path: "/projects/{id}/resume",
+            command: command::PROJECT_RESUME,
+            mutating: true,
+        },
+        RouteEntry {
             method: "GET",
             path: "/projects/changes",
             command: CHANGES,
@@ -84,7 +112,13 @@ pub fn table_entries() -> &'static [RouteEntry] {
 
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
-    Router::new()
+    let lifecycle = Kind::ALL.into_iter().fold(Router::new(), |router, kind| {
+        router.route(
+            &project_lifecycle::path(kind),
+            project_lifecycle::route(kind),
+        )
+    });
+    lifecycle
         .route(
             "/api/v1/projects",
             get(|State(state), q| read(state, "project", parsed(q, list_field)))
@@ -110,10 +144,10 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// The envelope a local-mode HTTP caller runs under: the local agent, which
-/// reads but holds no human verb, so `POST /projects` answers `403
-/// project_agent_scope` (#315). #316 makes it configurable; #317 adds hosted
-/// mode's signed stamp.
-fn caller() -> Envelope {
+/// reads but holds no human verb, so `POST /projects` and the lifecycle
+/// routes answer `403 project_agent_scope` (#315). #316 makes it
+/// configurable; #317 adds hosted mode's signed stamp.
+pub(super) fn caller() -> Envelope {
     Envelope::local_agent()
 }
 

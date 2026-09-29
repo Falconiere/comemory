@@ -13,13 +13,14 @@ use clap::{Args as ClapArgs, Subcommand};
 
 use crate::cli::load_config;
 use crate::cli::output::json;
-use crate::cli::project_activity;
+use crate::cli::{project_activity, project_lifecycle};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
 use crate::domains::projects::changes::{self, ChangeFrame};
+use crate::domains::projects::lifecycle::Kind;
 use crate::domains::projects::plan::{self, PlanView};
 use crate::domains::projects::view::ProjectView;
-use crate::domains::projects::{create, list, show};
+use crate::domains::projects::{create, lifecycle, list, show};
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 use crate::utilities::uuid;
@@ -45,6 +46,15 @@ Examples:
   comemory project list --status active --limit 10
   comemory project list --cursor '<nextCursor from the previous page>'
 
+  # Pause an active project, then resume it (each bumps its version)
+  comemory project pause 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 3 \\
+    --reason 'Waiting on the design review'
+  comemory project resume 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 4
+
+  # Archive it out of the default list, and restore it
+  comemory project archive 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 5
+  comemory project restore 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --expected-version 6
+
   # Walk one project's activity, oldest first
   comemory project activity 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --order asc --limit 50
 
@@ -69,6 +79,14 @@ pub enum ProjectCmd {
     Show(ShowArgs),
     /// List projects newest first, one keyset page at a time.
     List(ListArgs),
+    /// Archive a project: hide it from the default list, keep its history.
+    Archive(project_lifecycle::Args),
+    /// Restore an archived project that is not completed or canceled.
+    Restore(project_lifecycle::Args),
+    /// Pause an active project, with a reason.
+    Pause(project_lifecycle::Args),
+    /// Resume a paused project.
+    Resume(project_lifecycle::Args),
     /// Page one project's activity log, newest first or oldest first.
     Activity(project_activity::Args),
     /// Read the body-free change feed: one frame per committed mutation.
@@ -192,6 +210,10 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             let resp = authority::run(&mut ctx, &operator, list_request(l))?;
             emit(json_flag, &resp, |out| render_page(out, &resp))
         }
+        ProjectCmd::Archive(l) => lifecycle(&mut ctx, json_flag, l.request(Kind::Archive)?),
+        ProjectCmd::Restore(l) => lifecycle(&mut ctx, json_flag, l.request(Kind::Restore)?),
+        ProjectCmd::Pause(l) => lifecycle(&mut ctx, json_flag, l.request(Kind::Pause)?),
+        ProjectCmd::Resume(l) => lifecycle(&mut ctx, json_flag, l.request(Kind::Resume)?),
         ProjectCmd::Activity(a) => {
             let resp = authority::run(&mut ctx, &operator, a.request())?;
             emit(json_flag, &resp, |out| project_activity::render(out, &resp))
@@ -211,6 +233,12 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             emit(json_flag, &resp, |out| render_plan(out, &resp.plan))
         }
     }
+}
+
+/// Run one lifecycle verb as the local operator and print the project.
+fn lifecycle(ctx: &mut Ctx<'_>, json_flag: bool, req: lifecycle::Request) -> Result<()> {
+    let resp = authority::run(ctx, &Envelope::local_operator(), req)?;
+    emit(json_flag, &resp, |out| render_project(out, &resp.project))
 }
 
 /// The core request for `project create`, its key minted when absent.
@@ -266,6 +294,9 @@ fn render_project(out: &mut dyn std::io::Write, p: &ProjectView) -> std::io::Res
     writeln!(out, "slug          {}", p.slug)?;
     writeln!(out, "name          {}", p.name)?;
     writeln!(out, "status        {} ({})", p.status, p.health)?;
+    writeln!(out, "version       {}", p.version)?;
+    let archived = p.archived_at.as_deref().unwrap_or("-");
+    writeln!(out, "archived      {archived}")?;
     writeln!(out, "lead          {}", p.lead_user_id)?;
     writeln!(
         out,

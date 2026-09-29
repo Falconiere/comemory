@@ -21,7 +21,6 @@ use crate::domains::projects::timestamp::now_ms;
 use crate::domains::projects::view::{self, ProjectView};
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::project_read;
 use crate::store::projects::{NewProject, ProjectInsert, insert_project, insert_relations};
 use crate::utilities::activity::command;
 use crate::utilities::context::Ctx;
@@ -186,7 +185,7 @@ fn write(tx: &Connection, actor: &Actor, charter: &Charter) -> Result<Response> 
         payload: &payload,
     };
     activity::record(tx, actor, &event, at_ms)?;
-    let view = created_view(tx, &charter.id)?;
+    let view = view::written(tx, &charter.id, "creation")?;
     Ok(Response { project: view })
 }
 
@@ -224,19 +223,6 @@ fn write_relations(conn: &Connection, project: &NewProject<'_>, charter: &Charte
         .map(|description| Ok((uuid::new_v4()?, description.clone())))
         .collect::<Result<Vec<_>>>()?;
     insert_relations(conn, project, &charter.repositories, &criteria)
-}
-
-/// The view of the row this transaction just wrote.
-fn created_view(conn: &Connection, id: &str) -> Result<ProjectView> {
-    let row = project_read::project(conn, id)?;
-    let view = row.map(|row| view::load(conn, vec![row])).transpose()?;
-    view.and_then(|mut views| views.pop()).ok_or_else(|| {
-        ProjectError::Invariant {
-            invariant: "project_created_row".to_string(),
-            message: format!("project {id} vanished inside its own creation transaction"),
-        }
-        .into()
-    })
 }
 
 #[cfg(test)]

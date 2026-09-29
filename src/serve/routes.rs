@@ -72,6 +72,9 @@ pub mod memory_stores;
 pub mod overview;
 /// `GET /projects/{id}/activity` (`domains::projects::activity_page`).
 pub mod project_activity;
+/// `POST /projects/{id}/{archive,restore,pause,resume}`
+/// (`domains::projects::lifecycle`).
+pub mod project_lifecycle;
 /// Raw project request bodies and queries parsed into core requests, every
 /// malformed input a `400 invalid_request` naming its field.
 pub mod project_request;
