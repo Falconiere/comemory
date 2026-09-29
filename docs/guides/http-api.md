@@ -356,7 +356,7 @@ paths, so a hosted cutover forwards without remapping; see
 
 | Method + path | CLI command | Notes |
 |---|---|---|
-| ● `POST /projects` | `project create` | **`403 project_agent_scope`** in local mode (below); for an admitted human, **`201`**. Body is the platform's: `name`, `keyPrefix`, `outcome`, optional `id` (client UUID, minted when absent), `successCriteria[]`, `constraints[]`, `nonGoals[]`, `repositories[]` (canonical `owner/name`), `leadUserId` (defaults to the caller's principal id), `targetDate` (`YYYY-MM-DD` = UTC midnight, or RFC 3339); `workspaceId` is accepted and ignored. Writes the charter and one `project.created` activity event in one transaction. Every limit answers `422 invalid_request` with `{field, reason, limit}`; a duplicate `keyPrefix` is `422 {field: keyPrefix, reason: duplicate}` |
+| ● `POST /projects` | `project create` | **`403 project_agent_scope`** in local mode (below); for an admitted human, **`201`**. Body is the platform's: `idempotencyKey` (required, 1–200 characters; `400` when absent, `422` outside the range), `name`, `keyPrefix`, `outcome`, optional `id` (client UUID, minted when absent), `successCriteria[]`, `constraints[]`, `nonGoals[]`, `repositories[]` (canonical `owner/name`), `leadUserId` (defaults to the caller's principal id), `targetDate` (`YYYY-MM-DD` = UTC midnight, or RFC 3339); `workspaceId` is accepted and ignored. Writes the charter and one `project.created` activity event in one transaction. Every limit answers `422 invalid_request` with `{field, reason, limit}`; a duplicate `keyPrefix` is `422 {field: keyPrefix, reason: duplicate}`. Idempotent: the same key and body replays the stored answer (`201`, no write); the same key with another body is `409 idempotency_conflict` |
 | ○ `GET /projects?status=&health=&includeArchived=&cursor=&limit=` | `project list` | `{projects, nextCursor}`, newest first by `(createdAt, id)`; `limit` 1–100 (default 20, `422` past it); `cursor` is the previous page's `<epochMillis>:<uuid>` — a malformed one is `400 invalid_request`; archived projects only with `includeArchived=true`; a repeated or unknown parameter is `400` |
 | ○ `GET /projects/{id}` | `project show` | `{project}`; a non-UUID id is `400`, an unknown one `404 project_not_found` |
 | ○ `GET /projects/changes?after=&limit=` | `project changes` | The body-free change feed (#324): a `project.read` reader under the caller's envelope (`Verb::ProjectChanges`), so the local agent every local-mode caller runs as reads it; `data` is the bare frame array, the `/sync/replica/events` shape — `[{seq, entity: "project", project_id, event_id, op}]` ascending by `seq`, one frame per committed mutation (`op: changed`, `event_id` = its activity event) and one per hard deletion (`op: deleted`, `event_id` = the project id). No charter, proposal, work-item, evidence or activity body ever appears. `after` defaults to `0`, `limit` to `100` (1–1000, `422` past it). Retention is unbounded; a cursor past the head is `422 {field: after, reason: cursor_ahead}` and one below the oldest retained row `422 {field: after, reason: cursor_expired}` — never a page that skips. A non-integer or negative `after`, or a repeated or unknown parameter, is `400`. The static segment wins over `{id}` |
@@ -378,6 +378,17 @@ an over-limit charter: authority is checked before validation, after the body
 parses (`400`) and after the read-only gate (`405`). Charter projects through
 the CLI, which runs as the local operator; #316 adds the setting that makes a
 local-mode server act as a human, and #317 the hosted mode's signed stamp.
+
+Every project mutation is idempotent (#327). Its `idempotencyKey` is scoped
+to the caller's principal, not to the command or the project, so two
+principals may reuse one key. The first run stores its response as a command
+receipt in the same transaction as the change. A retry with the same key and
+the same body — the digest covers the command type and every body field
+except `idempotencyKey` and `workspaceId` — returns that response and writes
+nothing. Any other reuse answers `409 idempotency_conflict`. A failed command
+stores no receipt, so its retry runs again. Receipts live until their project
+is hard-deleted; there is no TTL. The receipt holds the core response, so a
+key first used through the CLI replays over HTTP with the same `data`.
 
 ### Request field mapping
 

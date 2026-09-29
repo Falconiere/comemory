@@ -260,6 +260,10 @@ Examples:
     --outcome 'Projects work without a cloud account' \
     --success-criterion 'A project is created offline' --repository falconiere/comemory
 
+  # Retry-safe: rerunning with the same key prints the first answer again
+  comemory project create --name 'Ship offline projects' --key-prefix SHIP \
+    --outcome 'Projects work without a cloud account' --idempotency-key ship-2026-09
+
   # Read it back
   comemory project show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
 
