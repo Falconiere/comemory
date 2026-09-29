@@ -1,7 +1,9 @@
 //! `POST|GET /api/v1/projects` and `GET /api/v1/projects/{id}` — the
 //! `domains::projects` create, list and show cores, on the platform's REST
-//! paths so a hosted cutover forwards without remapping. `POST` answers
-//! `201`, as the platform does.
+//! paths so a hosted cutover forwards without remapping. Every core runs
+//! under [`caller`]'s envelope, which no header can change: in local mode
+//! the local agent, so `POST` answers `403 project_agent_scope`, and an
+//! admitted create answers `201`, as the platform does.
 //!
 //! Bodies and queries are parsed here rather than by axum's extractors,
 //! whose rejections are plain text: every malformed input answers the
@@ -17,8 +19,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::get;
 
-use crate::domains::projects::principal::Principal;
-use crate::domains::projects::{create, list, show};
+use crate::domains::projects::authority::{self, Envelope};
+use crate::domains::projects::{create, show};
 use crate::serve::AppState;
 use crate::serve::routes::project_request::{body, list_query};
 use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
@@ -61,7 +63,15 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/projects/{id}", get(show_project))
 }
 
-/// `POST /api/v1/projects` — charter a draft project as the local operator.
+/// The envelope a local-mode HTTP caller runs under: the local agent, which
+/// reads but holds no human verb, so `POST /projects` answers `403
+/// project_agent_scope` (#315). #316 makes it configurable; #317 adds hosted
+/// mode's signed stamp.
+fn caller() -> Envelope {
+    Envelope::local_agent()
+}
+
+/// `POST /api/v1/projects` — charter a draft project, when [`caller`] may.
 async fn create_project(State(state): State<AppState>, headers: HeaderMap, raw: Bytes) -> Response {
     let started = Instant::now();
     let origin = state.http_origin(&headers);
@@ -75,12 +85,15 @@ async fn create_project(State(state): State<AppState>, headers: HeaderMap, raw: 
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
-        create::run(&mut ctx, &Principal::local_operator(), req)
+        authority::run(&mut ctx, &caller(), req)
     })
     .await;
-    let mut response = respond(CREATE, result, started);
+    created(respond(CREATE, result, started))
+}
+
+/// The platform's `201` for a created project; a refusal passes through.
+fn created(mut response: Response) -> Response {
     if response.status() == StatusCode::OK {
-        // The platform answers a created project with `201`.
         *response.status_mut() = StatusCode::CREATED;
     }
     response
@@ -95,13 +108,20 @@ async fn list_projects(
         Ok(req) => req,
         Err(e) => return respond::<()>("project", Err(e), Instant::now()),
     };
-    query_response(state, "project", move |ctx| list::run(ctx, req)).await
+    query_response(state, "project", move |ctx| {
+        authority::run(ctx, &caller(), req)
+    })
+    .await
 }
 
 /// `GET /api/v1/projects/{id}` — one charter.
 async fn show_project(State(state): State<AppState>, Path(id): Path<String>) -> Response {
     query_response(state, "project.show", move |ctx| {
-        show::run(ctx, show::Request { id })
+        authority::run(ctx, &caller(), show::Request { id })
     })
     .await
 }
+
+#[cfg(test)]
+#[path = "tests/projects.rs"]
+mod tests;

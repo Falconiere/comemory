@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
 use crate::domains::projects::keyset;
 use crate::domains::projects::limits;
 use crate::domains::projects::view::{self, ProjectView};
@@ -56,33 +57,43 @@ pub struct Response {
     pub next_cursor: Option<String>,
 }
 
-/// Read one page.
-pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
-    let limit = limits::page(req.limit)?;
-    let cursor = req.cursor.as_deref().map(keyset::decode).transpose()?;
-    let status = vocabulary("status", req.status.as_deref(), STATUSES)?;
-    let health = vocabulary("health", req.health.as_deref(), HEALTH)?;
-    let conn = ctx.conn()?;
-    let mut rows = project_read::project_page(
-        conn,
-        &ProjectPage {
-            status,
-            health,
-            include_archived: req.include_archived.unwrap_or(false),
-            after: cursor.as_ref().map(|c| (c.at_ms, c.id.as_str())),
-            limit: limit + 1,
-        },
-    )?;
-    let has_more = rows.len() as i64 > limit;
-    rows.truncate(limit as usize);
-    let next_cursor = rows
-        .last()
-        .filter(|_| has_more)
-        .map(|last| keyset::encode(last.created_at, &last.id));
-    Ok(Response {
-        projects: view::load(conn, rows)?,
-        next_cursor,
-    })
+impl sealed::Sealed for Request {}
+
+impl Command for Request {
+    type Response = Response;
+
+    fn verb(&self) -> Verb {
+        Verb::ProjectList
+    }
+
+    /// Read one page.
+    fn execute(self, ctx: &mut Ctx<'_>, _actor: &Actor) -> Result<Response> {
+        let limit = limits::page(self.limit)?;
+        let cursor = self.cursor.as_deref().map(keyset::decode).transpose()?;
+        let status = vocabulary("status", self.status.as_deref(), STATUSES)?;
+        let health = vocabulary("health", self.health.as_deref(), HEALTH)?;
+        let conn = ctx.conn()?;
+        let mut rows = project_read::project_page(
+            conn,
+            &ProjectPage {
+                status,
+                health,
+                include_archived: self.include_archived.unwrap_or(false),
+                after: cursor.as_ref().map(|c| (c.at_ms, c.id.as_str())),
+                limit: limit + 1,
+            },
+        )?;
+        let has_more = rows.len() as i64 > limit;
+        rows.truncate(limit as usize);
+        let next_cursor = rows
+            .last()
+            .filter(|_| has_more)
+            .map(|last| keyset::encode(last.created_at, &last.id));
+        Ok(Response {
+            projects: view::load(conn, rows)?,
+            next_cursor,
+        })
+    }
 }
 
 /// `value` when it is one of `allowed`; otherwise the platform's schema-edge

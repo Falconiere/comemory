@@ -10,9 +10,9 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::domains::projects::activity::{self, Event};
+use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
 use crate::domains::projects::charter::{self, Charter};
 use crate::domains::projects::limits;
-use crate::domains::projects::principal::Principal;
 use crate::domains::projects::slug::{base_slug, disambiguate};
 use crate::domains::projects::timestamp::now_ms;
 use crate::domains::projects::view::{self, ProjectView};
@@ -84,24 +84,35 @@ struct CreatedPayload<'a> {
     criteria_count: usize,
 }
 
-/// Create a draft project as `actor`.
-pub fn run(ctx: &mut Ctx<'_>, actor: &Principal, req: Request) -> Result<Response> {
-    let started = Instant::now();
-    let result = create(ctx, actor, req);
-    let summary = result
-        .as_ref()
-        .map(|r| serde_json::json!({"id": r.project.id, "keyPrefix": r.project.key_prefix}));
-    let outcome = match &summary {
-        Ok(value) => Outcome::Ok(value),
-        Err(e) => Outcome::Failed(e),
-    };
-    record_in(ctx, command::PROJECT_CREATE, started, &outcome, None);
-    result
+impl sealed::Sealed for Request {}
+
+impl Command for Request {
+    type Response = Response;
+
+    fn verb(&self) -> Verb {
+        Verb::ProjectCreate
+    }
+
+    /// Create a draft project as `actor`, then record the telemetry row.
+    fn execute(self, ctx: &mut Ctx<'_>, actor: &Actor) -> Result<Response> {
+        let started = Instant::now();
+        let result = create(ctx, actor, self);
+        let summary = result
+            .as_ref()
+            .map(|r| serde_json::json!({"id": r.project.id, "keyPrefix": r.project.key_prefix}));
+        let outcome = match &summary {
+            Ok(value) => Outcome::Ok(value),
+            Err(e) => Outcome::Failed(e),
+        };
+        record_in(ctx, command::PROJECT_CREATE, started, &outcome, None);
+        result
+    }
 }
 
 /// Validate, then write everything in one immediate transaction.
-fn create(ctx: &mut Ctx<'_>, actor: &Principal, req: Request) -> Result<Response> {
-    let charter = charter::validate(req, actor)?;
+fn create(ctx: &mut Ctx<'_>, actor: &Actor, req: Request) -> Result<Response> {
+    let creator = actor.principal();
+    let charter = charter::validate(req, creator)?;
     let tx = write_transaction(ctx.conn()?)?;
     // Stamped once the writer lock is held, so commit order and `created_at`
     // order agree for every writer of this database.
@@ -119,8 +130,8 @@ fn create(ctx: &mut Ctx<'_>, actor: &Principal, req: Request) -> Result<Response
         lead_type: charter.lead.principal_type.as_str(),
         lead_id: &charter.lead.id,
         target_date: charter.target_date,
-        creator_type: actor.principal_type.as_str(),
-        creator_id: &actor.id,
+        creator_type: creator.principal_type.as_str(),
+        creator_id: &creator.id,
         at_ms,
     };
     let slug = insert_with_unique_slug(&tx, &project)?;

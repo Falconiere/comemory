@@ -695,6 +695,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/memories/update.rs | comemory::domains::memories::update; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/memories/tests/update.rs | none | domains::memories | src/domains/memories/update.rs | retain |
 | src/domains/projects.rs | comemory::domains::projects; preserve | none | none | domains::projects | src/domains/projects.rs | retain |
 | src/domains/projects/activity.rs | comemory::domains::projects::activity; preserve | none | none | domains::projects | src/domains/projects/activity.rs | retain |
+| src/domains/projects/authority.rs | comemory::domains::projects::authority; preserve | src/domains/projects/tests/authority.rs | none | domains::projects | src/domains/projects/authority.rs | retain |
 | src/domains/projects/charter.rs | comemory::domains::projects::charter; preserve | none | none | domains::projects | src/domains/projects/charter.rs | retain |
 | src/domains/projects/create.rs | comemory::domains::projects::create; preserve | src/domains/projects/tests/create.rs | none | domains::projects | src/domains/projects/create.rs | retain |
 | src/domains/projects/keyset.rs | comemory::domains::projects::keyset; preserve | src/domains/projects/tests/keyset.rs | none | domains::projects | src/domains/projects/keyset.rs | retain |
@@ -902,7 +903,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/routes/meta.rs | comemory::serve::routes::meta; preserve | none | none | delivery::serve | src/serve/routes/meta.rs | retain |
 | src/serve/routes/overview.rs | comemory::serve::routes::overview; preserve | src/serve/routes/tests/overview.rs | none | delivery::serve | src/serve/routes/overview.rs | retain |
 | src/serve/routes/project_request.rs | comemory::serve::routes::project_request; preserve | src/serve/routes/tests/project_request.rs | none | delivery::serve | src/serve/routes/project_request.rs | retain |
-| src/serve/routes/projects.rs | comemory::serve::routes::projects; preserve | none | none | delivery::serve | src/serve/routes/projects.rs | retain |
+| src/serve/routes/projects.rs | comemory::serve::routes::projects; preserve | src/serve/routes/tests/projects.rs | none | delivery::serve | src/serve/routes/projects.rs | retain |
 | src/serve/routes/repos.rs | comemory::serve::routes::repos; preserve | src/serve/routes/tests/repos.rs | none | delivery::serve | src/serve/routes/repos.rs | retain |
 | src/serve/routes/repos_admin.rs | comemory::serve::routes::repos_admin; preserve | src/serve/routes/tests/repos_admin.rs | none | delivery::serve | src/serve/routes/repos_admin.rs | retain |
 | src/serve/routes/search.rs | comemory::serve::routes::search; preserve | src/serve/routes/tests/search.rs | none | delivery::serve | src/serve/routes/search.rs | retain |

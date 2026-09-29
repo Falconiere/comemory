@@ -163,6 +163,16 @@ fn rows() -> Vec<(ProjectError, &'static str, u16, i32, Mcp)> {
             70,
             Mcp::Tool,
         ),
+        // Adjacent to its sibling: `dedup` below only drops neighbours.
+        (
+            ProjectError::TierForbidden {
+                reason: s("Only the project lead or a workspace admin may run this command"),
+            },
+            "forbidden",
+            403,
+            70,
+            Mcp::Tool,
+        ),
         (
             ProjectError::ProposalStale {
                 base_plan_version: 3,
@@ -271,12 +281,13 @@ fn rows() -> Vec<(ProjectError, &'static str, u16, i32, Mcp)> {
 }
 
 /// Every code reads the same code word across `classify`, the HTTP
-/// envelope, the CLI exit and MCP — 23 rows for 22 codes, because
-/// `invalid_request` answers at two edges.
+/// envelope, the CLI exit and MCP — 24 rows for 22 codes, because
+/// `invalid_request` answers at two edges and `forbidden` is raised both for
+/// another actor's execution and for a human below a verb's tier (#315).
 #[tokio::test]
 async fn every_project_code_reads_the_same_across_adapters() {
     let rows = rows();
-    assert_eq!(rows.len(), 23);
+    assert_eq!(rows.len(), 24);
     let mut codes: Vec<&str> = rows.iter().map(|row| row.1).collect();
     codes.dedup();
     assert_eq!(codes.len(), 22, "twenty-two distinct codes");
@@ -312,8 +323,10 @@ async fn invalid_request_status_follows_the_edge_not_the_code() {
 }
 
 /// The engine's `error` member is the platform's, byte for byte, for the
-/// three fixture codes — including `proposal_stale`, whose `details` keys
-/// are not alphabetical.
+/// fixture lines — including `proposal_stale`, whose `details` keys are not
+/// alphabetical, and the four authority refusals #315 ports (a member below
+/// the lead tier, a lead below the owner tier, an agent on a human-only verb,
+/// an agent missing a capability).
 #[tokio::test]
 async fn project_error_bodies_equal_the_platform_fixture() {
     let s = String::from;
@@ -329,6 +342,18 @@ async fn project_error_bodies_equal_the_platform_fixture() {
             unmet_criterion_ids: vec![s("crit_a")],
             unverified_criterion_ids: vec![s("crit_b")],
             work_item_ids: vec![s("wi_1")],
+        },
+        ProjectError::TierForbidden {
+            reason: s("Only the project lead or a workspace admin may run this command"),
+        },
+        ProjectError::TierForbidden {
+            reason: s("Only a workspace owner or admin can delete a project"),
+        },
+        ProjectError::ProjectAgentScope {
+            reason: s("This command requires a signed-in human"),
+        },
+        ProjectError::ProjectAgentScope {
+            reason: s("This grant does not carry the health.update capability"),
         },
     ];
     let lines: Vec<&str> = PLATFORM_FIXTURE

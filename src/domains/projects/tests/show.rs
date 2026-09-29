@@ -4,7 +4,7 @@
 //! `404 project_not_found`.
 
 use comemory::config::{Config, Paths};
-use comemory::domains::projects::principal::Principal;
+use comemory::domains::projects::authority::{self, Envelope};
 use comemory::domains::projects::{create, show};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -22,12 +22,13 @@ fn show_reads_back_refuses_malformed_and_answers_unknown_with_404() {
         "name": "Read me", "keyPrefix": "READ", "outcome": "Read back"
     }))
     .unwrap();
-    let created = create::run(&mut ctx, &Principal::local_operator(), req)
+    let created = authority::run(&mut ctx, &Envelope::local_operator(), req)
         .unwrap()
         .project;
 
-    let shown = show::run(
+    let shown = authority::run(
         &mut ctx,
+        &Envelope::local_operator(),
         show::Request {
             id: created.id.to_uppercase(),
         },
@@ -35,8 +36,9 @@ fn show_reads_back_refuses_malformed_and_answers_unknown_with_404() {
     .unwrap();
     assert_eq!(shown.project, created);
 
-    let e = show::run(
+    let e = authority::run(
         &mut ctx,
+        &Envelope::local_operator(),
         show::Request {
             id: "not-a-uuid".into(),
         },
@@ -44,6 +46,11 @@ fn show_reads_back_refuses_malformed_and_answers_unknown_with_404() {
     .unwrap_err();
     assert_eq!(classify(&e), ("invalid_request", Class::BadRequest));
     let unknown = "00000000-0000-4000-8000-000000000000";
-    let e = show::run(&mut ctx, show::Request { id: unknown.into() }).unwrap_err();
+    let e = authority::run(
+        &mut ctx,
+        &Envelope::local_operator(),
+        show::Request { id: unknown.into() },
+    )
+    .unwrap_err();
     assert_eq!(classify(&e), ("project_not_found", Class::NotFound));
 }

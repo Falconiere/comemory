@@ -10,6 +10,8 @@
 
 /// The one `project_activity_events` writer every mutation shares.
 pub mod activity;
+/// The capability envelope every core runs under, and the verb table.
+pub mod authority;
 /// A create request checked against every charter rule.
 pub mod charter;
 /// `project create`: a draft charter and its `project.created` event.
@@ -20,7 +22,7 @@ pub mod keyset;
 pub mod limits;
 /// `project list`: a keyset page of charters.
 pub mod list;
-/// The actor a project command runs as.
+/// The principal kinds and ids an envelope carries.
 pub mod principal;
 /// `project show`: one charter by id.
 pub mod show;

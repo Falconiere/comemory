@@ -1,7 +1,10 @@
 //! The two project read tools (#326), as their own `#[tool_router]` block:
 //! the `domains::projects` list and show cores, with no repo scope — a
-//! project is not repo-scoped. The epic's six project writers (#261) join
-//! them in later tasks.
+//! project is not repo-scoped — each run under the session's envelope
+//! ([`McpState::project_envelope`]). The epic's six project writers (#261)
+//! join them in later tasks.
+//!
+//! [`McpState::project_envelope`]: crate::mcp::state::McpState::project_envelope
 //!
 //! `description` repeats [`crate::mcp::catalog`] because rmcp's `#[tool]`
 //! takes a string LITERAL; `tests/cli_scenario_mcp.rs::mcp_01_lists_catalog`
@@ -12,8 +15,12 @@ use rmcp::model::{CallToolResult, ErrorData};
 use rmcp::{tool, tool_router};
 
 use crate::domains::projects;
+use crate::domains::projects::authority::{self, Command};
 use crate::mcp::server::ComemoryServer;
+use crate::mcp::state::McpState;
 use crate::mcp::tools_read::read_tool;
+use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 #[tool_router(router = project_router, vis = "pub(crate)")]
 impl ComemoryServer {
@@ -26,7 +33,7 @@ impl ComemoryServer {
         &self,
         Parameters(req): Parameters<projects::list::Request>,
     ) -> Result<CallToolResult, ErrorData> {
-        read_tool(self, move |c, _| projects::list::run(c, req)).await
+        read_tool(self, move |c, s| enveloped(c, s, req)).await
     }
 
     /// One project charter by id.
@@ -38,6 +45,11 @@ impl ComemoryServer {
         &self,
         Parameters(req): Parameters<projects::show::Request>,
     ) -> Result<CallToolResult, ErrorData> {
-        read_tool(self, move |c, _| projects::show::run(c, req)).await
+        read_tool(self, move |c, s| enveloped(c, s, req)).await
     }
+}
+
+/// Run a project core under the session's envelope.
+fn enveloped<C: Command>(ctx: &mut Ctx<'_>, state: &McpState, req: C) -> Result<C::Response> {
+    authority::run(ctx, state.project_envelope(), req)
 }

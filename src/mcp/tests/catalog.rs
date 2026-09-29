@@ -39,6 +39,29 @@ fn exactly_three_tools_mutate() {
     assert!(!catalog::is_mutating("delete-everything"));
 }
 
+/// Human-only verbs get no tool (#315): nothing catalogued, so nothing
+/// `tools/list` advertises (`mcp_01_lists_catalog`), names an approval,
+/// rejection, change request, completion, cancellation or deletion.
+#[test]
+fn no_tool_is_named_for_a_human_only_verb() {
+    for tool in TOOLS {
+        for verb in [
+            "approve",
+            "reject",
+            "request_changes",
+            "complete",
+            "cancel",
+            "delete",
+        ] {
+            assert!(
+                !tool.name.contains(verb),
+                "tool `{}` is named for the human verb `{verb}`",
+                tool.name
+            );
+        }
+    }
+}
+
 #[test]
 fn every_tool_carries_an_agent_facing_description() {
     for tool in TOOLS {

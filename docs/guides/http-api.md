@@ -356,7 +356,7 @@ paths, so a hosted cutover forwards without remapping; see
 
 | Method + path | CLI command | Notes |
 |---|---|---|
-| ● `POST /projects` | `project create` | **`201`**. Body is the platform's: `name`, `keyPrefix`, `outcome`, optional `id` (client UUID, minted when absent), `successCriteria[]`, `constraints[]`, `nonGoals[]`, `repositories[]` (canonical `owner/name`), `leadUserId` (defaults to the local operator), `targetDate` (`YYYY-MM-DD` = UTC midnight, or RFC 3339); `workspaceId` is accepted and ignored. Writes the charter and one `project.created` activity event in one transaction. Every limit answers `422 invalid_request` with `{field, reason, limit}`; a duplicate `keyPrefix` is `422 {field: keyPrefix, reason: duplicate}` |
+| ● `POST /projects` | `project create` | **`403 project_agent_scope`** in local mode (below); for an admitted human, **`201`**. Body is the platform's: `name`, `keyPrefix`, `outcome`, optional `id` (client UUID, minted when absent), `successCriteria[]`, `constraints[]`, `nonGoals[]`, `repositories[]` (canonical `owner/name`), `leadUserId` (defaults to the caller's principal id), `targetDate` (`YYYY-MM-DD` = UTC midnight, or RFC 3339); `workspaceId` is accepted and ignored. Writes the charter and one `project.created` activity event in one transaction. Every limit answers `422 invalid_request` with `{field, reason, limit}`; a duplicate `keyPrefix` is `422 {field: keyPrefix, reason: duplicate}` |
 | ○ `GET /projects?status=&health=&includeArchived=&cursor=&limit=` | `project list` | `{projects, nextCursor}`, newest first by `(createdAt, id)`; `limit` 1–100 (default 20, `422` past it); `cursor` is the previous page's `<epochMillis>:<uuid>` — a malformed one is `400 invalid_request`; archived projects only with `includeArchived=true`; a repeated or unknown parameter is `400` |
 | ○ `GET /projects/{id}` | `project show` | `{project}`; a non-UUID id is `400`, an unknown one `404 project_not_found` |
 
@@ -364,6 +364,19 @@ A malformed project body answers the platform's schema-edge shape rather
 than axum's plain-text rejection: `body must be an object`, `<field> is
 required`, or `<field> is invalid`, with `{field, reason}` details
 (`successCriteria.3` for an array element).
+
+Every project route runs under a capability envelope (#315), and a local-mode
+server gives every caller the same one: the **local agent**, a
+`project_agent` (`local-agent`) holding all six capabilities (`project.read`,
+`proposal.create`, `work_packet.create`, `execution.update`,
+`evidence.create`, `health.update`) and, by principal kind, no human verb. No
+request header changes it. The two `GET` routes therefore answer, while
+`POST /projects` — a human-only verb — answers `403 project_agent_scope`
+(`This command requires a signed-in human`) and writes nothing, not even for
+an over-limit charter: authority is checked before validation, after the body
+parses (`400`) and after the read-only gate (`405`). Charter projects through
+the CLI, which runs as the local operator; #316 adds the setting that makes a
+local-mode server act as a human, and #317 the hosted mode's signed stamp.
 
 ### Request field mapping
 

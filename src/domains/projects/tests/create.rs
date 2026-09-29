@@ -10,8 +10,8 @@
 //! failure after the project row is written — no row left behind.
 
 use comemory::config::{Config, Paths};
+use comemory::domains::projects::authority::{self, Envelope};
 use comemory::domains::projects::create::{self, Request};
-use comemory::domains::projects::principal::Principal;
 use comemory::errors::{Error, Result};
 use comemory::store::{Connection, connection};
 use comemory::utilities::context::Ctx;
@@ -41,7 +41,7 @@ impl Home {
 
     fn create(&mut self, req: Request) -> Result<create::Response> {
         let mut ctx = Ctx::borrowed(&self.paths, &self.cfg, &mut self.conn);
-        create::run(&mut ctx, &Principal::local_operator(), req)
+        authority::run(&mut ctx, &Envelope::local_operator(), req)
     }
 
     fn count(&self, table: &str) -> i64 {

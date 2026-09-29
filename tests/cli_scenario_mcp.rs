@@ -633,6 +633,8 @@ async fn mcp_09_project_readers_work_read_only() {
     assert_eq!(page["nextCursor"], Value::Null);
     let shown = home.data("project_show", json!({"id": id})).await;
     assert_eq!(shown["project"], page["projects"][0]);
+    // The agent reads the operator's actor back unchanged (#315).
+    assert_eq!(shown["project"]["createdBy"], "local-operator");
 
     let bad_cursor = home.call("project_list", json!({"cursor": "abc"})).await;
     assert_eq!(bad_cursor.is_error, Some(true));

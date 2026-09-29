@@ -97,6 +97,51 @@ fn a_project_is_created_shown_and_listed_offline() {
     assert!(tty.contains("SHIP") && tty.contains(id), "{tty}");
 }
 
+/// With no config file and no login, the CLI runs as the local operator
+/// (#315): a `user` at owner tier whose id is the actor on the stored row,
+/// on the `project.created` event, and through both read commands.
+#[test]
+fn the_unconfigured_operator_is_the_actor_on_the_row_the_event_and_the_reads() {
+    let home = CliHome::new();
+    let id = create(&home, "SHIP");
+    assert!(
+        !home.data_dir().join("config.toml").exists(),
+        "a config file was needed"
+    );
+
+    let shown = &home.run_json(&["project", "show", &id])["project"];
+    let listed = &home.run_json(&["project", "list"])["projects"][0];
+    for view in [shown, listed] {
+        assert_eq!(view["createdBy"], "local-operator", "{view}");
+        assert_eq!(view["leadUserId"], "local-operator", "{view}");
+    }
+
+    let db = rusqlite::Connection::open_with_flags(
+        home.data_dir().join("comemory.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let stored: [String; 2] = db
+        .query_row(
+            "SELECT creator_principal_type || ':' || creator_principal_id,
+                    lead_principal_type || ':' || lead_principal_id
+             FROM projects WHERE id = ?1",
+            [&id],
+            |r| Ok([r.get(0)?, r.get(1)?]),
+        )
+        .unwrap();
+    assert_eq!(stored, ["user:local-operator", "user:local-operator"]);
+    let event: String = db
+        .query_row(
+            "SELECT actor_principal_type || ':' || actor_principal_id
+             FROM project_activity_events WHERE entity_id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(event, "user:local-operator");
+}
+
 #[test]
 fn refusals_exit_by_edge_and_leave_no_row() {
     let home = CliHome::new();

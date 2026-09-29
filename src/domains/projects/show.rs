@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
 use crate::domains::projects::view::{self, ProjectView};
 use crate::prelude::*;
 use crate::store::project_read;
@@ -26,20 +27,32 @@ pub struct Response {
     pub project: ProjectView,
 }
 
-/// Read the project `req.id` names.
-pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
-    let id = uuid::canonical(&req.id)
-        .ok_or_else(|| Error::from(ProjectError::invalid_field("projectId", "invalid")))?;
-    let conn = ctx.conn()?;
-    let row = project_read::project(conn, &id)?.ok_or_else(|| {
-        Error::from(ProjectError::ProjectNotFound {
-            project_id: req.id.clone(),
-        })
-    })?;
-    let project = view::load(conn, vec![row])?
-        .pop()
-        .ok_or_else(|| Error::from(ProjectError::ProjectNotFound { project_id: req.id }))?;
-    Ok(Response { project })
+impl sealed::Sealed for Request {}
+
+impl Command for Request {
+    type Response = Response;
+
+    fn verb(&self) -> Verb {
+        Verb::ProjectShow
+    }
+
+    /// Read the project `self.id` names.
+    fn execute(self, ctx: &mut Ctx<'_>, _actor: &Actor) -> Result<Response> {
+        let id = uuid::canonical(&self.id)
+            .ok_or_else(|| Error::from(ProjectError::invalid_field("projectId", "invalid")))?;
+        let conn = ctx.conn()?;
+        let row = project_read::project(conn, &id)?.ok_or_else(|| {
+            Error::from(ProjectError::ProjectNotFound {
+                project_id: self.id.clone(),
+            })
+        })?;
+        let project = view::load(conn, vec![row])?.pop().ok_or_else(|| {
+            Error::from(ProjectError::ProjectNotFound {
+                project_id: self.id,
+            })
+        })?;
+        Ok(Response { project })
+    }
 }
 
 #[cfg(test)]

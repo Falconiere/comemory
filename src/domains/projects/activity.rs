@@ -5,7 +5,7 @@
 
 use serde::Serialize;
 
-use crate::domains::projects::principal::Principal;
+use crate::domains::projects::authority::Actor;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::project_activity::{self, NewProjectEvent};
@@ -25,13 +25,15 @@ pub struct Event<'a, P: Serialize> {
     pub payload: &'a P,
 }
 
-/// Append `event` by `actor` at `at_ms` and return the event's new id.
+/// Append `event` by the admitted `actor` at `at_ms` and return the event's
+/// new id.
 pub fn record<P: Serialize>(
     conn: &Connection,
-    actor: &Principal,
+    actor: &Actor,
     event: &Event<'_, P>,
     at_ms: i64,
 ) -> Result<String> {
+    let actor = actor.principal();
     let id = uuid::new_v4()?;
     let payload = serde_json::to_string(event.payload)?;
     project_activity::insert(
