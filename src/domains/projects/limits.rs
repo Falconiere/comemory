@@ -6,7 +6,7 @@
 //! string at the cap there is at the cap here.
 
 use crate::prelude::*;
-use crate::utilities::project_error::ProjectError;
+use crate::utilities::project_error::{ProjectError, RequestEdge};
 
 /// `name` length cap.
 pub const NAME_MAX: usize = 120;
@@ -72,7 +72,7 @@ pub fn key_prefix(value: &str) -> Result<()> {
     if shaped {
         Ok(())
     } else {
-        Err(ProjectError::invariant_field("keyPrefix", "invalid_format").into())
+        Err(invariant("keyPrefix", "invalid_format"))
     }
 }
 
@@ -86,6 +86,14 @@ pub fn page(limit: Option<i64>) -> Result<i64> {
         }
         Some(n) => Ok(n),
     }
+}
+
+/// An invariant-edge (`422`) `invalid_request` for `field`:
+/// `"<field> is <reason>"`, details `{field, reason}`.
+pub fn invariant(field: &str, reason: &str) -> Error {
+    ProjectError::invalid_field(field, reason)
+        .at(RequestEdge::Invariant, None)
+        .into()
 }
 
 #[cfg(test)]

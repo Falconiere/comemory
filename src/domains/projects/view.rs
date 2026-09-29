@@ -84,12 +84,13 @@ pub struct ProjectView {
 /// each rather than two per row.
 pub fn load(conn: &Connection, rows: Vec<ProjectRow>) -> Result<Vec<ProjectView>> {
     let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+    let relations = project_read::relations(conn, &ids)?;
     let mut repositories: HashMap<String, Vec<String>> = HashMap::new();
-    for (project_id, repo) in project_read::repositories(conn, &ids)? {
+    for (project_id, repo) in relations.repositories {
         repositories.entry(project_id).or_default().push(repo);
     }
     let mut criteria: HashMap<String, Vec<CriterionView>> = HashMap::new();
-    for row in project_read::criteria(conn, &ids)? {
+    for row in relations.criteria {
         criteria
             .entry(row.project_id.clone())
             .or_default()

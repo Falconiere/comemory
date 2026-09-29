@@ -13,7 +13,6 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::extract::State;
-use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::get;
 use serde::Serialize;
@@ -301,18 +300,8 @@ pub(crate) fn respond<T: Serialize>(
     result: Result<T>,
     started: Instant,
 ) -> Response {
-    respond_with(StatusCode::OK, command, result, started)
-}
-
-/// [`respond`] with a caller-chosen success `status` (`201` for a create).
-pub(crate) fn respond_with<T: Serialize>(
-    status: StatusCode,
-    command: &str,
-    result: Result<T>,
-    started: Instant,
-) -> Response {
     match result {
-        Ok(data) => Envelope::success(status, command, data, elapsed_ms(started)),
+        Ok(data) => Envelope::ok(command, data, elapsed_ms(started)),
         Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
     }
 }

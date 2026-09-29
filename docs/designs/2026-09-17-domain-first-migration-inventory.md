@@ -864,6 +864,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/mcp/scope.rs | comemory::mcp::scope; preserve | src/mcp/tests/scope.rs | none | delivery::mcp | src/mcp/scope.rs | retain |
 | src/mcp/server.rs | comemory::mcp::server; preserve | none | none | delivery::mcp | src/mcp/server.rs | retain |
 | src/mcp/state.rs | comemory::mcp::state; preserve | src/mcp/tests/state.rs | none | delivery::mcp | src/mcp/state.rs | retain |
+| src/mcp/tools_projects.rs | comemory::mcp::tools_projects; preserve | none | none | delivery::mcp | src/mcp/tools_projects.rs | retain |
 | src/mcp/tools_read.rs | comemory::mcp::tools_read; preserve | none | none | delivery::mcp | src/mcp/tools_read.rs | retain |
 | src/mcp/tools_write.rs | comemory::mcp::tools_write; preserve | none | none | delivery::mcp | src/mcp/tools_write.rs | retain |
 | src/prelude.rs | comemory::prelude; preserve | none | none | shared::root | src/prelude.rs | retain |

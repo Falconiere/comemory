@@ -21,7 +21,7 @@ use crate::domains::projects::principal::Principal;
 use crate::domains::projects::{create, list, show};
 use crate::serve::AppState;
 use crate::serve::routes::project_request::{body, list_query};
-use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond, respond_with};
+use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -78,7 +78,12 @@ async fn create_project(State(state): State<AppState>, headers: HeaderMap, raw: 
         create::run(&mut ctx, &Principal::local_operator(), req)
     })
     .await;
-    respond_with(StatusCode::CREATED, CREATE, result, started)
+    let mut response = respond(CREATE, result, started);
+    if response.status() == StatusCode::OK {
+        // The platform answers a created project with `201`.
+        *response.status_mut() = StatusCode::CREATED;
+    }
+    response
 }
 
 /// `GET /api/v1/projects` — one keyset page, newest first.

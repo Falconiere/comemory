@@ -105,45 +105,57 @@ fn unique_violation(e: &Error) -> Option<ProjectInsert> {
     }
 }
 
-/// The repositories a project may use, in the given order.
-pub fn insert_repositories(
+/// The rows written beside a new project: the repositories it may use, in
+/// order, and its project-level success criteria (`work_item_id` `NULL`,
+/// `position` their index), each criterion an `(id, description)` pair.
+pub fn insert_relations(
     conn: &Connection,
     project: &NewProject<'_>,
     repositories: &[String],
-) -> Result<()> {
-    for name in repositories {
-        orm::execute(
-            conn,
-            ProjectRepositories::insert()
-                .set(&repo::project_id, project.id)
-                .set(&repo::repo, name.as_str())
-                .set(&repo::creator_principal_type, project.creator_type)
-                .set(&repo::creator_principal_id, project.creator_id)
-                .set(&repo::created_at, project.at_ms)
-                .to_sql(),
-        )?;
-    }
-    Ok(())
-}
-
-/// Project-level success criteria (`work_item_id` `NULL`), `position` their
-/// index; each `(id, description)` pair is one row with the declared defaults.
-pub fn insert_criteria(
-    conn: &Connection,
-    project_id: &str,
     criteria: &[(String, String)],
 ) -> Result<()> {
-    for (position, (id, description)) in criteria.iter().enumerate() {
-        orm::execute(
-            conn,
-            ProjectCriteria::insert()
-                .set(&crit::id, id.as_str())
-                .set(&crit::project_id, project_id)
-                .set(&crit::description, description.as_str())
-                .set(&crit::position, position as i64)
-                .to_sql(),
-        )?;
-    }
+    // Each statement's initial values only fix its placeholder shape; every
+    // row rebinds all of them, in the same order.
+    let repository_row = ProjectRepositories::insert()
+        .set(&repo::project_id, "")
+        .set(&repo::repo, "")
+        .set(&repo::creator_principal_type, "")
+        .set(&repo::creator_principal_id, "")
+        .set(&repo::created_at, 0_i64);
+    orm::execute_many(
+        conn,
+        repository_row.to_sql(),
+        repositories.iter().map(|name| {
+            let creator = (project.creator_type, project.creator_id);
+            (
+                project.id,
+                name.as_str(),
+                creator.0,
+                creator.1,
+                project.at_ms,
+            )
+        }),
+    )?;
+    let criterion_row = ProjectCriteria::insert()
+        .set(&crit::id, "")
+        .set(&crit::project_id, "")
+        .set(&crit::description, "")
+        .set(&crit::position, 0_i64);
+    orm::execute_many(
+        conn,
+        criterion_row.to_sql(),
+        criteria
+            .iter()
+            .enumerate()
+            .map(|(position, (id, description))| {
+                (
+                    id.as_str(),
+                    project.id,
+                    description.as_str(),
+                    position as i64,
+                )
+            }),
+    )?;
     Ok(())
 }
 

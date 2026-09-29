@@ -178,25 +178,33 @@ impl ProjectError {
     /// A schema-edge `invalid_request` (`400`) for `field`, worded exactly as
     /// the platform's `invalidRequestFrom`: `"<field> is <reason>"`.
     pub fn invalid_field(field: &str, reason: &str) -> Self {
-        Self::schema_message(format!("{field} is {reason}"), field, reason)
+        Self::InvalidRequest {
+            edge: RequestEdge::Schema,
+            message: format!("{field} is {reason}"),
+            details: OrderedDetails::from_pairs(vec![
+                ("field", Value::from(field)),
+                ("reason", Value::from(reason)),
+            ]),
+        }
     }
 
-    /// A schema-edge `invalid_request` (`400`) with the platform's own fixed
-    /// `message` (`"body must be an object"`).
-    pub fn schema_message(message: String, field: &str, reason: &str) -> Self {
-        Self::field_refusal(RequestEdge::Schema, message, field, reason, None)
-    }
-
-    /// An invariant-edge `invalid_request` (`422`) for `field`, worded
-    /// `"<field> is <reason>"` like [`Self::invalid_field`].
-    pub fn invariant_field(field: &str, reason: &str) -> Self {
-        Self::invariant_message(format!("{field} is {reason}"), field, reason)
-    }
-
-    /// An invariant-edge `invalid_request` (`422`) with the platform's own
-    /// fixed `message` (`"keyPrefix is already used in this workspace"`).
-    pub fn invariant_message(message: String, field: &str, reason: &str) -> Self {
-        Self::field_refusal(RequestEdge::Invariant, message, field, reason, None)
+    /// This `invalid_request` answered at `edge`, and — when the platform
+    /// words it with a fixed sentence (`"keyPrefix is already used in this
+    /// workspace"`) — with that message. Any other refusal is unchanged.
+    #[must_use]
+    pub fn at(mut self, edge: RequestEdge, fixed_message: Option<&str>) -> Self {
+        if let Self::InvalidRequest {
+            edge: current,
+            message,
+            ..
+        } = &mut self
+        {
+            *current = edge;
+            if let Some(fixed) = fixed_message {
+                *message = fixed.to_string();
+            }
+        }
+        self
     }
 
     /// A cap refusal (`422`): `"<field> is <reason> (limit <limit>)"`, so a
@@ -204,28 +212,12 @@ impl ProjectError {
     /// `details` `{field, reason, limit}`.
     pub fn over_limit(field: &str, reason: &str, limit: usize) -> Self {
         let message = format!("{field} is {reason} (limit {limit})");
-        Self::field_refusal(RequestEdge::Invariant, message, field, reason, Some(limit))
-    }
-
-    /// One `invalid_request` at `edge` whose details are `{field, reason}`,
-    /// plus `limit` for a cap.
-    fn field_refusal(
-        edge: RequestEdge,
-        message: String,
-        field: &str,
-        reason: &str,
-        limit: Option<usize>,
-    ) -> Self {
-        let mut pairs = vec![
-            ("field", Value::from(field)),
-            ("reason", Value::from(reason)),
-        ];
-        pairs.extend(limit.map(|limit| ("limit", Value::from(limit))));
-        Self::InvalidRequest {
-            edge,
-            message,
-            details: OrderedDetails::from_pairs(pairs),
+        let mut refusal =
+            Self::invalid_field(field, reason).at(RequestEdge::Invariant, Some(&message));
+        if let Self::InvalidRequest { details, .. } = &mut refusal {
+            details.push("limit", Value::from(limit));
         }
+        refusal
     }
 
     /// The `details` object, in the platform's key order. Every code but

@@ -38,20 +38,8 @@ pub struct Envelope;
 impl Envelope {
     /// `200 OK` success envelope: `{ok:true, data, meta:{command,elapsed_ms}}`.
     pub fn ok<T: Serialize>(command: &str, data: T, elapsed_ms: u64) -> Response {
-        Self::success(StatusCode::OK, command, data, elapsed_ms)
-    }
-
-    /// The success envelope with a caller-chosen 2xx `status` — `201
-    /// Created` for a route that mints a resource, as the platform's
-    /// `POST /projects` answers.
-    pub fn success<T: Serialize>(
-        status: StatusCode,
-        command: &str,
-        data: T,
-        elapsed_ms: u64,
-    ) -> Response {
         respond(
-            status,
+            StatusCode::OK,
             json!({
                 "ok": true,
                 "data": data,

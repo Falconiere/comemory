@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domains::projects::activity::{self, Event};
 use crate::domains::projects::charter::{self, Charter};
+use crate::domains::projects::limits;
 use crate::domains::projects::principal::Principal;
 use crate::domains::projects::slug::{base_slug, disambiguate};
 use crate::domains::projects::timestamp::now_ms;
@@ -19,12 +20,10 @@ use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::connection::write_transaction;
 use crate::store::project_read;
-use crate::store::projects::{
-    NewProject, ProjectInsert, insert_criteria, insert_project, insert_repositories,
-};
+use crate::store::projects::{NewProject, ProjectInsert, insert_project, insert_relations};
 use crate::utilities::activity::{Outcome, command, record_in};
 use crate::utilities::context::Ctx;
-use crate::utilities::project_error::ProjectError;
+use crate::utilities::project_error::{ProjectError, RequestEdge};
 use crate::utilities::uuid;
 
 /// Bounds the slug retry loop, as the platform does.
@@ -160,29 +159,26 @@ fn insert_with_unique_slug(conn: &Connection, project: &NewProject<'_>) -> Resul
             ProjectInsert::Inserted => return Ok(slug),
             ProjectInsert::SlugTaken => {}
             ProjectInsert::KeyPrefixTaken => {
-                let message = "keyPrefix is already used in this workspace".to_string();
-                return Err(
-                    ProjectError::invariant_message(message, "keyPrefix", "duplicate").into(),
-                );
+                let message = "keyPrefix is already used in this workspace";
+                let refusal = ProjectError::invalid_field("keyPrefix", "duplicate");
+                return Err(refusal.at(RequestEdge::Invariant, Some(message)).into());
             }
-            ProjectInsert::IdTaken => {
-                return Err(ProjectError::invariant_field("id", "duplicate").into());
-            }
+            ProjectInsert::IdTaken => return Err(limits::invariant("id", "duplicate")),
         }
     }
-    let message = "Could not derive a unique project slug".to_string();
-    Err(ProjectError::invariant_message(message, "name", "slug_exhausted").into())
+    let message = "Could not derive a unique project slug";
+    let refusal = ProjectError::invalid_field("name", "slug_exhausted");
+    Err(refusal.at(RequestEdge::Invariant, Some(message)).into())
 }
 
 /// The repositories and project-level criteria (each criterion a new UUID).
 fn write_relations(conn: &Connection, project: &NewProject<'_>, charter: &Charter) -> Result<()> {
-    insert_repositories(conn, project, &charter.repositories)?;
     let criteria = charter
         .success_criteria
         .iter()
         .map(|description| Ok((uuid::new_v4()?, description.clone())))
         .collect::<Result<Vec<_>>>()?;
-    insert_criteria(conn, project.id, &criteria)
+    insert_relations(conn, project, &charter.repositories, &criteria)
 }
 
 /// The view of the row this transaction just wrote.

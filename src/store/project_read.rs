@@ -186,25 +186,32 @@ pub fn project_page(conn: &Connection, page: &ProjectPage<'_>) -> Result<Vec<Pro
     )
 }
 
-/// `(project_id, repo)` for every project in `ids`, ordered by project then
-/// repository — the order the platform's primary-key index yields.
-pub fn repositories(conn: &Connection, ids: &[String]) -> Result<Vec<(String, String)>> {
-    orm::query_all(
+/// A page's relations: `(project_id, repo)` pairs ordered by project then
+/// repository — the order the platform's primary-key index yields — and the
+/// project-level criteria (`work_item_id IS NULL`) in display order,
+/// archived ones included as on the platform.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Relations {
+    /// `(project_id, repo)`.
+    pub repositories: Vec<(String, String)>,
+    /// Project-level criteria.
+    pub criteria: Vec<CriterionRow>,
+}
+
+/// The [`Relations`] of every project in `ids`, one query each.
+pub fn relations(conn: &Connection, ids: &[String]) -> Result<Relations> {
+    let ids = values(ids);
+    let repositories = orm::query_all(
         conn,
         ProjectRepositories::select()
             .columns_typed(&[&repo::project_id, &repo::repo])
-            .filter(repo::project_id.in_list(&values(ids)))
+            .filter(repo::project_id.in_list(&ids))
             .order_by(repo::project_id.asc())
             .order_by(repo::repo.asc())
             .to_sql(),
         |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-}
-
-/// Project-level criteria (`work_item_id IS NULL`) of every project in `ids`,
-/// in display order. Archived criteria are included, as on the platform.
-pub fn criteria(conn: &Connection, ids: &[String]) -> Result<Vec<CriterionRow>> {
-    orm::query_all(
+    )?;
+    let criteria = orm::query_all(
         conn,
         ProjectCriteria::select()
             .columns_typed(&[
@@ -217,7 +224,7 @@ pub fn criteria(conn: &Connection, ids: &[String]) -> Result<Vec<CriterionRow>> 
                 &crit::resolution_rationale,
                 &crit::position,
             ])
-            .filter(crit::project_id.in_list(&values(ids)))
+            .filter(crit::project_id.in_list(&ids))
             .filter(crit::work_item_id.is_null())
             .order_by(crit::project_id.asc())
             .order_by(crit::position.asc())
@@ -234,7 +241,11 @@ pub fn criteria(conn: &Connection, ids: &[String]) -> Result<Vec<CriterionRow>> 
                 position: r.get(7)?,
             })
         },
-    )
+    )?;
+    Ok(Relations {
+        repositories,
+        criteria,
+    })
 }
 
 /// `ids` as bind values.

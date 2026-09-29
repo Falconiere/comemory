@@ -35,6 +35,8 @@ pub mod scope;
 pub mod server;
 /// Shared per-session state: call gate, paths, config, scope and flags.
 pub mod state;
+/// The two project read tools (`project_list`, `project_show`).
+pub mod tools_projects;
 /// The nine read tools.
 pub mod tools_read;
 /// The two write tools.

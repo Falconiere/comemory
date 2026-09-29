@@ -13,7 +13,7 @@ use serde_path_to_error::Segment;
 
 use crate::domains::projects::list;
 use crate::prelude::*;
-use crate::utilities::project_error::ProjectError;
+use crate::utilities::project_error::{ProjectError, RequestEdge};
 
 /// `raw` as `T`, or the `400` naming the first field that failed.
 pub fn body<T: DeserializeOwned>(raw: &[u8]) -> Result<T> {
@@ -69,7 +69,9 @@ pub fn list_query<E>(
 
 /// The platform's refusal for a body that is not a JSON object.
 fn not_an_object() -> Error {
-    ProjectError::schema_message("body must be an object".to_string(), "body", "invalid").into()
+    ProjectError::invalid_field("body", "invalid")
+        .at(RequestEdge::Schema, Some("body must be an object"))
+        .into()
 }
 
 /// One path segment as the platform names it: a key, or an array index.

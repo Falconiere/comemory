@@ -40,8 +40,9 @@ pub struct Charter {
 /// Check `req` for `actor`; the lead defaults to the actor's id.
 pub fn validate(req: Request, actor: &Principal) -> Result<Charter> {
     let id = match req.id.as_deref() {
-        Some(raw) => uuid::canonical(raw)
-            .ok_or_else(|| Error::from(ProjectError::invariant_field("id", "invalid_format")))?,
+        Some(raw) => {
+            uuid::canonical(raw).ok_or_else(|| limits::invariant("id", "invalid_format"))?
+        }
         None => uuid::new_v4()?,
     };
     text("name", &req.name, 1, limits::NAME_MAX)?;
@@ -105,7 +106,7 @@ fn repositories(raw: &[String]) -> Result<Vec<String>> {
     for (index, entry) in raw.iter().enumerate() {
         let field = format!("repositories.{index}");
         let canonical = canonical_github_name(entry.trim())
-            .ok_or_else(|| Error::from(ProjectError::invariant_field(&field, "invalid_format")))?;
+            .ok_or_else(|| limits::invariant(&field, "invalid_format"))?;
         if !out.contains(&canonical) {
             out.push(canonical);
         }

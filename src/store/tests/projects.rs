@@ -5,9 +5,7 @@
 
 use comemory::store::connection;
 use comemory::store::project_read;
-use comemory::store::projects::{
-    NewProject, ProjectInsert, insert_criteria, insert_project, insert_repositories,
-};
+use comemory::store::projects::{NewProject, ProjectInsert, insert_project, insert_relations};
 use tempfile::tempdir;
 
 fn charter<'a>(id: &'a str, slug: &'a str, key_prefix: &'a str) -> NewProject<'a> {
@@ -81,22 +79,22 @@ fn repositories_and_criteria_are_written_beside_the_project() {
     let conn = connection::open(dir.path().join("comemory.db")).unwrap();
     let project = charter(A, "ship-it", "SHIP");
     insert_project(&conn, &project).unwrap();
-    insert_repositories(&conn, &project, &["zeta/app".into(), "acme/api".into()]).unwrap();
-    insert_criteria(
+    insert_relations(
         &conn,
-        A,
+        &project,
+        &["zeta/app".into(), "acme/api".into()],
         &[
             ("c1".into(), "Tests pass".into()),
             ("c2".into(), "Docs ship".into()),
         ],
     )
     .unwrap();
-    let ids = vec![A.to_string()];
+    let relations = project_read::relations(&conn, &[A.to_string()]).unwrap();
     assert_eq!(
-        project_read::repositories(&conn, &ids).unwrap(),
+        relations.repositories,
         vec![(A.into(), "acme/api".into()), (A.into(), "zeta/app".into())]
     );
-    let criteria = project_read::criteria(&conn, &ids).unwrap();
+    let criteria = relations.criteria;
     assert_eq!(criteria.len(), 2);
     assert_eq!(
         (criteria[0].position, criteria[0].description.as_str()),
