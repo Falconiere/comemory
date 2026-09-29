@@ -2,7 +2,7 @@
 
 Stdio Model Context Protocol server for agent hosts (Claude Code, Codex,
 Cursor, Gemini CLI, Windsurf). Speaks JSON-RPC on stdin/stdout and offers a
-curated eleven-tool catalog over the same command cores the CLI and
+curated seventeen-tool catalog over the same command cores the CLI and
 `comemory serve` call. Diagnostics go to stderr; stdout carries the protocol
 and nothing else.
 

@@ -80,6 +80,7 @@ Each journey has an HTTP twin over a real `comemory serve`, sharing
 | --- | --- |
 | *(globals)* | [globals.md](globals.md) |
 | `save` | [save.md](save.md) |
+| `project` | [project.md](project.md) |
 | `search` | [search.md](search.md) |
 | `search-code` | [search-code.md](search-code.md) |
 | `list` | [list.md](list.md) |

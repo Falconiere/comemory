@@ -134,7 +134,8 @@ comemory capture session --path F  # redact + POST a session receipt (or --dry-r
 comemory capture sources           # show platform capture consent (CLI cannot grant)
 comemory capture install-hook      # Claude Code SessionEnd → capture session --from-hook
 comemory distill --session-id <id> --transcript <path>  # propose candidates from explicit saves
-comemory mcp                       # stdio MCP adapter: the eleven-tool catalog over JSON-RPC
+comemory mcp                       # stdio MCP adapter: the seventeen-tool catalog over JSON-RPC
+comemory project create|show|list  # engine-owned project charters, offline (epic #261)
 comemory recall-status             # tracked queries, verdicts, saves and pending recalls for a repo
 just migration <name>              # struct diff → migrations/NNNN_<name>.sql (+ snapshot + journal)
 just migration-journal <file>      # journal a hand-written migrations/NNNN_<name>.sql

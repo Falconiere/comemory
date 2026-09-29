@@ -133,7 +133,7 @@ Understanding-oriented background:
   experiment that would put a number on it.
 - **[MCP transport and learning-loop hooks](designs/2026-09-18-mcp-transport-and-learning-loop.md)** —
   `comemory mcp`, the stdio adapter beside `cli` and `serve`, its curated
-  eleven-tool catalog, and the recall-injection / Stop-enforcement / SessionEnd
+  seventeen-tool catalog, and the recall-injection / Stop-enforcement / SessionEnd
   hooks that close the learning loop.
 - **[Real-time activity feed](designs/2026-09-20-activity-feed.md)** —
   `activity_log`, one row per agent-visible command run, and the two routes

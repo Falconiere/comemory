@@ -216,3 +216,43 @@ fn a_walk_returns_every_earlier_project_once_while_another_process_inserts() {
     }
     assert!(seen.values().all(|&n| n == 1), "a project appeared twice");
 }
+
+#[test]
+fn every_flag_reaches_the_core() {
+    let home = CliHome::new();
+    let id = "0F8C2D7E-3B1A-4C5D-9E6F-7A8B9C0D1E2F";
+    let created = home.run_json(&[
+        "project",
+        "create",
+        "--id",
+        id,
+        "--lead",
+        "lead-7",
+        "--name",
+        "Flags",
+        "--key-prefix",
+        "FLAG",
+        "--outcome",
+        "o",
+        "--target-date",
+        "2026-10-01T02:00:00+02:00",
+    ]);
+    assert_eq!(created["project"]["id"], id.to_lowercase());
+    assert_eq!(created["project"]["leadUserId"], "lead-7");
+    assert_eq!(created["project"]["targetDate"], "2026-10-01T00:00:00.000Z");
+    let listed = home.run_json(&[
+        "project",
+        "list",
+        "--status",
+        "draft",
+        "--health",
+        "unknown",
+        "--include-archived",
+    ]);
+    assert_eq!(listed["projects"][0]["id"], id.to_lowercase());
+    let none = home.run_json(&["project", "list", "--status", "active"]);
+    assert_eq!(none["projects"], serde_json::json!([]));
+    let (code, stderr) = refused(&home, &["project", "list", "--health", "great"]);
+    assert_eq!(code, 64, "{stderr}");
+    assert!(stderr.contains("health is invalid"), "{stderr}");
+}
