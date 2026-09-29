@@ -4,7 +4,7 @@ Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
 **284 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 679 production `.rs` files under `src/`. That
+**`similarity-rs 0.5.0`** over the 681 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
 

@@ -40,7 +40,8 @@ impl Home {
             cfg: Config::defaults(),
         };
         let req: create::Request = serde_json::from_value(json!({
-            "id": PROJECT, "name": "Plan", "keyPrefix": "PLAN", "outcome": "A plan reads back"
+            "idempotencyKey": "k1", "id": PROJECT, "name": "Plan", "keyPrefix": "PLAN",
+            "outcome": "A plan reads back"
         }))
         .unwrap();
         home.read(&Envelope::local_operator(), req).unwrap();
