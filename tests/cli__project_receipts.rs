@@ -48,9 +48,7 @@ fn run(home: &CliHome, args: &[&str]) -> Output {
 
 /// Run to success; its stdout bytes.
 fn ok(home: &CliHome, args: &[&str]) -> Vec<u8> {
-    let out = run(home, args);
-    assert!(out.status.success(), "{args:?}: {out:?}");
-    out.stdout
+    home.run_ok(args).into_bytes()
 }
 
 /// Run to failure; its exit code and stderr.
@@ -159,7 +157,7 @@ fn two_processes_racing_one_key_create_one_project() {
     for round in 0..8 {
         let home = CliHome::new();
         // Migrate first, so the race is the create and not the schema.
-        ok(&home, &["--json", "project", "list"]);
+        home.run_json(&["project", "list"]);
         let args = charter("race", "RACE", "Ship it");
         let spawn = || {
             Command::new(bin)
