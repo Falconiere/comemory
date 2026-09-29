@@ -2,10 +2,12 @@
 
 Engine-owned project management (epic #261): charter a project, read it back
 and page through the charters — offline, in a fresh data directory, with no
-account, read a project's committed plan, and poll the body-free change
-feed. Nested: `create` / `show` / `list` / `changes` / `plan show`. Each verb is a thin shell over a
+account, read a project's committed plan, page its activity log, and poll
+the body-free change feed. Nested: `create` / `show` / `list` / `activity` /
+`changes` / `plan show`. Each verb is a thin shell over a
 `domains::projects` core that the HTTP routes and the MCP readers
-(`project_list`, `project_show`) call too. Every core runs under a capability
+(`project_list`, `project_show`, whose `view: "activity"` reads the
+activity page) call too. Every core runs under a capability
 envelope (#315), chosen by the surface, never by a header or an argument:
 
 - the CLI is the **local operator**, a `user` (`local-operator`) at `owner`
@@ -33,18 +35,20 @@ until their project is hard-deleted.
 `tests/cli_scenario_mcp.rs`, colocated `src/domains/projects/tests/*`,
 `src/store/tests/projects.rs`, `src/store/tests/project_read.rs`,
 `tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`,
-`tests/cli__project_plan.rs`, `src/store/tests/project_plan.rs`
+`tests/cli__project_plan.rs`, `src/store/tests/project_plan.rs`,
+`tests/cli__project_activity.rs`, `src/store/tests/project_activity.rs`
 
 **HTTP:** `POST /api/v1/projects` (`403 project_agent_scope` for the local
 agent), `GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
-`GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/changes` — see the
+`GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/{id}/activity`,
+`GET /api/v1/projects/changes` — see the
 [HTTP API guide](../guides/http-api.md#route-map).
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
 ## Positionals
 
-`show <ID>` and `plan show <ID>` — the project's UUID, in either case.
+`show <ID>`, `activity <ID>` and `plan show <ID>` — the project's UUID, in either case.
 
 ## Flags
 
@@ -66,6 +70,9 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | `--include-archived` | `list` | false | Include archived projects |
 | `--cursor` | `list` | first page | The previous page's `nextCursor` (`<epochMillis>:<uuid>`) |
 | `--limit` | `list` | `20` | Page size, 1–100 |
+| `--order` | `activity` | `desc` | `desc` (newest first) or `asc` (oldest first) |
+| `--cursor` | `activity` | first page | The previous page's `nextCursor` (`<epochMillis>:<uuid>`) |
+| `--limit` | `activity` | `50` | Page size, 1–200 |
 | `--after` | `changes` | `0` | Frames after this `seq` |
 | `--limit` | `changes` | `100` | Page size, 1–1000 |
 
@@ -281,3 +288,42 @@ warning never logs the value.
   `tests/cli_scenario_mcp.rs::mcp_09_project_readers_work_read_only`,
   `src/domains/projects/tests/plan.rs::an_agent_without_project_read_is_refused_before_the_store_opens`,
   `src/store/tests/project_plan.rs::every_plan_row_comes_back_in_display_order_archived_included`
+
+### project-10 Page a project's activity log
+
+- **Flags:** `--order`, `--cursor`, `--limit`, `--json`
+- **Setup:** a project chartered through the CLI, with more events appended
+  straight into its `comemory.db` in runs sharing one millisecond, and
+  another process that keeps appending events to the same project and
+  chartering other projects during the walk
+- **Command:** `comemory project activity <ID> --order desc --limit 4`, then
+  `--cursor <nextCursor>` until it is `null`, and the same walk with
+  `--order asc`. Also `GET /api/v1/projects/{id}/activity`, or MCP
+  `project_show` with `"view": "activity"`.
+- **Expect:**
+  - `{events, nextCursor}`, each event the platform's view:
+    `{id, projectId, actorPrincipalType, actorPrincipalId, eventType,
+    entityType, entityId, payload, createdAt}`. A fresh project's page is
+    its one `project.created` event by `local-operator`, and it is identical
+    over the CLI, HTTP `data` and MCP.
+  - Every event that existed before the walk began appears exactly once in
+    either order, and no other project's event appears. Ties on `createdAt`
+    are ordered by `id`, so a page boundary inside a tie drops nothing, and
+    the `asc` walk is the `desc` walk reversed at every page size.
+  - An exact remainder ends with `nextCursor: null`.
+  - A stored payload that is not a JSON object reads as `{}`.
+  - The TTY view prints `createdAt  eventType entityType entityId
+    actorType:actorId` per event, or `no activity`, then `next page: --cursor
+    <c>`.
+  - A malformed id (`projectId is invalid`), cursor or order exits 64
+    (`400`), as does an unknown id (`Project not found`, `404`).
+  - `--limit 0` and `--limit 201` exit 65 (`422`, `limit is too_small (limit
+    1)` / `too_large (limit 200)`). 1 and 200 are accepted.
+  - An agent without `project.read` is refused `403 project_agent_scope`
+    before the store opens.
+- **Covered by:** `tests/cli__project_activity.rs::a_walk_returns_every_earlier_event_once_while_another_process_writes`,
+  `tests/cli__project_activity.rs::json_and_tty_views_page_one_project_and_refusals_exit_by_edge`,
+  `src/store/tests/project_activity.rs::both_orders_walk_the_same_set_in_reverse_at_every_page_size`,
+  `src/domains/projects/tests/activity_page.rs`,
+  `tests/serve__routes__projects.rs::the_activity_page_matches_the_cli_and_refuses_by_edge`,
+  `tests/cli_scenario_mcp.rs::mcp_10_project_activity_view_reads_read_only`

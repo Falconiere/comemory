@@ -699,3 +699,98 @@ async fn mcp_09_project_readers_work_read_only() {
         "read_only"
     );
 }
+
+/// #331: `project_show`'s activity view pages a project the CLI chartered
+/// in a `--read-only` session, key for key the CLI's own page, and its
+/// refusals carry the project code and `details`.
+#[tokio::test]
+async fn mcp_10_project_activity_view_reads_read_only() {
+    let tmp = tempfile::TempDir::new().expect("cwd");
+    let seed = McpHome::spawn(tmp.path(), &[]).await;
+    let cli = |args: &[&str]| -> Value {
+        let out = Command::new(assert_cmd::cargo::cargo_bin("comemory"))
+            .arg("--json")
+            .args(args)
+            .env("COMEMORY_DATA_DIR", seed.data_dir())
+            .output()
+            .expect("run comemory");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).expect("--json")
+    };
+    let created = cli(&[
+        "project",
+        "create",
+        "--name",
+        "Walk me",
+        "--key-prefix",
+        "WALK",
+        "--outcome",
+        "Walked",
+    ]);
+    let id = created["project"]["id"]
+        .as_str()
+        .expect("an id")
+        .to_string();
+    let expected = cli(&["project", "activity", &id, "--order", "asc", "--limit", "5"]);
+
+    let home = seed.attach(tmp.path(), &["--read-only"]).await;
+    let page = home
+        .data(
+            "project_show",
+            json!({"id": id, "view": "activity", "order": "asc", "limit": 5}),
+        )
+        .await;
+    assert_eq!(page, expected);
+    assert_eq!(page["events"][0]["eventType"], "project.created");
+    assert_eq!(page["nextCursor"], Value::Null);
+    // The charter stays the default view.
+    let shown = home.data("project_show", json!({"id": id})).await;
+    assert_eq!(shown["project"]["id"], json!(id));
+
+    let refusals = [
+        (
+            json!({"id": id, "view": "activity", "limit": 201}),
+            "invalid_request",
+            json!({"field": "limit", "reason": "too_large", "limit": 200}),
+        ),
+        (
+            json!({"id": id, "view": "activity", "order": "sideways"}),
+            "invalid_request",
+            json!({"field": "order", "reason": "invalid"}),
+        ),
+        (
+            json!({"id": id, "view": "activity", "cursor": "abc"}),
+            "invalid_request",
+            json!({"field": "cursor", "reason": "invalid"}),
+        ),
+        (
+            json!({"id": "not-a-uuid", "view": "activity"}),
+            "invalid_request",
+            json!({"field": "projectId", "reason": "invalid"}),
+        ),
+    ];
+    for (args, code, details) in refusals {
+        let refused = home.call("project_show", args.clone()).await;
+        assert_eq!(refused.is_error, Some(true), "{args}");
+        let error = refused.structured_content.expect("a structured refusal");
+        assert_eq!(
+            (&error["code"], &error["details"]),
+            (&json!(code), &details),
+            "{args}"
+        );
+    }
+    let unknown = home
+        .call(
+            "project_show",
+            json!({"id": "00000000-0000-4000-8000-000000000000", "view": "activity"}),
+        )
+        .await;
+    assert_eq!(
+        unknown.structured_content.expect("a refusal")["code"],
+        "project_not_found"
+    );
+}

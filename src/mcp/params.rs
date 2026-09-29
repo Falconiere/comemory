@@ -4,7 +4,7 @@
 //! `Deserialize` + `JsonSchema`. `feedback` and the architecture tools need
 //! adapter-owned shapes: feedback changes verdict provenance, architecture
 //! maps nested CLI arguments and the model body to domain cores, and
-//! `project_show` picks the charter or the plan core by `view`.
+//! `project_show` picks the charter, the plan or the activity core by `view`.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -13,6 +13,7 @@ use crate::domains::architecture::model::{MAX_BYTES, Model};
 use crate::domains::architecture::scaffold::Options;
 use crate::domains::learning::feedback;
 use crate::prelude::*;
+use crate::utilities::project_error::ProjectError;
 
 /// Shared clustering parameters for architecture scaffold and check.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -102,18 +103,50 @@ pub enum ProjectShowView {
     Charter,
     /// The committed plan, as `project plan show` reads it.
     Plan,
+    /// One page of the activity log, as `project activity` reads it.
+    Activity,
 }
 
-/// `project_show` tool parameters: the `project show` / `project plan show`
-/// request plus the view choosing between them.
+/// `project_show` tool parameters: the `project show` / `project plan show` /
+/// `project activity` request plus the view choosing between them. The page
+/// fields belong to the activity view; any other view refuses them.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectShowParams {
     /// The project's UUID.
     pub id: String,
-    /// `charter` (default) or `plan`.
+    /// `charter` (default), `plan` or `activity`.
     #[serde(default)]
     pub view: ProjectShowView,
+    /// Activity page size, 1–200; 50 when absent.
+    #[serde(default)]
+    pub limit: Option<i64>,
+    /// The previous activity page's `nextCursor`.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// `desc` (newest first, the default) or `asc` (oldest first).
+    #[serde(default)]
+    pub order: Option<String>,
+}
+
+impl ProjectShowParams {
+    /// Refuse a page field (`limit`, `cursor`, `order`) on any view but
+    /// `activity`, naming the first one set, so a caller never believes it
+    /// paged a charter or a plan: the schema-edge `400 invalid_request`.
+    pub fn page_fields_fit_the_view(&self) -> Result<()> {
+        if self.view == ProjectShowView::Activity {
+            return Ok(());
+        }
+        let set = [
+            ("limit", self.limit.is_some()),
+            ("cursor", self.cursor.is_some()),
+            ("order", self.order.is_some()),
+        ];
+        match set.iter().find(|(_, present)| *present) {
+            Some((field, _)) => Err(ProjectError::invalid_field(field, "invalid").into()),
+            None => Ok(()),
+        }
+    }
 }
 
 /// `feedback` tool parameters — `feedback::Request` with provenance replaced

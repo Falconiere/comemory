@@ -82,19 +82,61 @@ fn a_missing_query_id_is_rejected() {
 }
 
 #[test]
-fn project_show_defaults_to_the_charter_and_refuses_an_unknown_view() {
+fn project_show_defaults_to_the_charter_and_carries_the_activity_page() {
     use comemory::mcp::params::{ProjectShowParams, ProjectShowView};
     let id = "11111111-1111-4111-8111-111111111111";
     let parse = |value| serde_json::from_value::<ProjectShowParams>(value);
     let bare = parse(json!({"id": id})).unwrap();
     assert_eq!(
-        (bare.id.as_str(), bare.view),
-        (id, ProjectShowView::Charter)
+        (
+            bare.id.as_str(),
+            bare.view,
+            bare.limit,
+            bare.cursor,
+            bare.order
+        ),
+        (id, ProjectShowView::Charter, None, None, None)
     );
+    bare.page_fields_fit_the_view().unwrap();
     let plan = parse(json!({"id": id, "view": "plan"})).unwrap();
     assert_eq!(plan.view, ProjectShowView::Plan);
+    let page = parse(json!({
+        "id": id, "view": "activity", "limit": 7, "cursor": "c", "order": "asc"
+    }))
+    .unwrap();
+    assert_eq!(
+        (
+            page.view,
+            page.limit,
+            page.cursor.as_deref(),
+            page.order.as_deref()
+        ),
+        (ProjectShowView::Activity, Some(7), Some("c"), Some("asc"))
+    );
+    page.page_fields_fit_the_view().unwrap();
     let e = parse(json!({"id": id, "view": "roadmap"})).unwrap_err();
     assert!(e.to_string().contains("unknown variant `roadmap`"), "{e}");
-    let e = parse(json!({"id": id, "cursor": "abc"})).unwrap_err();
-    assert!(e.to_string().contains("unknown field `cursor`"), "{e}");
+    let e = parse(json!({"id": id, "after": 0})).unwrap_err();
+    assert!(e.to_string().contains("unknown field `after`"), "{e}");
+}
+
+#[test]
+fn a_page_field_on_a_view_that_does_not_page_is_refused_naming_it() {
+    use comemory::mcp::params::ProjectShowParams;
+    use comemory::utilities::error_code::{Class, classify};
+    let id = "11111111-1111-4111-8111-111111111111";
+    for (view, field, value) in [
+        ("charter", "limit", json!(5)),
+        ("charter", "cursor", json!("c")),
+        ("plan", "order", json!("asc")),
+    ] {
+        let params: ProjectShowParams =
+            serde_json::from_value(json!({"id": id, "view": view, field: value})).unwrap();
+        let e = params.page_fields_fit_the_view().unwrap_err();
+        assert_eq!(classify(&e), ("invalid_request", Class::BadRequest), "{e}");
+        assert_eq!(e.to_string(), format!("{field} is invalid"));
+    }
+    // The default view is the charter, so a bare page field is refused too.
+    let bare: ProjectShowParams = serde_json::from_value(json!({"id": id, "limit": 5})).unwrap();
+    assert!(bare.page_fields_fit_the_view().is_err());
 }

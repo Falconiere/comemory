@@ -64,7 +64,8 @@ One line per file, named after its primary item:
 | `mine.rs` | `Args` | `comemory mine` — distill query reformulations from `retrieval_log` into expansions |
 | `pagination.rs` | `PaginationArgs` | Shared `--k` / `--offset` window flags, flattened into paginated commands |
 | `prune.rs` | `Args` | `comemory prune` — surface deletion candidates against the SQLite mirror |
-| `project.rs` | `Args` | `comemory project create\|show\|list\|changes\|plan show` — engine-owned project charters, the committed plan and the body-free change feed, offline; the CLI acts as the local operator |
+| `project.rs` | `Args` | `comemory project create\|show\|list\|activity\|changes\|plan show` — engine-owned project charters, the committed plan, a project's activity page and the body-free change feed, offline; the CLI acts as the local operator |
+| `project_activity.rs` | `Args` | `comemory project activity <ID> [--order desc\|asc] [--cursor] [--limit]` — the flags and TTY view of one project's activity page (#331), run by `project.rs` |
 | `rebuild.rs` | `Args` | `comemory rebuild` — atomically rebuild the SQLite mirror from markdown |
 | `recall_status.rs` | `Args` | `comemory recall-status` — tracked queries, verdicts, saves and pending recalls for a repo + lower time bound; core in `domains::learning::recall_status` |
 | `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |
