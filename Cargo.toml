@@ -76,6 +76,10 @@ rusqlite = { version = "0.40", features = ["libsqlite3-sys", "bundled", "load_ex
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Field paths for a rejected project request body (src/serve/routes/projects.rs),
+# so `successCriteria.3 is invalid` names the element the platform names.
+# Already resolved transitively through axum's `json` feature.
+serde_path_to_error = "0.1"
 serde_yaml = "0.9"
 sha2 = "0.11"
 siphasher = "1"

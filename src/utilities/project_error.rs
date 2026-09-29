@@ -178,14 +178,13 @@ impl ProjectError {
     /// A schema-edge `invalid_request` (`400`) for `field`, worded exactly as
     /// the platform's `invalidRequestFrom`: `"<field> is <reason>"`.
     pub fn invalid_field(field: &str, reason: &str) -> Self {
-        Self::InvalidRequest {
-            edge: RequestEdge::Schema,
-            message: format!("{field} is {reason}"),
-            details: OrderedDetails::from_pairs(vec![
-                ("field", Value::from(field)),
-                ("reason", Value::from(reason)),
-            ]),
-        }
+        Self::schema_message(format!("{field} is {reason}"), field, reason)
+    }
+
+    /// A schema-edge `invalid_request` (`400`) with the platform's own fixed
+    /// `message` (`"body must be an object"`).
+    pub fn schema_message(message: String, field: &str, reason: &str) -> Self {
+        Self::field_refusal(RequestEdge::Schema, message, field, reason, None)
     }
 
     /// An invariant-edge `invalid_request` (`422`) for `field`, worded
@@ -197,28 +196,35 @@ impl ProjectError {
     /// An invariant-edge `invalid_request` (`422`) with the platform's own
     /// fixed `message` (`"keyPrefix is already used in this workspace"`).
     pub fn invariant_message(message: String, field: &str, reason: &str) -> Self {
-        Self::InvalidRequest {
-            edge: RequestEdge::Invariant,
-            message,
-            details: OrderedDetails::from_pairs(vec![
-                ("field", Value::from(field)),
-                ("reason", Value::from(reason)),
-            ]),
-        }
+        Self::field_refusal(RequestEdge::Invariant, message, field, reason, None)
     }
 
     /// A cap refusal (`422`): `"<field> is <reason> (limit <limit>)"`, so a
     /// surface that prints only the message still names the limit, and
     /// `details` `{field, reason, limit}`.
     pub fn over_limit(field: &str, reason: &str, limit: usize) -> Self {
+        let message = format!("{field} is {reason} (limit {limit})");
+        Self::field_refusal(RequestEdge::Invariant, message, field, reason, Some(limit))
+    }
+
+    /// One `invalid_request` at `edge` whose details are `{field, reason}`,
+    /// plus `limit` for a cap.
+    fn field_refusal(
+        edge: RequestEdge,
+        message: String,
+        field: &str,
+        reason: &str,
+        limit: Option<usize>,
+    ) -> Self {
+        let mut pairs = vec![
+            ("field", Value::from(field)),
+            ("reason", Value::from(reason)),
+        ];
+        pairs.extend(limit.map(|limit| ("limit", Value::from(limit))));
         Self::InvalidRequest {
-            edge: RequestEdge::Invariant,
-            message: format!("{field} is {reason} (limit {limit})"),
-            details: OrderedDetails::from_pairs(vec![
-                ("field", Value::from(field)),
-                ("reason", Value::from(reason)),
-                ("limit", Value::from(limit)),
-            ]),
+            edge,
+            message,
+            details: OrderedDetails::from_pairs(pairs),
         }
     }
 

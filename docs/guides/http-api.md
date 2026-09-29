@@ -322,7 +322,7 @@ view over the same cores; ◇ = a job-creating route)
 | Method + path | Notes |
 |---|---|
 | ○ `GET /overview`, `GET /overview/eval-series?limit=` | counters, index state, last index run, latest eval metrics, recall series, 4 recent memories |
-| ○ `GET /activity?command=&source=&actor=&repo=&since=&limit=&offset=` | the recorded-command feed: one row per instrumented run (`save`, `delete`, `update`, `restore`, `search`, `find`, `context`, `search-code`, `feedback`, `sync.import`, `index-code`) with its bounded summary and `device` (`null` for a run recorded here, the origin device for one imported from another machine), plus per-command `rollups` and the `cursor` its stream starts from. `limit` defaults to 50, caps at 200 |
+| ○ `GET /activity?command=&source=&actor=&repo=&since=&limit=&offset=` | the recorded-command feed: one row per instrumented run (`save`, `delete`, `update`, `restore`, `search`, `find`, `context`, `search-code`, `feedback`, `sync.import`, `index-code`, `project.create`) with its bounded summary and `device` (`null` for a run recorded here, the origin device for one imported from another machine), plus per-command `rollups` and the `cursor` its stream starts from. `limit` defaults to 50, caps at 200 |
 | ○ `GET /activity/events?after_id=&command=&source=&actor=&repo=` | the same feed as SSE: one `activity` event per row, the event `id` being the row id. Starts at the newest row unless `after_id` or `Last-Event-ID` says otherwise; `?token=` works here, as an `EventSource` cannot set headers |
 | ○ `GET\|POST /search` | the console view over `find`: `q`, `scope` (`all\|memories\|code`), `kinds[]` (≤ 1), `limit`, `explain`; hits carry `type` and a derived `score_parts[]` explain strip |
 | ○ `GET /search/suggest?q=` | mined expansions matching a query token + recent queries by prefix |
@@ -349,6 +349,21 @@ view over the same cores; ◇ = a job-creating route)
 | ○ `GET /gc/policy`, ● `PUT /gc/policy`, ●◇✓ `POST /gc/run` | `trash_retention_days` / `telemetry_retention_days` / `last_run`; the job form of `gc` |
 | ● `POST /repos`, ● `PATCH /repos/{name}`, ● `POST /repos/{name}/archive`, ●✓ `DELETE /repos/{name}` | connect a (contained) root, re-point its root, archive (stops indexing, keeps memories), disconnect (drops code rows, keeps memories) |
 | ○ `GET /memory-stores`, ○ `GET /memory-stores/{id}`, ● `POST /memory-stores` (`501`), ● `PATCH /memory-stores/{id}`, ●◇ `POST /memory-stores/{id}/sync` | the one store (`default`): path, remote, `push_on_save`, git sync state; `PATCH` writes `[git] auto_sync` / `[git] remote` into `config.toml`, reloads, and answers from the reloaded config; the sync job commits `memories/` (pathspec-limited), pulls (`--rebase --autostash`; either conflict shape is reported by path, nothing is pushed), then pushes — `git push <remote> HEAD` when `[git] remote` is set, else a bare `git push` to the upstream |
+
+**Projects** (`serve/routes/projects.rs`, #326 — the platform's `/v1/projects`
+paths, so a hosted cutover forwards without remapping; see
+[the projects scenario](../scenarios/projects.md))
+
+| Method + path | CLI command | Notes |
+|---|---|---|
+| ● `POST /projects` | `project create` | **`201`**. Body is the platform's: `name`, `keyPrefix`, `outcome`, optional `id` (client UUID, minted when absent), `successCriteria[]`, `constraints[]`, `nonGoals[]`, `repositories[]` (canonical `owner/name`), `leadUserId` (defaults to the local operator), `targetDate` (`YYYY-MM-DD` = UTC midnight, or RFC 3339); `workspaceId` is accepted and ignored. Writes the charter and one `project.created` activity event in one transaction. Every limit answers `422 invalid_request` with `{field, reason, limit}`; a duplicate `keyPrefix` is `422 {field: keyPrefix, reason: duplicate}` |
+| ○ `GET /projects?status=&health=&includeArchived=&cursor=&limit=` | `project list` | `{projects, nextCursor}`, newest first by `(createdAt, id)`; `limit` 1–100 (default 20, `422` past it); `cursor` is the previous page's `<epochMillis>:<uuid>` — a malformed one is `400 invalid_request`; archived projects only with `includeArchived=true`; a repeated or unknown parameter is `400` |
+| ○ `GET /projects/{id}` | `project show` | `{project}`; a non-UUID id is `400`, an unknown one `404 project_not_found` |
+
+A malformed project body answers the platform's schema-edge shape rather
+than axum's plain-text rejection: `body must be an object`, `<field> is
+required`, or `<field> is invalid`, with `{field, reason}` details
+(`successCriteria.3` for an array element).
 
 ### Request field mapping
 
