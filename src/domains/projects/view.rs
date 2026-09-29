@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::domains::projects::timestamp::iso;
 use crate::prelude::*;
@@ -15,7 +15,7 @@ use crate::store::project_read::{self, CriterionRow, ProjectRow};
 use crate::utilities::project_error::ProjectError;
 
 /// One project-level success criterion.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CriterionView {
     /// UUID.
@@ -36,7 +36,7 @@ pub struct CriterionView {
 
 /// The charter, its repositories and project-level criteria, and its
 /// lifecycle state.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectView {
     /// UUID.

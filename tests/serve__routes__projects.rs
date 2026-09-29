@@ -10,8 +10,9 @@
 //! project_agent_scope` and writes nothing — not even for a charter that would
 //! breach a limit — while a project the CLI (the local operator) chartered in
 //! the same data directory reads back through both `GET` routes. Malformed
-//! input still answers `400`, a list limit `422`, and a read-only server
-//! refuses the create with `405` before authority is consulted.
+//! input — a create without `idempotencyKey` included — still answers `400`,
+//! a list limit `422`, and a read-only server refuses the create with `405`
+//! before authority is consulted.
 
 use assert_cmd::Command;
 use serde_json::{Value, json};
@@ -24,6 +25,7 @@ use serve_bin::ServeHome;
 fn charter(key: &str) -> Value {
     json!({
         "workspaceId": "ignored-by-the-engine",
+        "idempotencyKey": format!("create-{key}"),
         "name": format!("Project {key}"),
         "keyPrefix": key,
         "outcome": "Ship it",
@@ -132,11 +134,27 @@ fn malformed_input_answers_400_and_a_list_limit_422() {
     assert_eq!(status, 400, "{body}");
     assert_eq!(body["error"]["message"], "body must be an object");
 
-    let (status, body) = home.post_raw("/projects", &json!({"keyPrefix": "AB", "outcome": "o"}));
+    let (status, body) = home.post_raw(
+        "/projects",
+        &json!({"idempotencyKey": "k1", "keyPrefix": "AB", "outcome": "o"}),
+    );
     assert_eq!(status, 400, "{body}");
     assert_eq!(
         body["error"]["details"],
         json!({"field": "name", "reason": "required"})
+    );
+
+    // Every mutation names its retry key (#327): a create without one is
+    // malformed, whoever sends it.
+    let mut unkeyed = charter("KEYLESS");
+    unkeyed.as_object_mut().unwrap().remove("idempotencyKey");
+    let (status, body) = home.post_raw("/projects", &unkeyed);
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "invalid_request");
+    assert_eq!(body["error"]["message"], "idempotencyKey is required");
+    assert_eq!(
+        body["error"]["details"],
+        json!({"field": "idempotencyKey", "reason": "required"})
     );
 
     let (status, body) = home.get_raw("/projects/not-a-uuid");

@@ -20,6 +20,7 @@ use crate::domains::projects::view::ProjectView;
 use crate::domains::projects::{create, list, show};
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
+use crate::utilities::uuid;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -27,6 +28,10 @@ Examples:
   comemory project create --name 'Ship offline projects' --key-prefix SHIP \\
     --outcome 'Projects work without a cloud account' \\
     --success-criterion 'A project is created offline' --repository falconiere/comemory
+
+  # Retry-safe: rerunning with the same key prints the first answer again
+  comemory project create --name 'Ship offline projects' --key-prefix SHIP \\
+    --outcome 'Projects work without a cloud account' --idempotency-key ship-2026-09
 
   # Read it back
   comemory project show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
@@ -93,6 +98,11 @@ pub struct CreateArgs {
     /// Use this UUID as the project id instead of minting one.
     #[arg(long)]
     pub id: Option<String>,
+    /// Retry key (1–200 characters): rerunning with the same key and flags
+    /// prints the first answer and writes nothing. A fresh one is minted when
+    /// omitted, so only a run that names its key is retry-safe.
+    #[arg(long = "idempotency-key", id = "idempotencyKey")]
+    pub idempotency_key: Option<String>,
 }
 
 /// Args for `project show`.
@@ -143,7 +153,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let operator = Envelope::local_operator();
     match a.cmd {
         ProjectCmd::Create(c) => {
-            let resp = authority::run(&mut ctx, &operator, create_request(c))?;
+            let resp = authority::run(&mut ctx, &operator, create_request(c)?)?;
             emit(json_flag, &resp, |out| render_project(out, &resp.project))
         }
         ProjectCmd::Show(s) => {
@@ -165,11 +175,16 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     }
 }
 
-/// The core request for `project create`.
-fn create_request(c: CreateArgs) -> create::Request {
-    create::Request {
+/// The core request for `project create`, its key minted when absent.
+fn create_request(c: CreateArgs) -> Result<create::Request> {
+    let idempotency_key = match c.idempotency_key {
+        Some(key) => key,
+        None => uuid::new_v4()?,
+    };
+    Ok(create::Request {
         id: c.id,
         workspace_id: None,
+        idempotency_key,
         name: c.name,
         key_prefix: c.key_prefix,
         outcome: c.outcome,
@@ -179,7 +194,7 @@ fn create_request(c: CreateArgs) -> create::Request {
         repositories: c.repositories,
         lead_user_id: c.lead_user_id,
         target_date: c.target_date,
-    }
+    })
 }
 
 /// The core request for `project list`.

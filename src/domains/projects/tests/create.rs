@@ -68,6 +68,7 @@ fn request(name: &str, key_prefix: &str) -> Request {
     Request {
         id: None,
         workspace_id: None,
+        idempotency_key: comemory::utilities::uuid::new_v4().unwrap(),
         name: name.to_string(),
         key_prefix: key_prefix.to_string(),
         outcome: "Ship the loop".to_string(),
