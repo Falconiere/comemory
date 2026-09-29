@@ -126,11 +126,13 @@ impl Command for Request {
 }
 
 /// A `limit + 1` read as the page a caller asked for and the cursor that
-/// continues it: `None` when the extra row was not there.
+/// continues it: `None` when the extra row was not there. A negative `limit`
+/// yields an empty page with no cursor.
 #[must_use]
 pub fn split(mut rows: Vec<ActivityRow>, limit: i64) -> (Vec<ActivityRow>, Option<String>) {
     let has_more = rows.len() as i64 > limit;
-    rows.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+    // A non-positive limit is refused upstream; here it reads as an empty page.
+    rows.truncate(usize::try_from(limit).unwrap_or(0));
     let next_cursor = rows
         .last()
         .filter(|_| has_more)

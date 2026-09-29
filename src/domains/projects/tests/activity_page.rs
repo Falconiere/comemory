@@ -7,7 +7,7 @@
 //! `project.read` is refused before the store is opened.
 
 use comemory::config::{Config, Paths};
-use comemory::domains::projects::activity_page::{Request, Response, view};
+use comemory::domains::projects::activity_page::{Request, Response, split, view};
 use comemory::domains::projects::authority::{self, Capabilities, Envelope};
 use comemory::domains::projects::create;
 use comemory::store::project_activity::{self, ActivityRow, NewProjectEvent};
@@ -288,4 +288,35 @@ fn a_payload_that_is_not_an_object_reads_as_empty() {
     })
     .unwrap_err();
     assert_eq!(classify(&e).0, "internal_error");
+}
+
+#[test]
+fn split_keeps_the_page_and_a_cursor_only_when_the_probe_row_came_back() {
+    let rows = |n: usize| -> Vec<ActivityRow> {
+        (0..n)
+            .map(|k| ActivityRow {
+                id: format!("{k:08x}-4444-4000-8000-000000000000"),
+                project_id: "p".into(),
+                actor_principal_type: "user".into(),
+                actor_principal_id: "u".into(),
+                event_type: "project.created".into(),
+                entity_type: "project".into(),
+                entity_id: "p".into(),
+                payload: "{}".into(),
+                created_at: 1_000 + k as i64,
+            })
+            .collect()
+    };
+    let (page, next) = split(rows(3), 2);
+    assert_eq!(page.len(), 2);
+    assert_eq!(
+        next.as_deref(),
+        Some("1001:00000001-4444-4000-8000-000000000000")
+    );
+    let (page, next) = split(rows(2), 2);
+    assert_eq!((page.len(), next), (2, None));
+    // A negative limit fails safe: an empty page and no cursor, never the
+    // whole read.
+    let (page, next) = split(rows(3), -1);
+    assert_eq!((page.len(), next), (0, None));
 }
