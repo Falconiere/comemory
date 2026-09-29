@@ -772,6 +772,17 @@ async fn mcp_10_project_activity_view_reads_read_only() {
             "invalid_request",
             json!({"field": "projectId", "reason": "invalid"}),
         ),
+        // A page field on a view that does not page is refused, never ignored.
+        (
+            json!({"id": id, "limit": 5}),
+            "invalid_request",
+            json!({"field": "limit", "reason": "invalid"}),
+        ),
+        (
+            json!({"id": id, "view": "plan", "order": "asc"}),
+            "invalid_request",
+            json!({"field": "order", "reason": "invalid"}),
+        ),
     ];
     for (args, code, details) in refusals {
         let refused = home.call("project_show", args.clone()).await;

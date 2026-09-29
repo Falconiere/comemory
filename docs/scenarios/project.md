@@ -321,6 +321,9 @@ warning never logs the value.
     1)` / `too_large (limit 200)`). 1 and 200 are accepted.
   - An agent without `project.read` is refused `403 project_agent_scope`
     before the store opens.
+  - Over MCP, `limit`, `cursor` or `order` on the `charter` or `plan` view
+    is refused `400 invalid_request` naming the field, so a caller never
+    believes it paged a charter.
 - **Covered by:** `tests/cli__project_activity.rs::a_walk_returns_every_earlier_event_once_while_another_process_writes`,
   `tests/cli__project_activity.rs::json_and_tty_views_page_one_project_and_refusals_exit_by_edge`,
   `src/store/tests/project_activity.rs::both_orders_walk_the_same_set_in_reverse_at_every_page_size`,
