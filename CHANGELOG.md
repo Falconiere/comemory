@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-09-29
+
+### Added
+
+- attach and page typed evidence over CLI, HTTP and MCP ([#393](https://github.com/Falconiere/comemory/pull/393))
+
 ## [0.54.0] - 2026-09-29
 
 ### Added
