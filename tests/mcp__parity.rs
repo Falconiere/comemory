@@ -25,7 +25,7 @@
 
 use clap::{Command as ClapCommand, CommandFactory};
 use comemory::cli::Cli;
-use comemory::domains::{code, graph, learning, memories};
+use comemory::domains::{code, graph, learning, memories, projects};
 use comemory::mcp::catalog::{self, TOOLS};
 use comemory::mcp::params::{
     ArchitectureSaveParams, ArchitectureShapeParams, ArchitectureShowParams, FeedbackParams,
@@ -111,6 +111,8 @@ const PROBES: &[(&str, ProbeFn)] = &[
         "architecture_check",
         is_unknown_field::<ArchitectureShapeParams>,
     ),
+    ("project_list", is_unknown_field::<projects::list::Request>),
+    ("project_show", is_unknown_field::<projects::show::Request>),
 ];
 
 /// Resolve a root or nested clap path such as `architecture scaffold`.
@@ -250,10 +252,13 @@ fn mcp_is_cli_only_and_recall_status_is_http() {
         if tool.command.starts_with("architecture ") {
             continue;
         }
+        // `/commands` lists top-level clap names, so a nested tool command
+        // (`project list`) is checked through its noun (`project`).
+        let noun = tool.command.split(' ').next().unwrap_or(tool.command);
         let entry = commands
             .iter()
-            .find(|c| c["name"] == json!(tool.command))
-            .unwrap_or_else(|| panic!("GET /commands is missing `{}`", tool.command));
+            .find(|c| c["name"] == json!(noun))
+            .unwrap_or_else(|| panic!("GET /commands is missing `{noun}`"));
         assert_eq!(
             entry["transport"],
             json!("http"),

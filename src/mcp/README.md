@@ -26,14 +26,14 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `catalog.rs` | `TOOLS` | The fifteen-row tool table — name, the CLI command path whose core it runs, whether it writes, and the agent-facing description the tool attribute reuses verbatim |
+| `catalog.rs` | `TOOLS` | The seventeen-row tool table — name, the CLI command path whose core it runs, whether it writes, and the agent-facing description the tool attribute reuses verbatim |
 | `exec.rs` | `run`, `Access` | Run a core on the blocking pool with the session locked and a fresh database connection opened/dropped inside that task; an `Access::Write` on a `--read-only` session is refused before the closure is ever built |
 | `params.rs` | `FeedbackParams` | Adapter-owned feedback provenance plus typed architecture scaffold, save and show parameters |
 | `result.rs` | `into_tool_result` | Success as structured content; every non-`Internal` error class as a tool-level `{code, message}`; `Internal` as a protocol error carrying only the code word. Plus the two adapter-raised refusals, `read_only` and `repo_required` |
 | `scope.rs` | `default_repo` | The session's default repo scope (`--repo`, else the cwd's main-worktree label) and `resolve`, the rule that lets an explicit non-empty parameter win |
 | `server.rs` | `ComemoryServer` | The rmcp service object: `read_router() + write_router()`, the session state every tool body clones, and `get_info` — tools capability plus the five-line loop `instructions`, with the missing-scope sentence appended when no default repo resolved |
 | `state.rs` | `McpState` | Cheaply-cloneable per-session state: `Arc<Mutex<()>>`, per-call connections, paths, config, default repo, `read_only`, and the `track()` decision for tracked reads |
-| `tools_read.rs` | `read_router` | Twelve read tools: recall/repository tools plus `architecture_scaffold`, `architecture_show` and `architecture_check`, all of which require a resolved repo scope |
+| `tools_read.rs` | `read_router` | Fourteen read tools: recall/repository tools, `project_list` and `project_show` (the `domains::projects` list and show cores, no repo scope), plus `architecture_scaffold`, `architecture_show` and `architecture_check`, all of which require a resolved repo scope |
 | `tools_write.rs` | `write_router` | Three write tools: `save`, `feedback`, and `architecture_save`; both save tools refuse an unscoped call before the store is touched |
 
 The `comemory mcp` subcommand itself is `src/cli/mcp.rs` (flags and data-dir

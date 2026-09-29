@@ -13,10 +13,10 @@ use std::collections::BTreeSet;
 use comemory::mcp::catalog::{self, TOOLS};
 
 #[test]
-fn catalog_holds_fifteen_uniquely_named_tools() {
-    assert_eq!(TOOLS.len(), 15, "catalog size");
+fn catalog_holds_seventeen_uniquely_named_tools() {
+    assert_eq!(TOOLS.len(), 17, "catalog size");
     let names: BTreeSet<&str> = TOOLS.iter().map(|t| t.name).collect();
-    assert_eq!(names.len(), 15, "duplicate tool name in {names:?}");
+    assert_eq!(names.len(), 17, "duplicate tool name in {names:?}");
 }
 
 #[test]

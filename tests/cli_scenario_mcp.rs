@@ -179,7 +179,7 @@ fn stored_events(data_dir: &Path, query_id: &str) -> Vec<(String, String, String
 
 /// AC-1: `initialize` succeeds and `tools/list` is exactly the catalog —
 /// every name, every description, an object `inputSchema` on each — and
-/// `--read-only` advertises the same eleven.
+/// `--read-only` advertises the same seventeen.
 #[tokio::test]
 async fn mcp_01_lists_catalog() {
     let tmp = tempfile::TempDir::new().expect("cwd");
@@ -592,5 +592,78 @@ async fn mcp_06_diagnostics_stay_off_stdout_under_rust_log() {
     assert!(
         stderr.contains("INFO") || stderr.contains("info"),
         "RUST_LOG=info must produce at least one log line on stderr; got {stderr:?}"
+    );
+}
+
+/// #326 AC-6: the two project readers answer in a `--read-only` session over
+/// a data directory the CLI chartered a project in; their refusals carry the
+/// project code and `details`, and the session still refuses a writer.
+#[tokio::test]
+async fn mcp_09_project_readers_work_read_only() {
+    let tmp = tempfile::TempDir::new().expect("cwd");
+    let seed = McpHome::spawn(tmp.path(), &[]).await;
+    let created = Command::new(assert_cmd::cargo::cargo_bin("comemory"))
+        .args([
+            "--json",
+            "project",
+            "create",
+            "--name",
+            "Read me",
+            "--key-prefix",
+            "READ",
+        ])
+        .args(["--outcome", "An agent can read the charter"])
+        .env("COMEMORY_DATA_DIR", seed.data_dir())
+        .output()
+        .expect("run comemory project create");
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let project: Value = serde_json::from_slice(&created.stdout).expect("create --json");
+    let id = project["project"]["id"]
+        .as_str()
+        .expect("an id")
+        .to_string();
+
+    let home = seed.attach(tmp.path(), &["--read-only"]).await;
+    let page = home.data("project_list", json!({"limit": 5})).await;
+    assert_eq!(page["projects"][0]["id"], json!(id));
+    assert_eq!(page["nextCursor"], Value::Null);
+    let shown = home.data("project_show", json!({"id": id})).await;
+    assert_eq!(shown["project"], page["projects"][0]);
+
+    let bad_cursor = home.call("project_list", json!({"cursor": "abc"})).await;
+    assert_eq!(bad_cursor.is_error, Some(true));
+    let error = bad_cursor.structured_content.expect("a structured refusal");
+    assert_eq!(error["code"], "invalid_request");
+    assert_eq!(
+        error["details"],
+        json!({"field": "cursor", "reason": "invalid"})
+    );
+    let over = home.call("project_list", json!({"limit": 101})).await;
+    let error = over.structured_content.expect("a structured refusal");
+    assert_eq!(
+        error["details"],
+        json!({"field": "limit", "reason": "too_large", "limit": 100})
+    );
+    let unknown = home
+        .call(
+            "project_show",
+            json!({"id": "00000000-0000-4000-8000-000000000000"}),
+        )
+        .await;
+    assert_eq!(
+        unknown.structured_content.expect("a refusal")["code"],
+        "project_not_found"
+    );
+
+    let refused = home
+        .call("save", json!({"body": "nope", "repo": REPO}))
+        .await;
+    assert_eq!(
+        refused.structured_content.expect("a refusal")["code"],
+        "read_only"
     );
 }
