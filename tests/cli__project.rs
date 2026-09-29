@@ -145,6 +145,12 @@ fn refusals_exit_by_edge_and_leave_no_row() {
         "{stderr}"
     );
 
+    // A negative page size never reaches the core: clap reads `-5` as an
+    // unknown flag and refuses it as a usage error.
+    let (code, stderr) = refused(&home, &["project", "list", "--limit", "-5"]);
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("unexpected argument '-5'"), "{stderr}");
+
     let (code, stderr) = refused(&home, &["project", "list", "--cursor", "abc"]);
     assert_eq!(code, 64, "{stderr}");
     assert!(stderr.contains("cursor is invalid"), "{stderr}");

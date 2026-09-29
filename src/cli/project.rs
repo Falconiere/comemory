@@ -112,7 +112,7 @@ pub struct ListArgs {
     #[arg(long)]
     pub cursor: Option<String>,
     /// Page size, 1–100 (default 20).
-    #[arg(long, allow_negative_numbers = true)]
+    #[arg(long)]
     pub limit: Option<i64>,
 }
 
