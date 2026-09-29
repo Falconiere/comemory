@@ -1,0 +1,169 @@
+{
+  "platformCommit": "b86dec5319c0ec3c15628e2f312f551d3f9e5a37",
+  "baseSlug": [
+    {
+      "name": "Ship the Governed Delivery Loop!",
+      "slug": "ship-the-governed-delivery-loop"
+    },
+    {
+      "name": "  __weird///name__  ",
+      "slug": "weird-name"
+    },
+    {
+      "name": "===",
+      "slug": "project"
+    },
+    {
+      "name": "Same Name",
+      "slug": "same-name"
+    },
+    {
+      "name": "",
+      "slug": "project"
+    },
+    {
+      "name": "Café déjà vu — ünïcödé",
+      "slug": "caf-d-j-vu-n-c-d"
+    },
+    {
+      "name": "ÉCOLE",
+      "slug": "cole"
+    },
+    {
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "slug": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-",
+      "slug": "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-"
+    },
+    {
+      "name": "Project 42: Q3/Q4 roadmap",
+      "slug": "project-42-q3-q4-roadmap"
+    },
+    {
+      "name": "日本語のプロジェクト",
+      "slug": "project"
+    },
+    {
+      "name": "KELVIN K sign",
+      "slug": "kelvin-k-sign"
+    }
+  ],
+  "disambiguate": [
+    {
+      "base": "ship-it",
+      "attempt": 0,
+      "slug": "ship-it"
+    },
+    {
+      "base": "ship-it",
+      "attempt": 1,
+      "slug": "ship-it-2"
+    },
+    {
+      "base": "ship-it",
+      "attempt": 2,
+      "slug": "ship-it-3"
+    },
+    {
+      "base": "ship-it",
+      "attempt": 24,
+      "slug": "ship-it-25"
+    }
+  ],
+  "encode": [
+    {
+      "atMillis": 1727481600000,
+      "id": "0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f",
+      "cursor": "1727481600000:0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f"
+    },
+    {
+      "atMillis": 0,
+      "id": "00000000-0000-0000-0000-000000000000",
+      "cursor": "0:00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "decode": [
+    {
+      "cursor": "1727481600000:0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f",
+      "ok": true,
+      "atMillis": 1727481600000,
+      "id": "0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f"
+    },
+    {
+      "cursor": "0:00000000-0000-0000-0000-000000000000",
+      "ok": true,
+      "atMillis": 0,
+      "id": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "cursor": "999999999999999:ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "ok": true,
+      "atMillis": 999999999999999,
+      "id": "ffffffff-ffff-ffff-ffff-ffffffffffff"
+    },
+    {
+      "cursor": "1000000000000000:0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    },
+    {
+      "cursor": "1727481600000:0F8C2D7E-3B1A-4C5D-9E6F-7A8B9C0D1E2F",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    },
+    {
+      "cursor": "abc",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    },
+    {
+      "cursor": "",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    },
+    {
+      "cursor": ":0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    },
+    {
+      "cursor": "1727481600000:",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    },
+    {
+      "cursor": "-5:0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    },
+    {
+      "cursor": "1727481600000:------------------------------------",
+      "ok": true,
+      "atMillis": 1727481600000,
+      "id": "------------------------------------"
+    },
+    {
+      "cursor": "1727481600000:0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f ",
+      "ok": false,
+      "code": "invalid_request",
+      "status": 400,
+      "message": "cursor is invalid"
+    }
+  ]
+}

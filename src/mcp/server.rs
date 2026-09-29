@@ -41,16 +41,17 @@ const NO_SCOPE_NOTE: &str = "\n\nThis session has no default repo: reads run acr
 pub struct ComemoryServer {
     /// Connection, paths, config, default scope and the `--read-only` flag.
     state: McpState,
-    /// The twelve read tools plus the three write tools, merged.
+    /// The twelve read tools, the two project readers and the three write
+    /// tools, merged.
     tool_router: ToolRouter<Self>,
 }
 
 impl ComemoryServer {
-    /// Compose the read and write routers over `state`.
+    /// Compose the read, project and write routers over `state`.
     pub fn new(state: McpState) -> Self {
         Self {
             state,
-            tool_router: Self::read_router() + Self::write_router(),
+            tool_router: Self::read_router() + Self::project_router() + Self::write_router(),
         }
     }
 

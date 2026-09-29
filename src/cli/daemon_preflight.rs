@@ -46,6 +46,7 @@ fn classify(cmd: &Cmd) -> Classification {
         Cmd::Auth(a) => classify_auth(&a.cmd),
         Cmd::Sync(a) => classify_sync(a),
         Cmd::Architecture(_)
+        | Cmd::Project(_)
         | Cmd::Save(_)
         | Cmd::Search(_)
         | Cmd::SearchCode(_)

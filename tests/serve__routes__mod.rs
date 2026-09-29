@@ -196,7 +196,10 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
         | "memory-stores.sync"
         // `erase` stops at its confirm gate on a normal server: an empty body
         // names no entity, and nothing is erased.
-        | "erase" => (serde_json::json!({}), vec![]),
+        | "erase"
+        // `project.create` answers `400 name is required` to an empty body,
+        // so no project is chartered.
+        | "project.create" => (serde_json::json!({}), vec![]),
         // `PUT /hooks/{name}` needs a body and, like `hooks`, a repo path the
         // gate is checked before touching.
         "hooks.set" => (

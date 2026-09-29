@@ -70,6 +70,11 @@ pub mod learning_console;
 pub mod memory_stores;
 /// `GET /overview`, `GET /overview/eval-series`.
 pub mod overview;
+/// Raw project request bodies and queries parsed into core requests, every
+/// malformed input a `400 invalid_request` naming its field.
+pub mod project_request;
+/// `POST|GET /projects`, `GET /projects/{id}` (`domains::projects`).
+pub mod projects;
 /// `POST /repos`, `PATCH|DELETE /repos/{name}`, `POST /repos/{name}/archive`.
 pub mod repos_admin;
 /// `GET|POST /search`, `GET /search/suggest`, `POST /search/{query_id}/feedback`.
@@ -152,6 +157,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(sync_replica::table_entries());
     entries.extend_from_slice(activity::table_entries());
     entries.extend_from_slice(activity_stream::table_entries());
+    entries.extend_from_slice(projects::table_entries());
     entries
 }
 
@@ -184,6 +190,7 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(trash::router(state.clone()))
         .merge(activity::router(state.clone()))
         .merge(activity_stream::router(state.clone()))
+        .merge(projects::router(state.clone()))
         .merge(sync::router(state.clone()))
         .merge(sync_replica::router(state))
 }

@@ -20,7 +20,7 @@ use crate::mcp::server::ComemoryServer;
 use crate::mcp::state::McpState;
 use crate::prelude::*;
 
-/// The curated tool table: fifteen entries naming the command core each tool
+/// The curated tool table: seventeen entries naming the command core each tool
 /// runs and whether it writes.
 pub mod catalog;
 /// The blocking-pool bridge every tool body runs its core through.
@@ -35,6 +35,8 @@ pub mod scope;
 pub mod server;
 /// Shared per-session state: call gate, paths, config, scope and flags.
 pub mod state;
+/// The two project read tools (`project_list`, `project_show`).
+pub mod tools_projects;
 /// The nine read tools.
 pub mod tools_read;
 /// The two write tools.

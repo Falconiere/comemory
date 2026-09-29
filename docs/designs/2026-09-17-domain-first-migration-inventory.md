@@ -451,6 +451,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/output/search_code.rs | comemory::cli::output::search_code; crate-root-alias | none | none | delivery::cli | src/cli/output/search_code.rs | retain |
 | src/cli/output/tty.rs | comemory::cli::output::tty; crate-root-alias | src/cli/output/tests/tty.rs | none | delivery::cli | src/cli/output/tty.rs | retain |
 | src/cli/pagination.rs | comemory::cli::pagination; preserve | none | none | delivery::cli | src/cli/pagination.rs | retain |
+| src/cli/project.rs | comemory::cli::project; preserve | none | none | delivery::cli | src/cli/project.rs | retain |
 | src/cli/prune.rs | comemory::cli::prune; preserve | none | none | delivery::cli | src/cli/prune.rs | retain |
 | src/cli/rebuild.rs | comemory::cli::rebuild; preserve | none | none | delivery::cli | src/cli/rebuild.rs | retain |
 | src/cli/recall_status.rs | comemory::cli::recall_status; preserve | none | none | delivery::cli | src/cli/recall_status.rs | retain |
@@ -692,6 +693,18 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/memories/store_trash.rs | comemory::domains::memories::store_trash; preserve | none | none | domains::memories | src/domains/memories/store_trash.rs | retain |
 | src/domains/memories/trash.rs | comemory::domains::memories::trash; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/memories/tests/trash.rs | none | domains::memories | src/domains/memories/trash.rs | retain |
 | src/domains/memories/update.rs | comemory::domains::memories::update; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/memories/tests/update.rs | none | domains::memories | src/domains/memories/update.rs | retain |
+| src/domains/projects.rs | comemory::domains::projects; preserve | none | none | domains::projects | src/domains/projects.rs | retain |
+| src/domains/projects/activity.rs | comemory::domains::projects::activity; preserve | none | none | domains::projects | src/domains/projects/activity.rs | retain |
+| src/domains/projects/charter.rs | comemory::domains::projects::charter; preserve | none | none | domains::projects | src/domains/projects/charter.rs | retain |
+| src/domains/projects/create.rs | comemory::domains::projects::create; preserve | src/domains/projects/tests/create.rs | none | domains::projects | src/domains/projects/create.rs | retain |
+| src/domains/projects/keyset.rs | comemory::domains::projects::keyset; preserve | src/domains/projects/tests/keyset.rs | none | domains::projects | src/domains/projects/keyset.rs | retain |
+| src/domains/projects/limits.rs | comemory::domains::projects::limits; preserve | src/domains/projects/tests/limits.rs | none | domains::projects | src/domains/projects/limits.rs | retain |
+| src/domains/projects/list.rs | comemory::domains::projects::list; preserve | src/domains/projects/tests/list.rs | none | domains::projects | src/domains/projects/list.rs | retain |
+| src/domains/projects/principal.rs | comemory::domains::projects::principal; preserve | none | none | domains::projects | src/domains/projects/principal.rs | retain |
+| src/domains/projects/show.rs | comemory::domains::projects::show; preserve | src/domains/projects/tests/show.rs | none | domains::projects | src/domains/projects/show.rs | retain |
+| src/domains/projects/slug.rs | comemory::domains::projects::slug; preserve | src/domains/projects/tests/slug.rs | none | domains::projects | src/domains/projects/slug.rs | retain |
+| src/domains/projects/timestamp.rs | comemory::domains::projects::timestamp; preserve | src/domains/projects/tests/timestamp.rs | none | domains::projects | src/domains/projects/timestamp.rs | retain |
+| src/domains/projects/view.rs | comemory::domains::projects::view; preserve | src/domains/projects/tests/view.rs | none | domains::projects | src/domains/projects/view.rs | retain |
 | src/domains/retrieval.rs | comemory::domains::retrieval; crate-root-alias | none | none | domains::retrieval | src/domains/retrieval.rs | retain |
 | src/domains/retrieval/bundle.rs | comemory::domains::retrieval::bundle; crate-root-alias | src/domains/retrieval/tests/bundle.rs | none | domains::retrieval | src/domains/retrieval/bundle.rs | retain |
 | src/domains/retrieval/code_prior.rs | comemory::domains::retrieval::code_prior; crate-root-alias | src/domains/retrieval/tests/code_prior.rs | none | domains::retrieval | src/domains/retrieval/code_prior.rs | retain |
@@ -851,6 +864,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/mcp/scope.rs | comemory::mcp::scope; preserve | src/mcp/tests/scope.rs | none | delivery::mcp | src/mcp/scope.rs | retain |
 | src/mcp/server.rs | comemory::mcp::server; preserve | none | none | delivery::mcp | src/mcp/server.rs | retain |
 | src/mcp/state.rs | comemory::mcp::state; preserve | src/mcp/tests/state.rs | none | delivery::mcp | src/mcp/state.rs | retain |
+| src/mcp/tools_projects.rs | comemory::mcp::tools_projects; preserve | none | none | delivery::mcp | src/mcp/tools_projects.rs | retain |
 | src/mcp/tools_read.rs | comemory::mcp::tools_read; preserve | none | none | delivery::mcp | src/mcp/tools_read.rs | retain |
 | src/mcp/tools_write.rs | comemory::mcp::tools_write; preserve | none | none | delivery::mcp | src/mcp/tools_write.rs | retain |
 | src/prelude.rs | comemory::prelude; preserve | none | none | shared::root | src/prelude.rs | retain |
@@ -887,6 +901,8 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/routes/memory_stores.rs | comemory::serve::routes::memory_stores; preserve | src/serve/routes/tests/memory_stores.rs | none | delivery::serve | src/serve/routes/memory_stores.rs | retain |
 | src/serve/routes/meta.rs | comemory::serve::routes::meta; preserve | none | none | delivery::serve | src/serve/routes/meta.rs | retain |
 | src/serve/routes/overview.rs | comemory::serve::routes::overview; preserve | src/serve/routes/tests/overview.rs | none | delivery::serve | src/serve/routes/overview.rs | retain |
+| src/serve/routes/project_request.rs | comemory::serve::routes::project_request; preserve | src/serve/routes/tests/project_request.rs | none | delivery::serve | src/serve/routes/project_request.rs | retain |
+| src/serve/routes/projects.rs | comemory::serve::routes::projects; preserve | none | none | delivery::serve | src/serve/routes/projects.rs | retain |
 | src/serve/routes/repos.rs | comemory::serve::routes::repos; preserve | src/serve/routes/tests/repos.rs | none | delivery::serve | src/serve/routes/repos.rs | retain |
 | src/serve/routes/repos_admin.rs | comemory::serve::routes::repos_admin; preserve | src/serve/routes/tests/repos_admin.rs | none | delivery::serve | src/serve/routes/repos_admin.rs | retain |
 | src/serve/routes/search.rs | comemory::serve::routes::search; preserve | src/serve/routes/tests/search.rs | none | delivery::serve | src/serve/routes/search.rs | retain |
@@ -1010,6 +1026,9 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/replace_in_place.rs | comemory::store::replace_in_place; preserve | src/store/tests/replace_in_place.rs | none | infrastructure::store | src/store/replace_in_place.rs | retain |
 | src/store/memory_intent.rs | comemory::store::memory_intent; preserve | src/store/tests/memory_intent.rs | none | infrastructure::store | src/store/memory_intent.rs | retain |
 | src/store/needs_embedding.rs | comemory::store::needs_embedding; preserve | src/store/tests/needs_embedding.rs | none | infrastructure::store | src/store/needs_embedding.rs | retain |
+| src/store/project_activity.rs | comemory::store::project_activity; preserve | none | none | infrastructure::store | src/store/project_activity.rs | retain |
+| src/store/project_read.rs | comemory::store::project_read; preserve | src/store/tests/project_read.rs | none | infrastructure::store | src/store/project_read.rs | retain |
+| src/store/projects.rs | comemory::store::projects; preserve | src/store/tests/projects.rs | none | infrastructure::store | src/store/projects.rs | retain |
 | src/store/readiness.rs | comemory::store::readiness; preserve | src/store/tests/readiness.rs | none | infrastructure::store | src/store/readiness.rs | retain |
 | src/store/store_health.rs | comemory::store::store_health; preserve | src/store/tests/store_health.rs | none | infrastructure::store | src/store/store_health.rs | retain |
 | src/store/sources.rs | comemory::store::sources; preserve | src/store/tests/sources.rs | none | infrastructure::store | src/store/sources.rs | retain |
@@ -1053,5 +1072,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/utilities/simhash.rs | comemory::utilities::simhash; crate-root-alias | src/utilities/tests/simhash.rs | none | shared::utilities | src/utilities/simhash.rs | retain |
 | src/utilities/shared_text.rs | comemory::utilities::shared_text; preserve | src/utilities/tests/shared_text.rs | none | shared::utilities | src/utilities/shared_text.rs | retain |
 | src/utilities/telemetry.rs | private | none | none | shared::utilities | src/utilities/telemetry.rs | retain |
+| src/utilities/uuid.rs | comemory::utilities::uuid; preserve | src/utilities/tests/uuid.rs | none | shared::utilities | src/utilities/uuid.rs | retain |
 | src/utilities/vector_stdin.rs | private | none | none | shared::utilities | src/utilities/vector_stdin.rs | retain |
 | src/utilities/when.rs | comemory::utilities::when; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | shared::utilities | src/utilities/when.rs | retain |

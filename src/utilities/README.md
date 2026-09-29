@@ -60,6 +60,7 @@ One line per file, named after its primary item:
 | `simhash.rs` | `simhash64` | 64-bit SimHash, Hamming distance, and the `NEAR_DUP_HAMMING` near-duplicate radius |
 | `shared_text.rs` | `for_share`, `label_for_share`, `Shared` | The free-text policy for anything shared with another machine (#254): a secret-rule match anywhere in the raw text withholds the field — a query entirely, a caller label by dropping it — and absolute machine paths in what may leave become `<path>`. Never logs the value |
 | `telemetry.rs` | `PROV_MANUAL` | The persisted vocabularies: `retrieval_log.source`, `feedback_events.target_kind`, the four `provenance` values, and the two auto-reinforcement sentinel query ids |
+| `uuid.rs` | `new_v4` | Version-4 UUID minting from the shared `/dev/urandom` helper, and `canonical`, the case-insensitive 8-4-4-4-12 check that lowercases a client-supplied id |
 | `vector_stdin.rs` | `read_optional` | Acquiring a caller-supplied vector from the flag pair and process stdin, under the 8 MiB payload cap — the only file here that reads stdin |
 | `when.rs` | `parse_when` | `--since` / `--until` / `--as-of` value parsing, including the bare-date day-edge expansion. Building the window from three parsed instants is `domains::retrieval::scope::scope_from_flags` — `TimeScope` is the retrieval capability's, and a shared module must not reach into one (#178) |
 

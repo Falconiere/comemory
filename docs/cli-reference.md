@@ -31,6 +31,7 @@ Usage: comemory [OPTIONS] <COMMAND>
 Commands:
   architecture    Scaffold, store, draw and drift-check the architecture model of an indexed repository (CLI-only)
   save            Save a memory (body via arg, `-`, or stdin)
+  project         Engine-owned project management: create, show and list project charters, offline
   search          Search the memory index by natural-language query
   search-code     Search the code index by natural-language or identifier query
   list            List memories with optional repo/kind filters
@@ -230,6 +231,40 @@ Examples:
   # (exit 65) rather than overwriting it.
   comemory save "Use Postgres for analytics" --json   # {"id":"…","created":true,…}
   comemory save "Use Postgres for analytics" --json   # {"id":"…","created":false,…}
+```
+
+---
+
+## comemory project
+
+```
+Engine-owned project management: create, show and list project charters, offline
+
+Usage: comemory project [OPTIONS] <COMMAND>
+
+Commands:
+  create  Charter a draft project and record its `project.created` event
+  show    Show one project's charter by id
+  list    List projects newest first, one keyset page at a time
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Charter a project offline (no account needed)
+  comemory project create --name 'Ship offline projects' --key-prefix SHIP \
+    --outcome 'Projects work without a cloud account' \
+    --success-criterion 'A project is created offline' --repository falconiere/comemory
+
+  # Read it back
+  comemory project show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
+
+  # Page through active projects, newest first
+  comemory project list --status active --limit 10
+  comemory project list --cursor '<nextCursor from the previous page>'
 ```
 
 ---

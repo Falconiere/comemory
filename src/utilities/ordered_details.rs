@@ -27,6 +27,11 @@ impl OrderedDetails {
     pub fn from_pairs(pairs: Vec<(&'static str, Value)>) -> Self {
         Self(pairs)
     }
+
+    /// Append one more member after the existing ones.
+    pub fn push(&mut self, key: &'static str, value: Value) {
+        self.0.push((key, value));
+    }
 }
 
 impl Serialize for OrderedDetails {

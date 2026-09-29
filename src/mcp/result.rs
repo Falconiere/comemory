@@ -90,6 +90,14 @@ pub fn into_tool_result<T: Serialize>(outcome: Result<T>) -> Result<CallToolResu
             if class == Class::Internal {
                 tracing::warn!(code, error = %e, "mcp: tool failed");
                 Err(ErrorData::internal_error(code, None))
+            } else if let Error::Project(project) = &e {
+                // A project refusal carries its ordered `details`, as its
+                // HTTP envelope does, so an agent sees the field and limit.
+                Ok(CallToolResult::structured_error(json!({
+                    "code": code,
+                    "message": e.to_string(),
+                    "details": project.details(),
+                })))
             } else {
                 Ok(tool_error(code, &e.to_string()))
             }

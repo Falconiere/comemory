@@ -59,6 +59,8 @@ pub mod command {
     pub const SYNC_IMPORT: &str = "sync.import";
     /// `domains::code::index_code`.
     pub const INDEX_CODE: &str = "index-code";
+    /// `domains::projects::create`.
+    pub const PROJECT_CREATE: &str = "project.create";
 }
 
 /// Who is running this command, and whether their runs are recorded at all.

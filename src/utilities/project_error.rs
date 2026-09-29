@@ -188,6 +188,38 @@ impl ProjectError {
         }
     }
 
+    /// This `invalid_request` answered at `edge`, and — when the platform
+    /// words it with a fixed sentence (`"keyPrefix is already used in this
+    /// workspace"`) — with that message. Any other refusal is unchanged.
+    #[must_use]
+    pub fn at(mut self, edge: RequestEdge, fixed_message: Option<&str>) -> Self {
+        if let Self::InvalidRequest {
+            edge: current,
+            message,
+            ..
+        } = &mut self
+        {
+            *current = edge;
+            if let Some(fixed) = fixed_message {
+                *message = fixed.to_string();
+            }
+        }
+        self
+    }
+
+    /// A cap refusal (`422`): `"<field> is <reason> (limit <limit>)"`, so a
+    /// surface that prints only the message still names the limit, and
+    /// `details` `{field, reason, limit}`.
+    pub fn over_limit(field: &str, reason: &str, limit: usize) -> Self {
+        let message = format!("{field} is {reason} (limit {limit})");
+        let mut refusal =
+            Self::invalid_field(field, reason).at(RequestEdge::Invariant, Some(&message));
+        if let Self::InvalidRequest { details, .. } = &mut refusal {
+            details.push("limit", Value::from(limit));
+        }
+        refusal
+    }
+
     /// The `details` object, in the platform's key order. Every code but
     /// `invalid_request` leads with `code`; `invalid_request` carries the
     /// caller's pairs unchanged.

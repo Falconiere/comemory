@@ -1,7 +1,7 @@
 //! The curated MCP tool table.
 //!
-//! Eleven entries keep tool discovery compact alongside the 94-route HTTP
-//! table. Each row names the clap subcommand whose
+//! Seventeen entries keep tool discovery compact beside the much larger HTTP
+//! route table. Each row names the clap subcommand whose
 //! core the tool runs, which is what `tests/mcp__parity.rs` walks to prove no
 //! tool invents a command or a parameter the CLI does not have.
 //!
@@ -95,6 +95,18 @@ pub const TOOLS: &[ToolEntry] = &[
         command: "recall-status",
         mutating: false,
         description: "Report shared repo activity since a timestamp: queries, verdicts, saves and unjudged queries. Not session-specific; empty recalls need no verdict.",
+    },
+    ToolEntry {
+        name: "project_list",
+        command: "project list",
+        mutating: false,
+        description: "List project charters newest first, one keyset page at a time. Filter by status, health or includeArchived; pass nextCursor back as cursor for the next page.",
+    },
+    ToolEntry {
+        name: "project_show",
+        command: "project show",
+        mutating: false,
+        description: "Read one project charter by UUID: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version.",
     },
     ToolEntry {
         name: "save",

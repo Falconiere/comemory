@@ -268,7 +268,10 @@ impl ComemoryServer {
 /// The one line every read tool above is: clone the session, run `f` on the
 /// blocking pool with the session locked only inside it, and shape the
 /// outcome into a protocol result.
-async fn read_tool<T, F>(server: &ComemoryServer, f: F) -> Result<CallToolResult, ErrorData>
+pub(crate) async fn read_tool<T, F>(
+    server: &ComemoryServer,
+    f: F,
+) -> Result<CallToolResult, ErrorData>
 where
     F: FnOnce(&mut Ctx<'_>, &McpState) -> Result<T> + Send + 'static,
     T: Serialize + Send + 'static,
