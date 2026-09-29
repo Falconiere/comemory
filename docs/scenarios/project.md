@@ -74,7 +74,7 @@ repository, no criterion, no activity event.
   target date is converted to UTC; the filters narrow the page; an unknown
   health value exits 64.
 - **Covered by:** `tests/cli__project.rs::every_flag_reaches_the_core`,
-  `src/domains/projects/tests/list.rs::a_walk_returns_every_project_once_and_refusals_use_their_edge`
+  `src/domains/projects/tests/list.rs::archived_projects_stay_out_unless_asked_and_filters_narrow`
 
 ### project-03 Refusals by edge
 
