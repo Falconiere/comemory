@@ -110,7 +110,7 @@ fn walk_under_writes(home: &Arc<CliHome>, project: &str, order: &str) -> HashMap
             while !stop.load(Ordering::Relaxed) && written < 40 {
                 let id = format!("{written:08x}-3333-4000-8000-000000000000");
                 append(&home, &project, &id, comemory_now_ms());
-                if written % 4 == 0 {
+                if written.is_multiple_of(4) {
                     create(&home, &format!("{prefix}{written}"));
                 }
                 written += 1;

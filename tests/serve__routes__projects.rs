@@ -251,6 +251,9 @@ fn a_read_only_server_refuses_the_create_but_still_lists() {
     assert_eq!(listed["projects"], json!([]));
 }
 
+/// A refused read: `(route, query, status, details)`.
+type Refusal<'a> = (&'a str, &'a [(&'a str, &'a str)], u16, Value);
+
 #[test]
 fn the_activity_page_matches_the_cli_and_refuses_by_edge() {
     let home = ServeHome::new();
@@ -273,7 +276,7 @@ fn the_activity_page_matches_the_cli_and_refuses_by_edge() {
     assert_eq!(page["nextCursor"], Value::Null);
     let before = rows(&home);
 
-    let refusals: [(&str, &[(&str, &str)], u16, Value); 7] = [
+    let refusals: [Refusal<'_>; 7] = [
         (
             &path,
             &[("limit", "201")],

@@ -71,7 +71,7 @@ fn seeded() -> (tempfile::TempDir, Connection, Vec<String>) {
         event(&conn, &id, P, *at);
         event(
             &conn,
-            &format!("{:08x}-0000-4000-8000-00000000000f", n),
+            &format!("{n:08x}-0000-4000-8000-00000000000f"),
             OTHER,
             *at,
         );

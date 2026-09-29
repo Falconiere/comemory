@@ -143,16 +143,15 @@ pub fn split(mut rows: Vec<ActivityRow>, limit: i64) -> (Vec<ActivityRow>, Optio
 /// `parseStoredJson` does; a `created_at` outside the representable range is
 /// a corrupt row, refused as the charter view refuses one.
 pub fn view(row: ActivityRow) -> Result<EventView> {
-    let payload = match serde_json::from_str::<Value>(&row.payload) {
-        Ok(Value::Object(map)) => map,
-        _ => {
-            tracing::warn!(
-                row_id = %row.id,
-                column = "project_activity_events.payload",
-                "stored payload is not a JSON object; reading as {{}}"
-            );
-            Map::new()
-        }
+    let payload = if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&row.payload) {
+        map
+    } else {
+        tracing::warn!(
+            row_id = %row.id,
+            column = "project_activity_events.payload",
+            "stored payload is not a JSON object; reading as {{}}"
+        );
+        Map::new()
     };
     let created_at = iso(row.created_at).ok_or_else(|| {
         Error::from(ProjectError::Invariant {
