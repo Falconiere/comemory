@@ -70,6 +70,8 @@ pub mod learning_console;
 pub mod memory_stores;
 /// `GET /overview`, `GET /overview/eval-series`.
 pub mod overview;
+/// `GET /projects/{id}/activity` (`domains::projects::activity_page`).
+pub mod project_activity;
 /// Raw project request bodies and queries parsed into core requests, every
 /// malformed input a `400 invalid_request` naming its field.
 pub mod project_request;

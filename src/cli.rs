@@ -86,8 +86,12 @@ pub mod off_runtime;
 pub mod output;
 /// Shared `--k` / `--offset` window resolution.
 pub mod pagination;
-/// `comemory project` — engine-owned project management (create, show, list).
+/// `comemory project` — engine-owned project management (create, show, list,
+/// activity, changes).
 pub mod project;
+/// `comemory project activity` — the flags and TTY view of one project's
+/// activity page.
+pub mod project_activity;
 /// `comemory prune`: orphan / low-value / stale-code candidates.
 pub mod prune;
 /// `comemory rebuild`: reconstruct the store from markdown.
@@ -172,7 +176,8 @@ pub enum Cmd {
     /// Save a memory (body via arg, `-`, or stdin).
     Save(save::Args),
     /// Engine-owned project management: create, show and list project
-    /// charters and read their body-free change feed, offline.
+    /// charters, page a project's activity log and read the body-free change
+    /// feed, offline.
     Project(project::Args),
     /// Search the memory index by natural-language query.
     Search(search::Args),

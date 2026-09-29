@@ -1,6 +1,7 @@
 //! The two project read tools (#326), as their own `#[tool_router]` block:
-//! the `domains::projects` list core, and the show and plan cores behind
-//! `project_show`'s `view` (#335), with no repo scope — a
+//! the `domains::projects` list core, and the show, plan (#335) and
+//! activity-page (#331) cores behind `project_show`'s `view`, with no repo
+//! scope — a
 //! project is not repo-scoped — each run under the session's envelope
 //! ([`McpState::project_envelope`]). The epic's six project writers (#261)
 //! join them in later tasks.
@@ -39,21 +40,33 @@ impl ComemoryServer {
         read_tool(self, move |c, s| enveloped(c, s, req)).await
     }
 
-    /// One project's charter or committed plan by id.
+    /// One project's charter, committed plan or activity page by id.
     #[tool(
         name = "project_show",
-        description = "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies."
+        description = "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies. view activity: one keyset page of its activity events; limit 1-200, order desc (default) or asc, and nextCursor back as cursor."
     )]
     async fn project_show(
         &self,
         Parameters(req): Parameters<ProjectShowParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let id = req.id;
-        read_tool(self, move |c, s| match req.view {
-            ProjectShowView::Charter => enveloped(c, s, projects::show::Request { id })
-                .map(|shown| Shown::Charter(Box::new(shown))),
-            ProjectShowView::Plan => {
-                enveloped(c, s, projects::plan::Request { id }).map(Shown::Plan)
+        read_tool(self, move |c, s| {
+            req.page_fields_fit_the_view()?;
+            let id = req.id;
+            match req.view {
+                ProjectShowView::Charter => enveloped(c, s, projects::show::Request { id })
+                    .map(|shown| Shown::Charter(Box::new(shown))),
+                ProjectShowView::Plan => {
+                    enveloped(c, s, projects::plan::Request { id }).map(Shown::Plan)
+                }
+                ProjectShowView::Activity => {
+                    let page = projects::activity_page::Request {
+                        id,
+                        limit: req.limit,
+                        cursor: req.cursor,
+                        order: req.order,
+                    };
+                    enveloped(c, s, page).map(Shown::Activity)
+                }
             }
         })
         .await
@@ -68,6 +81,8 @@ enum Shown {
     Charter(Box<projects::show::Response>),
     /// `{plan}`.
     Plan(projects::plan::Response),
+    /// `{events, nextCursor}`.
+    Activity(projects::activity_page::Response),
 }
 
 /// Run a project core under the session's envelope.

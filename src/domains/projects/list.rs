@@ -98,7 +98,7 @@ impl Command for Request {
 
 /// `value` when it is one of `allowed`; otherwise the platform's schema-edge
 /// enum refusal (`400`).
-fn vocabulary<'a>(
+pub(crate) fn vocabulary<'a>(
     field: &str,
     value: Option<&'a str>,
     allowed: &[&str],

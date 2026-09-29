@@ -31,7 +31,7 @@ Usage: comemory [OPTIONS] <COMMAND>
 Commands:
   architecture    Scaffold, store, draw and drift-check the architecture model of an indexed repository (CLI-only)
   save            Save a memory (body via arg, `-`, or stdin)
-  project         Engine-owned project management: create, show and list project charters and read their body-free change feed, offline
+  project         Engine-owned project management: create, show and list project charters, page a project's activity log and read the body-free change feed, offline
   search          Search the memory index by natural-language query
   search-code     Search the code index by natural-language or identifier query
   list            List memories with optional repo/kind filters
@@ -238,17 +238,18 @@ Examples:
 ## comemory project
 
 ```
-Engine-owned project management: create, show and list project charters and read their body-free change feed, offline
+Engine-owned project management: create, show and list project charters, page a project's activity log and read the body-free change feed, offline
 
 Usage: comemory project [OPTIONS] <COMMAND>
 
 Commands:
-  create   Charter a draft project and record its `project.created` event
-  show     Show one project's charter by id
-  list     List projects newest first, one keyset page at a time
-  changes  Read the body-free change feed: one frame per committed mutation
-  plan     Read a project's committed plan
-  help     Print this message or the help of the given subcommand(s)
+  create    Charter a draft project and record its `project.created` event
+  show      Show one project's charter by id
+  list      List projects newest first, one keyset page at a time
+  activity  Page one project's activity log, newest first or oldest first
+  changes   Read the body-free change feed: one frame per committed mutation
+  plan      Read a project's committed plan
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
@@ -274,6 +275,9 @@ Examples:
   # Page through active projects, newest first
   comemory project list --status active --limit 10
   comemory project list --cursor '<nextCursor from the previous page>'
+
+  # Walk one project's activity, oldest first
+  comemory project activity 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --order asc --limit 50
 
   # Poll the body-free change feed from a cursor
   comemory project changes --after 0 --limit 100 --json

@@ -2,7 +2,8 @@
 
 **What belongs here:** engine-owned project management (epic #261), ported from
 the comemory.io platform's `/v1/projects` contract: the charter and its limits,
-slug derivation, the keyset cursor, the project activity writer, the body-free
+slug derivation, the keyset cursor, the project activity writer and its
+keyset page, the body-free
 change feed, and the command cores the CLI, the loopback HTTP server and the
 MCP catalog all call.
 
@@ -18,6 +19,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `activity.rs` | `record` | The one `project_activity_events` writer every mutation shares, called inside the mutation's own transaction with the admitted `Actor`, which also appends the event's `changed` feed row; never `activity_log`, which is command telemetry |
+| `activity_page.rs` | `Request` | `project activity` / `GET /projects/{id}/activity` (`Verb::ActivityRead`, a `project.read` reader, #331): one project's events as a keyset page over `(created_at, id)`, `order` `desc` (default) or `asc`, ties broken by id, `limit` 1–200 (default 50); an unknown project is `404 project_not_found`. It also holds `EventView` (the platform's event view key for key, a non-object payload read as `{}`) and `split` (the `limit + 1` page arithmetic), both shared with the cross-project feed (#332) |
 | `authority.rs` | `run` | The capability envelope every core runs under: the sealed `Command` trait, the `Actor` only `run` mints, the ported 27-verb table plus the engine's `ProjectChanges` reader, human tiers, agent capabilities, and the local operator and local agent defaults |
 | `changes.rs` | `Request` | `project changes` / `GET /projects/changes` (`Verb::ProjectChanges`, a `project.read` reader): body-free frames `{seq, entity, project_id, event_id, op}` after a cursor, refusing a cursor past the head or below the oldest retained row; `record_deletion`, the `deleted` row #320 appends in its delete transaction |
 | `charter.rs` | `validate` | A create request checked against every charter rule before any store access, in the platform's field order, and normalized for storage (lowercase id, canonical de-duplicated repositories, the lead) |
@@ -155,6 +157,7 @@ Each later task adds its own group with its verbs; nothing is declared empty.
 ```text
 comemory project
   create | show | list                      #326
+  activity                                  #331 (read-only)
   archive | restore | pause | resume        #328
   plan show                                 #335 (the committed plan)
   plan …                                    plan slice (#264)
@@ -173,7 +176,9 @@ The curated catalog held 15 tools before this epic; projects add eight, and
 human-only verbs get none:
 
 - readers: `project_list`, `project_show` (the catalog is 17). The plan is a
-  `view: "plan"` of `project_show` (#335), not a row of its own;
+  `view: "plan"` of `project_show` (#335) and one activity page a
+  `view: "activity"` with `limit`, `cursor` and `order` (#331), neither a
+  row of its own;
 - writers: `project_propose`, `project_work` (ready, start),
   `project_execution` (heartbeat, block, resume, request review),
   `project_work_packet`, `project_evidence`, `project_health`.

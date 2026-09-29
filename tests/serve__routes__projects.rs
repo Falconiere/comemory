@@ -250,3 +250,84 @@ fn a_read_only_server_refuses_the_create_but_still_lists() {
     let listed = home.get("/projects");
     assert_eq!(listed["projects"], json!([]));
 }
+
+/// A refused read: `(route, query, status, details)`.
+type Refusal<'a> = (&'a str, &'a [(&'a str, &'a str)], u16, Value);
+
+#[test]
+fn the_activity_page_matches_the_cli_and_refuses_by_edge() {
+    let home = ServeHome::new();
+    let project = seed(&home, "WALK");
+    let id = project["id"].as_str().unwrap();
+    let out = Command::cargo_bin("comemory")
+        .unwrap()
+        .env("COMEMORY_DATA_DIR", home.data_dir())
+        .args(["--json", "project", "activity", id, "--order", "asc"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let cli: Value = serde_json::from_slice(&out.stdout).unwrap();
+
+    let path = format!("/projects/{id}/activity");
+    let page = home.get_q(&path, &[("order", "asc"), ("workspaceId", "w")]);
+    assert_eq!(page, cli);
+    assert_eq!(page["events"][0]["eventType"], "project.created");
+    assert_eq!(page["events"][0]["actorPrincipalId"], "local-operator");
+    assert_eq!(page["nextCursor"], Value::Null);
+    let before = rows(&home);
+
+    let refusals: [Refusal<'_>; 7] = [
+        (
+            &path,
+            &[("limit", "201")],
+            422,
+            json!({"field": "limit", "reason": "too_large", "limit": 200}),
+        ),
+        (
+            &path,
+            &[("limit", "0")],
+            422,
+            json!({"field": "limit", "reason": "too_small", "limit": 1}),
+        ),
+        (
+            &path,
+            &[("limit", "ten")],
+            400,
+            json!({"field": "limit", "reason": "invalid"}),
+        ),
+        (
+            &path,
+            &[("cursor", "abc")],
+            400,
+            json!({"field": "cursor", "reason": "invalid"}),
+        ),
+        (
+            &path,
+            &[("order", "sideways")],
+            400,
+            json!({"field": "order", "reason": "invalid"}),
+        ),
+        (
+            &path,
+            &[("status", "active")],
+            400,
+            json!({"field": "status", "reason": "invalid"}),
+        ),
+        (
+            "/projects/not-a-uuid/activity",
+            &[],
+            400,
+            json!({"field": "projectId", "reason": "invalid"}),
+        ),
+    ];
+    for (route, query, status, details) in refusals {
+        let (got, body) = home.get_q_raw(route, query);
+        assert_eq!(got, status, "{route} {query:?}: {body}");
+        assert_eq!(body["error"]["code"], "invalid_request", "{body}");
+        assert_eq!(body["error"]["details"], details, "{body}");
+    }
+    let (status, body) = home.get_raw("/projects/00000000-0000-4000-8000-000000000000/activity");
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(body["error"]["code"], "project_not_found");
+    assert_eq!(rows(&home)[..2], before[..2], "a read wrote a row");
+}

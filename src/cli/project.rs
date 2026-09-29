@@ -13,6 +13,7 @@ use clap::{Args as ClapArgs, Subcommand};
 
 use crate::cli::load_config;
 use crate::cli::output::json;
+use crate::cli::project_activity;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
 use crate::domains::projects::changes::{self, ChangeFrame};
@@ -44,6 +45,9 @@ Examples:
   comemory project list --status active --limit 10
   comemory project list --cursor '<nextCursor from the previous page>'
 
+  # Walk one project's activity, oldest first
+  comemory project activity 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --order asc --limit 50
+
   # Poll the body-free change feed from a cursor
   comemory project changes --after 0 --limit 100 --json";
 
@@ -65,6 +69,8 @@ pub enum ProjectCmd {
     Show(ShowArgs),
     /// List projects newest first, one keyset page at a time.
     List(ListArgs),
+    /// Page one project's activity log, newest first or oldest first.
+    Activity(project_activity::Args),
     /// Read the body-free change feed: one frame per committed mutation.
     Changes(ChangesArgs),
     /// Read a project's committed plan.
@@ -185,6 +191,10 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         ProjectCmd::List(l) => {
             let resp = authority::run(&mut ctx, &operator, list_request(l))?;
             emit(json_flag, &resp, |out| render_page(out, &resp))
+        }
+        ProjectCmd::Activity(a) => {
+            let resp = authority::run(&mut ctx, &operator, a.request())?;
+            emit(json_flag, &resp, |out| project_activity::render(out, &resp))
         }
         ProjectCmd::Changes(c) => {
             let req = changes::Request {
