@@ -2,12 +2,13 @@
 
 **What belongs here:** engine-owned project management (epic #261), ported from
 the comemory.io platform's `/v1/projects` contract: the charter and its limits,
-slug derivation, the keyset cursor, the project activity writer, and the command
-cores the CLI, the loopback HTTP server and the MCP catalog all call.
+slug derivation, the keyset cursor, the project activity writer, the body-free
+change feed, and the command cores the CLI, the loopback HTTP server and the
+MCP catalog all call.
 
 **What does NOT belong here:** SQL (every project statement lives in
-`store::{projects,project_read,project_activity}`, the declared tables in
-`store::schema_projects`), delivery (no file here imports `cli`, `serve` or
+`store::{projects,project_read,project_activity,project_changes}`, the
+declared tables in `store::schema_projects`), delivery (no file here imports `cli`, `serve` or
 `mcp`), and the refusal vocabulary, which is `utilities::project_error`.
 
 ## Contents
@@ -16,8 +17,9 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `activity.rs` | `record` | The one `project_activity_events` writer every mutation shares, called inside the mutation's own transaction with the admitted `Actor`; never `activity_log`, which is command telemetry |
-| `authority.rs` | `run` | The capability envelope every core runs under: the sealed `Command` trait, the `Actor` only `run` mints, the ported 27-verb table, human tiers, agent capabilities, and the local operator and local agent defaults |
+| `activity.rs` | `record` | The one `project_activity_events` writer every mutation shares, called inside the mutation's own transaction with the admitted `Actor`, which also appends the event's `changed` feed row; never `activity_log`, which is command telemetry |
+| `authority.rs` | `run` | The capability envelope every core runs under: the sealed `Command` trait, the `Actor` only `run` mints, the ported 27-verb table plus the engine's `ProjectChanges` reader, human tiers, agent capabilities, and the local operator and local agent defaults |
+| `changes.rs` | `Request` | `project changes` / `GET /projects/changes` (`Verb::ProjectChanges`, a `project.read` reader): body-free frames `{seq, entity, project_id, event_id, op}` after a cursor, refusing a cursor past the head or below the oldest retained row; `record_deletion`, the `deleted` row #320 appends in its delete transaction |
 | `charter.rs` | `validate` | A create request checked against every charter rule before any store access, in the platform's field order, and normalized for storage (lowercase id, canonical de-duplicated repositories, the lead) |
 | `create.rs` | `Request` | `project create` / `POST /projects`: the draft charter, its repositories, its project-level criteria and one `project.created` event in one immediate transaction; the slug retried with `-2`, `-3`, … on a real collision |
 | `keyset.rs` | `decode` | The platform's `<epochMillis>:<uuid>` keyset cursor over `(created_at, id)`: encode, and decode with a `400 invalid_request` for anything outside `^\d{1,15}:[0-9a-f-]{36}$`; later pages reuse it |
@@ -40,6 +42,12 @@ One line per file, named after its primary item:
   leaves no project row and no activity event.
 - **No charter update verb.** After creation a charter changes only through an
   approved `project.update` proposal (#338).
+- **One body-free feed row per committed mutation.** `activity::record`
+  appends it, so a new mutation emits with no per-command code; a refused or
+  rolled-back command emits none. The feed (`project_changes`) sits outside
+  `PROJECT_TABLES` with no foreign key, so a deletion row outlives its
+  project. Retention is unbounded: rows are ids only, and a cursor the feed
+  cannot continue is refused, never answered with a page that skips.
 - **Identities are client-generated UUIDs**, minted when absent, stored lowercase.
 - **Repositories are shape-checked only** (canonical `owner/name`); the allow-list
   rule is #337's.
@@ -114,7 +122,7 @@ comemory project
   packet …                                  packets slice (#266)
   evidence …      (add, list)               #346
   approvals …                               approval inbox
-  feed …                                    change feed (#270)
+  changes                                   #324 (read-only; HTTP for the relay)
 ```
 
 ## MCP budget

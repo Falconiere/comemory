@@ -172,7 +172,7 @@ pub enum Cmd {
     /// Save a memory (body via arg, `-`, or stdin).
     Save(save::Args),
     /// Engine-owned project management: create, show and list project
-    /// charters, offline.
+    /// charters and read their body-free change feed, offline.
     Project(project::Args),
     /// Search the memory index by natural-language query.
     Search(search::Args),

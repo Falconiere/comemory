@@ -1,11 +1,13 @@
 //! The one `project_activity_events` writer every project mutation shares:
-//! called inside the mutation's own transaction, so the event and the state
-//! change commit together or not at all. Never `activity_log` — that is
-//! command telemetry, recorded by the core instrumentation.
+//! called inside the mutation's own transaction, so the event, its
+//! `project_changes` feed row (#324) and the state change commit together or
+//! not at all. Never `activity_log` — that is command telemetry, recorded by
+//! the core instrumentation.
 
 use serde::Serialize;
 
 use crate::domains::projects::authority::Actor;
+use crate::domains::projects::changes;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::project_activity::{self, NewProjectEvent};
@@ -25,8 +27,8 @@ pub struct Event<'a, P: Serialize> {
     pub payload: &'a P,
 }
 
-/// Append `event` by the admitted `actor` at `at_ms` and return the event's
-/// new id.
+/// Append `event` by the admitted `actor` at `at_ms`, and its `changed` feed
+/// row, and return the event's new id.
 pub fn record<P: Serialize>(
     conn: &Connection,
     actor: &Actor,
@@ -50,5 +52,6 @@ pub fn record<P: Serialize>(
             at_ms,
         },
     )?;
+    changes::record_change(conn, event.project_id, &id, event.entity_type, at_ms)?;
     Ok(id)
 }

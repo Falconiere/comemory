@@ -135,6 +135,8 @@ pub mod needs_embedding;
 mod orm;
 /// `project_activity_events` writes: the append-only project event.
 pub mod project_activity;
+/// `project_changes`: the body-free change feed, appended and paged by `seq`.
+pub mod project_changes;
 /// `projects` charter reads: one row, a keyset page, and a page's relations.
 pub mod project_read;
 /// `projects` charter writes: the row with its unique-index outcome, repositories and criteria.

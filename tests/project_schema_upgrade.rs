@@ -5,10 +5,11 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Migration 0031 over a real pre-projects data directory (#325): the pinned
-//! `v0.52.0` release binary writes it, the directory is copied, and this
-//! build opens the copy. The copy reaches version 31 with its memory intact
-//! and every project table present and empty; the original is left at 30.
+//! Migrations 0031 and 0032 over a real pre-projects data directory (#325,
+//! #324): the pinned `v0.52.0` release binary writes it, the directory is
+//! copied, and this build opens the copy. The copy reaches the current version
+//! with its memory intact and every project table and the change feed present
+//! and empty; the original is left at 30.
 
 #[path = "common/legacy_engine.rs"]
 mod legacy_engine;
@@ -91,9 +92,9 @@ fn a_v0_52_0_data_directory_upgrades_to_the_project_tables() {
         "the memory survives the upgrade"
     );
 
-    assert_eq!(schema_version(copy.path()), "31");
+    assert_eq!(schema_version(copy.path()), "32");
     let conn = Connection::open(copy.path().join("comemory.db")).expect("open copy");
-    for table in PROJECT_TABLES {
+    for table in PROJECT_TABLES.iter().chain(&["project_changes"]) {
         let rows: i64 = conn
             .query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| {
                 r.get(0)

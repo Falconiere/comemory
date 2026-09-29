@@ -5,9 +5,9 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Migration 0031 against a real database opened through
+//! Migrations 0031 and 0032 against a real database opened through
 //! `store::connection::open` (`PRAGMA foreign_keys=ON`): every project table
-//! exists at version 31, the registry is leaf first over every declared key,
+//! and the change feed exist at version 32, the registry is leaf first over every declared key,
 //! and the platform's composite keys, cascades, `NO ACTION` links and the
 //! self-edge CHECK are enforced by SQLite itself.
 
@@ -75,7 +75,7 @@ fn seed_children(conn: &Connection) {
 }
 
 #[test]
-fn schema_projects_fresh_open_reaches_v31_with_every_table() {
+fn schema_projects_fresh_open_reaches_v32_with_every_table() {
     let (_dir, conn) = fresh();
     let version: String = conn
         .query_row(
@@ -84,11 +84,11 @@ fn schema_projects_fresh_open_reaches_v31_with_every_table() {
             |r| r.get(0),
         )
         .expect("version");
-    assert_eq!(version, "31");
-    assert_eq!(migrate::CURRENT_VERSION, "31");
+    assert_eq!(version, "32");
+    assert_eq!(migrate::CURRENT_VERSION, "32");
     assert_eq!(
         MIGRATIONS.len(),
-        31,
+        32,
         "CURRENT_VERSION agrees with MIGRATIONS.len()"
     );
     for table in PROJECT_TABLES {
@@ -104,6 +104,18 @@ fn schema_projects_fresh_open_reaches_v31_with_every_table() {
         );
     }
     assert_eq!(PROJECT_TABLES.len(), 14);
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_changes'"
+        ),
+        1,
+        "the change feed exists"
+    );
+    assert!(
+        !PROJECT_TABLES.contains(&"project_changes"),
+        "the change feed stays outside the cascade registry"
+    );
 }
 
 #[test]

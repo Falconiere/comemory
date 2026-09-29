@@ -27,7 +27,7 @@ use super::schema_memory::{
     Memories, MemoryFts, MemoryNeedsEmbedding, MemorySubstring, MemoryTags, MemoryVec,
     MemoryWriteIntent,
 };
-use super::schema_projects;
+use super::schema_projects::{self, ProjectChanges};
 use super::schema_replica::{
     ReplicaCursor, ReplicaFeed, ReplicaOperation, ReplicaPayload, ReplicaReceipt, ReplicaRevision,
     ReplicaStagedPart, ReplicaStream,
@@ -72,6 +72,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "memory_write_intent",
     "project_activity_events",
     "project_approvals",
+    "project_changes",
     "project_command_receipts",
     "project_criteria",
     "project_evidence",
@@ -187,6 +188,8 @@ pub fn registry() -> SchemaRegistry {
         SyncState::table_def(),
     ];
     tables.extend(schema_projects::table_defs());
+    // Outside `PROJECT_TABLES`: the feed outlives the projects it names.
+    tables.push(ProjectChanges::table_def());
     SchemaRegistry::from_tables(tables)
 }
 

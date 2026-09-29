@@ -3,9 +3,10 @@
 //! `index_runs` (v15), the v16 cloud-sync tables (`sync_log` / `sync_state` /
 //! `sync_binding`), the v22 `replica-v1` journal, the v23
 //! `memory_needs_embedding` backlog the journal's import path produces, the
-//! v26 `replica_device` identity, the `activity_log` feed, and the v27
+//! v26 `replica_device` identity, the `activity_log` feed, the v27
 //! exchange-client state (`sync_exchange`, `sync_policy_snapshot`,
-//! `replica_pull_hold`, `replica_binding`, `replica_replay`).
+//! `replica_pull_hold`, `replica_binding`, `replica_replay`), and the v32
+//! `project_changes` feed.
 //! History is exactly what markdown cannot reconstruct: a rebuild that
 //! dropped it would erase every recorded eval, gc, and index run (and
 //! re-offer every discarded knob proposal), would reset sync cursors /
@@ -148,6 +149,13 @@ const PRESERVED: &[(&str, &str)] = &[
         "activity_log",
         "id, at, command, source, actor, repo, duration_ms, ok, error_code, summary, \
          event_id, device",
+    ),
+    // A relay's cursor is a `seq`: the rows keep theirs, and because nothing
+    // prunes the feed the highest copied `seq` is the old head, so
+    // `AUTOINCREMENT` resumes above every cursor already handed out.
+    (
+        "project_changes",
+        "seq, project_id, event_id, entity_type, op, created_at",
     ),
     (
         "sync_exchange",

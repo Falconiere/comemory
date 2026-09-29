@@ -264,8 +264,8 @@ fn an_agent_reaches_exactly_the_verbs_its_capabilities_name() {
             shared += 1;
         }
     }
-    assert_eq!(shared, 13);
-    assert_eq!(home.counts(), [13, 13, 13]);
+    assert_eq!(shared, 14);
+    assert_eq!(home.counts(), [14, 14, 14]);
     assert_eq!(home.event_actors(), ["project_agent:local-agent"]);
 
     let reader = Envelope::agent("reader", Capabilities::parse("t", &["project.read"]));
@@ -338,8 +338,8 @@ fn a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete() {
             as_lead.unwrap();
         }
     }
-    // 16 member verbs as the member, 26 of 27 as the lead.
-    assert_eq!(home.counts(), [42, 42, 42]);
+    // 17 member verbs as the member, 27 of 28 as the lead.
+    assert_eq!(home.counts(), [44, 44, 44]);
 }
 
 #[test]
@@ -349,7 +349,7 @@ fn the_local_operator_admits_every_verb_as_itself() {
     for (i, verb) in Verb::ALL.into_iter().enumerate() {
         home.probe(&operator, verb, &key('O', i)).unwrap();
     }
-    assert_eq!(home.counts(), [27, 27, 27]);
+    assert_eq!(home.counts(), [28, 28, 28]);
     assert_eq!(home.event_actors(), ["user:local-operator"]);
 }
 

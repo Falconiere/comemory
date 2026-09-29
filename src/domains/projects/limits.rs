@@ -78,11 +78,16 @@ pub fn key_prefix(value: &str) -> Result<()> {
 
 /// A list page size: [`PAGE_DEFAULT`] when absent, else `1..=PAGE_MAX`.
 pub fn page(limit: Option<i64>) -> Result<i64> {
+    page_within(limit, PAGE_DEFAULT, PAGE_MAX)
+}
+
+/// A page size: `default` when absent, else `1..=max`.
+pub fn page_within(limit: Option<i64>, default: i64, max: i64) -> Result<i64> {
     match limit {
-        None => Ok(PAGE_DEFAULT),
+        None => Ok(default),
         Some(n) if n < 1 => Err(ProjectError::over_limit("limit", "too_small", 1).into()),
-        Some(n) if n > PAGE_MAX => {
-            Err(ProjectError::over_limit("limit", "too_large", PAGE_MAX as usize).into())
+        Some(n) if n > max => {
+            Err(ProjectError::over_limit("limit", "too_large", max as usize).into())
         }
         Some(n) => Ok(n),
     }
