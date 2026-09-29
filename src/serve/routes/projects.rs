@@ -1,9 +1,10 @@
-//! `POST|GET /api/v1/projects` and `GET /api/v1/projects/{id}` — the
-//! `domains::projects` create, list and show cores, on the platform's REST
-//! paths so a hosted cutover forwards without remapping. Every core runs
-//! under [`caller`]'s envelope, which no header can change: in local mode
-//! the local agent, so `POST` answers `403 project_agent_scope`, and an
-//! admitted create answers `201`, as the platform does.
+//! `POST|GET /api/v1/projects`, `GET /api/v1/projects/{id}` and
+//! `GET /api/v1/projects/changes` — the `domains::projects` create, list, show
+//! and change-feed cores, on the platform's REST paths so a hosted cutover
+//! forwards without remapping. Every core runs under [`caller`]'s envelope,
+//! which no header can change: in local mode the local agent, so `POST`
+//! answers `403 project_agent_scope`, and an admitted create answers `201`,
+//! as the platform does.
 //!
 //! Bodies and queries are parsed here rather than by axum's extractors,
 //! whose rejections are plain text: every malformed input answers the
@@ -19,16 +20,18 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::get;
 
-use crate::domains::projects::authority::{self, Envelope};
-use crate::domains::projects::{create, show};
+use crate::domains::projects::authority::{self, Command, Envelope};
+use crate::domains::projects::{changes, create, show};
 use crate::serve::AppState;
-use crate::serve::routes::project_request::{body, list_query};
+use crate::serve::routes::project_request::{body, list_field, query};
 use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// `project.create`'s route command, shared by the table and its handler.
 const CREATE: &str = "project.create";
+/// `project.changes`'s route command, shared by the table and its handler.
+const CHANGES: &str = "project.changes";
 
 /// This resource's route-table entries, appended onto [`super::table`]. The
 /// list route carries the bare `project` command, the top-level clap name the
@@ -53,13 +56,27 @@ pub fn table_entries() -> &'static [RouteEntry] {
             command: "project.show",
             mutating: false,
         },
+        RouteEntry {
+            method: "GET",
+            path: "/projects/changes",
+            command: CHANGES,
+            mutating: false,
+        },
     ]
 }
 
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/api/v1/projects", get(list_projects).post(create_project))
+        .route(
+            "/api/v1/projects",
+            get(|State(state), q| read(state, "project", q, list_field)).post(create_project),
+        )
+        // The static segment wins over `{id}`: `changes` is never a project id.
+        .route(
+            "/api/v1/projects/changes",
+            get(|State(state), q| read(state, CHANGES, q, changes_field)),
+        )
         .route("/api/v1/projects/{id}", get(show_project))
 }
 
@@ -99,19 +116,39 @@ fn created(mut response: Response) -> Response {
     response
 }
 
-/// `GET /api/v1/projects` — one keyset page, newest first.
-async fn list_projects(
-    State(state): State<AppState>,
-    query: Result<Query<Vec<(String, String)>>, QueryRejection>,
-) -> Response {
-    let req = match list_query(query.map(|Query(pairs)| pairs)) {
-        Ok(req) => req,
-        Err(e) => return respond::<()>("project", Err(e), Instant::now()),
-    };
-    query_response(state, "project", move |ctx| {
-        authority::run(ctx, &caller(), req)
-    })
-    .await
+/// A query-string read under [`caller`]'s envelope: `GET /projects` (a keyset
+/// page, newest first) and `GET /projects/changes` (body-free frames after a
+/// cursor). The query is parsed before any store access, so a malformed one
+/// never opens the database.
+async fn read<R>(
+    state: AppState,
+    command: &'static str,
+    raw: std::result::Result<Query<Vec<(String, String)>>, QueryRejection>,
+    field: fn(&mut R, &str, String) -> Option<()>,
+) -> Response
+where
+    R: Command + Default + Send + 'static,
+    R::Response: serde::Serialize + Send + 'static,
+{
+    match query(raw.map(|Query(pairs)| pairs), field) {
+        Ok(req) => {
+            query_response(state, command, move |ctx| {
+                authority::run(ctx, &caller(), req)
+            })
+            .await
+        }
+        Err(e) => respond::<()>(command, Err(e), Instant::now()),
+    }
+}
+
+/// `GET /projects/changes`'s integer `after` or `limit` stored on `req`;
+/// `None` refuses any other key or a non-integer value.
+pub fn changes_field(req: &mut changes::Request, key: &str, value: String) -> Option<()> {
+    let slot = [("after", &mut req.after), ("limit", &mut req.limit)]
+        .into_iter()
+        .find_map(|(name, slot)| (name == key).then_some(slot))?;
+    *slot = Some(value.parse().ok()?);
+    Some(())
 }
 
 /// `GET /api/v1/projects/{id}` — one charter.

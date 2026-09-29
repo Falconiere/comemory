@@ -2,7 +2,8 @@
 
 Engine-owned project management (epic #261): charter a project, read it back
 and page through the charters — offline, in a fresh data directory, with no
-account. Nested: `create` / `show` / `list`. Each verb is a thin shell over a
+account, and poll the body-free change feed. Nested: `create` / `show` /
+`list` / `changes`. Each verb is a thin shell over a
 `domains::projects` core that the HTTP routes and the MCP readers
 (`project_list`, `project_show`) call too. Every core runs under a capability
 envelope (#315), chosen by the surface, never by a header or an argument:
@@ -19,11 +20,12 @@ changes only through an approved `project.update` proposal (#338).
 
 **Runnable tests:** `tests/cli__project.rs`, `tests/serve__routes__projects.rs`,
 `tests/cli_scenario_mcp.rs`, colocated `src/domains/projects/tests/*`,
-`src/store/tests/projects.rs`, `src/store/tests/project_read.rs`
+`src/store/tests/projects.rs`, `src/store/tests/project_read.rs`,
+`tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`
 
 **HTTP:** `POST /api/v1/projects` (`403 project_agent_scope` for the local
-agent), `GET /api/v1/projects`,
-`GET /api/v1/projects/{id}` — see the
+agent), `GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
+`GET /api/v1/projects/changes` — see the
 [HTTP API guide](../guides/http-api.md#route-map).
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
@@ -51,6 +53,8 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | `--include-archived` | `list` | false | Include archived projects |
 | `--cursor` | `list` | first page | The previous page's `nextCursor` (`<epochMillis>:<uuid>`) |
 | `--limit` | `list` | `20` | Page size, 1–100 |
+| `--after` | `changes` | `0` | Frames after this `seq` |
+| `--limit` | `changes` | `100` | Page size, 1–1000 |
 
 ## Refusals
 
@@ -173,3 +177,28 @@ warning never logs the value.
   `src/domains/projects/tests/authority.rs::a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete`,
   `src/domains/projects/tests/authority.rs::an_unrecognised_capability_empties_the_whole_list_and_logs_no_value`,
   `src/mcp/tests/state.rs::the_project_envelope_holds_every_capability_and_no_human_verb`
+
+### project-07 The body-free change feed
+
+- **Flags:** `--after`, `--limit`, `--json`
+- **Setup:** projects created through the CLI while a `comemory serve` runs
+  on the same data directory
+- **Command:** `comemory project changes --after <seq> --json`, or
+  `GET /api/v1/projects/changes?after=<seq>&limit=<n>`
+- **Expect:** one frame `{seq, entity: "project", project_id, event_id, op}`
+  per committed mutation — `op: changed`, `event_id` the mutation's activity
+  event — and none for a refused, replayed or rolled-back command; no
+  charter text in the bytes. A hard deletion (#320) adds `op: deleted` with
+  the project id as `event_id`, and the row outlives the project. A reader
+  that drops its connection mid-response or outlives a server restart resumes
+  from its last `seq` with no gap and no duplicate. Retention is unbounded; a
+  cursor past the head (`after is cursor_ahead`) or below the oldest retained
+  row (`after is cursor_expired`) exits 65 (`422`), and `comemory rebuild`
+  keeps every `seq`. The TTY view prints one `seq op project_id event_id`
+  line per frame and `next: --after <seq>`.
+- **Covered by:** `tests/cli__project_changes.rs::each_committed_mutation_emits_one_body_free_frame`,
+  `tests/cli__project_changes.rs::a_reader_resumes_after_a_mid_stream_drop_and_a_server_restart`,
+  `tests/cli__project_changes.rs::cursors_outside_the_feed_are_refused_over_http_and_the_cli`,
+  `tests/cli__project_changes.rs::a_rebuild_keeps_every_seq_so_a_cursor_stays_valid`,
+  `src/domains/projects/tests/changes.rs::a_mutation_rolled_back_after_its_feed_row_emits_nothing`,
+  `src/store/tests/project_changes.rs::a_deletion_row_and_the_earlier_rows_outlive_the_project_cascade`

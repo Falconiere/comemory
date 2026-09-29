@@ -139,6 +139,7 @@ fn the_project_envelope_holds_every_capability_and_no_human_verb() {
         V::WorkItemRead,
         V::EvidenceRead,
         V::ActivityRead,
+        V::ProjectChanges,
         V::ProposalCreate,
         V::WorkPacketCreate,
         V::WorkItemTransition,

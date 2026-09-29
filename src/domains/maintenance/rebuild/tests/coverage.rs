@@ -145,14 +145,15 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// local document is called upstream; v27's exchange-client state is copied
 /// because it describes an upstream, not anything on this disk; v31's
 /// fourteen project tables are copied because a charter, a plan and its
-/// evidence are operator-authored state no file re-derives.
+/// evidence are operator-authored state no file re-derives; v32's project
+/// change feed is copied because a relay's cursor is one of its `seq`s.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_seventy_six_tables() {
+fn migration_integrity_derived_live_set_has_exactly_seventy_seven_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        76,
-        "expected exactly 76 live tables, got {}: {live:?}",
+        77,
+        "expected exactly 77 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -191,6 +192,7 @@ fn migration_integrity_derived_live_set_has_exactly_seventy_six_tables() {
         "replica_pull_hold",
         "replica_binding",
         "replica_replay",
+        "project_changes",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),
@@ -338,16 +340,20 @@ fn migration_integrity_derived_live_set_matches_a_real_migrated_db() {
 /// (#342) will walk — and in `COPIED_TABLES`, and the registry names nothing
 /// `schema_projects` does not declare. A table missing from the registry would
 /// be skipped by every walk; one missing from `COPIED_TABLES` would vanish on
-/// the next rebuild.
+/// the next rebuild. The change feed (#324) is the one `project_*` table kept
+/// out of the registry on purpose — a deletion row must outlive the cascade
+/// the registry drives — and is still copied.
 #[test]
 fn migration_integrity_every_project_table_is_registered_and_copied() {
     use comemory::store::schema::DECLARED_TABLES;
     use comemory::store::schema_projects::{PROJECT_TABLES, table_defs};
+    const FEED: &str = "project_changes";
 
     let declared: BTreeSet<&str> = DECLARED_TABLES
         .iter()
         .copied()
         .filter(|t| *t == "projects" || t.starts_with("project_"))
+        .filter(|t| *t != FEED)
         .collect();
     let registry: BTreeSet<&str> = PROJECT_TABLES.iter().copied().collect();
     assert_eq!(
@@ -365,10 +371,18 @@ fn migration_integrity_every_project_table_is_registered_and_copied() {
         registry.iter().map(ToString::to_string).collect(),
         "table_defs() declares exactly PROJECT_TABLES"
     );
-    for table in PROJECT_TABLES {
+    for table in PROJECT_TABLES.iter().chain(&[FEED]) {
         assert!(
             COPIED_TABLES.contains(table),
             "{table} is project state no file re-derives; it must be in COPIED_TABLES"
         );
     }
+    assert!(
+        DECLARED_TABLES.contains(&FEED),
+        "the change feed is declared"
+    );
+    assert!(
+        !registry.contains(FEED),
+        "the change feed stays outside the cascade"
+    );
 }

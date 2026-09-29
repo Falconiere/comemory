@@ -254,6 +254,10 @@ pub enum Verb {
     EvidenceRead,
     /// `GET /projects/{id}/activity`.
     ActivityRead,
+    /// `GET /projects/changes`, the body-free change feed (#324) — an engine
+    /// route with no platform twin, read by the hosted relay: ids a project
+    /// reader already sees, so a reader's rule.
+    ProjectChanges,
     /// `POST /projects/{id}/proposals`.
     ProposalCreate,
     /// `POST …/work-items/{workItemId}/work-packet`.
@@ -300,7 +304,7 @@ pub enum Verb {
 impl Verb {
     /// Every verb, readers first, then the shared writers, then the
     /// human-only verbs by tier.
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::ProjectShow,
         Self::ProjectList,
         Self::PlanRead,
@@ -308,6 +312,7 @@ impl Verb {
         Self::WorkItemRead,
         Self::EvidenceRead,
         Self::ActivityRead,
+        Self::ProjectChanges,
         Self::ProposalCreate,
         Self::WorkPacketCreate,
         Self::WorkItemTransition,
@@ -340,7 +345,8 @@ impl Verb {
             | Self::ProposalRead
             | Self::WorkItemRead
             | Self::EvidenceRead
-            | Self::ActivityRead => Rule::Shared(Tier::Member, C::ProjectRead),
+            | Self::ActivityRead
+            | Self::ProjectChanges => Rule::Shared(Tier::Member, C::ProjectRead),
             Self::ProposalCreate => Rule::Shared(Tier::Member, C::ProposalCreate),
             Self::WorkPacketCreate => Rule::Shared(Tier::Member, C::WorkPacketCreate),
             Self::WorkItemTransition | Self::ExecutionUpdate => {

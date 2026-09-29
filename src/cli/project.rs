@@ -15,6 +15,7 @@ use crate::cli::load_config;
 use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
+use crate::domains::projects::changes::{self, ChangeFrame};
 use crate::domains::projects::view::ProjectView;
 use crate::domains::projects::{create, list, show};
 use crate::prelude::*;
@@ -32,7 +33,10 @@ Examples:
 
   # Page through active projects, newest first
   comemory project list --status active --limit 10
-  comemory project list --cursor '<nextCursor from the previous page>'";
+  comemory project list --cursor '<nextCursor from the previous page>'
+
+  # Poll the body-free change feed from a cursor
+  comemory project changes --after 0 --limit 100 --json";
 
 /// Top-level `project` args — nested verb required.
 #[derive(ClapArgs, Debug)]
@@ -52,6 +56,8 @@ pub enum ProjectCmd {
     Show(ShowArgs),
     /// List projects newest first, one keyset page at a time.
     List(ListArgs),
+    /// Read the body-free change feed: one frame per committed mutation.
+    Changes(ChangesArgs),
 }
 
 /// Args for `project create`.
@@ -116,6 +122,17 @@ pub struct ListArgs {
     pub limit: Option<i64>,
 }
 
+/// Args for `project changes`.
+#[derive(ClapArgs, Debug)]
+pub struct ChangesArgs {
+    /// Frames after this `seq` (default 0, the start).
+    #[arg(long)]
+    pub after: Option<i64>,
+    /// Page size, 1–1000 (default 100).
+    #[arg(long)]
+    pub limit: Option<i64>,
+}
+
 /// Run one `project` verb.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
@@ -136,6 +153,14 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         ProjectCmd::List(l) => {
             let resp = authority::run(&mut ctx, &operator, list_request(l))?;
             emit(json_flag, &resp, |out| render_page(out, &resp))
+        }
+        ProjectCmd::Changes(c) => {
+            let req = changes::Request {
+                after: c.after,
+                limit: c.limit,
+            };
+            let frames = authority::run(&mut ctx, &operator, req)?;
+            emit(json_flag, &frames, |out| render_changes(out, &frames))
         }
     }
 }
@@ -225,6 +250,24 @@ fn render_page(out: &mut dyn std::io::Write, page: &list::Response) -> std::io::
     }
     if let Some(cursor) = &page.next_cursor {
         writeln!(out, "next page: --cursor {cursor}")?;
+    }
+    Ok(())
+}
+
+/// One line per frame, then the next read's cursor when there was a frame.
+fn render_changes(out: &mut dyn std::io::Write, frames: &[ChangeFrame]) -> std::io::Result<()> {
+    if frames.is_empty() {
+        writeln!(out, "no changes")?;
+    }
+    for f in frames {
+        writeln!(
+            out,
+            "{:<8} {:<8} {}  {}",
+            f.seq, f.op, f.project_id, f.event_id
+        )?;
+    }
+    if let Some(last) = frames.last() {
+        writeln!(out, "next: --after {}", last.seq)?;
     }
     Ok(())
 }

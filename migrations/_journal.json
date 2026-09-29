@@ -186,6 +186,12 @@
       "name": "0031_projects.sql",
       "hash": "sha256:43496a9188885f1f4f51cd0f3f3ddc0d1e676b33cc965707a091b472741218e9",
       "created_at": 1790624111
+    },
+    {
+      "idx": 31,
+      "name": "0032_project_changes.sql",
+      "hash": "sha256:8a72f0f82b6f237f19ace7c97da3b9f7a6e7029f79fc615199650688cd792d77",
+      "created_at": 1790649859
     }
   ]
 }

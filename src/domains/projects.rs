@@ -12,6 +12,8 @@
 pub mod activity;
 /// The capability envelope every core runs under, and the verb table.
 pub mod authority;
+/// `project changes`: the body-free change feed and its writers.
+pub mod changes;
 /// A create request checked against every charter rule.
 pub mod charter;
 /// `project create`: a draft charter and its `project.created` event.

@@ -130,6 +130,10 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "project_work_packets",
     "project_evidence",
     "project_evidence_criteria",
+    // The body-free change feed (#324), outside the project registry so a
+    // deletion row outlives its project; a relay cursor is one of its `seq`s,
+    // so a rebuild must keep them (`rebuild_copy_history`).
+    "project_changes",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.

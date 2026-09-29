@@ -240,6 +240,35 @@ pub struct ProjectCriteria {
     pub archived_at: Integer,
 }
 
+/// `project_changes`: the body-free change feed (#324) — one id-only row per
+/// committed project mutation, written in the mutation's own transaction, and
+/// one `deleted` row per hard deletion. Deliberately **not** in
+/// [`PROJECT_TABLES`] and without a foreign key to `projects`: a deletion row
+/// must outlive the project it names. The `AUTOINCREMENT` key is the reader's
+/// cursor, monotonic and never reused; nothing prunes the feed.
+#[table(name = "project_changes")]
+pub struct ProjectChanges {
+    /// Monotonic position, and the cursor a reader resumes from.
+    #[column(primary_key, autoincrement)]
+    pub seq: Integer,
+    /// The project that changed.
+    #[column(not_null)]
+    pub project_id: Text,
+    /// The activity event recorded with the change; the project's own id for
+    /// a deletion, whose audit trail is gone.
+    #[column(not_null)]
+    pub event_id: Text,
+    /// Kind of entity the event happened to (`project`, …).
+    #[column(not_null)]
+    pub entity_type: Text,
+    /// `changed` or `deleted`.
+    #[column(not_null)]
+    pub op: Text,
+    /// Epoch milliseconds, the mutation's own timestamp.
+    #[column(not_null)]
+    pub created_at: Integer,
+}
+
 #[cfg(test)]
 #[path = "tests/schema_projects.rs"]
 mod tests;

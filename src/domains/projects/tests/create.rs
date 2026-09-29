@@ -6,7 +6,8 @@
 )]
 //! Test mirror for `src/domains/projects/create.rs`, against a real temp data
 //! directory: the draft charter and its view, exactly one `project.created`
-//! event plus one `activity_log` row, and — for every refusal, including a
+//! event (and its one `project_changes` feed row) plus one `activity_log`
+//! row, and — for every refusal, including a
 //! failure after the project row is written — no row left behind.
 
 use comemory::config::{Config, Paths};
@@ -51,12 +52,13 @@ impl Home {
     }
 
     /// Row counts of every table a create writes.
-    fn counts(&self) -> [i64; 4] {
+    fn counts(&self) -> [i64; 5] {
         [
             "projects",
             "project_repositories",
             "project_criteria",
             "project_activity_events",
+            "project_changes",
         ]
         .map(|t| self.count(t))
     }
@@ -149,7 +151,7 @@ fn creates_a_draft_charter_with_one_event_and_one_telemetry_row() {
         payload,
         r#"{"name":"Ship the Governed Delivery Loop!","keyPrefix":"SHIP","repositoryCount":1,"criteriaCount":2}"#
     );
-    assert_eq!(home.counts(), [1, 1, 2, 1]);
+    assert_eq!(home.counts(), [1, 1, 2, 1, 1]);
     let telemetry: Vec<(String, i64)> = home
         .conn
         .prepare("SELECT command, ok FROM activity_log")
@@ -328,7 +330,7 @@ fn shape_refusals_are_invariants_and_a_bad_date_is_a_schema_edge() {
         let (got_class, details, _) = refusal(home.create(req));
         assert_eq!((got_class, details.as_str()), (class, expected));
     }
-    assert_eq!(home.counts(), [0, 0, 0, 0]);
+    assert_eq!(home.counts(), [0, 0, 0, 0, 0]);
 }
 
 #[test]
@@ -365,7 +367,7 @@ fn a_failure_after_the_project_row_rolls_everything_back() {
         .unwrap();
     let e = home.create(request("Late failure", "LATE")).unwrap_err();
     assert!(e.to_string().contains("event refused"), "{e}");
-    assert_eq!(home.counts(), [0, 0, 0, 0]);
+    assert_eq!(home.counts(), [0, 0, 0, 0, 0]);
     let failed: i64 = home
         .conn
         .query_row(
