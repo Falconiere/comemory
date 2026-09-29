@@ -24,6 +24,8 @@ pub mod keyset;
 pub mod limits;
 /// `project list`: a keyset page of charters.
 pub mod list;
+/// `project plan show`: the committed plan at the current version.
+pub mod plan;
 /// The principal kinds and ids an envelope carries.
 pub mod principal;
 /// The idempotent-command runner every mutation goes through.

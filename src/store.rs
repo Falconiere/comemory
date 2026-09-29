@@ -137,6 +137,8 @@ mod orm;
 pub mod project_activity;
 /// `project_changes`: the body-free change feed, appended and paged by `seq`.
 pub mod project_changes;
+/// A project's plan rows: milestones, work items, criteria and dependencies.
+pub mod project_plan;
 /// `projects` charter reads: one row, a keyset page, and a page's relations.
 pub mod project_read;
 /// `project_command_receipts`: an idempotent project command's stored answer.
