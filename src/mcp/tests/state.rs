@@ -18,9 +18,12 @@
 //! `false` before the env is ever consulted.
 
 use comemory::config::{Config, Paths, env};
+use comemory::domains::projects::authority::Verb;
+use comemory::domains::projects::principal::{LOCAL_AGENT_ID, Principal};
 use comemory::mcp::McpOptions;
 use comemory::mcp::state::McpState;
 use comemory::store::memory_list::{ListFilter, SortBy, list_memories};
+use comemory::utilities::error_code::classify;
 use tempfile::{TempDir, tempdir};
 
 /// A session over a real `comemory.db` under `dir`, scoped to `app`.
@@ -111,4 +114,48 @@ fn track_delegates_to_the_shared_access_tracking_setting() {
         "a writable session must follow config::env::access_tracking_enabled, \
          the one definition cli and serve also read"
     );
+}
+
+/// Every project tool runs as the local agent (#315): holding all six
+/// capabilities, it is admitted on every shared verb, yet by principal kind
+/// it cannot approve, request changes, reject, complete, cancel or delete —
+/// on a read-write session as on a read-only one.
+#[test]
+fn the_project_envelope_holds_every_capability_and_no_human_verb() {
+    use Verb as V;
+    let dir = tempdir().expect("tempdir");
+    let envelope = state_in(&dir, false).project_envelope();
+    assert_eq!(envelope.principal(), &Principal::agent(LOCAL_AGENT_ID));
+    for verb in [
+        V::ProjectShow,
+        V::ProjectList,
+        V::PlanRead,
+        V::ProposalRead,
+        V::WorkItemRead,
+        V::EvidenceRead,
+        V::ActivityRead,
+        V::ProposalCreate,
+        V::WorkPacketCreate,
+        V::WorkItemTransition,
+        V::ExecutionUpdate,
+        V::EvidenceCreate,
+        V::HealthUpdate,
+    ] {
+        assert!(envelope.authorize(verb).is_ok(), "{verb:?} refused");
+    }
+    for verb in [
+        V::ProposalApprove,
+        V::ProposalRequestChanges,
+        V::ProposalReject,
+        V::ProjectComplete,
+        V::WorkItemComplete,
+        V::ProjectCancel,
+        V::ProjectDelete,
+    ] {
+        let e = envelope.authorize(verb).expect_err("a human verb admitted");
+        assert_eq!(classify(&e).0, "project_agent_scope", "{verb:?}");
+        assert_eq!(e.to_string(), "This command requires a signed-in human");
+    }
+    let read_only = tempdir().expect("tempdir");
+    assert_eq!(state_in(&read_only, true).project_envelope(), envelope);
 }
