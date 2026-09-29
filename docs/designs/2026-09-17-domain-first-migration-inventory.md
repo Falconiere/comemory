@@ -704,7 +704,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/projects/show.rs | comemory::domains::projects::show; preserve | src/domains/projects/tests/show.rs | none | domains::projects | src/domains/projects/show.rs | retain |
 | src/domains/projects/slug.rs | comemory::domains::projects::slug; preserve | src/domains/projects/tests/slug.rs | none | domains::projects | src/domains/projects/slug.rs | retain |
 | src/domains/projects/timestamp.rs | comemory::domains::projects::timestamp; preserve | src/domains/projects/tests/timestamp.rs | none | domains::projects | src/domains/projects/timestamp.rs | retain |
-| src/domains/projects/view.rs | comemory::domains::projects::view; preserve | none | none | domains::projects | src/domains/projects/view.rs | retain |
+| src/domains/projects/view.rs | comemory::domains::projects::view; preserve | src/domains/projects/tests/view.rs | none | domains::projects | src/domains/projects/view.rs | retain |
 | src/domains/retrieval.rs | comemory::domains::retrieval; crate-root-alias | none | none | domains::retrieval | src/domains/retrieval.rs | retain |
 | src/domains/retrieval/bundle.rs | comemory::domains::retrieval::bundle; crate-root-alias | src/domains/retrieval/tests/bundle.rs | none | domains::retrieval | src/domains/retrieval/bundle.rs | retain |
 | src/domains/retrieval/code_prior.rs | comemory::domains::retrieval::code_prior; crate-root-alias | src/domains/retrieval/tests/code_prior.rs | none | domains::retrieval | src/domains/retrieval/code_prior.rs | retain |

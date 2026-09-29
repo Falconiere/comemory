@@ -164,3 +164,44 @@ fn archived_projects_stay_out_unless_asked_and_filters_narrow() {
         .unwrap();
     assert!(active.projects.is_empty());
 }
+
+#[test]
+fn a_cursor_walk_keeps_its_filters_across_rows_sharing_one_millisecond() {
+    let mut home = Seeded::new(6);
+    home.conn
+        .execute_batch("UPDATE projects SET created_at = 1000")
+        .unwrap();
+    let archived = [home.ids[1].clone(), home.ids[4].clone()];
+    for id in &archived {
+        home.conn
+            .execute_batch(&format!(
+                "UPDATE projects SET archived_at = 5 WHERE id = '{id}'"
+            ))
+            .unwrap();
+    }
+    let mut seen = Vec::new();
+    let mut cursor = None;
+    loop {
+        let req = Request {
+            limit: Some(1),
+            cursor,
+            status: Some("draft".into()),
+            ..Request::default()
+        };
+        let page = home.list(req).unwrap();
+        seen.extend(page.projects.into_iter().map(|p| p.id));
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    let mut expected: Vec<String> = home
+        .ids
+        .iter()
+        .filter(|id| !archived.contains(id))
+        .cloned()
+        .collect();
+    expected.sort();
+    expected.reverse();
+    assert_eq!(seen, expected);
+}

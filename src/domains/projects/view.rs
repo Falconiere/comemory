@@ -12,6 +12,7 @@ use crate::domains::projects::timestamp::iso;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::project_read::{self, CriterionRow, ProjectRow};
+use crate::utilities::project_error::ProjectError;
 
 /// One project-level success criterion.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -96,14 +97,13 @@ pub fn load(conn: &Connection, rows: Vec<ProjectRow>) -> Result<Vec<ProjectView>
             .or_default()
             .push(criterion(row));
     }
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|row| {
             let repos = repositories.remove(&row.id).unwrap_or_default();
             let crits = criteria.remove(&row.id).unwrap_or_default();
             project(row, repos, crits)
         })
-        .collect())
+        .collect()
 }
 
 /// One stored criterion as its view.
@@ -124,10 +124,21 @@ fn project(
     row: ProjectRow,
     repositories: Vec<String>,
     criteria: Vec<CriterionView>,
-) -> ProjectView {
+) -> Result<ProjectView> {
     let constraints = string_array(&row.constraints, &row.id, "projects.constraints");
     let non_goals = string_array(&row.non_goals, &row.id, "projects.non_goals");
-    ProjectView {
+    let stamp = |ms: i64, column: &str| rendered(ms, &row.id, column);
+    let target_date = row
+        .target_date
+        .map(|ms| stamp(ms, "target_date"))
+        .transpose()?;
+    let created_at = stamp(row.created_at, "created_at")?;
+    let updated_at = stamp(row.updated_at, "updated_at")?;
+    let archived_at = row
+        .archived_at
+        .map(|ms| stamp(ms, "archived_at"))
+        .transpose()?;
+    Ok(ProjectView {
         id: row.id,
         slug: row.slug,
         key_prefix: row.key_prefix,
@@ -138,17 +149,30 @@ fn project(
         status: row.status,
         health: row.health,
         lead_user_id: row.lead_principal_id,
-        target_date: row.target_date.and_then(iso),
+        target_date,
         current_plan_version: row.current_plan_version,
         version: row.version,
         completion_policy: row.completion_policy,
         created_by: row.creator_principal_id,
-        created_at: iso(row.created_at).unwrap_or_default(),
-        updated_at: iso(row.updated_at).unwrap_or_default(),
-        archived_at: row.archived_at.and_then(iso),
+        created_at,
+        updated_at,
+        archived_at,
         repositories,
         criteria,
-    }
+    })
+}
+
+/// A stored epoch-millisecond column as ISO-8601; a value outside the
+/// representable range is a corrupt row, refused as an `internal_error`
+/// rather than rendered as an empty or missing date.
+fn rendered(ms: i64, row_id: &str, column: &str) -> Result<String> {
+    iso(ms).ok_or_else(|| {
+        ProjectError::Invariant {
+            invariant: "project_timestamp_range".to_string(),
+            message: format!("projects.{column} of {row_id} is outside the representable range"),
+        }
+        .into()
+    })
 }
 
 /// A stored JSON `string[]`; an unreadable value degrades to empty with a
@@ -159,3 +183,7 @@ fn string_array(raw: &str, row_id: &str, column: &str) -> Vec<String> {
         Vec::new()
     })
 }
+
+#[cfg(test)]
+#[path = "tests/view.rs"]
+mod tests;

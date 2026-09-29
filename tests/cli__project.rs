@@ -256,3 +256,66 @@ fn every_flag_reaches_the_core() {
     assert_eq!(code, 64, "{stderr}");
     assert!(stderr.contains("health is invalid"), "{stderr}");
 }
+
+#[test]
+fn the_tty_views_render_every_charter_line_and_the_next_page() {
+    let home = CliHome::new();
+    assert_eq!(home.run_ok(&["project", "list"]), "no projects\n");
+    let created = home.run_json(&[
+        "project",
+        "create",
+        "--name",
+        "Render me",
+        "--key-prefix",
+        "TTY",
+        "--outcome",
+        "Rendered",
+        "--success-criterion",
+        "Lines print",
+        "--constraint",
+        "Plain text",
+        "--non-goal",
+        "Colour",
+        "--repository",
+        "acme/api",
+        "--target-date",
+        "2026-10-01",
+    ]);
+    let id = created["project"]["id"].as_str().unwrap().to_string();
+    let shown = home.run_ok(&["project", "show", &id]);
+    for line in [
+        format!("id            {id}"),
+        "key           TTY".to_string(),
+        "slug          render-me".to_string(),
+        "name          Render me".to_string(),
+        "status        draft (unknown)".to_string(),
+        "lead          local-operator".to_string(),
+        "target        2026-10-01T00:00:00.000Z".to_string(),
+        "outcome       Rendered".to_string(),
+        "criterion     [open] Lines print".to_string(),
+        "constraint    Plain text".to_string(),
+        "non-goal      Colour".to_string(),
+        "repository    acme/api".to_string(),
+    ] {
+        assert!(
+            shown.lines().any(|l| l == line),
+            "missing `{line}` in:\n{shown}"
+        );
+    }
+    create(&home, "TWO");
+    let page = home.run_ok(&["project", "list", "--limit", "1"]);
+    let lines: Vec<&str> = page.lines().collect();
+    assert_eq!(lines.len(), 2, "{page}");
+    assert!(
+        lines[0].starts_with("TWO        draft     unknown   "),
+        "{page}"
+    );
+    assert!(lines[1].starts_with("next page: --cursor "), "{page}");
+    let cursor = lines[1].trim_start_matches("next page: --cursor ");
+    let last = home.run_ok(&["project", "list", "--limit", "1", "--cursor", cursor]);
+    assert!(
+        last.starts_with("TTY        draft     unknown   ") && last.contains(&id),
+        "{last}"
+    );
+    assert!(!last.contains("next page"), "{last}");
+}

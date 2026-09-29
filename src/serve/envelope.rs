@@ -209,10 +209,6 @@ fn meta(command: &str, elapsed_ms: u64) -> Meta<'_> {
     }
 }
 
-/// Build `{ok:false, error:{code, message, details?}, meta}` at a given
-/// status. Every error constructor funnels through here, so every error body
-/// serializes `ok, error{code, message, details}, meta` in that order — the
-/// platform's order, which a sorted `json!` map would not keep.
 /// A fixed refusal the server raises itself (no crate [`Error`], no
 /// `details`, no elapsed time): the token guard, the write permit, the
 /// read-only gate and the confirm gate.
@@ -220,6 +216,10 @@ fn refusal(command: &str, status: StatusCode, code: &'static str, message: &str)
     error_response(command, status, code, message.to_string(), None, 0)
 }
 
+/// Build `{ok:false, error:{code, message, details?}, meta}` at a given
+/// status. Every error constructor funnels through here, so every error body
+/// serializes `ok, error{code, message, details}, meta` in that order — the
+/// platform's order, which a sorted `json!` map would not keep.
 fn error_response(
     command: &str,
     status: StatusCode,

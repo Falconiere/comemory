@@ -352,7 +352,7 @@ view over the same cores; ◇ = a job-creating route)
 
 **Projects** (`serve/routes/projects.rs`, #326 — the platform's `/v1/projects`
 paths, so a hosted cutover forwards without remapping; see
-[the projects scenario](../scenarios/projects.md))
+[the projects scenario](../scenarios/project.md))
 
 | Method + path | CLI command | Notes |
 |---|---|---|

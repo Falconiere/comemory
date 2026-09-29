@@ -63,6 +63,7 @@ repository, no criterion, no activity event.
   `project list` return the same view; exactly one `project.created` activity
   event is written with the charter.
 - **Covered by:** `tests/cli__project.rs::a_project_is_created_shown_and_listed_offline`,
+  `tests/cli__project.rs::the_tty_views_render_every_charter_line_and_the_next_page`,
   `src/domains/projects/tests/create.rs::creates_a_draft_charter_with_one_event_and_one_telemetry_row`
 
 ### project-02 Every flag reaches the core

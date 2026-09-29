@@ -10,6 +10,7 @@ fn iso_renders_like_to_iso_string() {
     assert_eq!(iso(1_727_481_600_123).unwrap(), "2024-09-28T00:00:00.123Z");
     assert_eq!(iso(0).unwrap(), "1970-01-01T00:00:00.000Z");
     assert!(now_ms() > 1_727_481_600_000);
+    assert_eq!(iso(i64::MAX), None, "past the representable range");
 }
 
 #[test]

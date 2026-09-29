@@ -37,10 +37,10 @@ _None._
 - **Flags:** `--read-only`
 - **Setup:** throwaway `COMEMORY_DATA_DIR`, no corpus
 - **Command:** `comemory mcp` (spawned by the rmcp client over child stdio)
-- **Expect:** `initialize` succeeds; `tools/list` is exactly the eleven
+- **Expect:** `initialize` succeeds; `tools/list` is exactly the seventeen
   `comemory::mcp::catalog::TOOLS` names, each with its catalog description
   verbatim and an object `inputSchema`; `instructions` names `find` and
-  `feedback`; `--read-only` lists the same eleven.
+  `feedback`; `--read-only` lists the same seventeen.
 - **Covered by:** `tests/cli_scenario_mcp.rs::mcp_01_lists_catalog`
 
 ### mcp-02 Recall returns hits and a judgeable query id
