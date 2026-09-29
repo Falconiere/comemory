@@ -113,6 +113,78 @@ fn the_agent_reads_back_what_the_operator_chartered() {
     assert_eq!(body["error"]["code"], "project_not_found");
 }
 
+/// Run `comemory --json <args>` in the server's data directory, as the local
+/// operator; its parsed stdout.
+fn cli(home: &ServeHome, args: &[&str]) -> Value {
+    let out = Command::cargo_bin("comemory")
+        .unwrap()
+        .env("COMEMORY_DATA_DIR", home.data_dir())
+        .arg("--json")
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn the_agent_reads_the_plan_the_store_holds() {
+    const PROJECT: &str = "11111111-1111-4111-8111-111111111111";
+    let home = ServeHome::new();
+    cli(
+        &home,
+        &["project", "create", "--id", PROJECT, "--name", "Plan"]
+            .into_iter()
+            .chain(["--key-prefix", "PLAN", "--outcome", "o"])
+            .collect::<Vec<_>>(),
+    );
+    let plan = home.get(&format!("/projects/{PROJECT}/plan"));
+    assert_eq!(
+        plan,
+        json!({"plan": {
+            "projectId": PROJECT, "planVersion": 0,
+            "milestones": [], "workItems": [], "criteria": [], "dependencies": []
+        }})
+    );
+
+    rusqlite::Connection::open(home.data_dir().join("comemory.db"))
+        .unwrap()
+        .execute_batch(include_str!("fixtures/projects/plan_seed.sql"))
+        .unwrap();
+    let plan = home.get(&format!("/projects/{}/plan", PROJECT.to_uppercase()));
+    // HTTP re-keys the body, so the CLI's plan compares as a value.
+    assert_eq!(plan, cli(&home, &["project", "plan", "show", PROJECT]));
+    let plan = &plan["plan"];
+    assert_eq!(plan["planVersion"], 3);
+    let live: Vec<&str> = plan["workItems"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        live,
+        ["Render the items", "Fix the edge", "Build the reader"]
+    );
+    assert_eq!(plan["milestones"].as_array().unwrap().len(), 2);
+    assert_eq!(plan["criteria"].as_array().unwrap().len(), 2);
+    assert_eq!(plan["dependencies"].as_array().unwrap().len(), 2);
+    assert!(
+        !plan
+            .to_string()
+            .contains("b0000000-0000-4000-8000-000000000003")
+    );
+
+    let (status, body) = home.get_raw("/projects/not-a-uuid/plan");
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "invalid_request");
+    assert_eq!(body["error"]["message"], "projectId is invalid");
+    let (status, body) = home.get_raw("/projects/00000000-0000-4000-8000-000000000000/plan");
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(body["error"]["code"], "project_not_found");
+    assert_eq!(rows(&home), [1, 1, 1], "a plan read wrote a row");
+}
+
 #[test]
 fn malformed_input_answers_400_and_a_list_limit_422() {
     let home = ServeHome::new();

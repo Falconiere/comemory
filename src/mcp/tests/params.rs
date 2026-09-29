@@ -7,7 +7,7 @@
 )]
 //! Mirror test for `src/mcp/params.rs`: the provenance inversion that keeps an
 //! agent's inferred verdict out of the golden harvest, and the strictness the
-//! `deny_unknown_fields` derive buys.
+//! `deny_unknown_fields` derive buys, and `project_show`'s `view` choice.
 //!
 //! The two `source` words are asserted against the real
 //! `feedback_tracking::Source` parser and its stored provenance, so a rename
@@ -79,4 +79,22 @@ fn an_unknown_field_is_rejected() {
 fn a_missing_query_id_is_rejected() {
     let err = parse(json!({"used": ["ab12cd34"]})).expect_err("query_id is required");
     assert!(err.to_string().contains("query_id"), "error: {err}");
+}
+
+#[test]
+fn project_show_defaults_to_the_charter_and_refuses_an_unknown_view() {
+    use comemory::mcp::params::{ProjectShowParams, ProjectShowView};
+    let id = "11111111-1111-4111-8111-111111111111";
+    let parse = |value| serde_json::from_value::<ProjectShowParams>(value);
+    let bare = parse(json!({"id": id})).unwrap();
+    assert_eq!(
+        (bare.id.as_str(), bare.view),
+        (id, ProjectShowView::Charter)
+    );
+    let plan = parse(json!({"id": id, "view": "plan"})).unwrap();
+    assert_eq!(plan.view, ProjectShowView::Plan);
+    let e = parse(json!({"id": id, "view": "roadmap"})).unwrap_err();
+    assert!(e.to_string().contains("unknown variant `roadmap`"), "{e}");
+    let e = parse(json!({"id": id, "cursor": "abc"})).unwrap_err();
+    assert!(e.to_string().contains("unknown field `cursor`"), "{e}");
 }

@@ -247,6 +247,7 @@ Commands:
   show     Show one project's charter by id
   list     List projects newest first, one keyset page at a time
   changes  Read the body-free change feed: one frame per committed mutation
+  plan     Read a project's committed plan
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -266,6 +267,9 @@ Examples:
 
   # Read it back
   comemory project show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
+
+  # Read its committed plan: milestones, work items, criteria, dependencies
+  comemory project plan show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
 
   # Page through active projects, newest first
   comemory project list --status active --limit 10

@@ -4,7 +4,7 @@
 //! while a proposal's preflight and diff must tell an archived entity from an
 //! unknown one.
 
-use rusqlite::{Connection, Row};
+use rusqlite::Connection;
 use toolu_orm::core::query_column::CommonOps;
 
 use super::orm;
@@ -109,17 +109,7 @@ pub struct PlanRows {
 
 /// The plan rows of `project_id`, one query per table.
 pub fn plan_rows(conn: &Connection, project_id: &str) -> Result<PlanRows> {
-    Ok(PlanRows {
-        milestones: milestones(conn, project_id)?,
-        work_items: work_items(conn, project_id)?,
-        criteria: criteria(conn, project_id)?,
-        dependencies: dependencies(conn, project_id)?,
-    })
-}
-
-/// `project_milestones` of `project_id`.
-fn milestones(conn: &Connection, project_id: &str) -> Result<Vec<MilestoneRow>> {
-    let query = ProjectMilestones::select()
+    let milestones = ProjectMilestones::select()
         .columns_typed(&[
             &ms::id,
             &ms::name,
@@ -132,22 +122,7 @@ fn milestones(conn: &Connection, project_id: &str) -> Result<Vec<MilestoneRow>> 
         .filter(ms::project_id.eq(project_id))
         .order_by(ms::position.asc())
         .order_by(ms::id.asc());
-    orm::query_all(conn, query.to_sql(), |r| {
-        Ok(MilestoneRow {
-            id: r.get(0)?,
-            name: r.get(1)?,
-            description: r.get(2)?,
-            target_date: r.get(3)?,
-            position: r.get(4)?,
-            status: r.get(5)?,
-            archived_at: r.get(6)?,
-        })
-    })
-}
-
-/// `project_work_items` of `project_id`.
-fn work_items(conn: &Connection, project_id: &str) -> Result<Vec<WorkItemRow>> {
-    let query = ProjectWorkItems::select()
+    let work_items = ProjectWorkItems::select()
         .columns_typed(&[
             &item::id,
             &item::number,
@@ -169,52 +144,84 @@ fn work_items(conn: &Connection, project_id: &str) -> Result<Vec<WorkItemRow>> {
         .filter(item::project_id.eq(project_id))
         .order_by(item::position.asc())
         .order_by(item::number.asc());
-    orm::query_all(conn, query.to_sql(), work_item)
-}
-
-/// Decode one [`work_items`] row.
-fn work_item(r: &Row<'_>) -> rusqlite::Result<WorkItemRow> {
-    Ok(WorkItemRow {
-        id: r.get(0)?,
-        number: r.get(1)?,
-        parent_work_item_id: r.get(2)?,
-        milestone_id: r.get(3)?,
-        kind: r.get(4)?,
-        title: r.get(5)?,
-        description: r.get(6)?,
-        status: r.get(7)?,
-        priority: r.get(8)?,
-        estimate: r.get(9)?,
-        assignee_principal_type: r.get(10)?,
-        assignee_principal_id: r.get(11)?,
-        repo: r.get(12)?,
-        version: r.get(13)?,
-        position: r.get(14)?,
-        archived_at: r.get(15)?,
+    let milestones = orm::query_all(conn, milestones.to_sql(), |r| {
+        Ok(MilestoneRow {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            description: r.get(2)?,
+            target_date: r.get(3)?,
+            position: r.get(4)?,
+            status: r.get(5)?,
+            archived_at: r.get(6)?,
+        })
+    })?;
+    let work_items = orm::query_all(conn, work_items.to_sql(), |r| {
+        Ok(WorkItemRow {
+            id: r.get(0)?,
+            number: r.get(1)?,
+            parent_work_item_id: r.get(2)?,
+            milestone_id: r.get(3)?,
+            kind: r.get(4)?,
+            title: r.get(5)?,
+            description: r.get(6)?,
+            status: r.get(7)?,
+            priority: r.get(8)?,
+            estimate: r.get(9)?,
+            assignee_principal_type: r.get(10)?,
+            assignee_principal_id: r.get(11)?,
+            repo: r.get(12)?,
+            version: r.get(13)?,
+            position: r.get(14)?,
+            archived_at: r.get(15)?,
+        })
+    })?;
+    let (criteria, dependencies) = criteria_and_edges(conn, project_id)?;
+    Ok(PlanRows {
+        milestones,
+        work_items,
+        criteria,
+        dependencies,
     })
 }
 
-/// `project_criteria` of `project_id`, both levels.
-fn criteria(conn: &Connection, project_id: &str) -> Result<Vec<PlanCriterionRow>> {
-    let query = ProjectCriteria::select()
-        .columns_typed(&[
-            &crit::id,
-            &crit::project_id,
-            &crit::description,
-            &crit::required,
-            &crit::evidence_requirement,
-            &crit::resolution,
-            &crit::resolution_rationale,
-            &crit::position,
-            &crit::work_item_id,
-            &crit::archived_at,
-        ])
-        .filter(crit::project_id.eq(project_id))
-        .order_by(crit::position.asc())
-        .order_by(crit::id.asc());
-    orm::query_all(conn, query.to_sql(), |r| {
-        Ok(PlanCriterionRow {
-            criterion: CriterionRow {
+/// The criteria of both levels and the `blocks` edges of `project_id`.
+fn criteria_and_edges(
+    conn: &Connection,
+    project_id: &str,
+) -> Result<(Vec<PlanCriterionRow>, Vec<DependencyRow>)> {
+    let edges = ProjectWorkItemDependencies::select()
+        .columns_typed(&[&dep::blocker_id, &dep::blocked_id])
+        .filter(dep::project_id.eq(project_id))
+        .order_by(dep::blocker_id.asc())
+        .order_by(dep::blocked_id.asc())
+        .to_sql();
+    let edges = orm::query_all(conn, edges, |r| {
+        Ok(DependencyRow {
+            blocker_id: r.get(0)?,
+            blocked_id: r.get(1)?,
+        })
+    })?;
+    let criteria = orm::query_all(
+        conn,
+        ProjectCriteria::select()
+            .columns_typed(&[
+                &crit::id,
+                &crit::project_id,
+                &crit::description,
+                &crit::required,
+                &crit::evidence_requirement,
+                &crit::resolution,
+                &crit::resolution_rationale,
+                &crit::position,
+                &crit::work_item_id,
+                &crit::archived_at,
+            ])
+            .filter(crit::project_id.eq(project_id))
+            .order_by(crit::position.asc())
+            .order_by(crit::id.asc())
+            .to_sql(),
+        |r| {
+            let criterion = CriterionRow {
                 id: r.get(0)?,
                 project_id: r.get(1)?,
                 description: r.get(2)?,
@@ -223,26 +230,15 @@ fn criteria(conn: &Connection, project_id: &str) -> Result<Vec<PlanCriterionRow>
                 resolution: r.get(5)?,
                 resolution_rationale: r.get(6)?,
                 position: r.get(7)?,
-            },
-            work_item_id: r.get(8)?,
-            archived_at: r.get(9)?,
-        })
-    })
-}
-
-/// `project_work_item_dependencies` of `project_id`.
-fn dependencies(conn: &Connection, project_id: &str) -> Result<Vec<DependencyRow>> {
-    let query = ProjectWorkItemDependencies::select()
-        .columns_typed(&[&dep::blocker_id, &dep::blocked_id])
-        .filter(dep::project_id.eq(project_id))
-        .order_by(dep::blocker_id.asc())
-        .order_by(dep::blocked_id.asc());
-    orm::query_all(conn, query.to_sql(), |r| {
-        Ok(DependencyRow {
-            blocker_id: r.get(0)?,
-            blocked_id: r.get(1)?,
-        })
-    })
+            };
+            Ok(PlanCriterionRow {
+                criterion,
+                work_item_id: r.get(8)?,
+                archived_at: r.get(9)?,
+            })
+        },
+    )?;
+    Ok((criteria, edges))
 }
 
 #[cfg(test)]

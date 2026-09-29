@@ -2,8 +2,8 @@
 
 Engine-owned project management (epic #261): charter a project, read it back
 and page through the charters — offline, in a fresh data directory, with no
-account, and poll the body-free change feed. Nested: `create` / `show` /
-`list` / `changes`. Each verb is a thin shell over a
+account, read a project's committed plan, and poll the body-free change
+feed. Nested: `create` / `show` / `list` / `changes` / `plan show`. Each verb is a thin shell over a
 `domains::projects` core that the HTTP routes and the MCP readers
 (`project_list`, `project_show`) call too. Every core runs under a capability
 envelope (#315), chosen by the surface, never by a header or an argument:
@@ -32,18 +32,19 @@ until their project is hard-deleted.
 `tests/serve__routes__projects.rs`,
 `tests/cli_scenario_mcp.rs`, colocated `src/domains/projects/tests/*`,
 `src/store/tests/projects.rs`, `src/store/tests/project_read.rs`,
-`tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`
+`tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`,
+`tests/cli__project_plan.rs`, `src/store/tests/project_plan.rs`
 
 **HTTP:** `POST /api/v1/projects` (`403 project_agent_scope` for the local
 agent), `GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
-`GET /api/v1/projects/changes` — see the
+`GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/changes` — see the
 [HTTP API guide](../guides/http-api.md#route-map).
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
 ## Positionals
 
-`show <ID>` — the project's UUID, in either case.
+`show <ID>` and `plan show <ID>` — the project's UUID, in either case.
 
 ## Flags
 
@@ -242,3 +243,36 @@ warning never logs the value.
   `src/domains/projects/tests/receipt.rs`,
   `src/serve/routes/tests/projects.rs::a_cli_receipt_replays_through_the_http_create_path`,
   `tests/serve__routes__projects.rs::malformed_input_answers_400_and_a_list_limit_422`
+
+### project-09 Read the committed plan
+
+- **Flags:** `--json`
+- **Setup:** a project chartered with `--id`; for the populated case, the
+  rows of `tests/fixtures/projects/plan_seed.sql` written straight into its
+  `comemory.db` (no command writes a plan before approval, #338)
+- **Command:** `comemory project plan show <ID> --json`, or
+  `GET /api/v1/projects/{id}/plan`, or MCP `project_show` with
+  `"view": "plan"`
+- **Expect:**
+  - `{plan: {projectId, planVersion, milestones, workItems, criteria,
+    dependencies}}`, the platform's `ProjectPlanResponse`. A project before
+    its first approval reads `planVersion` 0 and four empty arrays.
+  - Milestones by `(position, id)` with an ISO `targetDate`, work items by
+    `(position, number)` with their parent and milestone ids, criteria of
+    both levels by `(position, id)` (`workItemId` null for a project-level
+    one), and every `blocks` edge.
+  - An archived milestone, work item or criterion is absent, and so is every
+    edge that names an archived item.
+  - The TTY view prints `plan vN of <id>`, then one line per milestone, item
+    (`#n [status] title`), criterion (`[resolution] text (scope)`) and edge.
+  - A malformed id exits 64 (`400 invalid_request`, `projectId is invalid`),
+    an unknown one exits 64 (`404 project_not_found`). An agent without
+    `project.read` is refused with `403 project_agent_scope` before the store
+    opens.
+- **Covered by:** `tests/cli__project_plan.rs::a_fresh_project_reads_plan_version_zero_with_empty_collections`,
+  `tests/cli__project_plan.rs::a_seeded_plan_renders_both_criteria_levels_and_every_live_dependency`,
+  `tests/cli__project_plan.rs::a_malformed_or_unknown_id_exits_64_naming_the_refusal`,
+  `tests/serve__routes__projects.rs::the_agent_reads_the_plan_the_store_holds`,
+  `tests/cli_scenario_mcp.rs::mcp_09_project_readers_work_read_only`,
+  `src/domains/projects/tests/plan.rs::an_agent_without_project_read_is_refused_before_the_store_opens`,
+  `src/store/tests/project_plan.rs::every_plan_row_comes_back_in_display_order_archived_included`

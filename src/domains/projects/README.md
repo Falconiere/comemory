@@ -7,7 +7,7 @@ change feed, and the command cores the CLI, the loopback HTTP server and the
 MCP catalog all call.
 
 **What does NOT belong here:** SQL (every project statement lives in
-`store::{projects,project_read,project_activity,project_changes}`, the
+`store::{projects,project_read,project_plan,project_activity,project_changes}`, the
 declared tables in `store::schema_projects`), delivery (no file here imports `cli`, `serve` or
 `mcp`), and the refusal vocabulary, which is `utilities::project_error`.
 
@@ -25,6 +25,7 @@ One line per file, named after its primary item:
 | `keyset.rs` | `decode` | The platform's `<epochMillis>:<uuid>` keyset cursor over `(created_at, id)`: encode, and decode with a `400 invalid_request` for anything outside `^\d{1,15}:[0-9a-f-]{36}$`; later pages reuse it |
 | `limits.rs` | `text` | The platform's charter and paging caps (`project-limits.ts`), counted in UTF-16 units, each breach a `422 invalid_request` naming field, reason and limit |
 | `list.rs` | `Request` | `project list` / `GET /projects`: a keyset page newest first, filtered by status, health and `includeArchived` |
+| `plan.rs` | `Request` | `project plan show` / `GET /projects/{id}/plan` / `project_show` with `view: "plan"` (`Verb::PlanRead`): the platform's `ProjectPlanResponse` at the current version; `plan_view` drops archived milestones, items and criteria and every edge naming an archived item, the projection later plan tasks reuse |
 | `receipt.rs` | `run` | The idempotent-command runner every mutation goes through (#327): a `(principal, idempotencyKey)`-scoped `project_command_receipts` row written in the mutation's own immediate transaction; an exact replay returns the stored response and writes nothing, any other reuse is `409 idempotency_conflict` |
 | `principal.rs` | `Principal` | The principal an envelope carries: `user` or `project_agent` plus an id; the `local-operator` and `local-agent` ids |
 | `show.rs` | `Request` | `project show` / `GET /projects/{id}`: one charter; a malformed id is `400`, an unknown one `404 project_not_found` |
@@ -155,6 +156,7 @@ Each later task adds its own group with its verbs; nothing is declared empty.
 comemory project
   create | show | list                      #326
   archive | restore | pause | resume        #328
+  plan show                                 #335 (the committed plan)
   plan …                                    plan slice (#264)
   proposal …                                #335–#338
   item …          (ready, start, …)         #351
@@ -170,7 +172,8 @@ comemory project
 The curated catalog held 15 tools before this epic; projects add eight, and
 human-only verbs get none:
 
-- readers: `project_list`, `project_show` (this task — the catalog is 17);
+- readers: `project_list`, `project_show` (the catalog is 17). The plan is a
+  `view: "plan"` of `project_show` (#335), not a row of its own;
 - writers: `project_propose`, `project_work` (ready, start),
   `project_execution` (heartbeat, block, resume, request review),
   `project_work_packet`, `project_evidence`, `project_health`.
