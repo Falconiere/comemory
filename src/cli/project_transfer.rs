@@ -1,6 +1,8 @@
 //! `comemory project export|import` (#342) — the offline transfer core over
 //! two data directories. This file owns the flags, the bundle file I/O and
-//! the TTY rendering; the cores are `domains::projects::{export, import}`.
+//! the TTY rendering, including `project show`'s transfer line and the
+//! stderr warning a bound project's mutation prints; the cores are
+//! `domains::projects::{export, import}`.
 //! A skipped import is an answer, not a failure: it exits `0` and names both
 //! digests.
 
@@ -11,9 +13,11 @@ use clap::Args as ClapArgs;
 
 use crate::cli::output::json;
 use crate::domains::projects::authority::{self, Envelope};
+use crate::domains::projects::binding::TransferView;
 use crate::domains::projects::bundle::{self, Bundle};
 use crate::domains::projects::export;
 use crate::domains::projects::import::{self, Outcome};
+use crate::domains::projects::local_only::LocalOnly;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 use crate::utilities::private_file::write_atomically;
@@ -112,6 +116,40 @@ pub fn import(
              (local digest {local}, bundle digest {digest}); both are kept"
         ),
     }?;
+    Ok(())
+}
+
+/// `project show`'s transfer line: where a transferred copy lives. An
+/// unbound project prints nothing.
+pub fn render_binding(
+    out: &mut dyn std::io::Write,
+    t: Option<&TransferView>,
+) -> std::io::Result<()> {
+    let Some(t) = t else {
+        return Ok(());
+    };
+    let way = if t.direction == "exported" {
+        "to"
+    } else {
+        "from"
+    };
+    writeln!(
+        out,
+        "transfer      {} {way} {} at {} (digest {})",
+        t.direction,
+        t.remote,
+        t.transferred_at,
+        short(&t.digest)
+    )
+}
+
+/// A transferred project's change stays local: say so on stderr, so stdout
+/// stays the project view (or its JSON, which carries the warning too).
+pub fn warn_local_only(warnings: &[LocalOnly]) -> Result<()> {
+    let mut err = std::io::stderr().lock();
+    for warning in warnings {
+        writeln!(err, "warning: {}", warning.message)?;
+    }
     Ok(())
 }
 

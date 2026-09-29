@@ -213,7 +213,10 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         }
         ProjectCmd::Show(s) => {
             let resp = authority::run(&mut ctx, &operator, show::Request { id: s.id })?;
-            emit(json_flag, &resp, |out| render_shown(out, &resp))
+            emit(json_flag, &resp, |out| {
+                render_project(out, &resp.project)?;
+                project_transfer::render_binding(out, resp.transfer.as_ref())
+            })
         }
         ProjectCmd::List(l) => {
             let resp = authority::run(&mut ctx, &operator, list_request(l))?;
@@ -246,12 +249,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 /// Run one lifecycle verb as the local operator and print the project.
 fn lifecycle(ctx: &mut Ctx<'_>, json_flag: bool, req: lifecycle::Request) -> Result<()> {
     let resp = authority::run(ctx, &Envelope::local_operator(), req)?;
-    // A transferred project's change stays local (#342): say so on stderr,
-    // so stdout stays the project view (or its JSON, which carries it too).
-    let mut err = std::io::stderr().lock();
-    for warning in &resp.warnings {
-        std::io::Write::write_fmt(&mut err, format_args!("warning: {}\n", warning.message))?;
-    }
+    project_transfer::warn_local_only(&resp.warnings)?;
     emit(json_flag, &resp, |out| render_project(out, &resp.project))
 }
 
@@ -331,25 +329,6 @@ fn render_project(out: &mut dyn std::io::Write, p: &ProjectView) -> std::io::Res
         writeln!(out, "repository    {r}")?;
     }
     writeln!(out, "created       {}", p.created_at)
-}
-
-/// `project show`: the charter, then where a transferred copy lives.
-fn render_shown(out: &mut dyn std::io::Write, resp: &show::Response) -> std::io::Result<()> {
-    render_project(out, &resp.project)?;
-    let Some(t) = &resp.transfer else {
-        return Ok(());
-    };
-    let way = if t.direction == "exported" {
-        "to"
-    } else {
-        "from"
-    };
-    let digest: String = t.digest.chars().take(12).collect();
-    writeln!(
-        out,
-        "transfer      {} {way} {} at {} (digest {digest})",
-        t.direction, t.remote, t.transferred_at
-    )
 }
 
 /// One line per project, then the next page's cursor when there is one.
