@@ -61,6 +61,14 @@ fn bare_and_reason_refusals_carry_only_their_code() {
         details_json(&ProjectError::ExecutionActorForbidden),
         r#"{"code":"forbidden"}"#
     );
+    let tier = ProjectError::TierForbidden {
+        reason: "Only a workspace owner or admin can delete a project".into(),
+    };
+    assert_eq!(
+        tier.to_string(),
+        "Only a workspace owner or admin can delete a project"
+    );
+    assert_eq!(details_json(&tier), r#"{"code":"forbidden"}"#);
     assert_eq!(
         details_json(&ProjectError::Invariant {
             invariant: "plan_operation_kind".into(),

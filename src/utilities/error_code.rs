@@ -117,7 +117,9 @@ pub fn classify_project(e: &ProjectError) -> (&'static str, Class) {
         ProjectError::DependencyCycle { .. } => ("dependency_cycle", Class::Unprocessable),
         ProjectError::ProjectAgentScope { .. } => ("project_agent_scope", Class::Forbidden),
         ProjectError::RepoNotAllowed { .. } => ("repo_not_allowed", Class::Forbidden),
-        ProjectError::ExecutionActorForbidden => ("forbidden", Class::Forbidden),
+        ProjectError::ExecutionActorForbidden | ProjectError::TierForbidden { .. } => {
+            ("forbidden", Class::Forbidden)
+        }
         ProjectError::ProposalStale { .. } => ("proposal_stale", Class::Conflict),
         ProjectError::ProposalAlreadyReviewed => ("proposal_already_reviewed", Class::Conflict),
         ProjectError::VersionConflict { .. } => ("version_conflict", Class::Conflict),

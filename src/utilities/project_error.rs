@@ -101,6 +101,13 @@ pub enum ProjectError {
     /// `403 forbidden` — acting on another actor's execution.
     #[error("Only this execution's own actor may run this command")]
     ExecutionActorForbidden,
+    /// `403 forbidden` — a human below the verb's authority tier (the
+    /// platform's `project-workspace-role.ts`); `details` is `{code}`.
+    #[error("{reason}")]
+    TierForbidden {
+        /// The platform's fixed sentence for the verb, never caller input.
+        reason: String,
+    },
     /// `409` — the proposal's base plan version is no longer current.
     #[error("The plan has changed since this proposal was written")]
     ProposalStale {
@@ -274,6 +281,7 @@ impl ProjectError {
             Self::InvalidRequest { .. }
             | Self::ProjectAgentScope { .. }
             | Self::ExecutionActorForbidden
+            | Self::TierForbidden { .. }
             | Self::ProposalAlreadyReviewed
             | Self::IdempotencyConflict
             | Self::InvalidTransition { .. }
