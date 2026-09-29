@@ -252,6 +252,8 @@ Commands:
   resume    Resume a paused project
   activity  Page one project's activity log, newest first or oldest first
   changes   Read the body-free change feed: one frame per committed mutation
+  export    Write one project, with every row it owns that travels, as a transfer bundle (receipts stay behind)
+  import    Import a transfer bundle under the same ids: an identical copy is unchanged, a different one skipped, and nothing is ever overwritten
   plan      Read a project's committed plan
   evidence  Record and page typed evidence on a project or its work items
   proposal  Submit, list and show plan proposals
@@ -308,6 +310,10 @@ Examples:
 
   # Poll the body-free change feed from a cursor
   comemory project changes --after 0 --limit 100 --json
+
+  # Move one project to another data directory under the same ids
+  comemory project export 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --output ship.json
+  comemory --data-dir ~/other project import ship.json
 ```
 
 ---

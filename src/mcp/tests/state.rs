@@ -157,6 +157,8 @@ fn the_project_envelope_holds_every_capability_and_no_human_verb() {
         V::WorkItemComplete,
         V::ProjectCancel,
         V::ProjectDelete,
+        V::ProjectExport,
+        V::ProjectImport,
     ] {
         let e = envelope.authorize(verb).expect_err("a human verb admitted");
         assert_eq!(classify(&e).0, "project_agent_scope", "{verb:?}");

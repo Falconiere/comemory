@@ -73,6 +73,10 @@ pub mod command {
     pub const PROJECT_EVIDENCE_ADD: &str = "project.evidence.add";
     /// `domains::projects::propose`.
     pub const PROJECT_PROPOSAL_SUBMIT: &str = "project.proposal.submit";
+    /// `domains::projects::export`.
+    pub const PROJECT_EXPORT: &str = "project.export";
+    /// `domains::projects::import`.
+    pub const PROJECT_IMPORT: &str = "project.import";
 }
 
 /// Who is running this command, and whether their runs are recorded at all.

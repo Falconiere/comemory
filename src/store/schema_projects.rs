@@ -1,6 +1,7 @@
-//! Declared schema — the engine's fourteen project tables (issue 325), ported
-//! column for column from the platform's Drizzle `project-schema/*-table.ts`.
-//! Charter tables and the registry live here; the work graph in
+//! Declared schema — the engine's project tables: the fourteen ported column
+//! for column from the platform's Drizzle `project-schema/*-table.ts` (issue
+//! 325), plus the engine-only transfer binding (issue 342). Charter tables,
+//! the binding and the registry live here; the work graph in
 //! [`super::schema_project_work`]; proposals, evidence, activity and receipts in
 //! [`super::schema_project_record`]. Composite keys, cascades and `NO ACTION`
 //! links are the platform's; enum columns stay unconstrained `TEXT`, so a value
@@ -36,10 +37,12 @@ use super::schema_project_work::{
 
 /// Every project-owned table, leaf first: a table precedes every table its
 /// foreign keys point at, so deleting in this order never trips a key, and
-/// copying in reverse inserts parents before children. The rebuild copy walks
-/// it today; hard deletion (#320) and transfer (#342) will walk it rather
-/// than keep their own.
+/// copying in reverse inserts parents before children. Membership is the
+/// cascade: every table here goes with its project. The rebuild copy and the
+/// transfer bundle walk it; hard deletion (#320) will walk it rather than keep
+/// its own. [`transfer_class`] says which of them travel in a bundle.
 pub const PROJECT_TABLES: &[&str] = &[
+    "project_transfer_bindings",
     "project_evidence_criteria",
     "project_evidence",
     "project_work_packets",
@@ -60,6 +63,7 @@ pub const PROJECT_TABLES: &[&str] = &[
 #[must_use]
 pub fn table_defs() -> Vec<TableDef> {
     vec![
+        ProjectTransferBindings::table_def(),
         ProjectEvidenceCriteria::table_def(),
         ProjectEvidence::table_def(),
         ProjectWorkPackets::table_def(),
@@ -75,6 +79,54 @@ pub fn table_defs() -> Vec<TableDef> {
         ProjectRepositories::table_def(),
         Projects::table_def(),
     ]
+}
+
+/// Whether a project-owned table travels in a transfer bundle (#342).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transfer {
+    /// Its rows are exported and imported under the same ids.
+    Carried,
+    /// Its rows stay in their own data directory, for the reason given.
+    Kept(&'static str),
+}
+
+/// The transfer class of `table`; `None` for a name the registry does not
+/// classify. Every table is named: there is no wildcard arm, so a new
+/// project table stays unclassified until someone decides.
+#[must_use]
+pub fn transfer_class(table: &str) -> Option<Transfer> {
+    match table {
+        "projects"
+        | "project_repositories"
+        | "project_milestones"
+        | "project_criteria"
+        | "project_work_items"
+        | "project_work_item_dependencies"
+        | "project_executions"
+        | "project_work_packets"
+        | "project_plan_proposals"
+        | "project_approvals"
+        | "project_evidence"
+        | "project_evidence_criteria"
+        | "project_activity_events" => Some(Transfer::Carried),
+        "project_command_receipts" => Some(Transfer::Kept(
+            "a receipt replays a response only the engine that ran the command produced",
+        )),
+        "project_transfer_bindings" => Some(Transfer::Kept(
+            "a binding records this data directory's link to one remote; the other side records its own",
+        )),
+        _ => None,
+    }
+}
+
+/// The names in `tables` with no [`transfer_class`], in order.
+#[must_use]
+pub fn unclassified<'a>(tables: &[&'a str]) -> Vec<&'a str> {
+    tables
+        .iter()
+        .copied()
+        .filter(|table| transfer_class(table).is_none())
+        .collect()
 }
 
 /// `projects`: one finite outcome — its charter, status, health and the plan
@@ -267,6 +319,32 @@ pub struct ProjectChanges {
     /// Epoch milliseconds, the mutation's own timestamp.
     #[column(not_null)]
     pub created_at: Integer,
+}
+
+/// `project_transfer_bindings` (#342): the one transfer this project took part
+/// in, so `project show` can say where a copy lives and a later local change
+/// can warn that it stays local. Engine-only: the platform has no such table.
+#[table(name = "project_transfer_bindings")]
+pub struct ProjectTransferBindings {
+    /// The bound project; deleting it cascades here.
+    #[column(primary_key, references = "projects(id)", on_delete = "cascade")]
+    pub project_id: Text,
+    /// `imported` (the copy came from `remote`) or `exported` (it went there).
+    #[column(not_null)]
+    pub direction: Text,
+    /// The other side: a workspace id, or a local label such as `file:<path>`.
+    #[column(not_null)]
+    pub remote: Text,
+    /// The effective digest: the transferred rows after any actor remap.
+    #[column(not_null)]
+    pub digest: Text,
+    /// The principal kind an actor remap replaced; `NULL` without a remap.
+    pub remapped_from_principal_type: Text,
+    /// The principal id an actor remap replaced.
+    pub remapped_from_principal_id: Text,
+    /// Epoch milliseconds of the transfer.
+    #[column(not_null, default = "unixepoch() * 1000")]
+    pub transferred_at: Integer,
 }
 
 #[cfg(test)]

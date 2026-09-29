@@ -299,12 +299,19 @@ pub enum Verb {
     ProjectCancel,
     /// `DELETE /projects/{id}`.
     ProjectDelete,
+    /// `project export` (#342): an engine-only transfer verb, a human's
+    /// explicit act — #343's hosted route requires a human stamp.
+    ProjectExport,
+    /// `project import` (#342): an engine-only transfer verb at `owner`,
+    /// because a bundle can carry rows attributed to principals other than
+    /// the importer.
+    ProjectImport,
 }
 
 impl Verb {
     /// Every verb, readers first, then the shared writers, then the
-    /// human-only verbs by tier.
-    pub const ALL: [Self; 28] = [
+    /// human-only verbs by tier, then the engine-only transfer verbs (#342).
+    pub const ALL: [Self; 30] = [
         Self::ProjectShow,
         Self::ProjectList,
         Self::PlanRead,
@@ -333,6 +340,8 @@ impl Verb {
         Self::ProjectComplete,
         Self::ProjectCancel,
         Self::ProjectDelete,
+        Self::ProjectExport,
+        Self::ProjectImport,
     ];
 
     /// The ported per-verb table.
@@ -357,7 +366,8 @@ impl Verb {
             Self::ProjectCreate
             | Self::ApprovalInbox
             | Self::WorkspaceActivity
-            | Self::WorkItemComplete => Rule::HumanOnly(Tier::Member),
+            | Self::WorkItemComplete
+            | Self::ProjectExport => Rule::HumanOnly(Tier::Member),
             Self::Archive
             | Self::Restore
             | Self::Pause
@@ -367,7 +377,7 @@ impl Verb {
             | Self::ProposalReject
             | Self::ProjectComplete
             | Self::ProjectCancel => Rule::HumanOnly(Tier::Lead),
-            Self::ProjectDelete => Rule::HumanOnly(Tier::Owner),
+            Self::ProjectDelete | Self::ProjectImport => Rule::HumanOnly(Tier::Owner),
         }
     }
 
@@ -380,6 +390,7 @@ impl Verb {
             }
             Self::HealthUpdate => "Only the project lead or a workspace admin may report health",
             Self::ProjectDelete => "Only a workspace owner or admin can delete a project",
+            Self::ProjectImport => "Only a workspace owner or admin can import a project",
             _ => "Only the project lead or a workspace admin may run this command",
         }
     }

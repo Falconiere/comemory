@@ -5,8 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Migrations 0031 and 0032 over a real pre-projects data directory (#325,
-//! #324): the pinned `v0.52.0` release binary writes it, the directory is
+//! Migrations 0031, 0032 and 0033 over a real pre-projects data directory
+//! (#325, #324, #342): the pinned `v0.52.0` release binary writes it, the directory is
 //! copied, and this build opens the copy. The copy reaches the current version
 //! with its memory intact and every project table and the change feed present
 //! and empty; the original is left at 30.
@@ -92,7 +92,7 @@ fn a_v0_52_0_data_directory_upgrades_to_the_project_tables() {
         "the memory survives the upgrade"
     );
 
-    assert_eq!(schema_version(copy.path()), "32");
+    assert_eq!(schema_version(copy.path()), "33");
     let conn = Connection::open(copy.path().join("comemory.db")).expect("open copy");
     for table in PROJECT_TABLES.iter().chain(&["project_changes"]) {
         let rows: i64 = conn

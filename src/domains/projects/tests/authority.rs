@@ -228,6 +228,8 @@ fn every_human_only_verb_refuses_an_agent_holding_all_six_before_the_store() {
             V::ProjectComplete,
             V::ProjectCancel,
             V::ProjectDelete,
+            V::ProjectExport,
+            V::ProjectImport,
         ]
     );
     let agent = Envelope::local_agent();
@@ -297,12 +299,13 @@ fn an_agent_reaches_exactly_the_verbs_its_capabilities_name() {
 }
 
 #[test]
-fn a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete() {
+fn a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete_and_import() {
     use Verb as V;
     const RUN: &str = "Only the project lead or a workspace admin may run this command";
     const REVIEW: &str = "Only the project lead or a workspace admin may review a proposal";
     const HEALTH: &str = "Only the project lead or a workspace admin may report health";
     const DELETE: &str = "Only a workspace owner or admin can delete a project";
+    const IMPORT: &str = "Only a workspace owner or admin can import a project";
     let above_member = [
         (V::HealthUpdate, HEALTH),
         (V::Archive, RUN),
@@ -315,6 +318,7 @@ fn a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete() {
         (V::ProjectComplete, RUN),
         (V::ProjectCancel, RUN),
         (V::ProjectDelete, DELETE),
+        (V::ProjectImport, IMPORT),
     ];
     let member = Envelope::user("mia", Tier::Member);
     let lead = Envelope::user("lee", Tier::Lead);
@@ -332,14 +336,16 @@ fn a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete() {
             }
         }
         let as_lead = home.probe(&lead, verb, &key('L', i));
-        if verb == V::ProjectDelete {
-            assert_eq!(refusal(as_lead), ("forbidden", DELETE.to_string()));
-        } else {
-            as_lead.unwrap();
+        match verb {
+            V::ProjectDelete => assert_eq!(refusal(as_lead), ("forbidden", DELETE.to_string())),
+            V::ProjectImport => assert_eq!(refusal(as_lead), ("forbidden", IMPORT.to_string())),
+            _ => {
+                as_lead.unwrap();
+            }
         }
     }
-    // 17 member verbs as the member, 27 of 28 as the lead.
-    assert_eq!(home.counts(), [44, 44, 44]);
+    // 18 member verbs as the member, 28 of 30 as the lead.
+    assert_eq!(home.counts(), [46, 46, 46]);
 }
 
 #[test]
@@ -349,7 +355,7 @@ fn the_local_operator_admits_every_verb_as_itself() {
     for (i, verb) in Verb::ALL.into_iter().enumerate() {
         home.probe(&operator, verb, &key('O', i)).unwrap();
     }
-    assert_eq!(home.counts(), [28, 28, 28]);
+    assert_eq!(home.counts(), [30, 30, 30]);
     assert_eq!(home.event_actors(), ["user:local-operator"]);
 }
 

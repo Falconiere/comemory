@@ -5,15 +5,18 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Migrations 0031 and 0032 against a real database opened through
+//! Migrations 0031, 0032 and 0033 against a real database opened through
 //! `store::connection::open` (`PRAGMA foreign_keys=ON`): every project table
-//! and the change feed exist at version 32, the registry is leaf first over every declared key,
-//! and the platform's composite keys, cascades, `NO ACTION` links and the
-//! self-edge CHECK are enforced by SQLite itself.
+//! and the change feed exist at version 33, the registry is leaf first over
+//! every declared key and gives every table a transfer class, and the
+//! platform's composite keys, cascades, `NO ACTION` links and the self-edge
+//! CHECK are enforced by SQLite itself.
 
 use comemory::store::connection;
 use comemory::store::migrate::{self, list::MIGRATIONS};
-use comemory::store::schema_projects::{PROJECT_TABLES, table_defs};
+use comemory::store::schema_projects::{
+    PROJECT_TABLES, Transfer, table_defs, transfer_class, unclassified,
+};
 use rusqlite::Connection;
 
 fn fresh() -> (tempfile::TempDir, Connection) {
@@ -75,7 +78,7 @@ fn seed_children(conn: &Connection) {
 }
 
 #[test]
-fn schema_projects_fresh_open_reaches_v32_with_every_table() {
+fn schema_projects_fresh_open_reaches_v33_with_every_table() {
     let (_dir, conn) = fresh();
     let version: String = conn
         .query_row(
@@ -84,11 +87,11 @@ fn schema_projects_fresh_open_reaches_v32_with_every_table() {
             |r| r.get(0),
         )
         .expect("version");
-    assert_eq!(version, "32");
-    assert_eq!(migrate::CURRENT_VERSION, "32");
+    assert_eq!(version, "33");
+    assert_eq!(migrate::CURRENT_VERSION, "33");
     assert_eq!(
         MIGRATIONS.len(),
-        32,
+        33,
         "CURRENT_VERSION agrees with MIGRATIONS.len()"
     );
     for table in PROJECT_TABLES {
@@ -103,7 +106,7 @@ fn schema_projects_fresh_open_reaches_v32_with_every_table() {
             "{table} exists"
         );
     }
-    assert_eq!(PROJECT_TABLES.len(), 14);
+    assert_eq!(PROJECT_TABLES.len(), 15);
     assert_eq!(
         count(
             &conn,
@@ -257,4 +260,69 @@ fn schema_projects_no_action_links_refuse_deleting_a_named_parent() {
         cross_parent.contains("FOREIGN KEY constraint failed"),
         "{cross_parent}"
     );
+}
+
+#[test]
+fn schema_projects_every_registry_table_has_a_transfer_class() {
+    assert_eq!(
+        unclassified(PROJECT_TABLES),
+        Vec::<&str>::new(),
+        "every project-owned table must say whether it travels in a bundle"
+    );
+    let carried = PROJECT_TABLES
+        .iter()
+        .filter(|t| transfer_class(t) == Some(Transfer::Carried))
+        .count();
+    assert_eq!(carried, 13, "all but the receipts and the binding travel");
+}
+
+/// The gate is armed: a project table added to the registry without a class
+/// is reported by name, and only it.
+#[test]
+fn schema_projects_unclassified_flags_an_unregistered_project_table() {
+    let mut tables: Vec<&str> = PROJECT_TABLES.to_vec();
+    tables.push("project_widgets");
+    assert_eq!(unclassified(&tables), vec!["project_widgets"]);
+    assert_eq!(transfer_class("project_widgets"), None);
+}
+
+#[test]
+fn schema_projects_receipts_and_bindings_stay_behind_with_a_reason() {
+    let Some(Transfer::Kept(receipt)) = transfer_class("project_command_receipts") else {
+        panic!("receipts must be kept in their own data directory");
+    };
+    assert_eq!(
+        receipt,
+        "a receipt replays a response only the engine that ran the command produced"
+    );
+    let Some(Transfer::Kept(binding)) = transfer_class("project_transfer_bindings") else {
+        panic!("a binding must be kept in its own data directory");
+    };
+    assert_eq!(
+        binding,
+        "a binding records this data directory's link to one remote; the other side records its own"
+    );
+}
+
+#[test]
+fn schema_projects_deleting_a_project_cascades_its_binding() {
+    let (_dir, conn) = fresh();
+    seed(&conn);
+    conn.execute_batch(
+        "INSERT INTO project_transfer_bindings (project_id, direction, remote, digest)
+         VALUES ('a', 'imported', 'ws-1', 'd1'), ('b', 'exported', 'ws-2', 'd2');",
+    )
+    .expect("bind both");
+    let stamped = count(
+        &conn,
+        "SELECT count(*) FROM project_transfer_bindings WHERE transferred_at > 0",
+    );
+    assert_eq!(stamped, 2, "transferred_at defaults to now");
+    conn.execute_batch("DELETE FROM projects WHERE id = 'a';")
+        .expect("delete a");
+    let left: Vec<String> = conn
+        .prepare("SELECT project_id FROM project_transfer_bindings")
+        .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
+        .expect("bindings");
+    assert_eq!(left, vec!["b".to_string()], "only b's binding survives");
 }
