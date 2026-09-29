@@ -3,8 +3,8 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**285 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 674 production `.rs` files under `src/`. That
+**284 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 681 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
 
@@ -17,6 +17,14 @@ project_show}`, the rmcp-forced tool skeleton every read tool shares. Every
 other pair the new store, domain and route code produced was burned down in
 the same change (one relation writer over `execute_many`, one relation read,
 one `invalid_request` builder with an edge/message modifier).
+
+**Why this number fell from 285 (#335, the plan read).** `project_show` now
+picks the charter or the plan core by its `view`, so its body no longer
+mirrors `project_list` and the `mcp::tools_projects::{project_list,
+project_show}` pair is gone. The plan read added no pair of its own: the four
+plan selects share two differently shaped functions in `store::project_plan`
+rather than one near-identical function per table, and `GET /projects/{id}`
+and `GET /projects/{id}/plan` share one `by_id` handler.
 
 **Why this number rose from 288 (#257, `watch` attaches to the coordinator).**
 `cli::watch::{follow_coordinator, attach_once}` pair: `follow_coordinator` is
@@ -725,7 +733,6 @@ to 266 as the MCP transport added three architecture tools.
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:171-183` method `edges` | 89.92% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:192-202` method `repos` | 90.63% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:153-162` method `list` | 89.95% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
-| `src/mcp/tools_projects.rs:32-37` method `project_list` | `src/mcp/tools_projects.rs:44-49` method `project_show` | 90.49% | rmcp-forced tool skeleton; the bodies run the `projects::list` and `projects::show` cores under the session's envelope |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 86.53% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/config/validate_knobs.rs:20-25` function `check_graph_hops` | `src/config/validate_knobs.rs:38-43` function `check_decay` | 86.09% | one bound per knob; the shapes rhyme because each is `if out of range { Err(msg) } else { Ok(()) }`, and each message names its own range |
 | `src/config/validate_knobs.rs:30-35` function `check_positive_count` | `src/config/validate_knobs.rs:38-43` function `check_decay` | 86.09% | same: one bound per knob, each with its own message |

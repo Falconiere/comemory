@@ -635,6 +635,21 @@ async fn mcp_09_project_readers_work_read_only() {
     assert_eq!(shown["project"], page["projects"][0]);
     // The agent reads the operator's actor back unchanged (#315).
     assert_eq!(shown["project"]["createdBy"], "local-operator");
+    let charter = home
+        .data("project_show", json!({"id": id, "view": "charter"}))
+        .await;
+    assert_eq!(charter, shown);
+    // The plan is a view of the same tool, not a catalog row (#335).
+    let plan = home
+        .data("project_show", json!({"id": id, "view": "plan"}))
+        .await;
+    assert_eq!(
+        plan,
+        json!({"plan": {
+            "projectId": id, "planVersion": 0,
+            "milestones": [], "workItems": [], "criteria": [], "dependencies": []
+        }})
+    );
 
     let bad_cursor = home.call("project_list", json!({"cursor": "abc"})).await;
     assert_eq!(bad_cursor.is_error, Some(true));
@@ -660,6 +675,21 @@ async fn mcp_09_project_readers_work_read_only() {
         unknown.structured_content.expect("a refusal")["code"],
         "project_not_found"
     );
+    let malformed = home
+        .error("project_show", json!({"id": "not-a-uuid", "view": "plan"}))
+        .await;
+    assert_eq!(malformed["code"], "invalid_request");
+    assert_eq!(
+        malformed["details"],
+        json!({"field": "projectId", "reason": "invalid"})
+    );
+    let unknown_plan = home
+        .error(
+            "project_show",
+            json!({"id": "00000000-0000-4000-8000-000000000000", "view": "plan"}),
+        )
+        .await;
+    assert_eq!(unknown_plan["code"], "project_not_found");
 
     let refused = home
         .call("save", json!({"body": "nope", "repo": REPO}))

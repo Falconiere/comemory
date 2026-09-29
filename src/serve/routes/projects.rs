@@ -1,6 +1,6 @@
-//! `POST|GET /api/v1/projects`, `GET /api/v1/projects/{id}` and
-//! `GET /api/v1/projects/changes` — the `domains::projects` create, list, show
-//! and change-feed cores, on the platform's REST paths so a hosted cutover
+//! `POST|GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
+//! `GET /api/v1/projects/{id}/plan` and `GET /api/v1/projects/changes` — the
+//! `domains::projects` create, list, show, plan and change-feed cores, on the platform's REST paths so a hosted cutover
 //! forwards without remapping. Every core runs under [`caller`]'s envelope,
 //! which no header can change: in local mode the local agent, so `POST`
 //! answers `403 project_agent_scope`, and an admitted create answers `201`,
@@ -21,7 +21,7 @@ use axum::response::Response;
 use axum::routing::get;
 
 use crate::domains::projects::authority::{self, Command, Envelope};
-use crate::domains::projects::{changes, create, show};
+use crate::domains::projects::{changes, create, plan, show};
 use crate::serve::AppState;
 use crate::serve::routes::project_request::{body, list_field, query};
 use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
@@ -32,6 +32,8 @@ use crate::utilities::context::Ctx;
 const CREATE: &str = "project.create";
 /// `project.changes`'s route command, shared by the table and its handler.
 const CHANGES: &str = "project.changes";
+/// `project plan show`'s route command, shared by the table and its handler.
+const PLAN_SHOW: &str = "project.plan.show";
 
 /// This resource's route-table entries, appended onto [`super::table`]. The
 /// list route carries the bare `project` command, the top-level clap name the
@@ -58,6 +60,12 @@ pub fn table_entries() -> &'static [RouteEntry] {
         },
         RouteEntry {
             method: "GET",
+            path: "/projects/{id}/plan",
+            command: PLAN_SHOW,
+            mutating: false,
+        },
+        RouteEntry {
+            method: "GET",
             path: "/projects/changes",
             command: CHANGES,
             mutating: false,
@@ -77,7 +85,14 @@ pub fn router(_state: AppState) -> Router<AppState> {
             "/api/v1/projects/changes",
             get(|State(state), q| read(state, CHANGES, q, changes_field)),
         )
-        .route("/api/v1/projects/{id}", get(show_project))
+        .route(
+            "/api/v1/projects/{id}",
+            get(|State(state), Path(id)| by_id(state, "project.show", show::Request { id })),
+        )
+        .route(
+            "/api/v1/projects/{id}/plan",
+            get(|State(state), Path(id)| by_id(state, PLAN_SHOW, plan::Request { id })),
+        )
 }
 
 /// The envelope a local-mode HTTP caller runs under: the local agent, which
@@ -151,10 +166,16 @@ pub fn changes_field(req: &mut changes::Request, key: &str, value: String) -> Op
     Some(())
 }
 
-/// `GET /api/v1/projects/{id}` — one charter.
-async fn show_project(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    query_response(state, "project.show", move |ctx| {
-        authority::run(ctx, &caller(), show::Request { id })
+/// A read of the project the path's `{id}` names, under [`caller`]'s
+/// envelope: `GET /projects/{id}` (its charter) and `GET /projects/{id}/plan`
+/// (its committed plan).
+async fn by_id<R>(state: AppState, command: &'static str, req: R) -> Response
+where
+    R: Command + Send + 'static,
+    R::Response: serde::Serialize + Send + 'static,
+{
+    query_response(state, command, move |ctx| {
+        authority::run(ctx, &caller(), req)
     })
     .await
 }

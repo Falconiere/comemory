@@ -106,7 +106,7 @@ pub const TOOLS: &[ToolEntry] = &[
         name: "project_show",
         command: "project show",
         mutating: false,
-        description: "Read one project charter by UUID: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version.",
+        description: "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies.",
     },
     ToolEntry {
         name: "save",

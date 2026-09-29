@@ -16,6 +16,7 @@ use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
 use crate::domains::projects::changes::{self, ChangeFrame};
+use crate::domains::projects::plan::{self, PlanView};
 use crate::domains::projects::view::ProjectView;
 use crate::domains::projects::{create, list, show};
 use crate::prelude::*;
@@ -35,6 +36,9 @@ Examples:
 
   # Read it back
   comemory project show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
+
+  # Read its committed plan: milestones, work items, criteria, dependencies
+  comemory project plan show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
 
   # Page through active projects, newest first
   comemory project list --status active --limit 10
@@ -63,6 +67,24 @@ pub enum ProjectCmd {
     List(ListArgs),
     /// Read the body-free change feed: one frame per committed mutation.
     Changes(ChangesArgs),
+    /// Read a project's committed plan.
+    Plan(PlanArgs),
+}
+
+/// Args for `project plan` — nested verb required.
+#[derive(ClapArgs, Debug)]
+pub struct PlanArgs {
+    /// Nested verb.
+    #[command(subcommand)]
+    pub cmd: PlanCmd,
+}
+
+/// `project plan` verbs.
+#[derive(Subcommand, Debug)]
+pub enum PlanCmd {
+    /// Show the plan at the current version: live milestones, work items,
+    /// criteria of both levels and dependencies.
+    Show(ShowArgs),
 }
 
 /// Args for `project create`.
@@ -172,6 +194,12 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             let frames = authority::run(&mut ctx, &operator, req)?;
             emit(json_flag, &frames, |out| render_changes(out, &frames))
         }
+        ProjectCmd::Plan(PlanArgs {
+            cmd: PlanCmd::Show(s),
+        }) => {
+            let resp = authority::run(&mut ctx, &operator, plan::Request { id: s.id })?;
+            emit(json_flag, &resp, |out| render_plan(out, &resp.plan))
+        }
     }
 }
 
@@ -265,6 +293,37 @@ fn render_page(out: &mut dyn std::io::Write, page: &list::Response) -> std::io::
     }
     if let Some(cursor) = &page.next_cursor {
         writeln!(out, "next page: --cursor {cursor}")?;
+    }
+    Ok(())
+}
+
+/// The plan version, then one line per milestone, work item, criterion and
+/// dependency.
+fn render_plan(out: &mut dyn std::io::Write, p: &PlanView) -> std::io::Result<()> {
+    writeln!(out, "plan          v{} of {}", p.plan_version, p.project_id)?;
+    for m in &p.milestones {
+        let (status, date) = (&m.status, &m.target_date);
+        writeln!(out, "milestone     [{status}] {}  {date}  {}", m.name, m.id)?;
+    }
+    for w in &p.work_items {
+        let (number, status) = (w.number, &w.status);
+        writeln!(
+            out,
+            "item          #{number} [{status}] {}  {}",
+            w.title, w.id
+        )?;
+    }
+    for c in &p.criteria {
+        let scope = c.work_item_id.as_deref().unwrap_or("project");
+        let (resolution, text) = (&c.criterion.resolution, &c.criterion.description);
+        writeln!(out, "criterion     [{resolution}] {text}  ({scope})")?;
+    }
+    for d in &p.dependencies {
+        writeln!(out, "blocks        {} -> {}", d.blocker_id, d.blocked_id)?;
+    }
+    let empty = p.milestones.is_empty() && p.work_items.is_empty();
+    if empty && p.criteria.is_empty() && p.dependencies.is_empty() {
+        writeln!(out, "no committed plan entities")?;
     }
     Ok(())
 }

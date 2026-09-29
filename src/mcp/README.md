@@ -28,12 +28,12 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `catalog.rs` | `TOOLS` | The seventeen-row tool table — name, the CLI command path whose core it runs, whether it writes, and the agent-facing description the tool attribute reuses verbatim |
 | `exec.rs` | `run`, `Access` | Run a core on the blocking pool with the session locked and a fresh database connection opened/dropped inside that task; an `Access::Write` on a `--read-only` session is refused before the closure is ever built |
-| `params.rs` | `FeedbackParams` | Adapter-owned feedback provenance plus typed architecture scaffold, save and show parameters |
+| `params.rs` | `FeedbackParams` | Adapter-owned feedback provenance, typed architecture scaffold, save and show parameters, and `ProjectShowParams`, whose `view` (`charter` default, `plan`) picks the core `project_show` runs |
 | `result.rs` | `into_tool_result` | Success as structured content; every non-`Internal` error class as a tool-level `{code, message}`; `Internal` as a protocol error carrying only the code word. Plus the two adapter-raised refusals, `read_only` and `repo_required` |
 | `scope.rs` | `default_repo` | The session's default repo scope (`--repo`, else the cwd's main-worktree label) and `resolve`, the rule that lets an explicit non-empty parameter win |
 | `server.rs` | `ComemoryServer` | The rmcp service object: `read_router() + project_router() + write_router()`, the session state every tool body clones, and `get_info` — tools capability plus the five-line loop `instructions`, with the missing-scope sentence appended when no default repo resolved |
 | `state.rs` | `McpState` | Cheaply-cloneable per-session state: `Arc<Mutex<()>>`, per-call connections, paths, config, default repo, `read_only`, the `track()` decision for tracked reads, and `project_envelope()`, the local agent every project tool runs as |
-| `tools_projects.rs` | `project_router` | The two project read tools, `project_list` and `project_show` — the `domains::projects` list and show cores, with no repo scope, run under the session's local-agent envelope (`McpState::project_envelope`: all six capabilities, no human verb) |
+| `tools_projects.rs` | `project_router` | The two project read tools, `project_list` and `project_show` — the `domains::projects` list core, and the show or plan core by `project_show`'s `view` (the plan is a view, not a catalog row, #335), with no repo scope, run under the session's local-agent envelope (`McpState::project_envelope`: all six capabilities, no human verb) |
 | `tools_read.rs` | `read_router` | Twelve read tools: recall/repository tools plus `architecture_scaffold`, `architecture_show` and `architecture_check`, all of which require a resolved repo scope |
 | `tools_write.rs` | `write_router` | Three write tools: `save`, `feedback`, and `architecture_save`; both save tools refuse an unscoped call before the store is touched |
 

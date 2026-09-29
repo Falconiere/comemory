@@ -29,6 +29,7 @@ use comemory::domains::{code, graph, learning, memories, projects};
 use comemory::mcp::catalog::{self, TOOLS};
 use comemory::mcp::params::{
     ArchitectureSaveParams, ArchitectureShapeParams, ArchitectureShowParams, FeedbackParams,
+    ProjectShowParams,
 };
 use comemory::retrieval;
 use serde_json::json;
@@ -112,7 +113,7 @@ const PROBES: &[(&str, ProbeFn)] = &[
         is_unknown_field::<ArchitectureShapeParams>,
     ),
     ("project_list", is_unknown_field::<projects::list::Request>),
-    ("project_show", is_unknown_field::<projects::show::Request>),
+    ("project_show", is_unknown_field::<ProjectShowParams>),
 ];
 
 /// Resolve a root or nested clap path such as `architecture scaffold`.

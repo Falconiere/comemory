@@ -2,8 +2,9 @@
 //!
 //! Most tools take the command core's own `Request`, which already derives
 //! `Deserialize` + `JsonSchema`. `feedback` and the architecture tools need
-//! adapter-owned shapes: feedback changes verdict provenance, while architecture
-//! maps nested CLI arguments and the model body to domain cores.
+//! adapter-owned shapes: feedback changes verdict provenance, architecture
+//! maps nested CLI arguments and the model body to domain cores, and
+//! `project_show` picks the charter or the plan core by `view`.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -90,6 +91,29 @@ pub struct ArchitectureShowParams {
     pub repo: Option<String>,
     /// Stored model JSON by default, or Mermaid source.
     pub format: Option<ArchitectureShowFormat>,
+}
+
+/// Which read of one project `project_show` returns.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectShowView {
+    /// The charter, as `project show` reads it.
+    #[default]
+    Charter,
+    /// The committed plan, as `project plan show` reads it.
+    Plan,
+}
+
+/// `project_show` tool parameters: the `project show` / `project plan show`
+/// request plus the view choosing between them.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectShowParams {
+    /// The project's UUID.
+    pub id: String,
+    /// `charter` (default) or `plan`.
+    #[serde(default)]
+    pub view: ProjectShowView,
 }
 
 /// `feedback` tool parameters — `feedback::Request` with provenance replaced

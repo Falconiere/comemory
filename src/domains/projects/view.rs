@@ -107,7 +107,7 @@ pub fn load(conn: &Connection, rows: Vec<ProjectRow>) -> Result<Vec<ProjectView>
 }
 
 /// One stored criterion as its view.
-fn criterion(row: CriterionRow) -> CriterionView {
+pub(super) fn criterion(row: CriterionRow) -> CriterionView {
     CriterionView {
         id: row.id,
         description: row.description,
@@ -130,13 +130,13 @@ fn project(
     let stamp = |ms: i64, column: &str| rendered(ms, &row.id, column);
     let target_date = row
         .target_date
-        .map(|ms| stamp(ms, "target_date"))
+        .map(|ms| stamp(ms, "projects.target_date"))
         .transpose()?;
-    let created_at = stamp(row.created_at, "created_at")?;
-    let updated_at = stamp(row.updated_at, "updated_at")?;
+    let created_at = stamp(row.created_at, "projects.created_at")?;
+    let updated_at = stamp(row.updated_at, "projects.updated_at")?;
     let archived_at = row
         .archived_at
-        .map(|ms| stamp(ms, "archived_at"))
+        .map(|ms| stamp(ms, "projects.archived_at"))
         .transpose()?;
     Ok(ProjectView {
         id: row.id,
@@ -162,14 +162,15 @@ fn project(
     })
 }
 
-/// A stored epoch-millisecond column as ISO-8601; a value outside the
-/// representable range is a corrupt row, refused as an `internal_error`
-/// rather than rendered as an empty or missing date.
-fn rendered(ms: i64, row_id: &str, column: &str) -> Result<String> {
+/// A stored epoch-millisecond `column` (table-qualified) of `row_id` as
+/// ISO-8601; a value outside the representable range is a corrupt row,
+/// refused as an `internal_error` rather than rendered as an empty or
+/// missing date.
+pub(super) fn rendered(ms: i64, row_id: &str, column: &str) -> Result<String> {
     iso(ms).ok_or_else(|| {
         ProjectError::Invariant {
             invariant: "project_timestamp_range".to_string(),
-            message: format!("projects.{column} of {row_id} is outside the representable range"),
+            message: format!("{column} of {row_id} is outside the representable range"),
         }
         .into()
     })
