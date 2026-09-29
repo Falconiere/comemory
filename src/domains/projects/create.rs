@@ -1,27 +1,29 @@
 //! `project create` / `POST /api/v1/projects`: a draft charter, ported from
 //! the platform's `project-charter-service.ts`. One transaction writes the
 //! project, its repositories, its project-level criteria and exactly one
-//! `project.created` activity event; any refusal or failure rolls all of it
-//! back. The ordinary `activity_log` telemetry row is written afterwards by
-//! the core instrumentation, never by the transaction.
+//! `project.created` activity event, under the command's receipt (#327);
+//! any refusal or failure rolls all of it back. The ordinary `activity_log`
+//! telemetry row is written afterwards by the core instrumentation, never by
+//! the transaction, and never for a replay.
 
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::domains::projects::activity::{self, Event};
 use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
 use crate::domains::projects::charter::{self, Charter};
 use crate::domains::projects::limits;
+use crate::domains::projects::receipt::{self, Applied, Keyed, Ran};
 use crate::domains::projects::slug::{base_slug, disambiguate};
 use crate::domains::projects::timestamp::now_ms;
 use crate::domains::projects::view::{self, ProjectView};
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::connection::write_transaction;
 use crate::store::project_read;
 use crate::store::projects::{NewProject, ProjectInsert, insert_project, insert_relations};
-use crate::utilities::activity::{Outcome, command, record_in};
+use crate::utilities::activity::command;
 use crate::utilities::context::Ctx;
 use crate::utilities::project_error::{ProjectError, RequestEdge};
 use crate::utilities::uuid;
@@ -29,8 +31,8 @@ use crate::utilities::uuid;
 /// Bounds the slug retry loop, as the platform does.
 const MAX_SLUG_ATTEMPTS: usize = 25;
 
-/// `project create` / `POST /api/v1/projects` request: the platform's body,
-/// minus `idempotencyKey` (#327). `workspaceId` is accepted and ignored.
+/// `project create` / `POST /api/v1/projects` request: the platform's body.
+/// `workspaceId` is accepted and ignored.
 #[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Request {
@@ -41,6 +43,8 @@ pub struct Request {
     /// directory is the workspace.
     #[serde(default)]
     pub workspace_id: Option<serde_json::Value>,
+    /// The caller's retry key, 1–200 UTF-16 units, scoped to the principal.
+    pub idempotency_key: String,
     /// Display name, 1–120 characters.
     pub name: String,
     /// 2–10 characters matching `^[A-Z][A-Z0-9]*$`, unique.
@@ -68,7 +72,7 @@ pub struct Request {
 }
 
 /// The created project.
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Response {
     /// Its charter view.
     pub project: ProjectView,
@@ -93,27 +97,58 @@ impl Command for Request {
         Verb::ProjectCreate
     }
 
-    /// Create a draft project as `actor`, then record the telemetry row.
+    /// Create a draft project as `actor`, or replay its receipt, then record
+    /// the telemetry row.
     fn execute(self, ctx: &mut Ctx<'_>, actor: &Actor) -> Result<Response> {
         let started = Instant::now();
-        let result = create(ctx, actor, self);
-        let summary = result
-            .as_ref()
-            .map(|r| serde_json::json!({"id": r.project.id, "keyPrefix": r.project.key_prefix}));
-        let outcome = match &summary {
-            Ok(value) => Outcome::Ok(value),
-            Err(e) => Outcome::Failed(e),
-        };
-        record_in(ctx, command::PROJECT_CREATE, started, &outcome, None);
-        result
+        let ran = create(ctx, actor, self);
+        receipt::record(
+            ctx,
+            command::PROJECT_CREATE,
+            started,
+            ran,
+            |r| json!({"id": r.project.id, "keyPrefix": r.project.key_prefix}),
+        )
     }
 }
 
-/// Validate, then write everything in one immediate transaction.
-fn create(ctx: &mut Ctx<'_>, actor: &Actor, req: Request) -> Result<Response> {
+impl Request {
+    /// The digested body: every field as received except `idempotencyKey`
+    /// and the ignored `workspaceId`. `id` counts, because the engine accepts
+    /// a client id: the same key with another id is another command.
+    fn digest_body(&self) -> Value {
+        json!({
+            "id": self.id,
+            "name": self.name,
+            "keyPrefix": self.key_prefix,
+            "outcome": self.outcome,
+            "successCriteria": self.success_criteria,
+            "constraints": self.constraints,
+            "nonGoals": self.non_goals,
+            "repositories": self.repositories,
+            "leadUserId": self.lead_user_id,
+            "targetDate": self.target_date,
+        })
+    }
+}
+
+/// Check the key, validate, then write everything under the receipt in one
+/// immediate transaction.
+fn create(ctx: &mut Ctx<'_>, actor: &Actor, req: Request) -> Result<Ran<Response>> {
+    let keyed = Keyed::new(&req.idempotency_key, "project.create", &req.digest_body())?;
+    let charter = charter::validate(req, actor.principal())?;
+    receipt::run(ctx.conn()?, actor, &keyed, |tx| {
+        let response = write(tx, actor, &charter)?;
+        Ok(Applied {
+            response,
+            project_id: charter.id.clone(),
+        })
+    })
+}
+
+/// The project, its relations and its `project.created` event.
+fn write(tx: &Connection, actor: &Actor, charter: &Charter) -> Result<Response> {
     let creator = actor.principal();
-    let charter = charter::validate(req, creator)?;
-    let tx = write_transaction(ctx.conn()?)?;
     // Stamped once the writer lock is held, so commit order and `created_at`
     // order agree for every writer of this database.
     let at_ms = now_ms();
@@ -134,9 +169,9 @@ fn create(ctx: &mut Ctx<'_>, actor: &Actor, req: Request) -> Result<Response> {
         creator_id: &creator.id,
         at_ms,
     };
-    let slug = insert_with_unique_slug(&tx, &project)?;
+    let slug = insert_with_unique_slug(tx, &project)?;
     project.slug = &slug;
-    write_relations(&tx, &project, &charter)?;
+    write_relations(tx, &project, charter)?;
     let payload = CreatedPayload {
         name: &charter.name,
         key_prefix: &charter.key_prefix,
@@ -150,9 +185,8 @@ fn create(ctx: &mut Ctx<'_>, actor: &Actor, req: Request) -> Result<Response> {
         entity_id: &charter.id,
         payload: &payload,
     };
-    activity::record(&tx, actor, &event, at_ms)?;
-    let view = created_view(&tx, &charter.id)?;
-    tx.commit()?;
+    activity::record(tx, actor, &event, at_ms)?;
+    let view = created_view(tx, &charter.id)?;
     Ok(Response { project: view })
 }
 

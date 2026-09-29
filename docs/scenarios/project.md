@@ -18,7 +18,18 @@ The actor is stored on every row and activity event and reads back as
 `createdBy` / `leadUserId`. A charter has no update verb: after creation it
 changes only through an approved `project.update` proposal (#338).
 
-**Runnable tests:** `tests/cli__project.rs`, `tests/serve__routes__projects.rs`,
+Every mutation except hard deletion (#320) is idempotent (#327); `create` is
+the first. It carries an idempotency key, scoped to the principal, and its
+first answer is stored as a command receipt in the same transaction. A retry
+with the same key and body returns that answer and writes nothing — no row,
+no activity event, no change-feed frame, no `activity_log` row. The body is
+compared exactly as sent, before normalization. The same key with another
+body or command is refused with `idempotency_conflict`. A failed command
+stores no receipt, so a retry runs again. Receipts have no TTL: they live
+until their project is hard-deleted.
+
+**Runnable tests:** `tests/cli__project.rs`, `tests/cli__project_receipts.rs`,
+`tests/serve__routes__projects.rs`,
 `tests/cli_scenario_mcp.rs`, colocated `src/domains/projects/tests/*`,
 `src/store/tests/projects.rs`, `src/store/tests/project_read.rs`,
 `tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`
@@ -48,6 +59,7 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | `--lead` | `create` | the local operator | The lead's principal id |
 | `--target-date` | `create` | none | `YYYY-MM-DD` (UTC midnight) or an RFC 3339 timestamp |
 | `--id` | `create` | minted | Use this UUID as the project id (stored lowercase) |
+| `--idempotency-key` | `create` | minted | Retry key, 1–200 UTF-16 units: rerunning with the same key and exactly the same flags prints the first answer and writes nothing; the same key with other flags exits 75 (`idempotency_conflict`). Omitted, a fresh UUID is minted, so that run is not retry-safe |
 | `--status` | `list` | all | `draft`, `planning`, `active`, `paused`, `completed` or `canceled` |
 | `--health` | `list` | all | `unknown`, `on_track`, `at_risk` or `off_track` |
 | `--include-archived` | `list` | false | Include archived projects |
@@ -202,3 +214,31 @@ warning never logs the value.
   `tests/cli__project_changes.rs::a_rebuild_keeps_every_seq_so_a_cursor_stays_valid`,
   `src/domains/projects/tests/changes.rs::a_mutation_rolled_back_after_its_feed_row_emits_nothing`,
   `src/store/tests/project_changes.rs::a_deletion_row_and_the_earlier_rows_outlive_the_project_cascade`
+
+### project-08 A retry-safe create
+
+- **Flags:** `--idempotency-key`, `--json`
+- **Setup:** a fresh `COMEMORY_DATA_DIR`
+- **Command:** `comemory --json project create --name SHIP --key-prefix SHIP --outcome 'Ship it' --idempotency-key k1`, run twice, then once more with another `--outcome`
+- **Expect:**
+  - The second run prints byte-identical stdout and leaves every project
+    table, `project_changes` and `activity_log` unchanged: no change
+    frame for a replay.
+  - The third run exits 75: `This idempotency key was already used for a
+    different command`.
+  - Two processes racing one key create one project and one receipt, and
+    both print the same answer.
+  - A create refused inside its transaction (a taken `--key-prefix`) stores
+    no receipt, so the same command succeeds once the other project is
+    gone.
+  - An empty or 201-character key exits 65 before the database is opened.
+  - A receipt the CLI stored replays through the HTTP create path as a
+    human with the same body. A body without `idempotencyKey` answers `400`.
+- **Covered by:** `tests/cli__project_receipts.rs::a_replay_prints_the_first_answer_and_writes_nothing`,
+  `tests/cli__project_receipts.rs::the_same_key_with_another_body_is_an_idempotency_conflict`,
+  `tests/cli__project_receipts.rs::two_processes_racing_one_key_create_one_project`,
+  `tests/cli__project_receipts.rs::a_create_refused_in_its_transaction_leaves_no_receipt_and_its_retry_runs`,
+  `tests/cli__project_receipts.rs::a_key_outside_one_to_two_hundred_characters_is_refused`,
+  `src/domains/projects/tests/receipt.rs`,
+  `src/serve/routes/tests/projects.rs::a_cli_receipt_replays_through_the_http_create_path`,
+  `tests/serve__routes__projects.rs::malformed_input_answers_400_and_a_list_limit_422`

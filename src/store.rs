@@ -139,6 +139,8 @@ pub mod project_activity;
 pub mod project_changes;
 /// `projects` charter reads: one row, a keyset page, and a page's relations.
 pub mod project_read;
+/// `project_command_receipts`: an idempotent project command's stored answer.
+pub mod project_receipts;
 /// `projects` charter writes: the row with its unique-index outcome, repositories and criteria.
 pub mod projects;
 /// `maintenance::prune`'s own scan (orphan-edge count, stale-code-file list, one

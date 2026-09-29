@@ -26,6 +26,8 @@ pub mod limits;
 pub mod list;
 /// The principal kinds and ids an envelope carries.
 pub mod principal;
+/// The idempotent-command runner every mutation goes through.
+pub mod receipt;
 /// `project show`: one charter by id.
 pub mod show;
 /// Slug derivation from a charter's name.

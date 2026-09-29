@@ -41,6 +41,7 @@ impl Home {
         let req = create::Request {
             id: id.map(str::to_string),
             workspace_id: None,
+            idempotency_key: comemory::utilities::uuid::new_v4().unwrap(),
             name: format!("Project {key_prefix}"),
             key_prefix: key_prefix.to_string(),
             outcome: "Ship the loop".to_string(),

@@ -25,6 +25,7 @@ One line per file, named after its primary item:
 | `keyset.rs` | `decode` | The platform's `<epochMillis>:<uuid>` keyset cursor over `(created_at, id)`: encode, and decode with a `400 invalid_request` for anything outside `^\d{1,15}:[0-9a-f-]{36}$`; later pages reuse it |
 | `limits.rs` | `text` | The platform's charter and paging caps (`project-limits.ts`), counted in UTF-16 units, each breach a `422 invalid_request` naming field, reason and limit |
 | `list.rs` | `Request` | `project list` / `GET /projects`: a keyset page newest first, filtered by status, health and `includeArchived` |
+| `receipt.rs` | `run` | The idempotent-command runner every mutation goes through (#327): a `(principal, idempotencyKey)`-scoped `project_command_receipts` row written in the mutation's own immediate transaction; an exact replay returns the stored response and writes nothing, any other reuse is `409 idempotency_conflict` |
 | `principal.rs` | `Principal` | The principal an envelope carries: `user` or `project_agent` plus an id; the `local-operator` and `local-agent` ids |
 | `show.rs` | `Request` | `project show` / `GET /projects/{id}`: one charter; a malformed id is `400`, an unknown one `404 project_not_found` |
 | `slug.rs` | `base_slug` | `projects.slug` from the charter name, and the `-2`, `-3`, … disambiguator |
@@ -51,6 +52,45 @@ One line per file, named after its primary item:
 - **Identities are client-generated UUIDs**, minted when absent, stored lowercase.
 - **Repositories are shape-checked only** (canonical `owner/name`); the allow-list
   rule is #337's.
+
+## Idempotency
+
+Every mutation except hard deletion (#320) runs through `receipt::run`
+(`receipt.rs`, #327), ported from the platform's
+`project-command-receipt-service.ts`:
+
+- **Key:** `idempotencyKey` is required on the core request, 1–200 UTF-16
+  units; a breach is `422 invalid_request` (the recorded cap divergence). The
+  CLI mints one when `--idempotency-key` is omitted, so only a named key is
+  retry-safe.
+- **Scope:** `(principal_type, principal_id, idempotency_key)` — not the
+  command, not the project — so two principals may reuse a key.
+- **Digest:** hex SHA-256 of canonical JSON `{"commandType", "body"}`; the
+  body is the request as received, before normalization (as the platform
+  digests its validated input, not its normalized charter), minus
+  `idempotencyKey` and bookkeeping (`workspaceId`). So a retry that respells a
+  repository or the id's case is another command. Create's body includes `id`,
+  because the engine accepts a client id.
+- **Replay:** same command type and digest → the stored core response,
+  parsed back into the typed response. Nothing runs and nothing is written:
+  no state change, no activity event, no `project_changes` frame (the feed
+  row is written only by `activity::record`, inside `apply`), and no
+  `activity_log` row.
+- **Conflict:** another command type or digest under the key → `409
+  idempotency_conflict`, before the command runs.
+- **Failure:** the receipt is written in the command's transaction, so a
+  failed command leaves none and its retry runs again.
+- **Race:** the receipt is read inside the `BEGIN IMMEDIATE` transaction, so
+  two processes racing one key serialize on SQLite's writer lock and the
+  second replays the first.
+- **Retention:** no TTL. A receipt lives until its project is hard-deleted,
+  when `ON DELETE CASCADE` removes it, as on the platform.
+- **Adapter independence:** the stored response is the core's, so a key
+  first used through the CLI replays over HTTP with the same `data`.
+
+A later mutation builds a `receipt::Keyed` from its key, command type and
+digest body, does its writes inside `receipt::run`'s `apply`, and records
+telemetry with `receipt::record`, which skips a replay.
 
 ## Authority
 

@@ -703,6 +703,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/projects/limits.rs | comemory::domains::projects::limits; preserve | src/domains/projects/tests/limits.rs | none | domains::projects | src/domains/projects/limits.rs | retain |
 | src/domains/projects/list.rs | comemory::domains::projects::list; preserve | src/domains/projects/tests/list.rs | none | domains::projects | src/domains/projects/list.rs | retain |
 | src/domains/projects/principal.rs | comemory::domains::projects::principal; preserve | none | none | domains::projects | src/domains/projects/principal.rs | retain |
+| src/domains/projects/receipt.rs | comemory::domains::projects::receipt; preserve | src/domains/projects/tests/receipt.rs | none | domains::projects | src/domains/projects/receipt.rs | retain |
 | src/domains/projects/show.rs | comemory::domains::projects::show; preserve | src/domains/projects/tests/show.rs | none | domains::projects | src/domains/projects/show.rs | retain |
 | src/domains/projects/slug.rs | comemory::domains::projects::slug; preserve | src/domains/projects/tests/slug.rs | none | domains::projects | src/domains/projects/slug.rs | retain |
 | src/domains/projects/timestamp.rs | comemory::domains::projects::timestamp; preserve | src/domains/projects/tests/timestamp.rs | none | domains::projects | src/domains/projects/timestamp.rs | retain |
@@ -1031,6 +1032,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/project_activity.rs | comemory::store::project_activity; preserve | none | none | infrastructure::store | src/store/project_activity.rs | retain |
 | src/store/project_changes.rs | comemory::store::project_changes; preserve | src/store/tests/project_changes.rs | none | infrastructure::store | src/store/project_changes.rs | retain |
 | src/store/project_read.rs | comemory::store::project_read; preserve | src/store/tests/project_read.rs | none | infrastructure::store | src/store/project_read.rs | retain |
+| src/store/project_receipts.rs | comemory::store::project_receipts; preserve | none | none | infrastructure::store | src/store/project_receipts.rs | retain |
 | src/store/projects.rs | comemory::store::projects; preserve | src/store/tests/projects.rs | none | infrastructure::store | src/store/projects.rs | retain |
 | src/store/readiness.rs | comemory::store::readiness; preserve | src/store/tests/readiness.rs | none | infrastructure::store | src/store/readiness.rs | retain |
 | src/store/store_health.rs | comemory::store::store_health; preserve | src/store/tests/store_health.rs | none | infrastructure::store | src/store/store_health.rs | retain |

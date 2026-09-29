@@ -24,7 +24,7 @@ fn refusal<T: std::fmt::Debug>(result: Result<T>) -> (String, String) {
 
 #[test]
 fn body_refusals_name_the_field() {
-    let cases: [(&str, &str, &str); 6] = [
+    let cases: [(&str, &str, &str); 8] = [
         (
             "[]",
             "body must be an object",
@@ -36,24 +36,34 @@ fn body_refusals_name_the_field() {
             r#"{"field":"body","reason":"invalid"}"#,
         ),
         (
-            r#"{"keyPrefix":"AB","outcome":"o"}"#,
+            r#"{"idempotencyKey":"k","keyPrefix":"AB","outcome":"o"}"#,
             "name is required",
             r#"{"field":"name","reason":"required"}"#,
         ),
         (
-            r#"{"name":5,"keyPrefix":"AB","outcome":"o"}"#,
+            r#"{"idempotencyKey":"k","name":5,"keyPrefix":"AB","outcome":"o"}"#,
             "name is invalid",
             r#"{"field":"name","reason":"invalid"}"#,
         ),
         (
-            r#"{"name":"n","keyPrefix":"AB","outcome":"o","successCriteria":["a",7]}"#,
+            r#"{"idempotencyKey":"k","name":"n","keyPrefix":"AB","outcome":"o","successCriteria":["a",7]}"#,
             "successCriteria.1 is invalid",
             r#"{"field":"successCriteria.1","reason":"invalid"}"#,
         ),
         (
-            r#"{"name":"n","keyPrefix":"AB","outcome":"o","idempotencyKey":"k"}"#,
+            r#"{"name":"n","keyPrefix":"AB","outcome":"o"}"#,
+            "idempotencyKey is required",
+            r#"{"field":"idempotencyKey","reason":"required"}"#,
+        ),
+        (
+            r#"{"name":"n","keyPrefix":"AB","outcome":"o","idempotencyKey":7}"#,
             "idempotencyKey is invalid",
             r#"{"field":"idempotencyKey","reason":"invalid"}"#,
+        ),
+        (
+            r#"{"name":"n","keyPrefix":"AB","outcome":"o","idempotencyKey":"k","extra":1}"#,
+            "extra is invalid",
+            r#"{"field":"extra","reason":"invalid"}"#,
         ),
     ];
     for (raw, message, details) in cases {
@@ -64,8 +74,10 @@ fn body_refusals_name_the_field() {
             "{raw}"
         );
     }
-    let ok: create::Request =
-        body(br#"{"workspaceId":"ws","name":"n","keyPrefix":"AB","outcome":"o"}"#).unwrap();
+    let ok: create::Request = body(
+        br#"{"workspaceId":"ws","idempotencyKey":"k","name":"n","keyPrefix":"AB","outcome":"o"}"#,
+    )
+    .unwrap();
     assert_eq!(ok.name, "n");
 }
 

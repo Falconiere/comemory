@@ -19,7 +19,7 @@ fn show_reads_back_refuses_malformed_and_answers_unknown_with_404() {
     let mut conn = connection::open(paths.db_path()).unwrap();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let req: create::Request = serde_json::from_value(serde_json::json!({
-        "name": "Read me", "keyPrefix": "READ", "outcome": "Read back"
+        "idempotencyKey": "k1", "name": "Read me", "keyPrefix": "READ", "outcome": "Read back"
     }))
     .unwrap();
     let created = authority::run(&mut ctx, &Envelope::local_operator(), req)

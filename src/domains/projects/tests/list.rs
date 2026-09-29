@@ -33,7 +33,8 @@ impl Seeded {
             let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
             for k in 0..n {
                 let req: create::Request = serde_json::from_value(serde_json::json!({
-                    "name": format!("P{k}"), "keyPrefix": format!("P{k}"), "outcome": "o"
+                    "idempotencyKey": format!("k{k}"), "name": format!("P{k}"), "keyPrefix": format!("P{k}"),
+                    "outcome": "o"
                 }))
                 .unwrap();
                 let created = authority::run(&mut ctx, &Envelope::local_operator(), req).unwrap();

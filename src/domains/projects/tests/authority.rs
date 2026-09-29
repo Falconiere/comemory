@@ -43,7 +43,7 @@ impl Command for Probe {
 /// A minimal charter keyed `key`.
 fn charter(key: &str) -> create::Request {
     serde_json::from_value(serde_json::json!({
-        "name": format!("Project {key}"), "keyPrefix": key, "outcome": "Ship it"
+        "idempotencyKey": key, "name": format!("Project {key}"), "keyPrefix": key, "outcome": "Ship it"
     }))
     .unwrap()
 }

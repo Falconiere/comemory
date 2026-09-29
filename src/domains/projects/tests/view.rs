@@ -20,7 +20,7 @@ fn corrupt_stored_values_degrade_or_refuse_as_the_platform_would() {
     let id = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
         let req: create::Request = serde_json::from_value(serde_json::json!({
-            "name": "Corrupt", "keyPrefix": "BAD", "outcome": "o", "constraints": ["kept?"]
+            "idempotencyKey": "k1", "name": "Corrupt", "keyPrefix": "BAD", "outcome": "o", "constraints": ["kept?"]
         }))
         .unwrap();
         authority::run(&mut ctx, &Envelope::local_operator(), req)
