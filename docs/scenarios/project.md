@@ -256,13 +256,16 @@ warning never logs the value.
 - **Expect:**
   - `{plan: {projectId, planVersion, milestones, workItems, criteria,
     dependencies}}`, the platform's `ProjectPlanResponse`. A project before
-    its first approval reads `planVersion` 0 and four empty arrays.
+    its first approval reads `planVersion` 0 with no milestones, work items
+    or dependencies; its `criteria` are the charter's success criteria.
   - Milestones by `(position, id)` with an ISO `targetDate`, work items by
     `(position, number)` with their parent and milestone ids, criteria of
     both levels by `(position, id)` (`workItemId` null for a project-level
     one), and every `blocks` edge.
   - An archived milestone, work item or criterion is absent, and so is every
-    edge that names an archived item.
+    edge that names an archived item. As on the platform, a live item keeps a
+    `milestoneId` whose milestone is archived, and a live criterion a
+    `workItemId` whose item is archived.
   - The TTY view prints `plan vN of <id>`, then one line per milestone, item
     (`#n [status] title`), criterion (`[resolution] text (scope)`) and edge.
   - A malformed id exits 64 (`400 invalid_request`, `projectId is invalid`),
@@ -270,6 +273,7 @@ warning never logs the value.
     `project.read` is refused with `403 project_agent_scope` before the store
     opens.
 - **Covered by:** `tests/cli__project_plan.rs::a_fresh_project_reads_plan_version_zero_with_empty_collections`,
+  `tests/cli__project_plan.rs::a_charter_s_success_criteria_are_the_plan_s_criteria_at_version_zero`,
   `tests/cli__project_plan.rs::a_seeded_plan_renders_both_criteria_levels_and_every_live_dependency`,
   `tests/cli__project_plan.rs::a_malformed_or_unknown_id_exits_64_naming_the_refusal`,
   `tests/serve__routes__projects.rs::the_agent_reads_the_plan_the_store_holds`,

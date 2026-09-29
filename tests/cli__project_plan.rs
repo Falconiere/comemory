@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! `comemory project plan show` through the real binary (#335): a freshly
-//! chartered project reads plan version 0 with empty collections; the plan
+//! chartered project reads plan version 0 with empty collections, or with
+//! only its charter's success criteria when it has some; the plan
 //! `tests/fixtures/projects/plan_seed.sql` writes straight into the store
 //! renders both criteria levels and every live dependency, with the archived
 //! milestone, item, criterion and their edges absent, in `--json` and on the
@@ -67,6 +68,37 @@ fn a_fresh_project_reads_plan_version_zero_with_empty_collections() {
 }
 
 #[test]
+fn a_charter_s_success_criteria_are_the_plan_s_criteria_at_version_zero() {
+    let home = CliHome::new();
+    let created = home.run_json(&[
+        "project",
+        "create",
+        "--name",
+        "Criteria",
+        "--key-prefix",
+        "CRIT",
+        "--outcome",
+        "Criteria read back",
+        "--success-criterion",
+        "The plan lists me",
+    ]);
+    let id = created["project"]["id"].as_str().unwrap();
+    let plan = plan(&home, id);
+    assert_eq!(plan["planVersion"], 0);
+    assert_eq!(
+        plan["criteria"][0]["id"],
+        created["project"]["criteria"][0]["id"]
+    );
+    assert_eq!(plan["criteria"][0]["workItemId"], Value::Null);
+    assert_eq!(plan["milestones"], json!([]));
+    assert_eq!(plan["workItems"], json!([]));
+
+    let tty = home.run_ok(&["project", "plan", "show", id]);
+    assert!(tty.contains("[open] The plan lists me  (project)"), "{tty}");
+    assert!(!tty.contains("no committed plan entities"), "{tty}");
+}
+
+#[test]
 fn a_seeded_plan_renders_both_criteria_levels_and_every_live_dependency() {
     let home = chartered();
     rusqlite::Connection::open(home.data_dir().join("comemory.db"))
@@ -77,8 +109,8 @@ fn a_seeded_plan_renders_both_criteria_levels_and_every_live_dependency() {
     let plan = plan(&home, PROJECT);
     assert_eq!(plan["planVersion"], 3);
     assert_eq!(tails(&plan["milestones"], "id"), ["01", "02"]);
-    assert_eq!(tails(&plan["workItems"], "id"), ["02", "04", "01"]);
-    assert_eq!(tails(&plan["criteria"], "id"), ["01", "02"]);
+    assert_eq!(tails(&plan["workItems"], "id"), ["02", "04", "01", "05"]);
+    assert_eq!(tails(&plan["criteria"], "id"), ["01", "02", "04"]);
     assert_eq!(plan["criteria"][0]["workItemId"], Value::Null);
     assert_eq!(
         plan["criteria"][1]["workItemId"],

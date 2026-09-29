@@ -6,8 +6,14 @@
 //! Archived milestones, work items and criteria are absent: archive is how an
 //! approved proposal removes something, so listing them would contradict the
 //! diff the reviewer approved. An edge naming an archived item is dropped
-//! too, so the graph only names items the same response lists. A project
-//! before its first approval reads plan version `0` with four empty arrays.
+//! too, so every edge names two items the same response lists. The platform
+//! filters nothing else: a live item keeps a `milestoneId` whose milestone is
+//! archived, and a live item-level criterion keeps a `workItemId` whose item
+//! is archived (approval archives an item's criteria with it, #338).
+//!
+//! A project before its first approval reads plan version `0` with no
+//! milestones, work items or dependencies; its `criteria` are the charter's
+//! project-level success criteria, which `project create` writes.
 
 use std::collections::HashSet;
 
@@ -143,13 +149,16 @@ impl Command for Request {
     fn execute(self, ctx: &mut Ctx<'_>, _actor: &Actor) -> Result<Response> {
         let id = uuid::canonical(&self.id)
             .ok_or_else(|| Error::from(ProjectError::invalid_field("projectId", "invalid")))?;
-        let conn = ctx.conn()?;
-        let project = project_read::project(conn, &id)?.ok_or_else(|| {
+        // One read transaction, so the version and the rows it names come from
+        // one snapshot even while an approval commits beside it.
+        let tx = ctx.conn()?.transaction()?;
+        let project = project_read::project(&tx, &id)?.ok_or_else(|| {
             Error::from(ProjectError::ProjectNotFound {
                 project_id: self.id,
             })
         })?;
-        let rows = project_plan::plan_rows(conn, &project.id)?;
+        let rows = project_plan::plan_rows(&tx, &project.id)?;
+        tx.commit()?;
         let plan = plan_view(project.id, project.current_plan_version, rows)?;
         Ok(Response { plan })
     }

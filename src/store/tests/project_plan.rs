@@ -2,7 +2,8 @@
 //! Coverage for `src/store/project_plan.rs` against a real migrated
 //! `comemory.db` seeded with `tests/fixtures/projects/plan_seed.sql`: every
 //! plan row comes back, archived ones included, in the platform's display
-//! order, and a project with no plan reads four empty collections.
+//! order, and a charter row with no criteria and no plan reads four empty
+//! collections.
 
 use comemory::store::connection;
 use comemory::store::project_plan::plan_rows;
@@ -70,7 +71,7 @@ fn every_plan_row_comes_back_in_display_order_archived_included() {
 
     // Work items by (position, number).
     let items = tails(rows.work_items.iter().map(|w| w.id.as_str()));
-    assert_eq!(items, ["02", "03", "04", "01"]);
+    assert_eq!(items, ["02", "03", "04", "01", "05"]);
     let nested = &rows.work_items[0];
     assert_eq!(nested.number, 2);
     assert_eq!(
@@ -115,7 +116,7 @@ fn every_plan_row_comes_back_in_display_order_archived_included() {
 
     // Criteria by (position, id), both levels and the archived one.
     let criteria = tails(rows.criteria.iter().map(|c| c.criterion.id.as_str()));
-    assert_eq!(criteria, ["01", "03", "02"]);
+    assert_eq!(criteria, ["01", "03", "02", "04"]);
     assert_eq!(rows.criteria[0].work_item_id, None);
     let item_level = &rows.criteria[2];
     assert_eq!(
@@ -128,6 +129,13 @@ fn every_plan_row_comes_back_in_display_order_archived_included() {
         Some("Covered elsewhere")
     );
     assert_eq!(rows.criteria[1].archived_at, Some(1_790_000_000_000));
+    assert_eq!(
+        (
+            rows.criteria[3].work_item_id.as_deref(),
+            rows.criteria[3].archived_at
+        ),
+        (Some("b0000000-0000-4000-8000-000000000003"), None)
+    );
 
     // Every edge, by (blocker, blocked), whatever order it was written in.
     let edges: Vec<(&str, &str)> = rows

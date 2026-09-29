@@ -1,9 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Test mirror for `src/domains/projects/plan.rs` over a real store: a fresh
-//! project reads plan version 0 with four empty arrays; the plan
-//! `tests/fixtures/projects/plan_seed.sql` seeds renders both criteria levels
-//! and every live edge while every archived entity, and each edge naming an
-//! archived item, is absent; an agent without `project.read` is refused
+//! project with no success criteria reads plan version 0 with four empty
+//! arrays; the plan `tests/fixtures/projects/plan_seed.sql` seeds renders both
+//! criteria levels and every live edge while every archived entity, and each
+//! edge naming an archived item, is absent, and a live item or criterion
+//! keeps its reference to an archived milestone or item, as on the platform; an agent without `project.read` is refused
 //! before the store opens; a malformed id is a `400`, an unknown one a `404`,
 //! and a milestone date outside the representable range an `internal_error`.
 
@@ -114,7 +115,12 @@ fn a_seeded_plan_renders_live_rows_and_drops_archived_ones() {
              "milestoneId": id('a', 1), "kind": "task", "title": "Build the reader",
              "description": "Read the plan", "status": "backlog", "priority": "normal",
              "estimate": null, "assigneePrincipalType": null, "assigneePrincipalId": null,
-             "repo": null, "version": 1, "position": 1}
+             "repo": null, "version": 1, "position": 1},
+            {"id": id('b', 5), "number": 5, "parentWorkItemId": null,
+             "milestoneId": id('a', 3), "kind": "task", "title": "Outlive the milestone",
+             "description": "Live in an archived milestone", "status": "backlog",
+             "priority": "normal", "estimate": null, "assigneePrincipalType": null,
+             "assigneePrincipalId": null, "repo": null, "version": 1, "position": 2}
         ])
     );
     assert_eq!(
@@ -126,7 +132,10 @@ fn a_seeded_plan_renders_live_rows_and_drops_archived_ones() {
             {"id": id('c', 2), "description": "Items render", "required": false,
              "evidenceRequirement": "verified", "resolution": "waived",
              "resolutionRationale": "Covered elsewhere", "position": 1,
-             "workItemId": id('b', 2)}
+             "workItemId": id('b', 2)},
+            {"id": id('c', 4), "description": "Outlive the item", "required": true,
+             "evidenceRequirement": "reported", "resolution": "open",
+             "resolutionRationale": null, "position": 2, "workItemId": id('b', 3)}
         ])
     );
     assert_eq!(

@@ -164,15 +164,22 @@ fn the_agent_reads_the_plan_the_store_holds() {
         .collect();
     assert_eq!(
         live,
-        ["Render the items", "Fix the edge", "Build the reader"]
+        [
+            "Render the items",
+            "Fix the edge",
+            "Build the reader",
+            "Outlive the milestone"
+        ]
     );
     assert_eq!(plan["milestones"].as_array().unwrap().len(), 2);
-    assert_eq!(plan["criteria"].as_array().unwrap().len(), 2);
-    assert_eq!(plan["dependencies"].as_array().unwrap().len(), 2);
+    assert_eq!(plan["criteria"].as_array().unwrap().len(), 3);
+    let archived = "b0000000-0000-4000-8000-000000000003";
+    let edges = plan["dependencies"].as_array().unwrap();
+    assert_eq!(edges.len(), 2);
     assert!(
-        !plan
-            .to_string()
-            .contains("b0000000-0000-4000-8000-000000000003")
+        edges
+            .iter()
+            .all(|e| e["blockerId"] != archived && e["blockedId"] != archived)
     );
 
     let (status, body) = home.get_raw("/projects/not-a-uuid/plan");

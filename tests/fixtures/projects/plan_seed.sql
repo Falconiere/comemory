@@ -5,9 +5,10 @@
 --               archived a..03;
 --   work items  b..01 #1 (position 1) in a..01; b..02 #2 nested under b..01
 --               with every optional field set; the archived b..03 #3 in the
---               archived a..03; b..04 #4 with no milestone;
+--               archived a..03; b..04 #4 with no milestone; b..05 #5
+--               (position 2), live but in the archived a..03;
 --   criteria    c..01 project-level; c..02 on b..02; the archived c..03 on
---               b..01;
+--               b..01; c..04, live but on the archived b..03;
 --   edges       b..01 -> b..02 and b..04 -> b..02 are live; b..01 -> b..03 and
 --               b..03 -> b..04 each name the archived item.
 UPDATE projects SET current_plan_version = 3
@@ -41,7 +42,11 @@ VALUES
    1, 0, 1790000000000),
   ('b0000000-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111',
    4, NULL, NULL, 'bug', 'Fix the edge', 'No milestone', 'backlog', 'normal',
-   NULL, NULL, NULL, NULL, 1, 0, NULL);
+   NULL, NULL, NULL, NULL, 1, 0, NULL),
+  ('b0000000-0000-4000-8000-000000000005', '11111111-1111-4111-8111-111111111111',
+   5, NULL, 'a0000000-0000-4000-8000-000000000003', 'task', 'Outlive the milestone',
+   'Live in an archived milestone', 'backlog', 'normal', NULL, NULL, NULL, NULL,
+   1, 2, NULL);
 
 INSERT INTO project_criteria
   (id, project_id, work_item_id, description, required, evidence_requirement,
@@ -54,7 +59,10 @@ VALUES
    'waived', 'Covered elsewhere', 1, NULL),
   ('c0000000-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111',
    'b0000000-0000-4000-8000-000000000001', 'Archived criterion', 1, 'reported',
-   'open', NULL, 0, 1790000000000);
+   'open', NULL, 0, 1790000000000),
+  ('c0000000-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111',
+   'b0000000-0000-4000-8000-000000000003', 'Outlive the item', 1, 'reported',
+   'open', NULL, 2, NULL);
 
 INSERT INTO project_work_item_dependencies (project_id, blocker_id, blocked_id)
 VALUES

@@ -321,7 +321,8 @@ fn render_plan(out: &mut dyn std::io::Write, p: &PlanView) -> std::io::Result<()
     for d in &p.dependencies {
         writeln!(out, "blocks        {} -> {}", d.blocker_id, d.blocked_id)?;
     }
-    if p.milestones.is_empty() && p.work_items.is_empty() {
+    let empty = p.milestones.is_empty() && p.work_items.is_empty();
+    if empty && p.criteria.is_empty() && p.dependencies.is_empty() {
         writeln!(out, "no committed plan entities")?;
     }
     Ok(())
