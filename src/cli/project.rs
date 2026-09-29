@@ -13,6 +13,7 @@ use clap::{Args as ClapArgs, Subcommand};
 
 use crate::cli::load_config;
 use crate::cli::output::json;
+use crate::cli::project_transfer::{self, ExportArgs, ImportArgs};
 use crate::cli::{project_activity, project_lifecycle};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
@@ -59,7 +60,11 @@ Examples:
   comemory project activity 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --order asc --limit 50
 
   # Poll the body-free change feed from a cursor
-  comemory project changes --after 0 --limit 100 --json";
+  comemory project changes --after 0 --limit 100 --json
+
+  # Move one project to another data directory under the same ids
+  comemory project export 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --output ship.json
+  comemory --data-dir ~/other project import ship.json";
 
 /// Top-level `project` args — nested verb required.
 #[derive(ClapArgs, Debug)]
@@ -91,6 +96,12 @@ pub enum ProjectCmd {
     Activity(project_activity::Args),
     /// Read the body-free change feed: one frame per committed mutation.
     Changes(ChangesArgs),
+    /// Write one project, with every row it owns that travels, as a transfer
+    /// bundle (receipts stay behind).
+    Export(ExportArgs),
+    /// Import a transfer bundle under the same ids: an identical copy is
+    /// unchanged, a different one skipped, and nothing is ever overwritten.
+    Import(ImportArgs),
     /// Read a project's committed plan.
     Plan(PlanArgs),
 }
@@ -204,7 +215,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         }
         ProjectCmd::Show(s) => {
             let resp = authority::run(&mut ctx, &operator, show::Request { id: s.id })?;
-            emit(json_flag, &resp, |out| render_project(out, &resp.project))
+            emit(json_flag, &resp, |out| render_shown(out, &resp))
         }
         ProjectCmd::List(l) => {
             let resp = authority::run(&mut ctx, &operator, list_request(l))?;
@@ -232,12 +243,20 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             let resp = authority::run(&mut ctx, &operator, plan::Request { id: s.id })?;
             emit(json_flag, &resp, |out| render_plan(out, &resp.plan))
         }
+        ProjectCmd::Export(e) => project_transfer::export(&mut ctx, &operator, e, json_flag),
+        ProjectCmd::Import(i) => project_transfer::import(&mut ctx, &operator, i, json_flag),
     }
 }
 
 /// Run one lifecycle verb as the local operator and print the project.
 fn lifecycle(ctx: &mut Ctx<'_>, json_flag: bool, req: lifecycle::Request) -> Result<()> {
     let resp = authority::run(ctx, &Envelope::local_operator(), req)?;
+    // A transferred project's change stays local (#342): say so on stderr,
+    // so stdout stays the project view (or its JSON, which carries it too).
+    let mut err = std::io::stderr().lock();
+    for warning in &resp.warnings {
+        std::io::Write::write_fmt(&mut err, format_args!("warning: {}\n", warning.message))?;
+    }
     emit(json_flag, &resp, |out| render_project(out, &resp.project))
 }
 
@@ -317,6 +336,25 @@ fn render_project(out: &mut dyn std::io::Write, p: &ProjectView) -> std::io::Res
         writeln!(out, "repository    {r}")?;
     }
     writeln!(out, "created       {}", p.created_at)
+}
+
+/// `project show`: the charter, then where a transferred copy lives.
+fn render_shown(out: &mut dyn std::io::Write, resp: &show::Response) -> std::io::Result<()> {
+    render_project(out, &resp.project)?;
+    let Some(t) = &resp.transfer else {
+        return Ok(());
+    };
+    let way = if t.direction == "exported" {
+        "to"
+    } else {
+        "from"
+    };
+    let digest: String = t.digest.chars().take(12).collect();
+    writeln!(
+        out,
+        "transfer      {} {way} {} at {} (digest {digest})",
+        t.direction, t.remote, t.transferred_at
+    )
 }
 
 /// One line per project, then the next page's cursor when there is one.

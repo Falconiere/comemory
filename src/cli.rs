@@ -87,7 +87,7 @@ pub mod output;
 /// Shared `--k` / `--offset` window resolution.
 pub mod pagination;
 /// `comemory project` — engine-owned project management (create, show, list,
-/// archive, restore, pause, resume, activity, changes).
+/// archive, restore, pause, resume, activity, changes, export, import).
 pub mod project;
 /// `comemory project activity` — the flags and TTY view of one project's
 /// activity page.
@@ -95,6 +95,8 @@ pub mod project_activity;
 /// `comemory project archive|restore|pause|resume` — the flags the four
 /// lifecycle verbs share.
 pub mod project_lifecycle;
+/// `comemory project export|import` — the offline transfer bundle verbs.
+pub mod project_transfer;
 /// `comemory prune`: orphan / low-value / stale-code candidates.
 pub mod prune;
 /// `comemory rebuild`: reconstruct the store from markdown.

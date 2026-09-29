@@ -43,10 +43,11 @@ file (`comemory.db`) backs FTS5 + `sqlite-vec` + edges.
   tables and — when candidate capture is enabled — the three
   candidate-observation tables `candidate_query_observations`,
   `candidate_observations` and `candidate_judgments` (#209), and the
-  fourteen project tables (`projects`, `project_work_items`, … — #325,
-  registered leaf first in `store::schema_projects::PROJECT_TABLES`) plus
-  `project_changes`, the body-free change feed kept outside that registry
-  (#324).
+  fourteen project tables (`projects`, `project_work_items`, … — #325) plus
+  the engine-only `project_transfer_bindings` (#342), all registered leaf
+  first, each with its transfer class, in
+  `store::schema_projects::PROJECT_TABLES`, plus `project_changes`, the
+  body-free change feed kept outside that registry (#324).
   `rusqlite 0.40` with `bundled` + `load_extension` features.
 - **Declared schema (toolu-orm 0.12):** every table in `comemory.db` is a
   `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct in
@@ -139,6 +140,7 @@ comemory distill --session-id <id> --transcript <path>  # propose candidates fro
 comemory mcp                       # stdio MCP adapter: the seventeen-tool catalog over JSON-RPC
 comemory project create|show|list  # engine-owned project charters, offline (epic #261)
 comemory project archive|restore|pause|resume <id> --expected-version N  # lead-only lifecycle (#328)
+comemory project export|import     # move one project between data directories as a bundle (#342)
 comemory recall-status             # tracked queries, verdicts, saves and pending recalls for a repo
 just migration <name>              # struct diff → migrations/NNNN_<name>.sql (+ snapshot + journal)
 just migration-journal <file>      # journal a hand-written migrations/NNNN_<name>.sql

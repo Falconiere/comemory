@@ -69,6 +69,10 @@ pub mod command {
     pub const PROJECT_PAUSE: &str = "project.pause";
     /// `domains::projects::lifecycle`, `resume`.
     pub const PROJECT_RESUME: &str = "project.resume";
+    /// `domains::projects::export`.
+    pub const PROJECT_EXPORT: &str = "project.export";
+    /// `domains::projects::import`.
+    pub const PROJECT_IMPORT: &str = "project.import";
 }
 
 /// Who is running this command, and whether their runs are recorded at all.

@@ -331,3 +331,37 @@ fn the_activity_page_matches_the_cli_and_refuses_by_edge() {
     assert_eq!(body["error"]["code"], "project_not_found");
     assert_eq!(rows(&home)[..2], before[..2], "a read wrote a row");
 }
+
+/// AC-6 (#342): `GET /projects/{id}` carries a transferred project's binding
+/// as `transfer`, and an unbound project's body has no such key.
+#[test]
+fn show_route_carries_transfer_for_a_bound_project() {
+    let home = ServeHome::new();
+    // The local agent may not create (#315), so the unbound project is
+    // written straight into the store beside the seed's bound one.
+    let local = "7a1c3e5f-2b4d-4c6e-8f0a-1b2c3d4e5f60";
+    let conn = rusqlite::Connection::open(home.data_dir().join("comemory.db")).unwrap();
+    conn.execute_batch(include_str!("fixtures/projects/every_table_seed.sql"))
+        .unwrap();
+    conn.execute_batch(&format!(
+        "INSERT INTO projects (id, slug, key_prefix, name, outcome, lead_principal_type,
+             lead_principal_id, creator_principal_type, creator_principal_id)
+         VALUES ('{local}', 'local', 'LOCL', 'Local', 'o', 'user', 'u1', 'user', 'u1');"
+    ))
+    .unwrap();
+
+    let bound = home.get("/projects/0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f");
+    assert_eq!(bound["project"]["keyPrefix"], "ALP");
+    assert_eq!(
+        bound["transfer"],
+        json!({
+            "direction": "imported",
+            "remote": "ws-origin",
+            "digest": "d".repeat(64),
+            "transferredAt": "2025-09-27T19:06:50.000Z",
+            "remappedFrom": "user:u-before",
+        })
+    );
+    let unbound = home.get(&format!("/projects/{local}"));
+    assert!(unbound.get("transfer").is_none(), "{unbound}");
+}

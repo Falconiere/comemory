@@ -146,14 +146,16 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// because it describes an upstream, not anything on this disk; v31's
 /// fourteen project tables are copied because a charter, a plan and its
 /// evidence are operator-authored state no file re-derives; v32's project
-/// change feed is copied because a relay's cursor is one of its `seq`s.
+/// change feed is copied because a relay's cursor is one of its `seq`s; and
+/// v33's `project_transfer_bindings` because where a copy of a project lives
+/// is known only here.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_seventy_seven_tables() {
+fn migration_integrity_derived_live_set_has_exactly_seventy_eight_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        77,
-        "expected exactly 77 live tables, got {}: {live:?}",
+        78,
+        "expected exactly 78 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to

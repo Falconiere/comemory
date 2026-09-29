@@ -184,7 +184,10 @@ fn write(tx: &Connection, actor: &Actor, charter: &Charter) -> Result<Response> 
         entity_id: &charter.id,
         payload: &payload,
     };
-    activity::record(tx, actor, &event, at_ms)?;
+    let recorded = activity::record(tx, actor, &event, at_ms)?;
+    // A project created a moment ago was never transferred, so it has no
+    // binding and its create response carries no `local_only` warning.
+    debug_assert!(recorded.local_only.is_none(), "a new project is unbound");
     let view = view::written(tx, &charter.id, "creation")?;
     Ok(Response { project: view })
 }
