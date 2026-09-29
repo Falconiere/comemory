@@ -3,25 +3,28 @@
 Engine-owned project management (epic #261): charter a project, read it back
 and page through the charters — offline, in a fresh data directory, with no
 account — archive, restore, pause and resume it, read its committed plan,
-page its activity log, and poll the body-free change feed. Nested: `create` /
-`show` / `list` / `archive` / `restore` / `pause` / `resume` / `activity` /
-`changes` / `plan show`. Each verb is a thin shell over a
-`domains::projects` core that the HTTP routes and the MCP readers
-(`project_list`, `project_show`, whose `view: "activity"` reads the
-activity page) call too. Every core runs under a capability
+page its activity log, poll the body-free change feed, and move one project to
+another data directory under the same ids (#342). Nested: `create` / `show` /
+`list` / `archive` / `restore` / `pause` / `resume` / `activity` / `changes` /
+`plan show` / `export` / `import`. Each verb is a thin shell over a
+`domains::projects` core; the HTTP routes and the MCP readers (`project_list`,
+`project_show`, whose `view: "activity"` reads the activity page) call every
+core but `export` and `import`, which are CLI-only here (the hosted routes are
+#343). Every core runs under a capability
 envelope (#315), chosen by the surface, never by a header or an argument:
 
 - the CLI is the **local operator**, a `user` (`local-operator`) at `owner`
-  tier, so it may run every verb;
+  tier, so it may run every verb, `export` and `import` included;
 - MCP and local-mode HTTP are the **local agent**, a `project_agent`
   (`local-agent`) holding all six capabilities and no human verb, so they read
-  but cannot create, approve, complete, cancel or delete.
+  but cannot create, approve, complete, cancel, delete, export or import.
 
 The actor is stored on every row and activity event and reads back as
 `createdBy` / `leadUserId`. A charter has no update verb: after creation it
 changes only through an approved `project.update` proposal (#338).
 
-Every mutation except hard deletion (#320) is idempotent (#327): `create`
+Every mutation except hard deletion (#320) and transfer import (#342) is
+idempotent (#327): `create`
 and the four lifecycle verbs today. Each carries an idempotency key, scoped
 to the principal, and its first answer is stored as a command receipt in the
 same transaction. A retry with the same key and body returns that answer and
@@ -31,16 +34,19 @@ normalization; a lifecycle verb also digests its project id, lowercased, so
 the id's case never matters but another project does. The same key with
 another body, command or project is refused with `idempotency_conflict`. A failed command
 stores no receipt, so a retry runs again. Receipts have no TTL: they live
-until their project is hard-deleted.
+until their project is hard-deleted. A transfer `import` carries no key: it
+is idempotent by content instead, since the same bundle again answers
+`unchanged` and writes nothing.
 
 **Runnable tests:** `tests/cli__project.rs`, `tests/cli__project_receipts.rs`,
-`tests/serve__routes__projects.rs`,
+`tests/cli__project_transfer.rs`, `tests/serve__routes__projects.rs`,
 `tests/cli_scenario_mcp.rs`, colocated `src/domains/projects/tests/*`,
 `src/store/tests/projects.rs`, `src/store/tests/project_read.rs`,
 `tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`,
 `tests/cli__project_plan.rs`, `src/store/tests/project_plan.rs`,
 `tests/cli__project_activity.rs`, `src/store/tests/project_activity.rs`,
-`tests/cli__project_lifecycle.rs`, `tests/serve__routes__project_lifecycle.rs`
+`tests/cli__project_lifecycle.rs`, `tests/serve__routes__project_lifecycle.rs`,
+`src/store/tests/project_transfer.rs`
 
 **HTTP:** `POST /api/v1/projects` (`403 project_agent_scope` for the local
 agent), `GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
@@ -55,7 +61,9 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 ## Positionals
 
 `show <ID>`, `archive <ID>`, `restore <ID>`, `pause <ID>`, `resume <ID>`,
-`activity <ID>` and `plan show <ID>` — the project's UUID, in either case.
+`activity <ID>`, `plan show <ID>` and `export <ID>` — the project's UUID, in either case.
+
+`import <BUNDLE>` — the file `project export` wrote, or `-` to read stdin.
 
 ## Flags
 
@@ -85,6 +93,8 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | `--limit` | `activity` | `50` | Page size, 1–200 |
 | `--after` | `changes` | `0` | Frames after this `seq` |
 | `--limit` | `changes` | `100` | Page size, 1–1000 |
+| `--output` | `export` | stdout | Write the bundle to this file instead: owner-only (`0600`), replaced atomically |
+| `--remote` | `import` | `file:<absolute path>` (`stdin` for `-`) | The other side, recorded on the transfer binding `project show` displays |
 
 ## Refusals
 
@@ -200,11 +210,11 @@ warning never logs the value.
     `project.created` event and in both reads.
   - An agent holding all six capabilities is refused every human-only verb,
     with no row and no database file opened. A `member` is refused every
-    lead verb, and a `lead` is refused deletion.
+    lead verb and import, and a `lead` is refused deletion and import.
   - An agent's capability list with one unrecognised value grants nothing.
 - **Covered by:** `tests/cli__project.rs::the_unconfigured_operator_is_the_actor_on_the_row_the_event_and_the_reads`,
   `src/domains/projects/tests/authority.rs::every_human_only_verb_refuses_an_agent_holding_all_six_before_the_store`,
-  `src/domains/projects/tests/authority.rs::a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete`,
+  `src/domains/projects/tests/authority.rs::a_member_is_refused_every_lead_verb_and_a_lead_is_refused_delete_and_import`,
   `src/domains/projects/tests/authority.rs::an_unrecognised_capability_empties_the_whole_list_and_logs_no_value`,
   `src/mcp/tests/state.rs::the_project_envelope_holds_every_capability_and_no_human_verb`
 
@@ -217,7 +227,8 @@ warning never logs the value.
   `GET /api/v1/projects/changes?after=<seq>&limit=<n>`
 - **Expect:** one frame `{seq, entity: "project", project_id, event_id, op}`
   per committed mutation — `op: changed`, `event_id` the mutation's activity
-  event — and none for a refused, replayed or rolled-back command; no
+  event, or the project id for a transfer import (#342), which writes no
+  activity event — and none for a refused, replayed or rolled-back command; no
   charter text in the bytes. A hard deletion (#320) adds `op: deleted` with
   the project id as `event_id`, and the row outlives the project. A reader
   that drops its connection mid-response or outlives a server restart resumes
@@ -383,3 +394,47 @@ warning never logs the value.
   `src/domains/projects/tests/lifecycle.rs::a_replay_writes_nothing_and_any_other_reuse_of_the_key_conflicts`,
   `src/store/tests/projects.rs::a_lifecycle_patch_lands_only_at_the_version_it_names`,
   `tests/serve__routes__project_lifecycle.rs`
+
+### project-12 Move one project between two data directories
+
+- **Flags:** `--output`, `--remote`, `--json`
+- **Setup:** data directory A holds a project with a row in every project
+  table; B is empty
+- **Command:** `comemory project export <id> --output ship.json` in A, then
+  `comemory project import ship.json` in B, twice; then edit a work item in B
+  and import again
+- **Expect:** B holds every carried row column for column. Command receipts
+  stay in A, because a receipt replays a response only the engine that ran the
+  command produced. The first import answers `imported`; the repeat answers
+  `unchanged` and writes nothing; after the edit it answers `skipped` with both
+  digests, exits 0, and both copies read as they were. `project show` in B
+  prints `transfer      imported from file:…/ship.json at … (digest …)`, and
+  `--json` carries `transfer`. Import writes no activity event, so the digest
+  stays comparable. A later local change to the project stays local: a
+  lifecycle verb on it (`archive`, `pause`, …) answers with a `local_only`
+  entry in `warnings` and prints `warning: This project was imported from …;
+  this change stays in this data directory …` on stderr.
+- **Covered by:** `tests/cli__project_transfer.rs::export_import_round_trip_between_two_data_directories`,
+  `src/domains/projects/tests/import.rs::import_round_trips_into_an_empty_directory`,
+  `src/domains/projects/tests/import.rs::identical_reimport_changes_no_project_row`,
+  `src/domains/projects/tests/import.rs::differing_import_is_skipped_with_both_digests`,
+  `src/domains/projects/tests/local_only.rs::activity_record_flags_a_bound_project_as_local_only`
+
+### project-13 Transfer refusals
+
+- **Flags:** none
+- **Command:** import into a directory where another project holds the key
+  prefix; import a bundle edited after export; import a file that is not JSON;
+  export an unknown or malformed id
+- **Expect:** a taken key prefix or slug exits 65
+  (`keyPrefix is already used in this workspace`, `details.value` naming it);
+  a child id another project holds exits 65 (`conflict`, naming the table); a
+  tampered bundle exits 64 (`bundle digest does not match its rows`), as does
+  one that is not JSON, one from another engine version (`schema_mismatch`),
+  and one with a bad row (`malformed`). Nothing is written in any case.
+  Export of an unknown id exits 64 with `Project not found`.
+- **Covered by:** `tests/cli__project_transfer.rs::import_refusals_exit_by_edge_and_write_nothing`,
+  `tests/cli__project_transfer.rs::export_refuses_unknown_and_malformed_ids`,
+  `src/domains/projects/tests/import.rs::key_prefix_and_slug_collisions_are_refused_with_details`,
+  `src/domains/projects/tests/import.rs::a_child_id_held_elsewhere_is_a_conflict_and_rolls_back`,
+  `src/domains/projects/tests/bundle_check.rs::check_refuses_malformed_rows_naming_the_table`

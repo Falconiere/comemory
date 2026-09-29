@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use crate::domains::projects::activity::{self, Event};
 use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
 use crate::domains::projects::limits::{self, RATIONALE_MAX};
+use crate::domains::projects::local_only::LocalOnly;
 use crate::domains::projects::receipt::{self, Applied, Keyed, Ran};
 use crate::domains::projects::timestamp::now_ms;
 use crate::domains::projects::view::{self, ProjectView};
@@ -122,6 +123,10 @@ pub struct Request {
 pub struct Response {
     /// Its charter view.
     pub project: ProjectView,
+    /// `local_only` when the project is bound by a transfer (#342): the
+    /// change stays in this data directory. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<LocalOnly>,
 }
 
 /// The platform's lifecycle event payload.
@@ -229,9 +234,10 @@ fn apply(tx: &Connection, actor: &Actor, req: &Request, id: &str) -> Result<Resp
         entity_id: id,
         payload: &payload,
     };
-    activity::record(tx, actor, &event, at_ms)?;
+    let recorded = activity::record(tx, actor, &event, at_ms)?;
     Ok(Response {
         project: view::written(tx, id, "lifecycle")?,
+        warnings: recorded.local_only.into_iter().collect(),
     })
 }
 

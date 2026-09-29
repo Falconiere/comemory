@@ -81,6 +81,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "project_milestones",
     "project_plan_proposals",
     "project_repositories",
+    "project_transfer_bindings",
     "project_work_item_dependencies",
     "project_work_items",
     "project_work_packets",

@@ -64,9 +64,10 @@ One line per file, named after its primary item:
 | `mine.rs` | `Args` | `comemory mine` — distill query reformulations from `retrieval_log` into expansions |
 | `pagination.rs` | `PaginationArgs` | Shared `--k` / `--offset` window flags, flattened into paginated commands |
 | `prune.rs` | `Args` | `comemory prune` — surface deletion candidates against the SQLite mirror |
-| `project.rs` | `Args` | `comemory project create\|show\|list\|archive\|restore\|pause\|resume\|activity\|changes\|plan show` — engine-owned project charters, their lifecycle, the committed plan, a project's activity page and the body-free change feed, offline; the CLI acts as the local operator |
+| `project.rs` | `Args` | `comemory project create\|show\|list\|archive\|restore\|pause\|resume\|activity\|changes\|plan show\|export\|import` — engine-owned project charters, their lifecycle, the committed plan, a project's activity page and the body-free change feed, offline; the CLI acts as the local operator, and `show` prints a transferred project's binding |
 | `project_activity.rs` | `Args` | `comemory project activity <ID> [--order desc\|asc] [--cursor] [--limit]` — the flags and TTY view of one project's activity page (#331), run by `project.rs` |
 | `project_lifecycle.rs` | `Args` | `comemory project archive\|restore\|pause\|resume <ID> --expected-version N [--reason] [--idempotency-key]` — the flags the four lifecycle verbs share (#328), run by `project.rs`, which renders the project view |
+| `project_transfer.rs` | `ExportArgs`, `ImportArgs` | `comemory project export\|import` — the transfer bundle to stdout or an owner-only `--output` file, and back from a file or stdin; an identical import is `unchanged`, a differing one `skipped` with both digests (exit 0) |
 | `rebuild.rs` | `Args` | `comemory rebuild` — atomically rebuild the SQLite mirror from markdown |
 | `recall_status.rs` | `Args` | `comemory recall-status` — tracked queries, verdicts, saves and pending recalls for a repo + lower time bound; core in `domains::learning::recall_status` |
 | `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |

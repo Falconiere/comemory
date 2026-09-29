@@ -1,4 +1,6 @@
-//! The idempotent-command runner every project mutation goes through (#327),
+//! The idempotent-command runner every project mutation goes through (#327)
+//! — except hard deletion (#320) and transfer import (#342, idempotent by
+//! content digest instead),
 //! ported from the platform's `project-command-receipt-service.ts`: the state
 //! change, its activity event and its `project_command_receipts` row commit
 //! in one immediate transaction. Scoped to principal and key; an exact

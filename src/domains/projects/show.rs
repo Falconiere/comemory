@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
+use crate::domains::projects::binding::{self, TransferView};
 use crate::domains::projects::view::{self, ProjectView};
 use crate::prelude::*;
 use crate::store::project_read;
@@ -25,6 +26,10 @@ pub struct Request {
 pub struct Response {
     /// Its charter view.
     pub project: ProjectView,
+    /// Its transfer binding (#342), when it was transferred; absent otherwise,
+    /// so an unbound project answers the platform's shape unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transfer: Option<TransferView>,
 }
 
 impl sealed::Sealed for Request {}
@@ -51,7 +56,8 @@ impl Command for Request {
                 project_id: self.id,
             })
         })?;
-        Ok(Response { project })
+        let transfer = binding::find(conn, &id)?;
+        Ok(Response { project, transfer })
     }
 }
 

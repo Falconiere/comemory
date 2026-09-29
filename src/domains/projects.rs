@@ -14,12 +14,22 @@ pub mod activity;
 pub mod activity_page;
 /// The capability envelope every core runs under, and the verb table.
 pub mod authority;
+/// A project's transfer binding: recorded on a transfer, shown by `project show`.
+pub mod binding;
+/// The transfer bundle: canonical rows, digest, parse and actor remap.
+pub mod bundle;
+/// A parsed bundle checked against this engine's carried tables.
+pub mod bundle_check;
 /// `project changes`: the body-free change feed and its writers.
 pub mod changes;
 /// A create request checked against every charter rule.
 pub mod charter;
 /// `project create`: a draft charter and its `project.created` event.
 pub mod create;
+/// `project export`: one project as a canonical transfer bundle.
+pub mod export;
+/// `project import`: a bundle written under the same ids, or compared.
+pub mod import;
 /// The epoch-millisecond `<ms>:<uuid>` keyset cursor every project page uses.
 pub mod keyset;
 /// `project archive|restore|pause|resume`: the four lifecycle commands.
@@ -28,11 +38,14 @@ pub mod lifecycle;
 pub mod limits;
 /// `project list`: a keyset page of charters.
 pub mod list;
+/// The `local_only` warning a mutation of a transferred project carries.
+pub mod local_only;
 /// `project plan show`: the committed plan at the current version.
 pub mod plan;
 /// The principal kinds and ids an envelope carries.
 pub mod principal;
-/// The idempotent-command runner every mutation goes through.
+/// The idempotent-command runner every mutation but hard deletion and
+/// transfer import goes through.
 pub mod receipt;
 /// `project show`: one charter by id.
 pub mod show;
