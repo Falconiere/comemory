@@ -9,18 +9,39 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::prelude::*;
+use crate::utilities::uuid;
 
 /// Write `bytes` to `path` atomically with owner-only permissions,
 /// replacing any file already there.
 pub fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    // A random suffix, so two writers of one path — threads of one process,
+    // or a process that reuses a crashed one's PID — never share a temp file.
     let mut tmp_name = path.as_os_str().to_owned();
-    tmp_name.push(format!(".tmp-{}", std::process::id()));
+    tmp_name.push(format!(".tmp-{}", uuid::new_v4()?));
     let tmp = PathBuf::from(tmp_name);
     let written = write_new(&tmp, bytes).and_then(|()| Ok(fs::rename(&tmp, path)?));
     if written.is_err() {
+        // Best effort: the temp file may never have been created.
         let _ = fs::remove_file(&tmp);
     }
-    written
+    written?;
+    sync_parent(path)
+}
+
+/// Make the rename durable across a crash by syncing the directory that now
+/// names the file (a no-op where directories cannot be opened for sync).
+fn sync_parent(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        fs::File::open(parent)?.sync_all()?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
 }
 
 /// Create `path` (which must not exist) with mode `0600` and fill it.
