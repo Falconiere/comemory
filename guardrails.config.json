@@ -24,7 +24,8 @@
         "sync",
         "capture",
         "maintenance",
-        "integrations"
+        "integrations",
+        "projects"
       ],
       "domains/*": [
         "ast",
@@ -124,7 +125,8 @@
       "mcp",
       "domains/architecture",
       "domains/sync/drain",
-      "domains/sync/daemon"
+      "domains/sync/daemon",
+      "domains/projects"
     ]
   },
   "fileSize": {

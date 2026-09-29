@@ -32,7 +32,8 @@
     "sync",
     "capture",
     "maintenance",
-    "integrations"
+    "integrations",
+    "projects"
   ],
   "legacy_modules": [],
   "owner_dependencies": [
@@ -163,6 +164,10 @@
     {
       "source": "domains::sync",
       "target": "domains::memories"
+    },
+    {
+      "source": "domains::projects",
+      "target": "domains::sync"
     }
   ],
   "setup_runtime_dependencies": [

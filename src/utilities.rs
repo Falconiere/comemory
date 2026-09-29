@@ -78,6 +78,8 @@ pub mod shared_text;
 pub mod simhash;
 /// The persisted retrieval-log / feedback vocabularies.
 pub(crate) mod telemetry;
+/// Version-4 UUID minting and the canonical-shape check.
+pub mod uuid;
 /// Acquire a caller-supplied vector from the flags and process stdin.
 pub(crate) mod vector_stdin;
 /// `--since` / `--until` / `--as-of` value parsing.

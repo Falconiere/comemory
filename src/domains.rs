@@ -48,6 +48,10 @@ pub mod maintenance;
 /// list, show, update, restore, trash and reference-refresh cores.
 pub mod memories;
 
+/// Engine-owned project management: charters, their activity log and the
+/// create, show and list cores (epic #261).
+pub mod projects;
+
 /// Hybrid search across memories, code and documents: the candidate legs,
 /// fusion, rerank, diversification, context bundles, code-reference freshness
 /// and the search, context, find, suggest and retrieval-config cores.

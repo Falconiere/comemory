@@ -72,8 +72,8 @@ jq '.staged_top_level_dirs += ["unexpected"]' "$POLICY" >"$TASK_TMP/unexpected-d
 assert_fails 'unexpected staged directory' 'invalid policy or inventory metadata' --policy "$TASK_TMP/unexpected-dir.json"
 jq '.staged_root_modules += ["unexpected"]' "$POLICY" >"$TASK_TMP/unexpected-root.json"
 assert_fails 'unexpected staged root' 'invalid policy or inventory metadata' --policy "$TASK_TMP/unexpected-root.json"
-jq '.domains += ["unexpected"]' "$POLICY" >"$TASK_TMP/eleventh-domain.json"
-assert_fails 'eleventh domain' 'invalid policy or inventory metadata' --policy "$TASK_TMP/eleventh-domain.json"
+jq '.domains += ["unexpected"]' "$POLICY" >"$TASK_TMP/unapproved-domain.json"
+assert_fails 'unapproved extra domain' 'invalid policy or inventory metadata' --policy "$TASK_TMP/unapproved-domain.json"
 sed '/^| src\/domains\/memories\/save.rs |/d' "$INVENTORY" >"$TASK_TMP/missing.md"
 assert_fails 'missing production row' 'inventory coverage' --inventory "$TASK_TMP/missing.md"
 assert_gate_rejects() {

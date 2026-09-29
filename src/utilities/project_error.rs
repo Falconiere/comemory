@@ -188,6 +188,40 @@ impl ProjectError {
         }
     }
 
+    /// An invariant-edge `invalid_request` (`422`) for `field`, worded
+    /// `"<field> is <reason>"` like [`Self::invalid_field`].
+    pub fn invariant_field(field: &str, reason: &str) -> Self {
+        Self::invariant_message(format!("{field} is {reason}"), field, reason)
+    }
+
+    /// An invariant-edge `invalid_request` (`422`) with the platform's own
+    /// fixed `message` (`"keyPrefix is already used in this workspace"`).
+    pub fn invariant_message(message: String, field: &str, reason: &str) -> Self {
+        Self::InvalidRequest {
+            edge: RequestEdge::Invariant,
+            message,
+            details: OrderedDetails::from_pairs(vec![
+                ("field", Value::from(field)),
+                ("reason", Value::from(reason)),
+            ]),
+        }
+    }
+
+    /// A cap refusal (`422`): `"<field> is <reason> (limit <limit>)"`, so a
+    /// surface that prints only the message still names the limit, and
+    /// `details` `{field, reason, limit}`.
+    pub fn over_limit(field: &str, reason: &str, limit: usize) -> Self {
+        Self::InvalidRequest {
+            edge: RequestEdge::Invariant,
+            message: format!("{field} is {reason} (limit {limit})"),
+            details: OrderedDetails::from_pairs(vec![
+                ("field", Value::from(field)),
+                ("reason", Value::from(reason)),
+                ("limit", Value::from(limit)),
+            ]),
+        }
+    }
+
     /// The `details` object, in the platform's key order. Every code but
     /// `invalid_request` leads with `code`; `invalid_request` carries the
     /// caller's pairs unchanged.
