@@ -13,7 +13,7 @@ use clap::{Args as ClapArgs, Subcommand};
 
 use crate::cli::load_config;
 use crate::cli::output::json;
-use crate::cli::project_evidence::{self, EvidenceCmd};
+use crate::cli::project_evidence;
 use crate::cli::{project_activity, project_lifecycle};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
@@ -241,20 +241,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             let resp = authority::run(&mut ctx, &operator, plan::Request { id: s.id })?;
             emit(json_flag, &resp, |out| render_plan(out, &resp.plan))
         }
-        ProjectCmd::Evidence(project_evidence::Args { cmd }) => match cmd {
-            EvidenceCmd::Add(a) => {
-                let resp = authority::run(&mut ctx, &operator, a.request()?)?;
-                emit(json_flag, &resp, |out| {
-                    project_evidence::render_one(out, &resp.evidence)
-                })
-            }
-            EvidenceCmd::List(l) => {
-                let resp = authority::run(&mut ctx, &operator, l.request())?;
-                emit(json_flag, &resp, |out| {
-                    project_evidence::render_page(out, &resp)
-                })
-            }
-        },
+        ProjectCmd::Evidence(e) => project_evidence::run(&mut ctx, &operator, json_flag, e),
     }
 }
 
@@ -298,7 +285,7 @@ fn list_request(l: ListArgs) -> list::Request {
 }
 
 /// `--json` prints `resp` verbatim; otherwise `tty` renders it.
-fn emit<T: serde::Serialize>(
+pub(crate) fn emit<T: serde::Serialize>(
     json_flag: bool,
     resp: &T,
     tty: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>,

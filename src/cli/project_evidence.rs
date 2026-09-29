@@ -1,15 +1,18 @@
 //! `comemory project evidence add|list` (#346): the flags and TTY views of
 //! typed evidence, thin shells over `domains::projects::evidence_add` and
-//! `evidence_page` that `project.rs` runs under the local operator's
-//! envelope. Clap argument ids equal the core requests' serde names, so the
+//! `evidence_page`; [`run`] executes them under the envelope `project.rs`
+//! hands it, the local operator's. Clap argument ids equal the core requests' serde names, so the
 //! MCP parity probe maps each `add` flag onto `project_evidence`.
 
 use clap::{Args as ClapArgs, Subcommand};
 use serde_json::Value;
 
+use crate::cli::project::emit;
+use crate::domains::projects::authority::{self, Envelope};
 use crate::domains::projects::evidence::EvidenceView;
 use crate::domains::projects::{evidence_add, evidence_page};
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 use crate::utilities::project_error::ProjectError;
 use crate::utilities::uuid;
 
@@ -137,6 +140,21 @@ impl ListArgs {
             kind: self.kind,
             trust: self.trust,
             work_item_id: self.work_item_id,
+        }
+    }
+}
+
+/// Run one `project evidence` verb under `operator`, printing its answer as
+/// JSON under `--json` and as the TTY view otherwise.
+pub fn run(ctx: &mut Ctx<'_>, operator: &Envelope, json_flag: bool, args: Args) -> Result<()> {
+    match args.cmd {
+        EvidenceCmd::Add(a) => {
+            let resp = authority::run(ctx, operator, a.request()?)?;
+            emit(json_flag, &resp, |out| render_one(out, &resp.evidence))
+        }
+        EvidenceCmd::List(l) => {
+            let resp = authority::run(ctx, operator, l.request())?;
+            emit(json_flag, &resp, |out| render_page(out, &resp))
         }
     }
 }
