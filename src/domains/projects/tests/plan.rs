@@ -193,4 +193,9 @@ fn malformed_unknown_and_corrupt_reads_are_refused() {
         .unwrap();
     let e = home.plan(PROJECT).unwrap_err();
     assert_eq!(classify(&e), ("internal_error", Class::Internal));
+    assert_eq!(
+        e.to_string(),
+        "project_milestones.target_date of a0000000-0000-4000-8000-000000000001 \
+         is outside the representable range"
+    );
 }

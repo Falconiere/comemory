@@ -47,8 +47,15 @@ fn corrupt_stored_values_degrade_or_refuse_as_the_platform_would() {
     conn.execute_batch(&format!("UPDATE projects SET created_at = {}", i64::MAX))
         .unwrap();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let e =
-        authority::run(&mut ctx, &Envelope::local_operator(), show::Request { id }).unwrap_err();
+    let e = authority::run(
+        &mut ctx,
+        &Envelope::local_operator(),
+        show::Request { id: id.clone() },
+    )
+    .unwrap_err();
     assert_eq!(classify(&e), ("internal_error", Class::Internal));
-    assert!(e.to_string().contains("projects.created_at"), "{e}");
+    assert_eq!(
+        e.to_string(),
+        format!("projects.created_at of {id} is outside the representable range")
+    );
 }
