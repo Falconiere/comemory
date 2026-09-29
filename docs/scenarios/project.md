@@ -18,14 +18,15 @@ The actor is stored on every row and activity event and reads back as
 `createdBy` / `leadUserId`. A charter has no update verb: after creation it
 changes only through an approved `project.update` proposal (#338).
 
-Every mutation is idempotent (#327): it carries an idempotency key, scoped to
-the principal, and its first answer is stored as a command receipt in the
-same transaction. A retry with the same key and body returns that answer and
-writes nothing — no row, no activity event, no change-feed frame, no
-`activity_log` row. The same
-key with another body or command is refused with `idempotency_conflict`. A
-failed command stores no receipt, so a retry runs again. Receipts have no
-TTL: they live until their project is hard-deleted.
+Every mutation except hard deletion (#320) is idempotent (#327); `create` is
+the first. It carries an idempotency key, scoped to the principal, and its
+first answer is stored as a command receipt in the same transaction. A retry
+with the same key and body returns that answer and writes nothing — no row,
+no activity event, no change-feed frame, no `activity_log` row. The body is
+compared exactly as sent, before normalization. The same key with another
+body or command is refused with `idempotency_conflict`. A failed command
+stores no receipt, so a retry runs again. Receipts have no TTL: they live
+until their project is hard-deleted.
 
 **Runnable tests:** `tests/cli__project.rs`, `tests/cli__project_receipts.rs`,
 `tests/serve__routes__projects.rs`,
@@ -58,7 +59,7 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | `--lead` | `create` | the local operator | The lead's principal id |
 | `--target-date` | `create` | none | `YYYY-MM-DD` (UTC midnight) or an RFC 3339 timestamp |
 | `--id` | `create` | minted | Use this UUID as the project id (stored lowercase) |
-| `--idempotency-key` | `create` | minted | Retry key, 1–200 characters: rerunning with the same key and flags prints the first answer and writes nothing; the same key with other flags exits 75 (`idempotency_conflict`). Omitted, a fresh UUID is minted, so that run is not retry-safe |
+| `--idempotency-key` | `create` | minted | Retry key, 1–200 UTF-16 units: rerunning with the same key and exactly the same flags prints the first answer and writes nothing; the same key with other flags exits 75 (`idempotency_conflict`). Omitted, a fresh UUID is minted, so that run is not retry-safe |
 | `--status` | `list` | all | `draft`, `planning`, `active`, `paused`, `completed` or `canceled` |
 | `--health` | `list` | all | `unknown`, `on_track`, `at_risk` or `off_track` |
 | `--include-archived` | `list` | false | Include archived projects |

@@ -244,12 +244,15 @@ fn a_key_outside_one_to_two_hundred_characters_is_refused() {
             "o",
         ],
     );
-    let keys: i64 = db(&home)
+    let minted: String = db(&home)
         .query_row(
-            "SELECT COUNT(DISTINCT idempotency_key) FROM project_command_receipts",
+            "SELECT idempotency_key FROM project_command_receipts
+             WHERE idempotency_key NOT LIKE 'kkk%'",
             [],
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(keys, 2);
+    let groups: Vec<usize> = minted.split('-').map(str::len).collect();
+    assert_eq!(groups, [8, 4, 4, 4, 12], "not a UUID: {minted}");
+    assert_eq!(minted.as_bytes()[14], b'4', "not a v4 UUID: {minted}");
 }

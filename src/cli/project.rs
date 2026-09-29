@@ -98,7 +98,7 @@ pub struct CreateArgs {
     /// Use this UUID as the project id instead of minting one.
     #[arg(long)]
     pub id: Option<String>,
-    /// Retry key (1–200 characters): rerunning with the same key and flags
+    /// Retry key (1–200 UTF-16 units): rerunning with the same key and flags
     /// prints the first answer and writes nothing. A fresh one is minted when
     /// omitted, so only a run that names its key is retry-safe.
     #[arg(long = "idempotency-key", id = "idempotencyKey")]

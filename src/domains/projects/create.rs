@@ -43,7 +43,7 @@ pub struct Request {
     /// directory is the workspace.
     #[serde(default)]
     pub workspace_id: Option<serde_json::Value>,
-    /// The caller's retry key, 1–200 characters, scoped to the principal.
+    /// The caller's retry key, 1–200 UTF-16 units, scoped to the principal.
     pub idempotency_key: String,
     /// Display name, 1–120 characters.
     pub name: String,

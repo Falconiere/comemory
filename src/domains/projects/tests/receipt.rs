@@ -17,7 +17,9 @@ use serde_json::json;
 
 use super::{Applied, IDEMPOTENCY_KEY_MAX, Keyed, digest, run};
 use crate::config::{Config, Paths};
-use crate::domains::projects::authority::{self, Actor, Command, Envelope, Tier, Verb, sealed};
+use crate::domains::projects::authority::{
+    self, Actor, Capabilities, Command, Envelope, Tier, Verb, sealed,
+};
 use crate::domains::projects::create::{Request, Response};
 use crate::errors::{Error, Result};
 use crate::store::projects::{NewProject, ProjectInsert, insert_project};
@@ -96,7 +98,8 @@ fn refusal<T: std::fmt::Debug>(result: Result<T>) -> (&'static str, Class, Strin
 }
 
 /// A second command type under the wrapper, as #328's lifecycle verbs will
-/// be: it writes one project row, or fails after writing it.
+/// be: each run writes its own project row, or fails after writing it. A
+/// shared verb, so an agent envelope may run it too.
 struct Probe<'a> {
     key: &'a str,
     command_type: &'static str,
@@ -110,19 +113,21 @@ impl Command for Probe<'_> {
     type Response = String;
 
     fn verb(&self) -> Verb {
-        Verb::ProjectCreate
+        Verb::HealthUpdate
     }
 
     fn execute(self, ctx: &mut Ctx<'_>, actor: &Actor) -> Result<String> {
         let body = json!({"probe": true});
         let keyed = Keyed::new(self.key, self.command_type, &body)?;
         let ran = run(ctx.conn()?, actor, &keyed, |tx| {
-            self.applied.set(self.applied.get() + 1);
-            let id = "7c1e0b4a-0d6e-4b8f-9a51-3f2d8e6c4b10";
+            let n = self.applied.get() + 1;
+            self.applied.set(n);
+            let id = format!("7c1e0b4a-0d6e-4b8f-9a51-3f2d8e6c4b{n:02}");
+            let (slug, key_prefix) = (format!("probe-{n}"), format!("PROBE{n}"));
             let row = NewProject {
-                id,
-                slug: "probe",
-                key_prefix: "PROBE",
+                id: &id,
+                slug: &slug,
+                key_prefix: &key_prefix,
                 name: "Probe",
                 outcome: "o",
                 constraints: "[]",
@@ -139,8 +144,8 @@ impl Command for Probe<'_> {
                 return Err(Error::Other("probe failed after its write".into()));
             }
             Ok(Applied {
-                response: id.to_string(),
-                project_id: id.to_string(),
+                response: id.clone(),
+                project_id: id,
             })
         })?;
         Ok(match ran {
@@ -269,6 +274,43 @@ fn two_principals_may_reuse_one_key() {
     assert_eq!(home.count("project_command_receipts"), 2);
     // Each principal still replays its own.
     assert_eq!(home.run(&alice, request("shared", "ALICE")).unwrap(), a);
+}
+
+#[test]
+fn the_principal_kind_is_part_of_the_scope() {
+    let mut home = Home::new();
+    let applied = Cell::new(0);
+    let probe = || Probe {
+        key: "shared",
+        command_type: "project.probe",
+        fail: false,
+        applied: &applied,
+    };
+    let user = Envelope::user("same-id", Tier::Lead);
+    let agent = Envelope::agent("same-id", Capabilities::all());
+    let as_user = home.run(&user, probe()).unwrap();
+    let as_agent = home.run(&agent, probe()).unwrap();
+    assert_ne!(as_user, as_agent);
+    assert_eq!(applied.get(), 2);
+    let scopes: Vec<String> = home
+        .conn
+        .prepare(
+            "SELECT principal_type || ':' || principal_id || ':' || idempotency_key
+             FROM project_command_receipts ORDER BY principal_type",
+        )
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        scopes,
+        vec!["project_agent:same-id:shared", "user:same-id:shared"]
+    );
+    // Each kind replays its own answer without running again.
+    assert_eq!(home.run(&agent, probe()).unwrap(), as_agent);
+    assert_eq!(home.run(&user, probe()).unwrap(), as_user);
+    assert_eq!(applied.get(), 2);
 }
 
 #[test]

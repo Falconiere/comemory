@@ -66,8 +66,11 @@ Every mutation except hard deletion (#320) runs through `receipt::run`
 - **Scope:** `(principal_type, principal_id, idempotency_key)` — not the
   command, not the project — so two principals may reuse a key.
 - **Digest:** hex SHA-256 of canonical JSON `{"commandType", "body"}`; the
-  body is the request minus `idempotencyKey` and bookkeeping (`workspaceId`).
-  Create's body includes `id`, because the engine accepts a client id.
+  body is the request as received, before normalization (as the platform
+  digests its validated input, not its normalized charter), minus
+  `idempotencyKey` and bookkeeping (`workspaceId`). So a retry that respells a
+  repository or the id's case is another command. Create's body includes `id`,
+  because the engine accepts a client id.
 - **Replay:** same command type and digest → the stored core response,
   parsed back into the typed response. Nothing runs and nothing is written:
   no state change, no activity event, no `project_changes` frame (the feed
