@@ -66,13 +66,11 @@ impl Envelope {
     /// of the router `guard`'s token check (legacy paths keep a plain-text
     /// 401; AC-11).
     pub fn unauthorized(command: &str) -> Response {
-        error_response(
+        refusal(
             command,
             StatusCode::UNAUTHORIZED,
             CODE_UNAUTHORIZED,
-            "missing or invalid token".to_string(),
-            None,
-            0,
+            "missing or invalid token",
         )
     }
 
@@ -81,14 +79,8 @@ impl Envelope {
     /// stalls into `SQLITE_BUSY` (AC-17). Called from
     /// `serve::routes::guard_mutating` on a failed `try_acquire`.
     pub fn busy(command: &str) -> Response {
-        let mut res = error_response(
-            command,
-            StatusCode::SERVICE_UNAVAILABLE,
-            CODE_BUSY,
-            "write permit held by another request; retry shortly".to_string(),
-            None,
-            0,
-        );
+        let message = "write permit held by another request; retry shortly";
+        let mut res = refusal(command, StatusCode::SERVICE_UNAVAILABLE, CODE_BUSY, message);
         res.headers_mut()
             .insert(header::RETRY_AFTER, HeaderValue::from_static("5"));
         res
@@ -98,13 +90,11 @@ impl Envelope {
     /// `--read-only` server. Called from `serve::routes::guard_mutating` and
     /// `serve::routes::guard_job`.
     pub fn read_only(command: &str) -> Response {
-        error_response(
+        refusal(
             command,
             StatusCode::METHOD_NOT_ALLOWED,
             CODE_READ_ONLY,
-            "server is read-only".to_string(),
-            None,
-            0,
+            "server is read-only",
         )
     }
 
@@ -116,13 +106,12 @@ impl Envelope {
     /// directly; kept as a standalone builder for tests exercising the
     /// envelope shape in isolation.
     pub fn confirmation_required(command: &str) -> Response {
-        error_response(
+        let message = "this operation requires explicit confirmation";
+        refusal(
             command,
             StatusCode::BAD_REQUEST,
             CODE_CONFIRMATION_REQUIRED,
-            "this operation requires explicit confirmation".to_string(),
-            None,
-            0,
+            message,
         )
     }
 
@@ -224,6 +213,13 @@ fn meta(command: &str, elapsed_ms: u64) -> Meta<'_> {
 /// status. Every error constructor funnels through here, so every error body
 /// serializes `ok, error{code, message, details}, meta` in that order — the
 /// platform's order, which a sorted `json!` map would not keep.
+/// A fixed refusal the server raises itself (no crate [`Error`], no
+/// `details`, no elapsed time): the token guard, the write permit, the
+/// read-only gate and the confirm gate.
+fn refusal(command: &str, status: StatusCode, code: &'static str, message: &str) -> Response {
+    error_response(command, status, code, message.to_string(), None, 0)
+}
+
 fn error_response(
     command: &str,
     status: StatusCode,

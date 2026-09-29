@@ -3,10 +3,20 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**289 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 621 production `.rs` files under `src/`. That
+**285 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 674 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number fell from 289 (#326, projects foundation).** The four
+fixed refusal constructors in `serve::envelope` (`unauthorized`, `busy`,
+`read_only`, `confirmation_required`) now share one `refusal` helper, which
+burns five of their six pairs; `unauthorized` ↔ `confirmation_required` stays.
+The projects capability adds one pair: `mcp::tools_projects::{project_list,
+project_show}`, the rmcp-forced tool skeleton every read tool shares. Every
+other pair the new store, domain and route code produced was burned down in
+the same change (one relation writer over `execute_many`, one relation read,
+one `invalid_request` builder with an edge/message modifier).
 
 **Why this number rose from 288 (#257, `watch` attaches to the coordinator).**
 `cli::watch::{follow_coordinator, attach_once}` pair: `follow_coordinator` is
@@ -503,13 +513,8 @@ fresh and does not depend on these line numbers.
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
 | `src/serve/routes.rs:260-270` function `guard_mutating` | `src/serve/routes.rs:277-282` function `guard_job` | 93.07% | parallel request-plumbing helpers over twin shapes |
-| `src/serve/envelope.rs:68-76` method `unauthorized` | `src/serve/envelope.rs:115-123` method `confirmation_required` | 90.50% | parallel response-envelope constructors, one per response shape |
-| `src/serve/envelope.rs:68-76` method `unauthorized` | `src/serve/envelope.rs:98-106` method `read_only` | 90.50% | parallel response-envelope constructors, one per response shape |
+| `src/serve/envelope.rs:68-75` method `unauthorized` | `src/serve/envelope.rs:108-116` method `confirmation_required` | 85.57% | parallel refusal constructors over the shared `refusal` helper; `confirmation_required` names its message first |
 | `src/serve/router.rs:59-68` function `forbidden_response` | `src/serve/router.rs:72-77` function `unauthorized_response` | 89.56% | parallel request-plumbing helpers over twin shapes |
-| `src/serve/envelope.rs:68-76` method `unauthorized` | `src/serve/envelope.rs:82-93` method `busy` | 89.25% | parallel response-envelope constructors, one per response shape |
-| `src/serve/envelope.rs:98-106` method `read_only` | `src/serve/envelope.rs:115-123` method `confirmation_required` | 89.11% | parallel response-envelope constructors, one per response shape |
-| `src/serve/envelope.rs:82-93` method `busy` | `src/serve/envelope.rs:115-123` method `confirmation_required` | 87.47% | parallel response-envelope constructors, one per response shape |
-| `src/serve/envelope.rs:82-93` method `busy` | `src/serve/envelope.rs:98-106` method `read_only` | 87.47% | parallel response-envelope constructors, one per response shape |
 | `src/serve/routes.rs:296-305` function `respond` | `src/serve/routes.rs:310-315` function `accepted` | 86.59% | parallel request-plumbing helpers over twin shapes |
 
 ### `src/serve/routes/memories/`
@@ -720,6 +725,7 @@ to 266 as the MCP transport added three architecture tools.
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:171-183` method `edges` | 89.92% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:192-202` method `repos` | 90.63% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:153-162` method `list` | 89.95% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_projects.rs:25-30` method `project_list` | `src/mcp/tools_projects.rs:37-42` method `project_show` | 90.49% | rmcp-forced tool skeleton; the bodies call the `projects::list` and `projects::show` cores |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 86.53% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/config/validate_knobs.rs:20-25` function `check_graph_hops` | `src/config/validate_knobs.rs:38-43` function `check_decay` | 86.09% | one bound per knob; the shapes rhyme because each is `if out of range { Err(msg) } else { Ok(()) }`, and each message names its own range |
 | `src/config/validate_knobs.rs:30-35` function `check_positive_count` | `src/config/validate_knobs.rs:38-43` function `check_decay` | 86.09% | same: one bound per knob, each with its own message |
