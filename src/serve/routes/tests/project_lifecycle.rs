@@ -6,8 +6,8 @@
 use comemory::domains::projects::lifecycle::{Body, Kind};
 use comemory::errors::Error;
 use comemory::serve::routes::project_lifecycle::path;
-use comemory::serve::routes::project_request::body;
 use comemory::utilities::error_code::{Class, classify};
+use comemory::utilities::project_body::body;
 
 #[test]
 fn each_verb_is_posted_to_its_own_segment() {

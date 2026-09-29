@@ -31,11 +31,12 @@ use crate::serve::AppState;
 use crate::serve::routes::project_activity::{self, ACTIVITY};
 use crate::serve::routes::project_evidence;
 use crate::serve::routes::project_lifecycle;
-use crate::serve::routes::project_request::{body, list_field, query};
+use crate::serve::routes::project_request::{list_field, query};
 use crate::serve::routes::{RouteEntry, guard_mutating, query_response, respond};
 use crate::utilities::activity::command;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
+use crate::utilities::project_body::body;
 
 /// `project.create`'s route command, shared by the table and its handler.
 const CREATE: &str = "project.create";
@@ -190,7 +191,7 @@ async fn create_project(State(state): State<AppState>, headers: HeaderMap, raw: 
 }
 
 /// The platform's `201` for a created project; a refusal passes through.
-fn created(mut response: Response) -> Response {
+pub(super) fn created(mut response: Response) -> Response {
     if response.status() == StatusCode::OK {
         *response.status_mut() = StatusCode::CREATED;
     }

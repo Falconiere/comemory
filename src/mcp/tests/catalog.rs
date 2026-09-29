@@ -29,12 +29,14 @@ fn exactly_four_tools_mutate() {
     assert_eq!(
         mutating,
         vec!["save", "architecture_save", "project_evidence", "feedback"],
+        vec!["project_propose", "save", "architecture_save", "feedback"],
         "mutating tools"
     );
     assert!(catalog::is_mutating("save"));
     assert!(catalog::is_mutating("feedback"));
     assert!(catalog::is_mutating("architecture_save"));
     assert!(catalog::is_mutating("project_evidence"));
+    assert!(catalog::is_mutating("project_propose"));
     assert!(!catalog::is_mutating("find"));
     // An unknown name is not dispatchable at all, so it is not "mutating".
     assert!(!catalog::is_mutating("delete-everything"));

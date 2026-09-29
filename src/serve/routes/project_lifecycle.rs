@@ -16,11 +16,11 @@ use axum::routing::{MethodRouter, post};
 use crate::domains::projects::authority;
 use crate::domains::projects::lifecycle::{Body, Kind, Request};
 use crate::serve::AppState;
-use crate::serve::routes::project_request::body;
 use crate::serve::routes::projects::caller;
 use crate::serve::routes::{guard_mutating, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
+use crate::utilities::project_body::body;
 
 /// `kind`'s path under `/api/v1`, `{id}` left for axum.
 #[must_use]

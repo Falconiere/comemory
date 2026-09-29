@@ -9,6 +9,7 @@ MCP catalog all call.
 
 **What does NOT belong here:** SQL (every project statement lives in
 `store::{projects,project_read,project_plan,project_activity,project_changes,project_evidence}`, the
+`store::{projects,project_read,project_plan,project_proposals,project_activity,project_changes}`, the
 declared tables in `store::schema_projects`), delivery (no file here imports `cli`, `serve` or
 `mcp`), and the refusal vocabulary, which is `utilities::project_error`.
 
@@ -32,13 +33,21 @@ One line per file, named after its primary item:
 | `lifecycle.rs` | `Request` | `project archive\|restore\|pause\|resume` / `POST /projects/{id}/{archive,restore,pause,resume}` (#328): the platform's one lifecycle command with a four-way `Kind`, human-only at lead tier. Loads the row, checks `expectedVersion` (`409 version_conflict`), then the ported transition (`409 invalid_transition`), writes a version-guarded patch and one `project.<verb>d` event under the receipt; a pause reason must be non-blank (`422`) |
 | `limits.rs` | `text` | The platform's charter and paging caps (`project-limits.ts`), counted in UTF-16 units, each breach a `422 invalid_request` naming field, reason and limit |
 | `list.rs` | `Request` | `project list` / `GET /projects`: a keyset page newest first, filtered by status, health and `includeArchived` |
+| `operation_fields.rs` | `ProjectPatch` | The criterion, milestone and charter shapes a plan operation carries (`project-plan-operations.ts`): patches with no identity field, proposed creates with a client UUID, `Option<Nullable<T>>` so an absent patch field and a `null` stay apart, and `null` refused on a field that is not nullable |
+| `operation_rules.rs` | `validate` | A parsed operation list's request-level rules: 1–200 operations and at most 262,144 serialized bytes (the platform's `refuseCap` details `{field, reason: cap_exceeded, limit, actual}`), each field's length or range (`422`, named by its platform path), and normalization — UUIDs lowercase (`400` when malformed), `targetDate` as `toISOString()` |
+| `operations.rs` | `Operation` | The twelve typed plan operations, internally tagged on `op`, denying unknown keys; `bounded`, the list deserializer that refuses a 2,001st operation at the schema edge (`400 operations is invalid`) on every adapter; `Nullable` and `non_null`, which keep absent, `null` and a value apart |
 | `plan.rs` | `Request` | `project plan show` / `GET /projects/{id}/plan` / `project_show` with `view: "plan"` (`Verb::PlanRead`): the platform's `ProjectPlanResponse` at the current version; `plan_view` drops archived milestones, items and criteria and every edge naming an archived item, the projection later plan tasks reuse |
+| `propose.rs` | `Request` | `project proposal submit` / `POST /projects/{id}/proposals` / MCP `project_propose` (`Verb::ProposalCreate`): request rules before the store, then in one immediate transaction under the receipt the project checks (archived or closed `409 invalid_transition`, stale base `409 proposal_stale`), the `pending` row, `draft` → `planning` with `version + 1`, and one `project.proposal_submitted` event |
+| `proposal_view.rs` | `ProposalView` | The platform's `ProjectProposalView` from a stored row and its review; a corrupt stored JSON column reads as empty, as the platform's read path degrades it |
+| `proposals.rs` | `ListRequest` | `project proposal list\|show` / `GET /projects/{id}/proposals[/{proposalId}]` (`Verb::ProposalRead`): a keyset page newest first, optionally one state; one proposal, `404 proposal_not_found` when unknown or of another project |
 | `receipt.rs` | `run` | The idempotent-command runner every mutation goes through (#327): a `(principal, idempotencyKey)`-scoped `project_command_receipts` row written in the mutation's own immediate transaction; an exact replay returns the stored response and writes nothing, any other reuse is `409 idempotency_conflict` |
 | `principal.rs` | `Principal` | The principal an envelope carries: `user` or `project_agent` plus an id; the `local-operator` and `local-agent` ids |
 | `show.rs` | `Request` | `project show` / `GET /projects/{id}`: one charter; a malformed id is `400`, an unknown one `404 project_not_found` |
 | `slug.rs` | `base_slug` | `projects.slug` from the charter name, and the `-2`, `-3`, … disambiguator |
 | `timestamp.rs` | `iso` | Epoch milliseconds rendered as `toISOString()`, and `targetDate` parsing (calendar date = UTC midnight, RFC 3339 converted to UTC) |
-| `view.rs` | `ProjectView` | The platform's charter view key for key minus `workspaceId`, the batched load of a page's repositories and criteria, and `written`, the view a mutation re-reads inside its own transaction |
+| `view.rs` | `ProjectView` | The platform's charter view key for key minus `workspaceId`, the batched load of a page's repositories and criteria, `written`, the view a mutation re-reads inside its own transaction, and `stored_json`, the degrade-to-empty reader of a stored JSON array |
+| `work_item_fields.rs` | `WorkItemPatch` | A work item as an operation carries it: its kind and priority enums, its assignee, the patch and the proposed create from one field list |
+| `work_item_rules.rs` | `create` | A work item's request-level rules, shared by `work_item.create` and `work_item.update` so both are held to the same caps |
 
 ## Rules this capability keeps
 
@@ -125,6 +134,37 @@ One line per file, named after its primary item:
   an evidence id. #348's verify retry is its first caller.
 - **No index:** the platform's table has none, and one project's evidence is
   small.
+## Proposals
+
+A plan changes only through an immutable proposal reviewed against the plan
+version it was written against (`propose.rs`, #336). Ported from the
+platform's `project-plan-operations.ts` and `project-proposal-service.ts`:
+
+- **Twelve operations**, each create naming its client UUID so approval
+  writes the identity the reviewer saw. Stored normalized (UUIDs lowercase,
+  `targetDate` ISO) in the platform's key order.
+- **Two refusal tiers, one code.** The schema edge (`400 invalid_request`):
+  more than 2,000 operations, a wrong type, a bad enum, an unknown key. The
+  documented caps (`422 invalid_request`): more than 200 operations, more
+  than 256 KiB of serialized operations, and every field length or range.
+  `POST …/proposals` admits a 32 MiB body so the 2,000 bound is the engine's
+  answer, not a `413`.
+- **Checks before the store:** the key, the shape and every cap. **Inside the
+  transaction:** the project exists, is neither archived nor
+  completed/canceled (`409 invalid_transition`), and its plan version still
+  equals `basePlanVersion` (`409 proposal_stale`). The live-plan preflight
+  (references, entity caps after applying, the dependency graph) is #337's.
+- **Status:** the first proposal moves a `draft` project to `planning` with
+  `version + 1`, in the same transaction as the row and its
+  `project.proposal_submitted` event (`{basePlanVersion, operationCount,
+  riskCount}`); a later one moves nothing.
+- **Digest:** the platform's `digestBody` verbatim — `basePlanVersion,
+  operations, rationale, assumptions, risks` as received — which the row
+  also stores as `request_digest`.
+- **Divergences:** a patch carrying an identity (`id`, or a criterion's
+  `workItemId`) is refused `400`, where zod strips the key; a shape error
+  inside an operation names `operations.<i>`, because serde buffers an
+  internally tagged enum; caps answer `422`, as for the charter.
 
 ## Idempotency
 
@@ -232,7 +272,7 @@ comemory project
   archive | restore | pause | resume        #328
   plan show                                 #335 (the committed plan)
   plan …                                    plan slice (#264)
-  proposal …                                #335–#338
+  proposal submit | list | show             #336 (review verbs #338, #339)
   item …          (ready, start, …)         #351
   execution …     (heartbeat, block, resume, request-review)  #352
   packet …                                  packets slice (#266)
@@ -252,6 +292,12 @@ human-only verbs get none:
   `view: "evidence"` with `limit`, `cursor`, `kind`, `trust` and
   `workItemId` (#346), none a row of its own;
 - writers: `project_propose`, `project_work` (ready, start),
+- readers: `project_list`, `project_show` (the catalog is 18 with
+  `project_propose`). The plan is a `view: "plan"` of `project_show` (#335)
+  and one activity page a `view: "activity"` with `limit`, `cursor` and
+  `order` (#331), neither a row of its own;
+- writers: `project_propose` (#336: submits a proposal for human review;
+  nothing in the plan changes until a human approves it), `project_work` (ready, start),
   `project_execution` (heartbeat, block, resume, request review),
   `project_work_packet`, `project_evidence` (#346; the catalog is now 18),
   `project_health`.

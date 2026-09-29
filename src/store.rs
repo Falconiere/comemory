@@ -142,6 +142,9 @@ pub mod project_changes;
 pub mod project_evidence;
 /// A project's plan rows: milestones, work items, criteria and dependencies.
 pub mod project_plan;
+/// `project_plan_proposals`: the immutable proposal, its first status move
+/// and its reads.
+pub mod project_proposals;
 /// `projects` charter reads: one row, a keyset page, and a page's relations.
 pub mod project_read;
 /// `project_command_receipts`: an idempotent project command's stored answer.

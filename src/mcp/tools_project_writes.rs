@@ -6,6 +6,12 @@
 //! project writers (#261) join it in later tasks.
 //!
 //! [`McpState::project_envelope`]: crate::mcp::state::McpState::project_envelope
+//! The project writer tools (#261), as their own `#[tool_router]` block:
+//! `project_propose` (#336), the `domains::projects::propose` core, which
+//! submits a plan proposal for human review. Each runs under the session's
+//! envelope, like the readers in [`crate::mcp::tools_projects`], and is
+//! refused outright in a `--read-only` session, like every writer. Human-only
+//! verbs have no tool here.
 //!
 //! `description` repeats [`crate::mcp::catalog`] because rmcp's `#[tool]`
 //! takes a string LITERAL; `tests/cli_scenario_mcp.rs::mcp_01_lists_catalog`
@@ -32,6 +38,16 @@ impl ComemoryServer {
         Parameters(req): Parameters<projects::evidence_add::Request>,
     ) -> Result<CallToolResult, ErrorData> {
         write_tool(self.session(), "project_evidence", move |c, s| {
+    /// Submit a plan proposal for human review.
+    #[tool(
+        name = "project_propose",
+        description = "Submit a plan proposal for human review: typed operations written against basePlanVersion, with a rationale, assumptions and risks. The plan does not change until a human approves it."
+    )]
+    async fn project_propose(
+        &self,
+        Parameters(req): Parameters<projects::propose::Request>,
+    ) -> Result<CallToolResult, ErrorData> {
+        write_tool(self.session(), "project_propose", move |c, s| {
             enveloped(c, s, req)
         })
         .await

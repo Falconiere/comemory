@@ -3,10 +3,10 @@
 //! The capability envelope (`authority`) wraps it; the transfer import (#342)
 //! remaps the local operator's id to the platform user on migrate.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The platform's `principal_type` vocabulary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PrincipalType {
     /// A human: the local operator, or a workspace member on a hosted engine.

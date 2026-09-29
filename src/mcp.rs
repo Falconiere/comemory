@@ -36,6 +36,7 @@ pub mod server;
 /// Shared per-session state: call gate, paths, config, scope and flags.
 pub mod state;
 /// The project writer tools: `project_evidence` (#346).
+/// The project writer tools (`project_propose`).
 pub mod tools_project_writes;
 /// The two project read tools (`project_list`, `project_show`).
 pub mod tools_projects;

@@ -14,6 +14,7 @@ use clap::{Args as ClapArgs, Subcommand};
 use crate::cli::load_config;
 use crate::cli::output::json;
 use crate::cli::project_evidence;
+use crate::cli::project_proposal::{self, ProposalArgs};
 use crate::cli::{project_activity, project_lifecycle};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
@@ -42,6 +43,12 @@ Examples:
 
   # Read its committed plan: milestones, work items, criteria, dependencies
   comemory project plan show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --json
+
+  # Propose plan changes for review, then page and read proposals
+  comemory project proposal submit 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f \\
+    --base-plan-version 0 --operations-file ops.json --rationale 'Scope the reader'
+  comemory project proposal list 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --state pending
+  comemory project proposal show 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f <PROPOSAL_ID> --json
 
   # Page through active projects, newest first
   comemory project list --status active --limit 10
@@ -102,6 +109,8 @@ pub enum ProjectCmd {
     Plan(PlanArgs),
     /// Record and page typed evidence on a project or its work items.
     Evidence(project_evidence::Args),
+    /// Submit, list and show plan proposals.
+    Proposal(ProposalArgs),
 }
 
 /// Args for `project plan` — nested verb required.
@@ -242,6 +251,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             emit(json_flag, &resp, |out| render_plan(out, &resp.plan))
         }
         ProjectCmd::Evidence(e) => project_evidence::run(&mut ctx, &operator, json_flag, e),
+        ProjectCmd::Proposal(p) => project_proposal::run(p.cmd, &mut ctx, &operator, json_flag),
     }
 }
 

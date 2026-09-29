@@ -78,6 +78,8 @@ pub mod project_evidence;
 /// `POST /projects/{id}/{archive,restore,pause,resume}`
 /// (`domains::projects::lifecycle`).
 pub mod project_lifecycle;
+/// `POST|GET /projects/{id}/proposals[/{proposalId}]` (`domains::projects`).
+pub mod project_proposals;
 /// Raw project request bodies and queries parsed into core requests, every
 /// malformed input a `400 invalid_request` naming its field.
 pub mod project_request;
@@ -166,6 +168,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(activity::table_entries());
     entries.extend_from_slice(activity_stream::table_entries());
     entries.extend_from_slice(projects::table_entries());
+    entries.extend_from_slice(project_proposals::table_entries());
     entries
 }
 
@@ -199,6 +202,7 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(activity::router(state.clone()))
         .merge(activity_stream::router(state.clone()))
         .merge(projects::router(state.clone()))
+        .merge(project_proposals::router(state.clone()))
         .merge(sync::router(state.clone()))
         .merge(sync_replica::router(state))
 }
