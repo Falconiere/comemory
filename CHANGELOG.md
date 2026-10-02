@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-10-02
+
+### Added
+
+- submit, list and show plan proposals over CLI, HTTP and MCP ([#390](https://github.com/Falconiere/comemory/pull/390))
+
 ## [0.55.0] - 2026-09-29
 
 ### Added
