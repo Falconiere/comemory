@@ -32,6 +32,10 @@ impl ComemoryServer {
         Parameters(req): Parameters<projects::evidence_add::Request>,
     ) -> Result<CallToolResult, ErrorData> {
         write_tool(self.session(), "project_evidence", move |c, s| {
+            enveloped(c, s, req)
+        })
+        .await
+    }
     /// Submit a plan proposal for human review.
     #[tool(
         name = "project_propose",
