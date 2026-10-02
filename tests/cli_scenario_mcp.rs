@@ -179,7 +179,7 @@ fn stored_events(data_dir: &Path, query_id: &str) -> Vec<(String, String, String
 
 /// AC-1: `initialize` succeeds and `tools/list` is exactly the catalog —
 /// every name, every description, an object `inputSchema` on each — and
-/// `--read-only` advertises the same eighteen.
+/// `--read-only` advertises the same nineteen.
 #[tokio::test]
 async fn mcp_01_lists_catalog() {
     let tmp = tempfile::TempDir::new().expect("cwd");
@@ -935,6 +935,8 @@ async fn mcp_11_project_evidence_attaches_and_pages() {
         .data("project_show", json!({"id": PROJECT, "view": "evidence"}))
         .await;
     assert_eq!(still["evidence"].as_array().map(Vec::len), Some(1));
+}
+
 /// #336 AC-6/AC-7: `project_propose` submits a proposal as the local agent
 /// against a project the CLI chartered, its refusals carry the project code,
 /// and a `--read-only` session refuses it like every writer.

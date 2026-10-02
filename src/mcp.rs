@@ -20,7 +20,7 @@ use crate::mcp::server::ComemoryServer;
 use crate::mcp::state::McpState;
 use crate::prelude::*;
 
-/// The curated tool table: eighteen entries naming the command core each tool
+/// The curated tool table: nineteen entries naming the command core each tool
 /// runs and whether it writes.
 pub mod catalog;
 /// The blocking-pool bridge every tool body runs its core through.

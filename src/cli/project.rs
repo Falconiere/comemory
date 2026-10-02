@@ -153,8 +153,8 @@ pub struct CreateArgs {
     pub idempotency_key: Option<String>,
 }
 
-/// Args for `project show` and `project plan show` live in
-/// `crate::cli::project_plan` (both verbs share the same id flag).
+// Args for `project show` and `project plan show` live in
+// `crate::cli::project_plan` (both verbs share the same id flag).
 
 /// Args for `project list`.
 #[derive(ClapArgs, Debug)]

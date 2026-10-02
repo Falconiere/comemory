@@ -3,11 +3,7 @@
 //! activity-page (#331) and evidence-page (#346) cores behind
 //! `project_show`'s `view`, with no repo scope — a project is not
 //! repo-scoped — each run under the session's envelope
-//! ([`McpState::project_envelope`]). The project writers live in
-//! the `domains::projects` list core, and the show, plan (#335) and
-//! activity-page (#331) cores behind `project_show`'s `view`, with no repo
-//! scope — a project is not repo-scoped — each run under the session's
-//! envelope ([`McpState::project_envelope`]). The project writers are
+//! ([`McpState::project_envelope`]). The project writers are
 //! [`crate::mcp::tools_project_writes`].
 //!
 //! [`McpState::project_envelope`]: crate::mcp::state::McpState::project_envelope

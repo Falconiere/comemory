@@ -13,14 +13,14 @@ use std::collections::BTreeSet;
 use comemory::mcp::catalog::{self, TOOLS};
 
 #[test]
-fn catalog_holds_eighteen_uniquely_named_tools() {
-    assert_eq!(TOOLS.len(), 18, "catalog size");
+fn catalog_holds_nineteen_uniquely_named_tools() {
+    assert_eq!(TOOLS.len(), 19, "catalog size");
     let names: BTreeSet<&str> = TOOLS.iter().map(|t| t.name).collect();
-    assert_eq!(names.len(), 18, "duplicate tool name in {names:?}");
+    assert_eq!(names.len(), 19, "duplicate tool name in {names:?}");
 }
 
 #[test]
-fn exactly_four_tools_mutate() {
+fn exactly_five_tools_mutate() {
     let mutating: Vec<&str> = TOOLS
         .iter()
         .filter(|t| t.mutating)
@@ -28,8 +28,13 @@ fn exactly_four_tools_mutate() {
         .collect();
     assert_eq!(
         mutating,
-        vec!["save", "architecture_save", "project_evidence", "feedback"],
-        vec!["project_propose", "save", "architecture_save", "feedback"],
+        vec![
+            "project_propose",
+            "save",
+            "architecture_save",
+            "project_evidence",
+            "feedback"
+        ],
         "mutating tools"
     );
     assert!(catalog::is_mutating("save"));

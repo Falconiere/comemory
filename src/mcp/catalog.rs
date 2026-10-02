@@ -1,6 +1,6 @@
 //! The curated MCP tool table.
 //!
-//! Eighteen entries keep tool discovery compact beside the much larger HTTP
+//! Nineteen entries keep tool discovery compact beside the much larger HTTP
 //! route table. Each row names the clap subcommand whose
 //! core the tool runs, which is what `tests/mcp__parity.rs` walks to prove no
 //! tool invents a command or a parameter the CLI does not have.

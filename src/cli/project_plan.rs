@@ -37,12 +37,7 @@ pub enum PlanCmd {
 }
 
 /// Run one `project plan` verb under the local operator's envelope.
-pub fn run(
-    ctx: &mut Ctx<'_>,
-    operator: &Envelope,
-    json_flag: bool,
-    cmd: PlanCmd,
-) -> Result<()> {
+pub fn run(ctx: &mut Ctx<'_>, operator: &Envelope, json_flag: bool, cmd: PlanCmd) -> Result<()> {
     match cmd {
         PlanCmd::Show(s) => {
             let resp = authority::run(ctx, operator, plan::Request { id: s.id })?;
