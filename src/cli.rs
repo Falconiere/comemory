@@ -98,6 +98,9 @@ pub mod project_evidence;
 /// `comemory project archive|restore|pause|resume` — the flags the four
 /// lifecycle verbs share.
 pub mod project_lifecycle;
+/// `comemory project plan show <PROJECT_ID>` — the plan verb's flags and
+/// TTY view (#335); `project.rs` reaches in here for `ShowArgs` too.
+pub mod project_plan;
 /// `comemory project proposal submit|list|show` — plan proposals (#336).
 pub mod project_proposal;
 /// `comemory prune`: orphan / low-value / stale-code candidates.

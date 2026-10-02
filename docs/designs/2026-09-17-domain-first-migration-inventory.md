@@ -455,6 +455,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/project_activity.rs | comemory::cli::project_activity; preserve | none | none | delivery::cli | src/cli/project_activity.rs | retain |
 | src/cli/project_evidence.rs | comemory::cli::project_evidence; preserve | none | none | delivery::cli | src/cli/project_evidence.rs | retain |
 | src/cli/project_lifecycle.rs | comemory::cli::project_lifecycle; preserve | none | none | delivery::cli | src/cli/project_lifecycle.rs | retain |
+| src/cli/project_plan.rs | comemory::cli::project_plan; preserve | none | none | delivery::cli | src/cli/project_plan.rs | retain |
 | src/cli/project_proposal.rs | comemory::cli::project_proposal; preserve | none | none | delivery::cli | src/cli/project_proposal.rs | retain |
 | src/cli/prune.rs | comemory::cli::prune; preserve | none | none | delivery::cli | src/cli/prune.rs | retain |
 | src/cli/rebuild.rs | comemory::cli::rebuild; preserve | none | none | delivery::cli | src/cli/rebuild.rs | retain |

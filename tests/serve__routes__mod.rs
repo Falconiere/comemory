@@ -201,14 +201,14 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
         // so no project is chartered; each lifecycle verb answers `400` for
         // its missing `idempotencyKey`, so no project moves, and neither does
         // `project.evidence.add`, so no evidence is recorded.
-        // its missing `idempotencyKey`, so no project moves, and
-        // `project.proposal.submit` does too, so no proposal is written.
+        // `project.proposal.submit` does the same for `idempotencyKey`, so
+        // no proposal is written.
         | "project.create"
         | "project.archive"
         | "project.restore"
         | "project.pause"
         | "project.resume"
-        | "project.evidence.add" => (serde_json::json!({}), vec![]),
+        | "project.evidence.add"
         | "project.proposal.submit" => (serde_json::json!({}), vec![]),
         // `PUT /hooks/{name}` needs a body and, like `hooks`, a repo path the
         // gate is checked before touching.

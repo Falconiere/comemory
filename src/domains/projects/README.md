@@ -8,8 +8,7 @@ change feed, and the command cores the CLI, the loopback HTTP server and the
 MCP catalog all call.
 
 **What does NOT belong here:** SQL (every project statement lives in
-`store::{projects,project_read,project_plan,project_activity,project_changes,project_evidence}`, the
-`store::{projects,project_read,project_plan,project_proposals,project_activity,project_changes}`, the
+`store::{projects,project_read,project_plan,project_proposals,project_activity,project_changes,project_evidence}`, the
 declared tables in `store::schema_projects`), delivery (no file here imports `cli`, `serve` or
 `mcp`), and the refusal vocabulary, which is `utilities::project_error`.
 

@@ -939,7 +939,7 @@ async fn mcp_11_project_evidence_attaches_and_pages() {
 /// against a project the CLI chartered, its refusals carry the project code,
 /// and a `--read-only` session refuses it like every writer.
 #[tokio::test]
-async fn mcp_11_project_propose_submits_and_read_only_refuses() {
+async fn mcp_12_project_propose_submits_and_read_only_refuses() {
     let tmp = tempfile::TempDir::new().expect("cwd");
     let home = McpHome::spawn(tmp.path(), &[]).await;
     let project = "11111111-1111-4111-8111-111111111111";
