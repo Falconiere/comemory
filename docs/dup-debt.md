@@ -3,10 +3,16 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**284 near-duplicate function/method pairs at threshold 0.85**, measured with
+**285 near-duplicate function/method pairs at threshold 0.85**, measured with
 **`similarity-rs 0.5.0`** over the 684 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number rose from 284 (#336, plan proposals).** The MCP transport
+gains a second project writer, so `mcp::tools_project_writes::{project_evidence,
+project_propose}` pair: the rmcp-forced tool skeleton recorded under
+`src/mcp/` below. Both bodies are already one `write_tool(…, enveloped)` call
+over a different core's request type, so no shared logic is left to extract.
 
 **Why this number held at 284 (#331, project activity page).**
 The activity page adds no pair. Its CLI verb and its route each live in
@@ -742,6 +748,7 @@ to 266 as the MCP transport added three architecture tools.
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:192-202` method `repos` | 90.63% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:153-162` method `list` | 89.95% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 86.53% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_project_writes.rs:30-38` method `project_evidence` | `src/mcp/tools_project_writes.rs:44-52` method `project_propose` | 93.30% | rmcp-forced tool skeleton; the bodies call different project cores through `write_tool` |
 | `src/config/validate_knobs.rs:20-25` function `check_graph_hops` | `src/config/validate_knobs.rs:38-43` function `check_decay` | 86.09% | one bound per knob; the shapes rhyme because each is `if out of range { Err(msg) } else { Ok(()) }`, and each message names its own range |
 | `src/config/validate_knobs.rs:30-35` function `check_positive_count` | `src/config/validate_knobs.rs:38-43` function `check_decay` | 86.09% | same: one bound per knob, each with its own message |
 | `src/config/validate_knobs.rs:20-25` function `check_graph_hops` | `src/config/validate_knobs.rs:30-35` function `check_positive_count` | 85.79% | same: one bound per knob, each with its own message |
