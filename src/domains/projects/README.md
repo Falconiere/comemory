@@ -290,16 +290,10 @@ human-only verbs get none:
   `limit`, `cursor` and `order` (#331), and one evidence page a
   `view: "evidence"` with `limit`, `cursor`, `kind`, `trust` and
   `workItemId` (#346), none a row of its own;
-- writers: `project_propose`, `project_work` (ready, start),
-- readers: `project_list`, `project_show` (the catalog is 18 with
-  `project_propose`). The plan is a `view: "plan"` of `project_show` (#335)
-  and one activity page a `view: "activity"` with `limit`, `cursor` and
-  `order` (#331), neither a row of its own;
 - writers: `project_propose` (#336: submits a proposal for human review;
-  nothing in the plan changes until a human approves it), `project_work` (ready, start),
-  `project_execution` (heartbeat, block, resume, request review),
-  `project_work_packet`, `project_evidence` (#346; the catalog is now 18),
-  `project_health`.
+  nothing in the plan changes until a human approves it), `project_work`
+  (ready, start), `project_execution` (heartbeat, block, resume, request
+  review), `project_work_packet`, `project_evidence` (#346), `project_health`.
 
 ## One MCP tool, many verbs: the `action` rule
 

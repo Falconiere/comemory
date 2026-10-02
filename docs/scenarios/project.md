@@ -492,7 +492,7 @@ warning never logs the value.
     before the store opens; the local agent holds it.
 - **Covered by:** `tests/cli__project_proposal.rs`,
   `tests/serve__routes__project_proposals.rs`,
-  `tests/cli_scenario_mcp.rs::mcp_11_project_propose_submits_and_read_only_refuses`,
+  `tests/cli_scenario_mcp.rs::mcp_12_project_propose_submits_and_read_only_refuses`,
   `src/domains/projects/tests/propose.rs`, `src/domains/projects/tests/proposals.rs`,
   `src/domains/projects/tests/operations.rs`,
   `src/domains/projects/tests/operation_rules.rs`,
