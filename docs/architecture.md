@@ -69,7 +69,7 @@ authoritative architecture reference; pair it with the
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) for the CLI |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
 | `serve` | Loopback-only axum HTTP server behind the `comemory serve` command (256-bit per-session token, Host-header guard, default-deny CORS, and the shared `utilities::path_containment` chokepoint) exposing the versioned `/api/v1` REST surface — every command core, background jobs with SSE progress/log streaming, and the console-facing aggregates (overview, graph nodes, learning loop, trash, gc policy). The `comemory graph` command exports the same code graph as JSON / DOT / static HTML |
-| `mcp` | The stdio MCP adapter behind `comemory mcp` — the third delivery surface beside `cli` and `serve`, running the same command cores over a curated eighteen-tool catalog (`find`, `search`, `search_code`, `context`, `show`, `list`, `edges`, `repos`, `recall_status`, `project_list`, `project_show`, the four `architecture_*` tools, `save`, `project_evidence`, `feedback`) instead of the full route table. Never imports `cli` or `serve` |
+| `mcp` | The stdio MCP adapter behind `comemory mcp` — the third delivery surface beside `cli` and `serve`, running the same command cores over a curated nineteen-tool catalog (`find`, `search`, `search_code`, `context`, `show`, `list`, `edges`, `repos`, `recall_status`, `project_list`, `project_show`, the four `architecture_*` tools, `project_propose`, `save`, `project_evidence`, `feedback`) instead of the full route table. Never imports `cli` or `serve` |
 | `domains/code` | the code capability: AST extraction and pattern search, incremental/full code indexing and ingestion, index-run history, the repository inventory and its admin operations, the git reindex hooks, and the lazy-reindex staleness policy. SQL stays in `store`; the detached index-code launch stays in `cli` |
 | `utilities` | transport-neutral shared primitives every domain and every delivery adapter may use: the execution `context` (`Ctx`), `pagination` (`Page`, `PageWindow`, `PageMeta`), `id_list`, `when`, `ref_args`, `embedding_input` + `vector_stdin`, `embed`, `fetch`, `http_error`, `simhash`, `digest`, `file_lock`, `path_containment`, `progress` (`ProgressSink`), `query_id`, `repo_root` (the one repository resolver, shared by the CLI, HTTP, retrieval freshness and reference refresh), `blocking` (`run_blocking`), `error_code` (`classify`), `exit_code` (the sysexits table), `project_error` (`ProjectError`, the twenty-two project refusal codes), `ordered_details` (`OrderedDetails`), and `telemetry` |
 
@@ -777,7 +777,7 @@ The feedback command reserves the writer and commits memory/code verdicts in
 one transaction. Identity resolution happens inside that transaction; a missing
 code symbol or a lock failure cannot leave memory feedback partially committed.
 
-The eighteen-tool catalog recommends a small `find` followed by selective
+The nineteen-tool catalog recommends a small `find` followed by selective
 `show`; `context` returns complete bodies and has no token budget.
 `recall-status` is repository/window aggregate telemetry, not session
 attribution. Stop hints are therefore advisory. Shared plugin hooks support

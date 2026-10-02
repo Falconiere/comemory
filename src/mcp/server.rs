@@ -1,4 +1,4 @@
-//! The rmcp service object: the two tool routers composed into one, and the
+//! The rmcp service object: the tool routers composed into one, and the
 //! `initialize` answer a host renders.
 //!
 //! [`ComemoryServer`] holds nothing but the session [`McpState`] and the
@@ -41,13 +41,14 @@ const NO_SCOPE_NOTE: &str = "\n\nThis session has no default repo: reads run acr
 pub struct ComemoryServer {
     /// Connection, paths, config, default scope and the `--read-only` flag.
     state: McpState,
-    /// The twelve read tools, the two project readers and the three write
-    /// tools, merged.
+    /// The twelve read tools, the two project readers, the project writer
+    /// and the three write tools, merged.
     tool_router: ToolRouter<Self>,
 }
 
 impl ComemoryServer {
     /// Compose the read, project, project-writer and write routers over
+    /// Compose the read, project-read, project-write and write routers over
     /// `state`.
     pub fn new(state: McpState) -> Self {
         Self {

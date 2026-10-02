@@ -59,6 +59,8 @@ pub mod pagination;
 pub mod path_containment;
 /// The progress / cancellation contract long-running jobs report through.
 pub mod progress;
+/// A raw project request body parsed into its core request, or its `400`.
+pub mod project_body;
 /// The twenty-two project refusal codes shared with the platform.
 pub mod project_error;
 /// The `q-<yyyymmdd>-<8hex>` retrieval-log query id: mint and validate.

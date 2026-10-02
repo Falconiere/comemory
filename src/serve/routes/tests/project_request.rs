@@ -1,11 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! Test mirror for `src/serve/routes/project_request.rs`: each malformed body
-//! or query — the list's and the change feed's — names its field the way the
+//! Test mirror for `src/serve/routes/project_request.rs`: each malformed
+//! query — the list's and the change feed's — names its key the way the
 //! platform's `invalidRequestFrom` does, always at the schema edge (`400`).
 
-use comemory::domains::projects::create;
 use comemory::errors::{Error, Result};
-use comemory::serve::routes::project_request::{body, list_field, query};
+use comemory::serve::routes::project_request::{list_field, query};
 use comemory::serve::routes::projects::changes_field;
 use comemory::utilities::error_code::{Class, classify};
 
@@ -20,65 +19,6 @@ fn refusal<T: std::fmt::Debug>(result: Result<T>) -> (String, String) {
         e.to_string(),
         serde_json::to_string(&project.details()).unwrap(),
     )
-}
-
-#[test]
-fn body_refusals_name_the_field() {
-    let cases: [(&str, &str, &str); 8] = [
-        (
-            "[]",
-            "body must be an object",
-            r#"{"field":"body","reason":"invalid"}"#,
-        ),
-        (
-            "not json",
-            "body must be an object",
-            r#"{"field":"body","reason":"invalid"}"#,
-        ),
-        (
-            r#"{"idempotencyKey":"k","keyPrefix":"AB","outcome":"o"}"#,
-            "name is required",
-            r#"{"field":"name","reason":"required"}"#,
-        ),
-        (
-            r#"{"idempotencyKey":"k","name":5,"keyPrefix":"AB","outcome":"o"}"#,
-            "name is invalid",
-            r#"{"field":"name","reason":"invalid"}"#,
-        ),
-        (
-            r#"{"idempotencyKey":"k","name":"n","keyPrefix":"AB","outcome":"o","successCriteria":["a",7]}"#,
-            "successCriteria.1 is invalid",
-            r#"{"field":"successCriteria.1","reason":"invalid"}"#,
-        ),
-        (
-            r#"{"name":"n","keyPrefix":"AB","outcome":"o"}"#,
-            "idempotencyKey is required",
-            r#"{"field":"idempotencyKey","reason":"required"}"#,
-        ),
-        (
-            r#"{"name":"n","keyPrefix":"AB","outcome":"o","idempotencyKey":7}"#,
-            "idempotencyKey is invalid",
-            r#"{"field":"idempotencyKey","reason":"invalid"}"#,
-        ),
-        (
-            r#"{"name":"n","keyPrefix":"AB","outcome":"o","idempotencyKey":"k","extra":1}"#,
-            "extra is invalid",
-            r#"{"field":"extra","reason":"invalid"}"#,
-        ),
-    ];
-    for (raw, message, details) in cases {
-        let got = refusal(body::<create::Request>(raw.as_bytes()));
-        assert_eq!(
-            (got.0.as_str(), got.1.as_str()),
-            (message, details),
-            "{raw}"
-        );
-    }
-    let ok: create::Request = body(
-        br#"{"workspaceId":"ws","idempotencyKey":"k","name":"n","keyPrefix":"AB","outcome":"o"}"#,
-    )
-    .unwrap();
-    assert_eq!(ok.name, "n");
 }
 
 /// `v` as owned query pairs.

@@ -37,10 +37,22 @@ pub mod lifecycle;
 pub mod limits;
 /// `project list`: a keyset page of charters.
 pub mod list;
+/// Criterion, milestone and charter shapes a plan operation carries.
+pub mod operation_fields;
+/// Request-level rules and normalization of a proposal's operations.
+pub mod operation_rules;
+/// The twelve typed plan operations a proposal is written in.
+pub mod operations;
 /// `project plan show`: the committed plan at the current version.
 pub mod plan;
 /// The principal kinds and ids an envelope carries.
 pub mod principal;
+/// A plan proposal's wire view.
+pub mod proposal_view;
+/// `project proposal list|show`: a project's proposals.
+pub mod proposals;
+/// `project proposal submit`: an immutable plan proposal.
+pub mod propose;
 /// The idempotent-command runner every mutation goes through.
 pub mod receipt;
 /// `project show`: one charter by id.
@@ -51,3 +63,7 @@ pub mod slug;
 pub mod timestamp;
 /// The charter view every command returns, and its batched relation load.
 pub mod view;
+/// A work item's shapes as a plan operation carries them.
+pub mod work_item_fields;
+/// A work item's request-level rules, shared by create and patch.
+pub mod work_item_rules;

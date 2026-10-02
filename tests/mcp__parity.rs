@@ -61,6 +61,9 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     ("search", "only"),
     ("search", "path"),
     ("architecture save", "file"),
+    // The CLI's file-body convenience: `--operations-file` collapses into the
+    // one `operations` field its `--operations` sibling already owns.
+    ("project proposal submit", "operationsFile"),
 ];
 
 /// Whether deserializing `{ "<arg_id>": null }` as `T` failed specifically
@@ -117,6 +120,10 @@ const PROBES: &[(&str, ProbeFn)] = &[
     (
         "project_evidence",
         is_unknown_field::<projects::evidence_add::Request>,
+    ),
+    (
+        "project_propose",
+        is_unknown_field::<projects::propose::Request>,
     ),
 ];
 

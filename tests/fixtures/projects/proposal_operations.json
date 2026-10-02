@@ -1,0 +1,37 @@
+{
+  "_comment": "One proposal holding every one of the twelve plan operation kinds with every optional field set, followed by the three creates with only their required fields. Some UUIDs are uppercase and dates are calendar dates, so a round trip shows normalization. `normalized` is what submit stores and show returns for the same list.",
+  "operations": [
+    {"op": "project.update", "patch": {"name": "Ship proposals", "outcome": "A plan changes only through review", "constraints": ["Offline first"], "nonGoals": ["A cancel verb"], "targetDate": "2026-12-01", "repositories": ["falconiere/comemory"]}},
+    {"op": "milestone.create", "milestone": {"name": "Alpha", "description": "The reader ships", "targetDate": "2026-10-15", "position": 0, "status": "planned", "id": "A0000000-0000-4000-8000-000000000001"}},
+    {"op": "work_item.create", "workItem": {"parentWorkItemId": null, "milestoneId": "a0000000-0000-4000-8000-000000000001", "kind": "feature", "title": "Submit proposals", "description": "CLI, HTTP and MCP", "priority": "high", "estimate": 3, "assignee": {"principalType": "project_agent", "principalId": "local-agent"}, "repo": "falconiere/comemory", "position": 1, "id": "b0000000-0000-4000-8000-000000000001"}},
+    {"op": "criterion.create", "criterion": {"description": "Every kind round-trips", "required": true, "evidenceRequirement": "verified", "position": 2, "id": "c0000000-0000-4000-8000-000000000001", "workItemId": "B0000000-0000-4000-8000-000000000001"}},
+    {"op": "criterion.update", "criterionId": "c0000000-0000-4000-8000-000000000002", "patch": {"description": "Reworded", "required": false, "evidenceRequirement": "reported", "position": 4}},
+    {"op": "criterion.archive", "criterionId": "c0000000-0000-4000-8000-000000000003"},
+    {"op": "milestone.update", "milestoneId": "a0000000-0000-4000-8000-000000000002", "patch": {"name": "Beta", "description": "", "targetDate": "2026-11-01T12:30:00+02:00", "position": 1, "status": "active"}},
+    {"op": "milestone.archive", "milestoneId": "a0000000-0000-4000-8000-000000000003"},
+    {"op": "work_item.update", "workItemId": "b0000000-0000-4000-8000-000000000002", "patch": {"parentWorkItemId": "b0000000-0000-4000-8000-000000000001", "milestoneId": null, "kind": "bug", "title": "Retitled", "description": "Changed", "priority": "urgent", "estimate": null, "assignee": null, "repo": null, "position": 0}},
+    {"op": "work_item.archive", "workItemId": "b0000000-0000-4000-8000-000000000003"},
+    {"op": "dependency.add", "blockerId": "b0000000-0000-4000-8000-000000000001", "blockedId": "b0000000-0000-4000-8000-000000000002"},
+    {"op": "dependency.remove", "blockerId": "b0000000-0000-4000-8000-000000000004", "blockedId": "B0000000-0000-4000-8000-000000000002"},
+    {"op": "milestone.create", "milestone": {"name": "Gamma", "targetDate": "2027-01-01", "id": "a0000000-0000-4000-8000-000000000004"}},
+    {"op": "work_item.create", "workItem": {"kind": "task", "title": "Minimal", "id": "b0000000-0000-4000-8000-000000000005"}},
+    {"op": "criterion.create", "criterion": {"description": "Minimal criterion", "id": "c0000000-0000-4000-8000-000000000005"}}
+  ],
+  "normalized": [
+    {"op": "project.update", "patch": {"name": "Ship proposals", "outcome": "A plan changes only through review", "constraints": ["Offline first"], "nonGoals": ["A cancel verb"], "targetDate": "2026-12-01T00:00:00.000Z", "repositories": ["falconiere/comemory"]}},
+    {"op": "milestone.create", "milestone": {"name": "Alpha", "description": "The reader ships", "targetDate": "2026-10-15T00:00:00.000Z", "position": 0, "status": "planned", "id": "a0000000-0000-4000-8000-000000000001"}},
+    {"op": "work_item.create", "workItem": {"parentWorkItemId": null, "milestoneId": "a0000000-0000-4000-8000-000000000001", "kind": "feature", "title": "Submit proposals", "description": "CLI, HTTP and MCP", "priority": "high", "estimate": 3, "assignee": {"principalType": "project_agent", "principalId": "local-agent"}, "repo": "falconiere/comemory", "position": 1, "id": "b0000000-0000-4000-8000-000000000001"}},
+    {"op": "criterion.create", "criterion": {"description": "Every kind round-trips", "required": true, "evidenceRequirement": "verified", "position": 2, "id": "c0000000-0000-4000-8000-000000000001", "workItemId": "b0000000-0000-4000-8000-000000000001"}},
+    {"op": "criterion.update", "criterionId": "c0000000-0000-4000-8000-000000000002", "patch": {"description": "Reworded", "required": false, "evidenceRequirement": "reported", "position": 4}},
+    {"op": "criterion.archive", "criterionId": "c0000000-0000-4000-8000-000000000003"},
+    {"op": "milestone.update", "milestoneId": "a0000000-0000-4000-8000-000000000002", "patch": {"name": "Beta", "description": "", "targetDate": "2026-11-01T10:30:00.000Z", "position": 1, "status": "active"}},
+    {"op": "milestone.archive", "milestoneId": "a0000000-0000-4000-8000-000000000003"},
+    {"op": "work_item.update", "workItemId": "b0000000-0000-4000-8000-000000000002", "patch": {"parentWorkItemId": "b0000000-0000-4000-8000-000000000001", "milestoneId": null, "kind": "bug", "title": "Retitled", "description": "Changed", "priority": "urgent", "estimate": null, "assignee": null, "repo": null, "position": 0}},
+    {"op": "work_item.archive", "workItemId": "b0000000-0000-4000-8000-000000000003"},
+    {"op": "dependency.add", "blockerId": "b0000000-0000-4000-8000-000000000001", "blockedId": "b0000000-0000-4000-8000-000000000002"},
+    {"op": "dependency.remove", "blockerId": "b0000000-0000-4000-8000-000000000004", "blockedId": "b0000000-0000-4000-8000-000000000002"},
+    {"op": "milestone.create", "milestone": {"name": "Gamma", "targetDate": "2027-01-01T00:00:00.000Z", "id": "a0000000-0000-4000-8000-000000000004"}},
+    {"op": "work_item.create", "workItem": {"kind": "task", "title": "Minimal", "id": "b0000000-0000-4000-8000-000000000005"}},
+    {"op": "criterion.create", "criterion": {"description": "Minimal criterion", "id": "c0000000-0000-4000-8000-000000000005"}}
+  ]
+}

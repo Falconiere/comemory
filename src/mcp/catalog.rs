@@ -1,6 +1,6 @@
 //! The curated MCP tool table.
 //!
-//! Eighteen entries keep tool discovery compact beside the much larger HTTP
+//! Nineteen entries keep tool discovery compact beside the much larger HTTP
 //! route table. Each row names the clap subcommand whose
 //! core the tool runs, which is what `tests/mcp__parity.rs` walks to prove no
 //! tool invents a command or a parameter the CLI does not have.
@@ -107,6 +107,12 @@ pub const TOOLS: &[ToolEntry] = &[
         command: "project show",
         mutating: false,
         description: "Read one project by UUID. Default view charter: outcome, success criteria, constraints, non-goals, repositories, status, health and current plan version. view plan: the committed plan's milestones, work items, criteria and dependencies. view activity: one keyset page of its activity events; limit 1-200, order desc (default) or asc, and nextCursor back as cursor. view evidence: one page of its evidence newest first; filter by kind, trust or workItemId, limit 1-100, nextCursor back as cursor.",
+    },
+    ToolEntry {
+        name: "project_propose",
+        command: "project proposal submit",
+        mutating: true,
+        description: "Submit a plan proposal for human review: typed operations written against basePlanVersion, with a rationale, assumptions and risks. The plan does not change until a human approves it.",
     },
     ToolEntry {
         name: "save",

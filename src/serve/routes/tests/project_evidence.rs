@@ -7,8 +7,9 @@
 use comemory::domains::projects::evidence_add;
 use comemory::errors::Error;
 use comemory::serve::routes::project_evidence::{field, with_project_id};
-use comemory::serve::routes::project_request::{body, query};
+use comemory::serve::routes::project_request::query;
 use comemory::utilities::error_code::{Class, classify};
+use comemory::utilities::project_body::body;
 
 fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
     v.iter()

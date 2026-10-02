@@ -2,7 +2,7 @@
 
 Stdio Model Context Protocol server for agent hosts (Claude Code, Codex,
 Cursor, Gemini CLI, Windsurf). Speaks JSON-RPC on stdin/stdout and offers a
-curated eighteen-tool catalog over the same command cores the CLI and
+curated nineteen-tool catalog over the same command cores the CLI and
 `comemory serve` call. Diagnostics go to stderr; stdout carries the protocol
 and nothing else.
 
@@ -37,10 +37,10 @@ _None._
 - **Flags:** `--read-only`
 - **Setup:** throwaway `COMEMORY_DATA_DIR`, no corpus
 - **Command:** `comemory mcp` (spawned by the rmcp client over child stdio)
-- **Expect:** `initialize` succeeds; `tools/list` is exactly the eighteen
+- **Expect:** `initialize` succeeds; `tools/list` is exactly the nineteen
   `comemory::mcp::catalog::TOOLS` names, each with its catalog description
   verbatim and an object `inputSchema`; `instructions` names `find` and
-  `feedback`; `--read-only` lists the same eighteen.
+  `feedback`; `--read-only` lists the same nineteen.
 - **Covered by:** `tests/cli_scenario_mcp.rs::mcp_01_lists_catalog`
 
 ### mcp-02 Recall returns hits and a judgeable query id
@@ -127,3 +127,16 @@ _None._
 - **Expected:** every save succeeds and is searchable; identical replays return
   one id, exactly one creation, and the complete body.
 - **Covered by:** `mcp_08_concurrent_agents_save_and_find_each_others_memories`.
+
+### mcp-12 An agent proposes plan changes for human review
+
+- **Setup:** the CLI charters a project; a real MCP session over its store.
+- **Action:** `project_propose` submits one `work_item.create` against
+  `basePlanVersion` 0, replays it under the same `idempotencyKey`, submits
+  against a stale base, then a `--read-only` session calls it.
+- **Expected:** the proposal is `pending`, proposed by `project_agent`, with
+  its UUID stored lowercase; the replay answers the same proposal; the stale
+  base is `proposal_stale` with `{basePlanVersion, currentPlanVersion}`; the
+  read-only session refuses it `read_only`. Nothing in the plan changes until
+  a human approves the proposal.
+- **Covered by:** `tests/cli_scenario_mcp.rs::mcp_12_project_propose_submits_and_read_only_refuses`.

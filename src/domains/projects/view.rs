@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::domains::projects::timestamp::iso;
@@ -140,8 +141,8 @@ fn project(
     repositories: Vec<String>,
     criteria: Vec<CriterionView>,
 ) -> Result<ProjectView> {
-    let constraints = string_array(&row.constraints, &row.id, "projects.constraints");
-    let non_goals = string_array(&row.non_goals, &row.id, "projects.non_goals");
+    let constraints = stored_json(&row.constraints, &row.id, "projects.constraints");
+    let non_goals = stored_json(&row.non_goals, &row.id, "projects.non_goals");
     let stamp = |ms: i64, column: &str| rendered(ms, &row.id, column);
     let target_date = row
         .target_date
@@ -191,9 +192,10 @@ pub(super) fn rendered(ms: i64, row_id: &str, column: &str) -> Result<String> {
     })
 }
 
-/// A stored JSON `string[]`; an unreadable value degrades to empty with a
-/// warning, as the platform's `parseStoredJson` does.
-fn string_array(raw: &str, row_id: &str, column: &str) -> Vec<String> {
+/// A stored JSON array; an unreadable value degrades to empty with a
+/// warning, as the platform's `parseStoredJson` does, so one corrupt row
+/// cannot cost a whole page.
+pub(super) fn stored_json<T: DeserializeOwned>(raw: &str, row_id: &str, column: &str) -> Vec<T> {
     serde_json::from_str(raw).unwrap_or_else(|e| {
         tracing::warn!(row_id, column, error = %e, "unreadable stored JSON; reading as []");
         Vec::new()

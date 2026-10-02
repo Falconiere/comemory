@@ -179,7 +179,7 @@ fn stored_events(data_dir: &Path, query_id: &str) -> Vec<(String, String, String
 
 /// AC-1: `initialize` succeeds and `tools/list` is exactly the catalog —
 /// every name, every description, an object `inputSchema` on each — and
-/// `--read-only` advertises the same eighteen.
+/// `--read-only` advertises the same nineteen.
 #[tokio::test]
 async fn mcp_01_lists_catalog() {
     let tmp = tempfile::TempDir::new().expect("cwd");
@@ -935,4 +935,64 @@ async fn mcp_11_project_evidence_attaches_and_pages() {
         .data("project_show", json!({"id": PROJECT, "view": "evidence"}))
         .await;
     assert_eq!(still["evidence"].as_array().map(Vec::len), Some(1));
+}
+
+/// #336 AC-6/AC-7: `project_propose` submits a proposal as the local agent
+/// against a project the CLI chartered, its refusals carry the project code,
+/// and a `--read-only` session refuses it like every writer.
+#[tokio::test]
+async fn mcp_12_project_propose_submits_and_read_only_refuses() {
+    let tmp = tempfile::TempDir::new().expect("cwd");
+    let home = McpHome::spawn(tmp.path(), &[]).await;
+    let project = "11111111-1111-4111-8111-111111111111";
+    let created = Command::new(assert_cmd::cargo::cargo_bin("comemory"))
+        .args([
+            "--json", "project", "create", "--id", project, "--name", "Propose",
+        ])
+        .args([
+            "--key-prefix",
+            "PROP",
+            "--outcome",
+            "An agent proposes scope",
+        ])
+        .env("COMEMORY_DATA_DIR", home.data_dir())
+        .output()
+        .expect("run comemory project create");
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let submission = |key: &str, base: i64| {
+        json!({
+            "projectId": project, "idempotencyKey": key, "basePlanVersion": base,
+            "operations": [{"op": "work_item.create",
+                "workItem": {"kind": "task", "title": "Wire the reader",
+                    "id": "B0000000-0000-4000-8000-000000000001"}}],
+            "rationale": "Scope the reader"
+        })
+    };
+    let submitted = home.data("project_propose", submission("mcp", 0)).await;
+    let proposal = &submitted["proposal"];
+    assert_eq!(proposal["state"], "pending");
+    assert_eq!(proposal["proposerPrincipalType"], "project_agent");
+    assert_eq!(
+        proposal["operations"][0]["workItem"]["id"],
+        "b0000000-0000-4000-8000-000000000001"
+    );
+    let replayed = home.data("project_propose", submission("mcp", 0)).await;
+    assert_eq!(replayed, submitted);
+    let stale = home.error("project_propose", submission("stale", 3)).await;
+    assert_eq!(stale["code"], "proposal_stale");
+    assert_eq!(
+        stale["details"],
+        json!({"code": "proposal_stale", "basePlanVersion": 3, "currentPlanVersion": 0})
+    );
+
+    let read_only = home.attach(tmp.path(), &["--read-only"]).await;
+    let refused = read_only.call("project_propose", submission("ro", 0)).await;
+    assert_eq!(
+        refused.structured_content.expect("a refusal")["code"],
+        "read_only"
+    );
 }

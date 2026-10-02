@@ -3,12 +3,13 @@
 Engine-owned project management (epic #261): charter a project, read it back
 and page through the charters — offline, in a fresh data directory, with no
 account — archive, restore, pause and resume it, read its committed plan,
-page its activity log, and poll the body-free change feed. Nested: `create` /
-`show` / `list` / `archive` / `restore` / `pause` / `resume` / `activity` /
-`changes` / `plan show`. Each verb is a thin shell over a
-`domains::projects` core that the HTTP routes and the MCP readers
+page its activity log, poll the body-free change feed, and propose plan
+changes for review. Nested: `create` / `show` / `list` / `archive` /
+`restore` / `pause` / `resume` / `activity` / `changes` / `plan show` /
+`proposal submit|list|show`. Each verb is a thin shell over a
+`domains::projects` core that the HTTP routes and the MCP tools
 (`project_list`, `project_show`, whose `view: "activity"` reads the
-activity page) call too. Every core runs under a capability
+activity page, and `project_propose`) call too. Every core runs under a capability
 envelope (#315), chosen by the surface, never by a header or an argument:
 
 - the CLI is the **local operator**, a `user` (`local-operator`) at `owner`
@@ -40,14 +41,18 @@ until their project is hard-deleted.
 `tests/cli__project_changes.rs`, `src/store/tests/project_changes.rs`,
 `tests/cli__project_plan.rs`, `src/store/tests/project_plan.rs`,
 `tests/cli__project_activity.rs`, `src/store/tests/project_activity.rs`,
-`tests/cli__project_lifecycle.rs`, `tests/serve__routes__project_lifecycle.rs`
+`tests/cli__project_lifecycle.rs`, `tests/serve__routes__project_lifecycle.rs`,
+`tests/cli__project_proposal.rs`, `tests/serve__routes__project_proposals.rs`,
+`src/store/tests/project_proposals.rs`
 
 **HTTP:** `POST /api/v1/projects` (`403 project_agent_scope` for the local
 agent), `GET /api/v1/projects`, `GET /api/v1/projects/{id}`,
 `GET /api/v1/projects/{id}/plan`, `GET /api/v1/projects/{id}/activity`,
 `POST /api/v1/projects/{id}/{archive,restore,pause,resume}` (`403
-project_agent_scope` for the local agent), `GET /api/v1/projects/changes` —
-see the
+project_agent_scope` for the local agent),
+`POST|GET /api/v1/projects/{id}/proposals`,
+`GET /api/v1/projects/{id}/proposals/{proposalId}`,
+`GET /api/v1/projects/changes` — see the
 [HTTP API guide](../guides/http-api.md#route-map).
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
@@ -55,7 +60,10 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 ## Positionals
 
 `show <ID>`, `archive <ID>`, `restore <ID>`, `pause <ID>`, `resume <ID>`,
-`activity <ID>` and `plan show <ID>` — the project's UUID, in either case.
+`activity <ID>`, `plan show <ID>`, `proposal submit <PROJECT_ID>` and
+`proposal list <PROJECT_ID>` — the project's UUID, in either case.
+`proposal show <PROJECT_ID> <PROPOSAL_ID>` — the project's and the
+proposal's UUIDs.
 
 ## Flags
 
@@ -85,6 +93,16 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | `--limit` | `activity` | `50` | Page size, 1–200 |
 | `--after` | `changes` | `0` | Frames after this `seq` |
 | `--limit` | `changes` | `100` | Page size, 1–1000 |
+| `--base-plan-version` | `proposal submit` | required | The plan version the operations were written against; another current version exits 75 (`proposal_stale`) |
+| `--operations` | `proposal submit` | one of the two | The operations as a JSON array of 1–200 typed plan operations, at most 256 KiB serialized |
+| `--operations-file` | `proposal submit` | one of the two | Read that JSON array from a file, or stdin for `-` |
+| `--rationale` | `proposal submit` | required | Why the change is proposed, 1–4000 characters |
+| `--assumption` | `proposal submit` | none | An assumption; repeatable, up to 50 of 1–500 characters |
+| `--risk` | `proposal submit` | none | A risk; repeatable, up to 50 of 1–4000 characters |
+| `--idempotency-key` | `proposal submit` | minted | Retry key, as for `create` |
+| `--state` | `proposal list` | all | `pending`, `approved`, `changes_requested`, `rejected` or `superseded` |
+| `--cursor` | `proposal list` | first page | The previous page's `nextCursor` |
+| `--limit` | `proposal list` | `20` | Page size, 1–100 |
 
 ## Refusals
 
@@ -434,3 +452,48 @@ warning never logs the value.
   `src/domains/projects/tests/{evidence,evidence_check,evidence_add,evidence_page}.rs`,
   `tests/serve__routes__projects.rs::evidence_attaches_and_pages_over_http_and_refuses_by_code`,
   `tests/cli_scenario_mcp.rs::mcp_11_project_evidence_attaches_and_pages`
+### project-12 Propose plan changes, then list and show proposals
+
+- **Flags:** `--json`
+- **Setup:** a draft project chartered with `--id`; the twelve-kind operation
+  list in `tests/fixtures/projects/proposal_operations.json`
+- **Command:** `comemory project proposal submit <ID> --base-plan-version 0
+  --operations-file ops.json --rationale '…'`, then `proposal list <ID>
+  --state pending` and `proposal show <ID> <PROPOSAL_ID>`; or `POST|GET
+  /api/v1/projects/{id}/proposals[/{proposalId}]`; or MCP `project_propose`
+- **Expect:**
+  - `{proposal: {id, projectId, basePlanVersion, state, operations,
+    rationale, assumptions, risks, proposerPrincipalType,
+    proposerPrincipalId, createdAt, updatedAt, review}}`, the platform's
+    `ProjectProposalView`; `state` is `pending` and `review` is `null` until
+    a review exists. The operations come back as submitted, with every UUID
+    lowercase and every `targetDate` rendered as an ISO timestamp; an absent
+    patch field stays absent and a `null` stays `null`; `null` on a field
+    the platform does not declare nullable is refused `400`.
+  - The twelve operations: `project.update`, `criterion.create|update|archive`,
+    `milestone.create|update|archive`, `work_item.create|update|archive`,
+    `dependency.add|remove`. A create carries its client UUID; a patch cannot
+    carry an identity (`id`, or a criterion's `workItemId`) and is refused.
+  - The first proposal moves a `draft` project to `planning` and bumps its
+    `version` in the same transaction as the row, one
+    `project.proposal_submitted` event and one change-feed frame; a later
+    proposal or a replay moves nothing.
+  - The list is newest first, filtered by `--state`, paged by `nextCursor`
+    (1–100 per page).
+  - Refusals: 2,001 operations `400` (exit 64, `operations is invalid`) — over
+    HTTP too, even past the server's 5 MiB default body limit, since the route
+    admits 32 MiB; 201 operations or more than 256 KiB of serialized
+    operations `422` (exit 65) with `{field, reason: cap_exceeded, limit,
+    actual}`; a shape error inside operation `i` `400 operations.<i> is
+    invalid`; a stale base `409 proposal_stale` (exit 75); an archived,
+    completed or canceled project `409 invalid_transition` (exit 75); an
+    unknown or foreign proposal `404 proposal_not_found`. None writes a row.
+  - An agent without `proposal.create` is refused `403 project_agent_scope`
+    before the store opens; the local agent holds it.
+- **Covered by:** `tests/cli__project_proposal.rs`,
+  `tests/serve__routes__project_proposals.rs`,
+  `tests/cli_scenario_mcp.rs::mcp_12_project_propose_submits_and_read_only_refuses`,
+  `src/domains/projects/tests/propose.rs`, `src/domains/projects/tests/proposals.rs`,
+  `src/domains/projects/tests/operations.rs`,
+  `src/domains/projects/tests/operation_rules.rs`,
+  `src/store/tests/project_proposals.rs`

@@ -87,7 +87,7 @@ pub mod output;
 /// Shared `--k` / `--offset` window resolution.
 pub mod pagination;
 /// `comemory project` — engine-owned project management (create, show, list,
-/// archive, restore, pause, resume, activity, changes).
+/// archive, restore, pause, resume, activity, changes, plan, proposal).
 pub mod project;
 /// `comemory project activity` — the flags and TTY view of one project's
 /// activity page.
@@ -98,6 +98,11 @@ pub mod project_evidence;
 /// `comemory project archive|restore|pause|resume` — the flags the four
 /// lifecycle verbs share.
 pub mod project_lifecycle;
+/// `comemory project plan show <PROJECT_ID>` — the plan verb's flags and
+/// TTY view (#335); `project.rs` reaches in here for `ShowArgs` too.
+pub mod project_plan;
+/// `comemory project proposal submit|list|show` — plan proposals (#336).
+pub mod project_proposal;
 /// `comemory prune`: orphan / low-value / stale-code candidates.
 pub mod prune;
 /// `comemory rebuild`: reconstruct the store from markdown.
@@ -182,8 +187,9 @@ pub enum Cmd {
     /// Save a memory (body via arg, `-`, or stdin).
     Save(save::Args),
     /// Engine-owned project management: create, show and list project
-    /// charters, archive, restore, pause and resume them, page a project's
-    /// activity log and read the body-free change feed, offline.
+    /// charters, archive, restore, pause and resume them, read the committed
+    /// plan, propose plan changes for review, page a project's activity log
+    /// and read the body-free change feed, offline.
     Project(project::Args),
     /// Search the memory index by natural-language query.
     Search(search::Args),

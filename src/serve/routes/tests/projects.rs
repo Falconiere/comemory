@@ -19,10 +19,10 @@ use crate::cli::project::{Args, CreateArgs, ProjectCmd};
 use crate::config::{Config, Paths};
 use crate::domains::projects::authority::{self, Envelope, Tier};
 use crate::domains::projects::create;
-use crate::serve::routes::project_request::body;
 use crate::serve::routes::respond;
 use crate::store::connection;
 use crate::utilities::context::Ctx;
+use crate::utilities::project_body::body;
 
 /// The response's status and JSON body.
 async fn read(response: Response) -> (StatusCode, Value) {

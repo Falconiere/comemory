@@ -51,6 +51,12 @@ impl Keyed {
             digest: digest(command_type, body)?,
         })
     }
+
+    /// The body digest, which a proposal also stores as its `request_digest`.
+    #[must_use]
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
 }
 
 /// What a first run wrote: its response and the project it touched.

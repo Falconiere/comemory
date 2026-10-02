@@ -1,11 +1,11 @@
 //! The project writer tools, as their own `#[tool_router]` block: today
-//! `project_evidence` (#346), the `domains::projects::evidence_add` core. Each
-//! is refused `read_only` on a `--read-only` session before its core runs,
-//! takes no repo scope — a project is not repo-scoped — and runs under the
-//! session's envelope ([`McpState::project_envelope`]). The epic's other
-//! project writers (#261) join it in later tasks.
-//!
-//! [`McpState::project_envelope`]: crate::mcp::state::McpState::project_envelope
+//! `project_evidence` (#346), the `domains::projects::evidence_add` core, and
+//! `project_propose` (#336), the `domains::projects::propose` core that
+//! submits a plan proposal for human review. Each is refused `read_only` on a
+//! `--read-only` session before its core runs, takes no repo scope — a
+//! project is not repo-scoped — and runs under the session's envelope, like
+//! the readers in [`crate::mcp::tools_projects`]. Human-only verbs have no
+//! tool here.
 //!
 //! `description` repeats [`crate::mcp::catalog`] because rmcp's `#[tool]`
 //! takes a string LITERAL; `tests/cli_scenario_mcp.rs::mcp_01_lists_catalog`
@@ -32,6 +32,20 @@ impl ComemoryServer {
         Parameters(req): Parameters<projects::evidence_add::Request>,
     ) -> Result<CallToolResult, ErrorData> {
         write_tool(self.session(), "project_evidence", move |c, s| {
+            enveloped(c, s, req)
+        })
+        .await
+    }
+    /// Submit a plan proposal for human review.
+    #[tool(
+        name = "project_propose",
+        description = "Submit a plan proposal for human review: typed operations written against basePlanVersion, with a rationale, assumptions and risks. The plan does not change until a human approves it."
+    )]
+    async fn project_propose(
+        &self,
+        Parameters(req): Parameters<projects::propose::Request>,
+    ) -> Result<CallToolResult, ErrorData> {
+        write_tool(self.session(), "project_propose", move |c, s| {
             enveloped(c, s, req)
         })
         .await
