@@ -20,6 +20,12 @@
 # toolu workflow artifacts (specs/plans) — local, not committed
 /docs/toolu/
 
+# opencode harness local state — per-session telemetry, installed hooks,
+# session markers and CLI wrappers — regenerated on every session and
+# specific to one machine, never a project input.
+/.opencode/tmp/
+/.opencode/toolu/
+
 # Serena MCP local project cache — not committed
 /.serena/
 
