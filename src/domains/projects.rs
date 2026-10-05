@@ -47,14 +47,14 @@ pub mod lifecycle;
 pub mod limits;
 /// `project list`: a keyset page of charters.
 pub mod list;
+/// The `local_only` warning a mutation of a transferred project carries.
+pub mod local_only;
 /// Criterion, milestone and charter shapes a plan operation carries.
 pub mod operation_fields;
 /// Request-level rules and normalization of a proposal's operations.
 pub mod operation_rules;
 /// The twelve typed plan operations a proposal is written in.
 pub mod operations;
-/// The `local_only` warning a mutation of a transferred project carries.
-pub mod local_only;
 /// `project plan show`: the committed plan at the current version.
 pub mod plan;
 /// The principal kinds and ids an envelope carries.

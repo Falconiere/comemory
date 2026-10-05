@@ -8,6 +8,7 @@ use clap::{Args as ClapArgs, Subcommand};
 use serde_json::Value;
 
 use crate::cli::project::emit;
+use crate::cli::project_transfer;
 use crate::domains::projects::authority::{self, Envelope};
 use crate::domains::projects::evidence::EvidenceView;
 use crate::domains::projects::{evidence_add, evidence_page};
@@ -150,6 +151,7 @@ pub fn run(ctx: &mut Ctx<'_>, operator: &Envelope, json_flag: bool, args: Args) 
     match args.cmd {
         EvidenceCmd::Add(a) => {
             let resp = authority::run(ctx, operator, a.request()?)?;
+            project_transfer::warn_local_only(&resp.warnings)?;
             emit(json_flag, &resp, |out| render_one(out, &resp.evidence))
         }
         EvidenceCmd::List(l) => {

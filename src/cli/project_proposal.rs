@@ -16,6 +16,7 @@ use clap::{Args as ClapArgs, Subcommand};
 use serde_json::{Value, json};
 
 use crate::cli::project::emit;
+use crate::cli::project_transfer;
 use crate::domains::projects::authority::{self, Envelope};
 use crate::domains::projects::proposal_view::ProposalView;
 use crate::domains::projects::proposals::{ListRequest, ListResponse, ShowRequest};
@@ -114,6 +115,7 @@ pub fn run(
     match cmd {
         ProposalCmd::Submit(s) => {
             let resp = authority::run(ctx, operator, submit_request(s)?)?;
+            project_transfer::warn_local_only(&resp.warnings)?;
             emit(json_flag, &resp, |out| render(out, &resp.proposal))
         }
         ProposalCmd::List(l) => {

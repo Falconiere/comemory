@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use crate::domains::projects::activity::{self, Event};
 use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
 use crate::domains::projects::limits;
+use crate::domains::projects::local_only::LocalOnly;
 use crate::domains::projects::operation_rules;
 use crate::domains::projects::operations::{Operation, bounded};
 use crate::domains::projects::proposal_view::{self, ProposalView};
@@ -71,6 +72,10 @@ pub struct Request {
 pub struct Response {
     /// Its view.
     pub proposal: ProposalView,
+    /// `local_only` when the project is bound by a transfer (#342): the
+    /// change stays in this data directory. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<LocalOnly>,
 }
 
 /// The platform's `project.proposal_submitted` payload, keys in its order.
@@ -187,7 +192,7 @@ fn write(
         entity_id: &id,
         payload: &payload,
     };
-    activity::record(tx, actor, &event, at_ms)?;
+    let recorded = activity::record(tx, actor, &event, at_ms)?;
     let row = project_proposals::proposal(tx, project_id, &id)?.ok_or_else(|| {
         Error::from(ProjectError::Invariant {
             invariant: "project_proposal_row".to_string(),
@@ -196,6 +201,7 @@ fn write(
     })?;
     Ok(Response {
         proposal: proposal_view::view(row)?,
+        warnings: recorded.local_only.into_iter().collect(),
     })
 }
 
