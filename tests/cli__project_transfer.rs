@@ -220,7 +220,7 @@ fn export_import_round_trip_between_two_data_directories() {
     // JSON carries the warning, stderr prints it, and the change is made.
     let out = c
         .bin()
-        .args(["--json", "project", "archive", A, "--expected-version", "7"])
+        .args(["--json", "project", "restore", A, "--expected-version", "7"])
         .output()
         .unwrap();
     assert!(
@@ -228,9 +228,9 @@ fn export_import_round_trip_between_two_data_directories() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let archived: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let restored: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
-        archived["warnings"],
+        restored["warnings"],
         serde_json::json!([{
             "code": "local_only",
             "projectId": A,
@@ -240,7 +240,7 @@ fn export_import_round_trip_between_two_data_directories() {
                         directory and will not reach stdin",
         }])
     );
-    assert!(archived["project"]["archivedAt"].is_string());
+    assert!(restored["project"]["archivedAt"].is_null());
     assert_eq!(
         String::from_utf8(out.stderr).unwrap(),
         "warning: This project was imported from stdin; this change stays in this data \
