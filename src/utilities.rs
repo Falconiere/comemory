@@ -57,6 +57,8 @@ pub mod ordered_details;
 pub mod pagination;
 /// Canonicalize-and-contain path checks shared by every filesystem surface.
 pub mod path_containment;
+/// Owner-only (`0600`) files written atomically: temp file, then rename.
+pub mod private_file;
 /// The progress / cancellation contract long-running jobs report through.
 pub mod progress;
 /// A raw project request body parsed into its core request, or its `400`.

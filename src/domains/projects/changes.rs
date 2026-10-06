@@ -4,9 +4,10 @@
 //! project, an event and an op — never a charter, proposal, work item,
 //! evidence or activity body.
 //!
-//! Rows are written by [`record_change`] (called only from
-//! [`crate::domains::projects::activity::record`]) and [`record_deletion`],
-//! both on the mutation's own transaction. Retention is unbounded; a cursor
+//! Rows are written by [`record_change`] (called from
+//! [`crate::domains::projects::activity::record`] for every mutation, and
+//! once by a transfer import, #342) and [`record_deletion`], all on the
+//! mutation's own transaction. Retention is unbounded; a cursor
 //! the feed cannot continue contiguously — below the oldest retained row or
 //! past the head — is refused, never answered with a page that skips.
 
@@ -51,7 +52,8 @@ pub struct ChangeFrame {
     /// The project that changed.
     pub project_id: String,
     /// The activity event recorded with the change; the project id for a
-    /// deletion.
+    /// deletion and for a transfer import (#342), neither of which leaves an
+    /// activity event to name.
     pub event_id: String,
     /// `changed` or `deleted`.
     pub op: String,
@@ -97,7 +99,11 @@ impl Command for Request {
 }
 
 /// Append the `changed` row for the activity event `event_id` on `conn`, the
-/// mutation's own transaction. Only the activity writer calls it.
+/// mutation's own transaction. The activity writer calls it for every
+/// mutation; an import (#342) calls it once with the project's own id as
+/// `event_id`, because an import writes no activity event (its rows are
+/// transferred content), yet a connected console must still learn the
+/// project arrived.
 pub(crate) fn record_change(
     conn: &Connection,
     project_id: &str,

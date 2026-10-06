@@ -134,6 +134,8 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     // deletion row outlives its project; a relay cursor is one of its `seq`s,
     // so a rebuild must keep them (`rebuild_copy_history`).
     "project_changes",
+    // Engine-only (#342): the one record of where a transferred copy lives.
+    "project_transfer_bindings",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.

@@ -135,6 +135,8 @@ pub mod needs_embedding;
 mod orm;
 /// `project_activity_events` writes: the append-only project event.
 pub mod project_activity;
+/// `project_transfer_bindings` writes and reads: where a transferred copy lives.
+pub mod project_binding;
 /// `project_changes`: the body-free change feed, appended and paged by `seq`.
 pub mod project_changes;
 /// `project_evidence` and its criterion links: the attach writes, the two
@@ -149,6 +151,12 @@ pub mod project_proposals;
 pub mod project_read;
 /// `project_command_receipts`: an idempotent project command's stored answer.
 pub mod project_receipts;
+/// The transfer view of each carried project table: columns, key, references.
+pub mod project_table_shape;
+/// Transfer bundle reads: one project's rows of any carried table, by its declared columns.
+pub mod project_transfer;
+/// Transfer bundle writes: rows inserted under deferred keys, then checked per table.
+pub mod project_transfer_write;
 /// `projects` charter writes: the row with its unique-index outcome, repositories and criteria.
 pub mod projects;
 /// `maintenance::prune`'s own scan (orphan-edge count, stale-code-file list, one
@@ -179,7 +187,7 @@ pub mod rebuild_copy_learning;
 /// Rebuild preservation copy: `feedback_events`, `query_expansions`,
 /// `bandit_arms`.
 pub mod rebuild_copy_learning_events;
-/// Rebuild preservation copy: the fourteen project tables, parents first.
+/// Rebuild preservation copy: every project-owned table, parents first.
 pub mod rebuild_copy_projects;
 /// The three pulled-projection tables a peer's code generation writes:
 /// its manifest, its snippet-free symbols and its graph edges.
@@ -290,8 +298,9 @@ pub mod schema_project_record;
 /// `project_work_item_dependencies`, `project_executions`,
 /// `project_work_packets`.
 pub mod schema_project_work;
-/// Declared project charter tables and `PROJECT_TABLES`, the leaf-first
-/// registry of all fourteen project-owned tables.
+/// Declared project charter tables, the transfer binding, and
+/// `PROJECT_TABLES`, the leaf-first registry of every project-owned table
+/// with its transfer class.
 pub mod schema_projects;
 /// Declared `replica-v1` journal tables: `replica_stream`, `replica_payload`,
 /// `replica_feed`, `replica_revision`, `replica_operation`, `replica_receipt`,

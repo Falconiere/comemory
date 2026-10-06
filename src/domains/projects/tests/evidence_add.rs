@@ -10,6 +10,7 @@
 
 use comemory::config::{Config, Paths};
 use comemory::domains::projects::authority::{self, Capabilities, Envelope};
+use comemory::domains::projects::binding::{self, Direction, NewBinding};
 use comemory::domains::projects::evidence::StoredMetadata;
 use comemory::domains::projects::{create, evidence_add};
 use comemory::errors::{Error, Result};
@@ -292,4 +293,40 @@ fn an_agent_without_evidence_create_is_refused_before_the_store_opens() {
         "This grant does not carry the evidence.create capability"
     );
     assert!(!paths.db_path().exists(), "the refusal opened the store");
+}
+
+/// A transferred project's attach still lands and answers with the
+/// `local_only` warning (#342); an unbound project's answer has none.
+#[test]
+fn an_attach_to_a_bound_project_warns_local_only() {
+    let mut home = Home::new();
+    let req = |key: &str, project: &str| -> evidence_add::Request {
+        serde_json::from_value(json!({"projectId": project, "idempotencyKey": key,
+                                      "kind": "external_url", "source": "ci"}))
+        .unwrap()
+    };
+    let plain = home
+        .run(&Envelope::local_agent(), req("k-plain", OTHER))
+        .unwrap();
+    assert!(plain.warnings.is_empty());
+
+    binding::record(
+        &home.conn,
+        &NewBinding {
+            project_id: PROJECT,
+            direction: Direction::Imported,
+            remote: "ws-origin",
+            digest: &"d".repeat(64),
+            remapped_from: None,
+            at_ms: 1_759_000_000_000,
+        },
+    )
+    .unwrap();
+    let bound = home
+        .run(&Envelope::local_agent(), req("k-bound", PROJECT))
+        .unwrap();
+    assert_eq!(bound.warnings.len(), 1);
+    assert_eq!(bound.warnings[0].code, "local_only");
+    assert_eq!(bound.warnings[0].project_id, PROJECT);
+    assert_eq!(home.counts()[0], 2, "the warning never refuses the attach");
 }

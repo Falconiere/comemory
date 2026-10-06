@@ -3,13 +3,13 @@
 **What belongs here:** engine-owned project management (epic #261), ported from
 the comemory.io platform's `/v1/projects` contract: the charter and its limits,
 slug derivation, the keyset cursor, the project activity writer and its
-keyset page, the body-free
-change feed, and the command cores the CLI, the loopback HTTP server and the
-MCP catalog all call.
+keyset page, the body-free change feed, the transfer bundle (#342), and the
+command cores the CLI, the loopback HTTP server and the MCP catalog all call.
 
 **What does NOT belong here:** SQL (every project statement lives in
-`store::{projects,project_read,project_plan,project_proposals,project_activity,project_changes,project_evidence}`, the
-declared tables in `store::schema_projects`), delivery (no file here imports `cli`, `serve` or
+`store::{projects,project_read,project_plan,project_proposals,project_activity,project_changes,project_evidence,project_transfer,project_transfer_write,project_binding}`,
+the declared tables and their transfer classes in `store::schema_projects`, the
+carried-table shapes in `store::project_table_shape`), delivery (no file here imports `cli`, `serve` or
 `mcp`), and the refusal vocabulary, which is `utilities::project_error`.
 
 ## Contents
@@ -18,9 +18,12 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `activity.rs` | `record` | The one `project_activity_events` writer every mutation shares, called inside the mutation's own transaction with the admitted `Actor`, which also appends the event's `changed` feed row; never `activity_log`, which is command telemetry |
+| `activity.rs` | `record` | The one `project_activity_events` writer every mutation shares, called inside the mutation's own transaction with the admitted `Actor`, which also appends the event's `changed` feed row; never `activity_log`, which is command telemetry. Returns a `#[must_use]` `Recorded` whose `local_only` is set when the project is bound by a transfer |
 | `activity_page.rs` | `Request` | `project activity` / `GET /projects/{id}/activity` (`Verb::ActivityRead`, a `project.read` reader, #331): one project's events as a keyset page over `(created_at, id)`, `order` `desc` (default) or `asc`, ties broken by id, `limit` 1–200 (default 50); an unknown project is `404 project_not_found`. It also holds `EventView` (the platform's event view key for key, a non-object payload read as `{}`) and `split` (the `limit + 1` page arithmetic), both shared with the cross-project feed (#332) |
-| `authority.rs` | `run` | The capability envelope every core runs under: the sealed `Command` trait, the `Actor` only `run` mints, the ported 27-verb table plus the engine's `ProjectChanges` reader, human tiers, agent capabilities, and the local operator and local agent defaults |
+| `authority.rs` | `run` | The capability envelope every core runs under: the sealed `Command` trait, the `Actor` only `run` mints, the ported 27-verb table plus the engine's `ProjectChanges` reader and the two transfer verbs, human tiers, agent capabilities, and the local operator and local agent defaults |
+| `binding.rs` | `record` | A project's transfer binding (direction, remote, effective digest, time, the actor a remap replaced): recorded by an import (and by #345 after an upload) and shown by `project show` |
+| `bundle.rs` | `Bundle` | The transfer bundle: format v1, the canonical form (carried tables parents first, rows sorted by primary key in Rust), its SHA-256 digest, a header-first `parse`, and the `ActorRemap` that rewrites matching principal pairs |
+| `bundle_check.rs` | `check` | A parsed bundle checked against the carried tables before any store access: `schema_mismatch` for another engine's table or column list, `malformed` for a bad row — including any reference to a row the bundle does not hold |
 | `changes.rs` | `Request` | `project changes` / `GET /projects/changes` (`Verb::ProjectChanges`, a `project.read` reader): body-free frames `{seq, entity, project_id, event_id, op}` after a cursor, refusing a cursor past the head or below the oldest retained row; `record_deletion`, the `deleted` row #320 appends in its delete transaction |
 | `charter.rs` | `validate` | A create request checked against every charter rule before any store access, in the platform's field order, and normalized for storage (lowercase id, canonical de-duplicated repositories, the lead) |
 | `create.rs` | `Request` | `project create` / `POST /projects`: the draft charter, its repositories, its project-level criteria and one `project.created` event in one immediate transaction; the slug retried with `-2`, `-3`, … on a real collision |
@@ -28,10 +31,13 @@ One line per file, named after its primary item:
 | `evidence_add.rs` | `Request` | `project evidence add` / `POST /projects/{id}/evidence` / MCP `project_evidence` (`Verb::EvidenceCreate`): under the receipt, one transaction checks the project, the repository gate (`403 repo_not_allowed`), the criteria (`422 … reason: unknown`) and the work item (`404 work_item_not_found`), then writes the row, its criterion links and one `project.evidence.recorded` event |
 | `evidence_check.rs` | `validate` | The attach's checks before any store access, in the platform's schema order: UUIDs and the kind vocabulary (`400`), the text caps (`422` with the limit), the absolute URL, the canonical `repo`, the hex `commitSha` and at most 20 criterion ids |
 | `evidence_page.rs` | `Request` | `project evidence list` / `GET /projects/{id}/evidence` / `project_show` with `view: "evidence"` (`Verb::EvidenceRead`): a keyset page newest first over `(created_at, id)`, `kind`, `trust` and `workItemId` alone or together, `limit` 1–100 (default 50); an unknown project `404`, an unknown item filter an empty page |
+| `export.rs` | `Request` | `project export`: one project's carried rows as a canonical bundle, read in one transaction; `snapshot` is the same read inside a caller's transaction. Human-only at `member` |
+| `import.rs` | `Import` | `project import`: check, verify the digest, remap, then in one immediate transaction answer `unchanged`/`skipped` for an existing id or refuse a taken key prefix or slug, write the rows under deferred keys and record the binding; no activity event. Human-only at `owner` |
 | `keyset.rs` | `decode` | The platform's `<epochMillis>:<uuid>` keyset cursor over `(created_at, id)`: encode, and decode with a `400 invalid_request` for anything outside `^\d{1,15}:[0-9a-f-]{36}$`; `Positioned`, the `(created_at, id)` of a row `activity_page::split` pages; later pages reuse it |
 | `lifecycle.rs` | `Request` | `project archive\|restore\|pause\|resume` / `POST /projects/{id}/{archive,restore,pause,resume}` (#328): the platform's one lifecycle command with a four-way `Kind`, human-only at lead tier. Loads the row, checks `expectedVersion` (`409 version_conflict`), then the ported transition (`409 invalid_transition`), writes a version-guarded patch and one `project.<verb>d` event under the receipt; a pause reason must be non-blank (`422`) |
 | `limits.rs` | `text` | The platform's charter and paging caps (`project-limits.ts`), counted in UTF-16 units, each breach a `422 invalid_request` naming field, reason and limit |
 | `list.rs` | `Request` | `project list` / `GET /projects`: a keyset page newest first, filtered by status, health and `includeArchived` |
+| `local_only.rs` | `LocalOnly` | The warning a mutation of a transferred project carries — the change stays here and will not reach the other side — looked up by `activity::record` for every mutation; it never refuses |
 | `operation_fields.rs` | `ProjectPatch` | The criterion, milestone and charter shapes a plan operation carries (`project-plan-operations.ts`): patches with no identity field, proposed creates with a client UUID, `Option<Nullable<T>>` so an absent patch field and a `null` stay apart, and `null` refused on a field that is not nullable |
 | `operation_rules.rs` | `validate` | A parsed operation list's request-level rules: 1–200 operations and at most 262,144 serialized bytes (the platform's `refuseCap` details `{field, reason: cap_exceeded, limit, actual}`), each field's length or range (`422`, named by its platform path), and normalization — UUIDs lowercase (`400` when malformed), `targetDate` as `toISOString()` |
 | `operations.rs` | `Operation` | The twelve typed plan operations, internally tagged on `op`, denying unknown keys; `bounded`, the list deserializer that refuses a 2,001st operation at the schema edge (`400 operations is invalid`) on every adapter; `Nullable` and `non_null`, which keep absent, `null` and a value apart |
@@ -41,6 +47,7 @@ One line per file, named after its primary item:
 | `proposals.rs` | `ListRequest` | `project proposal list\|show` / `GET /projects/{id}/proposals[/{proposalId}]` (`Verb::ProposalRead`): a keyset page newest first, optionally one state; one proposal, `404 proposal_not_found` when unknown or of another project |
 | `receipt.rs` | `run` | The idempotent-command runner every mutation goes through (#327): a `(principal, idempotencyKey)`-scoped `project_command_receipts` row written in the mutation's own immediate transaction; an exact replay returns the stored response and writes nothing, any other reuse is `409 idempotency_conflict` |
 | `principal.rs` | `Principal` | The principal an envelope carries: `user` or `project_agent` plus an id; the `local-operator` and `local-agent` ids |
+| `receipt.rs` | `run` | The idempotent-command runner every mutation but hard deletion and transfer import goes through (#327): a `(principal, idempotencyKey)`-scoped `project_command_receipts` row written in the mutation's own immediate transaction; an exact replay returns the stored response and writes nothing, any other reuse is `409 idempotency_conflict` |
 | `show.rs` | `Request` | `project show` / `GET /projects/{id}`: one charter; a malformed id is `400`, an unknown one `404 project_not_found` |
 | `slug.rs` | `base_slug` | `projects.slug` from the charter name, and the `-2`, `-3`, … disambiguator |
 | `timestamp.rs` | `iso` | Epoch milliseconds rendered as `toISOString()`, and `targetDate` parsing (calendar date = UTC midnight, RFC 3339 converted to UTC) |
@@ -167,10 +174,12 @@ platform's `project-plan-operations.ts` and `project-proposal-service.ts`:
 
 ## Idempotency
 
-Every mutation except hard deletion (#320) — `create`, `lifecycle` and `evidence_add`
-today — runs through `receipt::run`
-(`receipt.rs`, #327), ported from the platform's
-`project-command-receipt-service.ts`:
+Every mutation except hard deletion (#320) and transfer import (#342) —
+`create`, `lifecycle`, `evidence_add` and `propose` today — runs through
+`receipt::run` (`receipt.rs`, #327), ported from the platform's
+`project-command-receipt-service.ts`. Import is idempotent by content instead:
+the same bundle again answers `unchanged` and writes nothing, and it never
+carries receipts, which stay with the engine that ran each command:
 
 - **Key:** `idempotencyKey` is required on the core request, 1–200 UTF-16
   units; a breach is `422 invalid_request` (the recorded cap divergence). The
@@ -186,9 +195,9 @@ today — runs through `receipt::run`
   because the engine accepts a client id.
 - **Replay:** same command type and digest → the stored core response,
   parsed back into the typed response. Nothing runs and nothing is written:
-  no state change, no activity event, no `project_changes` frame (the feed
-  row is written only by `activity::record`, inside `apply`), and no
-  `activity_log` row.
+  no state change, no activity event, no `project_changes` frame (a
+  mutation's feed row is written by `activity::record` inside `apply`, which
+  a replay never reaches), and no `activity_log` row.
 - **Conflict:** another command type or digest under the key → `409
   idempotency_conflict`, before the command runs.
 - **Failure:** the receipt is written in the command's transaction, so a
@@ -237,7 +246,10 @@ self-declared telemetry label.
     work-item completion.
   - `lead` adds lifecycle, proposal review, health, and project completion
     and cancellation.
-  - `owner` adds deletion.
+  - `owner` adds deletion and transfer import.
+  - Transfer (#342, engine-only verbs): `project export` is human-only at
+    `member`; `project import` is human-only at `owner`, because a bundle can
+    carry rows attributed to principals other than the importer.
 - **Refusals:**
   - An agent is refused with `403 project_agent_scope`: `This command
     requires a signed-in human`, or `This grant does not carry the <cap>
@@ -260,6 +272,39 @@ self-declared telemetry label.
 A later task names its verb from `Verb`, implements `Command` for its request,
 and never re-decides who may run it.
 
+## Transfer (#342)
+
+The offline core that pull (#344) and `project migrate` (#345) leg over the
+network. Two explicit directions, never a mesh:
+
+- **What travels.** Every table `store::schema_projects::transfer_class` marks
+  `Carried`. `project_command_receipts` stays, because a receipt replays a
+  response only the engine that ran the command produced. The binding stays too,
+  because each side records its own. A new project table has no class until
+  someone decides, and a test fails until then.
+- **Same tasks = same digest.** The digest is SHA-256 over the canonical bundle,
+  after any actor remap, so a repeat import is a no-op even after a remap. The
+  same id with a different digest is `skipped`, and both copies stay. Nothing
+  is ever overwritten.
+- **Collisions.** A `key_prefix` or `slug` held by another project is refused
+  with `422 invalid_request` (`details.value` names it). A child row whose id
+  another project holds is refused with `422 conflict` naming the table. The
+  whole import rolls back.
+- **No activity event on import.** Activity rows are transferred content, and
+  an import event would make the next identical import diverge. A successful
+  import still appends one `changed` frame to the #324 feed (the project's own
+  id as `event_id`, as a deletion does), so a connected console refetches; the
+  feed is outside the transferred tables. `unchanged` and `skipped` append
+  nothing. Nothing goes to the replica journal or `sync_log`.
+- **Remap.** `ActorRemap {from, to}` rewrites every
+  `<role>_principal_type`/`_id` pair equal to `from`, never JSON bodies or
+  `verified_by`. The binding records the replaced actor.
+- **Bound projects warn.** Every mutation core must copy
+  `activity::record(..).local_only` into its response's `warnings`, which is
+  omitted when empty. The warning never refuses, and a later local change to a
+  transferred project stays local. `create` is exempt, because a new project is
+  never bound. #328 is the first verb that surfaces it.
+
 ## Command tree
 
 Each later task adds its own group with its verbs; nothing is declared empty.
@@ -268,6 +313,7 @@ Each later task adds its own group with its verbs; nothing is declared empty.
 comemory project
   create | show | list                      #326
   activity                                  #331 (read-only)
+  export | import                           #342 (CLI-only; hosted routes are #343)
   archive | restore | pause | resume        #328
   plan show                                 #335 (the committed plan)
   plan …                                    plan slice (#264)

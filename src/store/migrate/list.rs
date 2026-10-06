@@ -10,8 +10,8 @@ use rusqlite::Connection;
 use super::{
     M_BOOTSTRAP, M_V2, M_V3, M_V4, M_V5, M_V6, M_V7, M_V8, M_V9, M_V10, M_V11, M_V12, M_V13, M_V14,
     M_V15, M_V16, M_V17, M_V18, M_V19, M_V20, M_V21, M_V22, M_V23, M_V24, M_V25, M_V26, M_V27,
-    M_V28, M_V29, M_V30, M_V31, M_V32, backfill_memory_simhash, historical_document_revision,
-    mint_replica_epoch, rehash_simhashes,
+    M_V28, M_V29, M_V30, M_V31, M_V32, M_V33, backfill_memory_simhash,
+    historical_document_revision, mint_replica_epoch, rehash_simhashes,
 };
 use crate::prelude::*;
 
@@ -296,6 +296,14 @@ pub const MIGRATIONS: &[Migration] = &[
         class: Class::Additive,
         post: None,
         markers: &["0032_project_changes"],
+    },
+    Migration {
+        key: "0033_project_transfer",
+        sql: M_V33,
+        // Creates `project_transfer_bindings`; touches no row.
+        class: Class::Additive,
+        post: None,
+        markers: &["0033_project_transfer"],
     },
 ];
 

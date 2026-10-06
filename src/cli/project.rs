@@ -16,6 +16,7 @@ use crate::cli::output::json;
 use crate::cli::project_evidence;
 use crate::cli::project_plan::{self, PlanArgs, ShowArgs};
 use crate::cli::project_proposal::{self, ProposalArgs};
+use crate::cli::project_transfer::{self, ExportArgs, ImportArgs};
 use crate::cli::{project_activity, project_lifecycle};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::projects::authority::{self, Envelope};
@@ -73,7 +74,11 @@ Examples:
   comemory project evidence list 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --trust pending
 
   # Poll the body-free change feed from a cursor
-  comemory project changes --after 0 --limit 100 --json";
+  comemory project changes --after 0 --limit 100 --json
+
+  # Move one project to another data directory under the same ids
+  comemory project export 0f8c2d7e-3b1a-4c5d-9e6f-7a8b9c0d1e2f --output ship.json
+  comemory --data-dir ~/other project import ship.json";
 
 /// Top-level `project` args — nested verb required.
 #[derive(ClapArgs, Debug)]
@@ -105,6 +110,12 @@ pub enum ProjectCmd {
     Activity(project_activity::Args),
     /// Read the body-free change feed: one frame per committed mutation.
     Changes(ChangesArgs),
+    /// Write one project, with every row it owns that travels, as a transfer
+    /// bundle (receipts stay behind).
+    Export(ExportArgs),
+    /// Import a transfer bundle under the same ids: an identical copy is
+    /// unchanged, a different one skipped, and nothing is ever overwritten.
+    Import(ImportArgs),
     /// Read a project's committed plan.
     Plan(PlanArgs),
     /// Record and page typed evidence on a project or its work items.
@@ -202,7 +213,10 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         }
         ProjectCmd::Show(s) => {
             let resp = authority::run(&mut ctx, &operator, show::Request { id: s.id })?;
-            emit(json_flag, &resp, |out| render_project(out, &resp.project))
+            emit(json_flag, &resp, |out| {
+                render_project(out, &resp.project)?;
+                project_transfer::render_binding(out, resp.transfer.as_ref())
+            })
         }
         ProjectCmd::List(l) => {
             let resp = authority::run(&mut ctx, &operator, list_request(l))?;
@@ -227,12 +241,15 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         ProjectCmd::Plan(p) => project_plan::run(&mut ctx, &operator, json_flag, p.cmd),
         ProjectCmd::Evidence(e) => project_evidence::run(&mut ctx, &operator, json_flag, e),
         ProjectCmd::Proposal(p) => project_proposal::run(p.cmd, &mut ctx, &operator, json_flag),
+        ProjectCmd::Export(e) => project_transfer::export(&mut ctx, &operator, e, json_flag),
+        ProjectCmd::Import(i) => project_transfer::import(&mut ctx, &operator, i, json_flag),
     }
 }
 
 /// Run one lifecycle verb as the local operator and print the project.
 fn lifecycle(ctx: &mut Ctx<'_>, json_flag: bool, req: lifecycle::Request) -> Result<()> {
     let resp = authority::run(ctx, &Envelope::local_operator(), req)?;
+    project_transfer::warn_local_only(&resp.warnings)?;
     emit(json_flag, &resp, |out| render_project(out, &resp.project))
 }
 

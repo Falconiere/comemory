@@ -1,5 +1,5 @@
 //! The project quarter of [`super::rebuild_copy`]'s preservation copy: the
-//! fourteen tables of [`super::schema_projects::PROJECT_TABLES`], which hold
+//! tables of [`super::schema_projects::PROJECT_TABLES`], which hold
 //! operator-authored charters, plans, evidence and receipts that exist nowhere
 //! but this database.
 //!

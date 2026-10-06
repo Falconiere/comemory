@@ -18,6 +18,7 @@ use crate::domains::projects::activity::{self, Event};
 use crate::domains::projects::authority::{Actor, Command, Verb, sealed};
 use crate::domains::projects::evidence::{self, Claim, EvidenceView, Initial, StoredMetadata};
 use crate::domains::projects::evidence_check::{self, Valid};
+use crate::domains::projects::local_only::LocalOnly;
 use crate::domains::projects::receipt::{self, Applied, Keyed, Ran};
 use crate::domains::projects::timestamp::now_ms;
 use crate::prelude::*;
@@ -71,6 +72,10 @@ pub struct Request {
 pub struct Response {
     /// Its view.
     pub evidence: EvidenceView,
+    /// `local_only` when the project is bound by a transfer (#342): the
+    /// change stays in this data directory. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<LocalOnly>,
 }
 
 /// The platform's `project.evidence.recorded` payload, keys in its order.
@@ -204,8 +209,8 @@ fn write(tx: &Connection, actor: &Actor, v: &Valid, decided: &Decided) -> Result
         entity_id: &id,
         payload: &payload,
     };
-    activity::record(tx, actor, &event, at_ms)?;
-    recorded_view(tx, pid, &id)
+    let recorded = activity::record(tx, actor, &event, at_ms)?;
+    recorded_view(tx, pid, &id, recorded.local_only)
 }
 
 /// `404 project_not_found` for an unknown project, then `403
@@ -289,7 +294,12 @@ fn insert(
 }
 
 /// The view of the row this transaction just wrote.
-fn recorded_view(tx: &Connection, project_id: &str, id: &str) -> Result<Response> {
+fn recorded_view(
+    tx: &Connection,
+    project_id: &str,
+    id: &str,
+    local_only: Option<LocalOnly>,
+) -> Result<Response> {
     let row = project_evidence::one(tx, project_id, id)?.ok_or_else(|| {
         Error::from(ProjectError::Invariant {
             invariant: "evidence_row_missing".to_string(),
@@ -298,6 +308,7 @@ fn recorded_view(tx: &Connection, project_id: &str, id: &str) -> Result<Response
     })?;
     Ok(Response {
         evidence: evidence::view(row)?,
+        warnings: local_only.into_iter().collect(),
     })
 }
 
