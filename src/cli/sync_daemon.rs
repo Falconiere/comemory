@@ -98,6 +98,8 @@ fn stop_coordinator(paths: &Paths) -> Result<()> {
 
 fn uninstall(paths: &Paths, json_flag: bool) -> Result<()> {
     stop_coordinator(paths)?;
+    // Not `detect_for`: a unit written before the directory was judged
+    // throwaway must still be found and removed.
     let kind = supervisor::detect()?;
     let canonical = crate::domains::sync::daemon::identity::canonical_data_dir(paths)?;
     if kind != supervisor::Kind::Process && kind != supervisor::Kind::External {

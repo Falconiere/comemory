@@ -177,3 +177,48 @@ fn an_explicit_override_still_gets_a_native_unit_for_a_temp_directory() {
     assert_eq!(forced, Kind::Launchd);
     assert_eq!(reported, Kind::Launchd);
 }
+
+#[test]
+fn a_directory_not_yet_created_is_judged_by_its_nearest_existing_ancestor() {
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR") };
+    let (_dir, canonical) = canonical();
+    let missing = canonical.join("not/yet/created");
+    assert_eq!(for_data_dir(Kind::Launchd, &missing), Kind::Process);
+    // `$TMPDIR` reached through the `/var` symlink; `status` never creates it.
+    if let Ok(rest) = missing.strip_prefix("/private/var") {
+        let spelled = std::path::Path::new("/var").join(rest);
+        assert!(!spelled.exists());
+        let kind = detect_for(&Paths::new(&spelled)).unwrap();
+        assert_eq!(kind, Kind::Process, "{}", spelled.display());
+    }
+}
+
+#[test]
+fn a_directory_inside_the_home_is_never_throwaway() {
+    let (dir, canonical) = canonical();
+    let home = canonical.join("alice");
+    std::fs::create_dir_all(home.join(".comemory")).unwrap();
+    let previous = std::env::var_os("HOME");
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe {
+        std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR");
+        std::env::set_var("HOME", &home);
+    }
+    let inside = for_data_dir(Kind::Launchd, &home.join(".comemory"));
+    let outside = for_data_dir(Kind::Launchd, &canonical.join("scratch"));
+    // SAFETY: restored before asserting so a failure cannot leak HOME.
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+    drop(dir);
+    assert_eq!(inside, Kind::Launchd, "a home directory keeps its unit");
+    assert_eq!(
+        outside,
+        Kind::Process,
+        "a sibling of the home is still temp"
+    );
+}

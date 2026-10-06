@@ -28,6 +28,8 @@ pub fn spawn(paths: &Paths) -> Result<()> {
         // The protected `auth.json` is the resident coordinator's only
         // credential; an installer shell's exported key must not become it.
         .env_remove("COMEMORY_API_KEY")
+        // The coordinator reports the backend that started it, not `foreground`.
+        .env("COMEMORY_DAEMON_SUPERVISOR", "process")
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr);

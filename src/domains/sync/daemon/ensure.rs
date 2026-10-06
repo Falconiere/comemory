@@ -234,7 +234,13 @@ fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ens
     // the authenticated control connection above authorizes shutdown.
 
     let canonical = identity::canonical_data_dir(paths)?;
-    let kind = supervisor::detect_for(paths)?;
+    let detected = supervisor::detect()?;
+    let kind = supervisor::for_data_dir(detected, &canonical);
+    if kind != detected {
+        // A unit written before this directory was judged throwaway would
+        // restart a second coordinator at login, next to the process.
+        supervisor::retire_unit(detected, &canonical);
+    }
     if kind == supervisor::Kind::External {
         return wait_or_fail(paths, intent, kind, Vec::new(), deadline, "none");
     }
