@@ -7,7 +7,7 @@
 )]
 //! Tests for [`crate::domains::sync::daemon::supervisor`].
 
-use comemory::domains::sync::daemon::supervisor::{Kind, plan};
+use comemory::domains::sync::daemon::supervisor::{Kind, for_data_dir, plan};
 
 fn canonical() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -113,4 +113,26 @@ fn launchd_activation_reports_failure_when_bootstrap_and_bootout_fail() {
     let error = super::bootstrap_or_replace(&unit, "gui/4294967295")
         .expect_err("failed bootstrap and bootout must permit process fallback");
     assert!(error.to_string().contains("launchctl bootout"), "{error}");
+}
+
+#[test]
+fn a_temp_data_directory_is_never_given_a_native_unit() {
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR") };
+    let (_dir, canonical) = canonical();
+    assert_eq!(for_data_dir(Kind::Launchd, &canonical), Kind::Process);
+    assert_eq!(for_data_dir(Kind::Systemd, &canonical), Kind::Process);
+    assert_eq!(for_data_dir(Kind::External, &canonical), Kind::External);
+    let home = std::path::Path::new("/Users/someone/.comemory");
+    assert_eq!(for_data_dir(Kind::Launchd, home), Kind::Launchd);
+}
+
+#[test]
+fn an_explicit_override_still_gets_a_native_unit_for_a_temp_directory() {
+    let (_dir, canonical) = canonical();
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::set_var("COMEMORY_DAEMON_SUPERVISOR", "launchd") };
+    assert_eq!(for_data_dir(Kind::Launchd, &canonical), Kind::Launchd);
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR") };
 }

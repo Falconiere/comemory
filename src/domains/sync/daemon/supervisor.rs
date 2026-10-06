@@ -98,6 +98,34 @@ fn native() -> Kind {
     Kind::Unsupported
 }
 
+/// The backend that may supervise `canonical` when `kind` was auto-detected.
+/// A data directory under the OS temp directory is throwaway (a test run, a
+/// scratch probe): a LaunchAgent or systemd unit for it would outlive the
+/// run, pile up in the user's login items and keep a coordinator resident for
+/// a directory nobody returns to, so it is supervised as a plain process.
+/// An explicit `COMEMORY_DAEMON_SUPERVISOR` is always honored.
+#[must_use]
+pub fn for_data_dir(kind: Kind, canonical: &Path) -> Kind {
+    let native = matches!(kind, Kind::Launchd | Kind::Systemd);
+    if native && env::daemon_supervisor_override().is_none() && is_ephemeral(canonical) {
+        Kind::Process
+    } else {
+        kind
+    }
+}
+
+/// Whether `canonical` lives under a temp root.
+fn is_ephemeral(canonical: &Path) -> bool {
+    let mut roots = vec![
+        PathBuf::from("/tmp"),
+        PathBuf::from("/private/tmp"),
+        PathBuf::from("/var/tmp"),
+        PathBuf::from("/private/var/folders"),
+    ];
+    roots.extend(fs::canonicalize(std::env::temp_dir()));
+    roots.iter().any(|root| canonical.starts_with(root))
+}
+
 /// This directory's unit identity and path for `kind` (meaningless for
 /// [`Kind::Process`]/[`Kind::External`]/[`Kind::Unsupported`]).
 pub struct Unit {

@@ -265,6 +265,7 @@ fn start_backend(
             "comemory sync daemon is not supported on this OS".into(),
         ));
     }
+    let kind = supervisor::for_data_dir(kind, canonical);
     if kind != supervisor::Kind::Process {
         let unit = supervisor::plan(canonical, kind)?;
         let me = identity::BinaryIdentity::current()?;
