@@ -95,7 +95,7 @@ pub fn ensure(paths: &Paths, intent: Intent) -> Result<Ensured> {
     let probe_bound = || remaining(deadline, client::PROBE_BOUND);
 
     let probe = client::probe(paths, probe_bound());
-    if let Some(result) = accept(intent, probe) {
+    if let Some(result) = accept(paths, intent, probe) {
         return Ok(result);
     }
 
@@ -103,7 +103,7 @@ pub fn ensure(paths: &Paths, intent: Intent) -> Result<Ensured> {
 }
 
 /// Whether `probe` already satisfies `intent` without repairing.
-fn accept(intent: Intent, probe: Probe) -> Option<Ensured> {
+fn accept(paths: &Paths, intent: Intent, probe: Probe) -> Option<Ensured> {
     let Probe::Healthy(readiness) = probe else {
         return None;
     };
@@ -114,9 +114,9 @@ fn accept(intent: Intent, probe: Probe) -> Option<Ensured> {
     fits(intent, &readiness, &current).then(|| Ensured {
         ready: true,
         action: "none",
-        // `detect` is a pure env/OS check (no I/O), so the fast accept path
-        // still reports the real backend rather than a placeholder.
-        supervisor: supervisor::detect().unwrap_or(supervisor::Kind::External),
+        // `detect_for` is an env/OS/path check (no coordinator I/O), so the
+        // fast accept path still reports the real backend, not a placeholder.
+        supervisor: supervisor::detect_for(paths).unwrap_or(supervisor::Kind::External),
         notes: Vec::new(),
         daemon: Some(*readiness),
         error: None,
@@ -174,7 +174,7 @@ fn wait_for_lock_release(paths: &Paths, deadline: Instant) {
 }
 
 /// Serialize on [`ENSURE_LOCK`], re-probe (a racer may have just fixed it),
-/// then write/start the backend `[`supervisor::detect`]` chooses.
+/// then write/start the backend [`supervisor::detect_for`] chooses.
 fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
     let lock_path = paths.data_dir().join(ENSURE_LOCK);
     // Whatever intent the holder has, `Ensure`'s window is the longest.
@@ -184,6 +184,7 @@ fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
             break lock;
         }
         if let Some(mut repaired) = accept(
+            paths,
             settled(intent),
             client::probe(paths, Duration::from_millis(200)),
         ) {
@@ -195,7 +196,7 @@ fn repair(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ensured> {
         // The holder may be draining an evicted coordinator before its own
         // start window; wait out its worst case, not just this call's bound.
         if Instant::now() >= deadline.max(holder_worst_case) {
-            let supervisor = supervisor::detect().unwrap_or(supervisor::Kind::Process);
+            let supervisor = supervisor::detect_for(paths).unwrap_or(supervisor::Kind::Process);
             return Ok(not_ready(
                 supervisor,
                 Vec::new(),
@@ -214,7 +215,7 @@ fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ens
     // The lock may have waited; a healthy coordinator can already exist.
     let probe = client::probe(paths, Duration::from_millis(200));
     let evicting = matches!(probe, Probe::Healthy(_));
-    if let Some(accepted) = accept(intent, probe) {
+    if let Some(accepted) = accept(paths, intent, probe) {
         return Ok(accepted);
     }
     // Whatever answered has the wrong identity (or nothing does): evict it
@@ -233,7 +234,7 @@ fn repair_locked(paths: &Paths, intent: Intent, deadline: Instant) -> Result<Ens
     // the authenticated control connection above authorizes shutdown.
 
     let canonical = identity::canonical_data_dir(paths)?;
-    let kind = supervisor::detect()?;
+    let kind = supervisor::detect_for(paths)?;
     if kind == supervisor::Kind::External {
         return wait_or_fail(paths, intent, kind, Vec::new(), deadline, "none");
     }
@@ -265,7 +266,6 @@ fn start_backend(
             "comemory sync daemon is not supported on this OS".into(),
         ));
     }
-    let kind = supervisor::for_data_dir(kind, canonical);
     if kind != supervisor::Kind::Process {
         let unit = supervisor::plan(canonical, kind)?;
         let me = identity::BinaryIdentity::current()?;

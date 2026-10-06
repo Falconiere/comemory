@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::config::env;
+use crate::config::{Paths, env};
 use crate::domains::sync::daemon::identity::{UNIT_ID_LEN, data_dir_id};
 use crate::domains::sync::daemon_templates::{render_launch_agent_plist, render_systemd_unit};
 use crate::domains::sync::daemon_unit::{run_supervisor, users_uid};
@@ -98,6 +98,20 @@ fn native() -> Kind {
     Kind::Unsupported
 }
 
+/// [`detect`], narrowed by [`for_data_dir`] for the directory `paths` names:
+/// the backend that really supervises its coordinator. Starting, reporting
+/// and `status` all take this one answer, so none of them names a
+/// LaunchAgent that was never written.
+///
+/// # Errors
+/// [`Error::Config`] for an unrecognized override value.
+pub fn detect_for(paths: &Paths) -> Result<Kind> {
+    let kind = detect()?;
+    let given = paths.data_dir();
+    let resolved = fs::canonicalize(given);
+    Ok(for_data_dir(kind, resolved.as_deref().unwrap_or(given)))
+}
+
 /// The backend that may supervise `canonical` when `kind` was auto-detected.
 /// A data directory under the OS temp directory is throwaway (a test run, a
 /// scratch probe): a LaunchAgent or systemd unit for it would outlive the
@@ -114,16 +128,26 @@ pub fn for_data_dir(kind: Kind, canonical: &Path) -> Kind {
     }
 }
 
+/// Throwaway roots, in the canonical form a resolved data directory has:
+/// macOS resolves `/tmp` and `/var/tmp` under `/private` and keeps `$TMPDIR`
+/// under `/private/var/folders`; Linux keeps them as written.
+const EPHEMERAL_ROOTS: [&str; 5] = [
+    "/tmp",
+    "/private/tmp",
+    "/var/tmp",
+    "/private/var/tmp",
+    "/private/var/folders",
+];
+
 /// Whether `canonical` lives under a temp root.
 fn is_ephemeral(canonical: &Path) -> bool {
-    let mut roots = vec![
-        PathBuf::from("/tmp"),
-        PathBuf::from("/private/tmp"),
-        PathBuf::from("/var/tmp"),
-        PathBuf::from("/private/var/folders"),
-    ];
-    roots.extend(fs::canonicalize(std::env::temp_dir()));
-    roots.iter().any(|root| canonical.starts_with(root))
+    EPHEMERAL_ROOTS
+        .iter()
+        .any(|root| canonical.starts_with(root))
+        || fs::canonicalize(std::env::temp_dir()).is_ok_and(|temp| {
+            // A `TMPDIR` that holds the home directory (or is `/`) is no throwaway root.
+            canonical.starts_with(&temp) && !home().is_ok_and(|home| home.starts_with(&temp))
+        })
 }
 
 /// This directory's unit identity and path for `kind` (meaningless for

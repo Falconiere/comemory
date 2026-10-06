@@ -48,7 +48,7 @@ pub struct StatusView {
 /// Probe the coordinator for `paths`.
 ///
 /// # Errors
-/// Propagates only `supervisor::detect`'s config error (an unrecognized
+/// Propagates only `supervisor::detect_for`'s config error (an unrecognized
 /// `COMEMORY_DAEMON_SUPERVISOR` override).
 pub fn view(paths: &Paths) -> Result<StatusView> {
     let store = probe_store(paths);
@@ -64,7 +64,7 @@ pub fn view(paths: &Paths) -> Result<StatusView> {
             healthy,
         });
     }
-    let kind = supervisor::detect()?;
+    let kind = supervisor::detect_for(paths)?;
     if kind == supervisor::Kind::Unsupported {
         return Ok(StatusView {
             state: State::Unsupported,

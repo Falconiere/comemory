@@ -24,6 +24,9 @@ _isolated_envs() {
     -u COMEMORY_VERSION -u COMEMORY_NO_MODIFY_PATH)
   if [ "$mode" = native ]; then
     home_dir="${DAEMON_INSTALL_NATIVE_HOME:-$HOME}"
+    # The data dir lives under /tmp, which an unset override supervises as a
+    # plain process; native mode must name the backend it exists to prove.
+    envs+=(COMEMORY_DAEMON_SUPERVISOR="$(native_expected_supervisor)")
   else
     envs+=(-u XDG_RUNTIME_DIR -u DBUS_SESSION_BUS_ADDRESS COMEMORY_DAEMON_SUPERVISOR=process)
   fi

@@ -42,7 +42,7 @@ published target is.
 | --- | --- | --- |
 | `ensure.rs` | `ensure` / `Intent` | Verify (and, unless a read-only preflight already found one healthy, repair) the coordinator for a data directory. `daemon-ensure.lock` serializes concurrent repairs to one; shutdown requires an authenticated control connection, never an unverified PID from stale metadata |
 | `status_view.rs` | `view` / `StatusView` | `comemory sync daemon status`'s live probe report — starts nothing, never calls `ensure`; `store` and `healthy` come from this process's own read-only `probe_store`, so a failed upgrade reads unhealthy even with no coordinator running |
-| `supervisor.rs` | `Kind` / `detect` / `activate` | Which OS backend keeps a directory's coordinator running (`launchd` / `systemd` / `process` / `external`) and its per-directory unit lifecycle; `remove_legacy` retires the pre-#257 single, un-id'd unit |
+| `supervisor.rs` | `Kind` / `detect` / `detect_for` / `activate` | Which OS backend keeps a directory's coordinator running (`launchd` / `systemd` / `process` / `external`; `detect_for` runs a data directory under a temp root as `process` unless `COMEMORY_DAEMON_SUPERVISOR` is set) and its per-directory unit lifecycle; `remove_legacy` retires the pre-#257 single, un-id'd unit |
 
 Tests live beside the modules under `tests/`. When you add a file here, add
 its row above. No `mod.rs` barrel.

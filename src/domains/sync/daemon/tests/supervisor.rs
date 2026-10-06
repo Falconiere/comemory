@@ -7,7 +7,8 @@
 )]
 //! Tests for [`crate::domains::sync::daemon::supervisor`].
 
-use comemory::domains::sync::daemon::supervisor::{Kind, for_data_dir, plan};
+use comemory::config::Paths;
+use comemory::domains::sync::daemon::supervisor::{Kind, detect_for, for_data_dir, plan};
 
 fn canonical() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -128,11 +129,51 @@ fn a_temp_data_directory_is_never_given_a_native_unit() {
 }
 
 #[test]
+fn every_canonical_spelling_of_a_system_temp_root_is_throwaway() {
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR") };
+    // macOS resolves `/var/tmp` to `/private/var/tmp` before the directory is
+    // judged, so the resolved spelling must count as much as the literal one.
+    for root in [
+        "/tmp",
+        "/private/tmp",
+        "/var/tmp",
+        "/private/var/tmp",
+        "/private/var/folders/zz/abc/T",
+    ] {
+        let dir = std::path::Path::new(root).join("comemory-data");
+        assert_eq!(for_data_dir(Kind::Launchd, &dir), Kind::Process, "{root}");
+    }
+    // Component-wise: a sibling that merely shares the prefix is not temp.
+    let sibling = std::path::Path::new("/tmpfs-data/comemory");
+    assert_eq!(for_data_dir(Kind::Launchd, sibling), Kind::Launchd);
+}
+
+#[test]
+fn detect_for_names_the_backend_that_will_really_supervise_the_directory() {
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR") };
+    let (_dir, canonical) = canonical();
+    let kind = detect_for(&Paths::new(&canonical)).unwrap();
+    assert_eq!(kind, Kind::Process, "a temp directory reports `process`");
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::set_var("COMEMORY_DAEMON_SUPERVISOR", "nonsense") };
+    let rejected = detect_for(&Paths::new(&canonical));
+    // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    unsafe { std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR") };
+    assert!(rejected.is_err(), "a bad override still surfaces");
+}
+
+#[test]
 fn an_explicit_override_still_gets_a_native_unit_for_a_temp_directory() {
     let (_dir, canonical) = canonical();
     // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
     unsafe { std::env::set_var("COMEMORY_DAEMON_SUPERVISOR", "launchd") };
-    assert_eq!(for_data_dir(Kind::Launchd, &canonical), Kind::Launchd);
+    let forced = for_data_dir(Kind::Launchd, &canonical);
+    let reported = detect_for(&Paths::new(&canonical)).unwrap();
     // SAFETY: this test is in the env-mutating nextest group (max-threads=1).
+    // Restored before asserting so a failure cannot leak the override.
     unsafe { std::env::remove_var("COMEMORY_DAEMON_SUPERVISOR") };
+    assert_eq!(forced, Kind::Launchd);
+    assert_eq!(reported, Kind::Launchd);
 }
