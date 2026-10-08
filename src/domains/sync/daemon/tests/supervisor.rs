@@ -20,8 +20,8 @@ fn run_supervisor_child(
     let list = Command::new(&executable).arg("--list").output().unwrap();
     let test_name = String::from_utf8_lossy(&list.stdout)
         .lines()
-        .find_map(|line| line.strip_suffix(": test"))
-        .filter(|name| name.ends_with("::supervisor_environment_child"))
+        .filter_map(|line| line.strip_suffix(": test"))
+        .find(|name| name.ends_with("::supervisor_environment_child"))
         .unwrap()
         .to_owned();
     let mut command = Command::new(executable);
