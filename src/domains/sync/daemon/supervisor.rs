@@ -9,7 +9,7 @@
 //! it.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -138,20 +138,34 @@ fn can_narrow(kind: Kind) -> bool {
 /// created still resolves through its nearest existing ancestor, so `status`
 /// (which never creates it) and `ensure` (which does) judge the same path.
 fn resolve(path: &Path) -> PathBuf {
-    let mut tail = Vec::new();
-    let mut head = path;
-    loop {
-        if let Ok(real) = fs::canonicalize(head) {
-            return tail.iter().rev().fold(real, |acc, part| acc.join(part));
-        }
-        match (head.parent(), head.file_name()) {
-            (Some(parent), Some(name)) => {
-                tail.push(name);
-                head = parent;
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    let mut resolved = PathBuf::new();
+    let mut missing = Vec::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => resolved.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if missing.pop().is_none() {
+                    resolved.pop();
+                }
             }
-            _ => return path.to_path_buf(),
+            Component::Normal(name) if missing.is_empty() => {
+                match fs::canonicalize(resolved.join(name)) {
+                    Ok(canonical) => resolved = canonical,
+                    Err(_) => missing.push(name.to_os_string()),
+                }
+            }
+            Component::Normal(name) => missing.push(name.to_os_string()),
         }
     }
+    missing
+        .into_iter()
+        .fold(resolved, |path, component| path.join(component))
 }
 
 /// Throwaway roots, in the canonical form a resolved data directory has:
