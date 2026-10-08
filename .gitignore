@@ -2,6 +2,7 @@
 /.claude/tmp/
 /.claude/settings.local.json
 /.codex/tmp/
+/.cursor/tmp/
 /.fastembed_cache/
 # cargo-mutants scratch output — never committed
 /mutants.out/
