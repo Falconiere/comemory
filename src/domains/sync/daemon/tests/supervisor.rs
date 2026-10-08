@@ -50,6 +50,17 @@ fn assert_supervisor_child(case: &str, override_value: Option<&str>) {
     );
 }
 
+fn assert_home_child(home: &std::path::Path) {
+    let output = run_supervisor_child("home", None, Some(home));
+    assert!(
+        output.status.success(),
+        "home case for {} failed: {}{}",
+        home.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn canonical() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let canonical = std::fs::canonicalize(dir.path()).unwrap();
@@ -280,11 +291,16 @@ fn a_missing_path_that_walks_out_of_temp_is_not_throwaway() {
 fn a_directory_inside_the_home_is_never_throwaway() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("alice");
-    let output = run_supervisor_child("home", None, Some(&home));
-    assert!(
-        output.status.success(),
-        "home case failed: {}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_home_child(&home);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_directory_inside_a_symlinked_home_is_never_throwaway() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("alice");
+    std::fs::create_dir_all(&home).unwrap();
+    let alias = dir.path().join("home-alias");
+    std::os::unix::fs::symlink(&home, &alias).unwrap();
+    assert_home_child(&alias);
 }
