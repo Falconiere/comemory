@@ -155,7 +155,8 @@ preflight verifies it and repairs it first, so `login`, `save`, `sync` and
 Backed by a macOS LaunchAgent (`io.comemory.sync.<id>`) or a Linux systemd
 `--user` unit (`comemory-sync-<id>.service`) when one is available, falling
 back to a plain detached process — with a note in `ensure`'s report — when it
-is not (containers, a headless host with no session bus). `install`/`start`
+is not (containers, a headless host with no session bus) or when the data
+directory is throwaway, under a temp root such as `/tmp` or `$TMPDIR`. `install`/`start`
 are hidden deprecated aliases of `repair`/`ensure`; `--daemon`/`--no-daemon`
 on `auth login` do nothing (the former warns; the latter is refused).
 Windows is not supported.

@@ -9,11 +9,11 @@
 //! it.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::config::env;
+use crate::config::{Paths, env};
 use crate::domains::sync::daemon::identity::{UNIT_ID_LEN, data_dir_id};
 use crate::domains::sync::daemon_templates::{render_launch_agent_plist, render_systemd_unit};
 use crate::domains::sync::daemon_unit::{run_supervisor, users_uid};
@@ -96,6 +96,100 @@ fn native() -> Kind {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn native() -> Kind {
     Kind::Unsupported
+}
+
+/// [`detect`], narrowed by [`for_data_dir`] for the directory `paths` names:
+/// the backend that really supervises its coordinator. Starting, reporting
+/// and `status` all take this one answer, so none of them names a
+/// LaunchAgent that was never written.
+///
+/// # Errors
+/// [`Error::Config`] for an unrecognized override value.
+pub fn detect_for(paths: &Paths) -> Result<Kind> {
+    let kind = detect()?;
+    if !can_narrow(kind) {
+        return Ok(kind);
+    }
+    Ok(for_data_dir(kind, &resolve(paths.data_dir())))
+}
+
+/// The backend that may supervise `canonical` when `kind` was auto-detected.
+/// A data directory under the OS temp directory is throwaway (a test run, a
+/// scratch probe): a LaunchAgent or systemd unit for it would outlive the
+/// run, pile up in the user's login items and keep a coordinator resident for
+/// a directory nobody returns to, so it is supervised as a plain process.
+/// An explicit `COMEMORY_DAEMON_SUPERVISOR` is always honored, and so is a
+/// directory inside the user's home.
+#[must_use]
+pub fn for_data_dir(kind: Kind, canonical: &Path) -> Kind {
+    if can_narrow(kind) && is_ephemeral(canonical) {
+        Kind::Process
+    } else {
+        kind
+    }
+}
+
+/// Whether `kind` is a native backend the user did not ask for by name.
+fn can_narrow(kind: Kind) -> bool {
+    matches!(kind, Kind::Launchd | Kind::Systemd) && env::daemon_supervisor_override().is_none()
+}
+
+/// `path` with symlinks resolved as far as it exists: a directory not yet
+/// created still resolves through its nearest existing ancestor, so `status`
+/// (which never creates it) and `ensure` (which does) judge the same path.
+fn resolve(path: &Path) -> PathBuf {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
+    let mut resolved = PathBuf::new();
+    let mut missing = Vec::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => resolved.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if missing.pop().is_none() {
+                    resolved.pop();
+                }
+            }
+            Component::Normal(name) if missing.is_empty() => {
+                match fs::canonicalize(resolved.join(name)) {
+                    Ok(canonical) => resolved = canonical,
+                    Err(_) => missing.push(name.to_os_string()),
+                }
+            }
+            Component::Normal(name) => missing.push(name.to_os_string()),
+        }
+    }
+    missing
+        .into_iter()
+        .fold(resolved, |path, component| path.join(component))
+}
+
+/// Throwaway roots, in the canonical form a resolved data directory has:
+/// macOS resolves `/tmp` and `/var/tmp` under `/private` and keeps `$TMPDIR`
+/// under `/private/var/folders`; Linux keeps them as written.
+const EPHEMERAL_ROOTS: [&str; 5] = [
+    "/tmp",
+    "/private/tmp",
+    "/var/tmp",
+    "/private/var/tmp",
+    "/private/var/folders",
+];
+
+/// Whether `canonical` lives under a temp root. A directory inside the user's
+/// home never does, however the home and the temp root overlap (`HOME=/tmp/u`,
+/// `TMPDIR=$HOME`).
+fn is_ephemeral(canonical: &Path) -> bool {
+    if home().is_ok_and(|home| canonical.starts_with(resolve(&home))) {
+        return false;
+    }
+    EPHEMERAL_ROOTS
+        .iter()
+        .any(|root| canonical.starts_with(root))
+        || fs::canonicalize(std::env::temp_dir()).is_ok_and(|temp| canonical.starts_with(temp))
 }
 
 /// This directory's unit identity and path for `kind` (meaningless for
@@ -288,6 +382,16 @@ pub fn remove(kind: Kind, unit: &Unit) {
             }
         }
         Kind::Process | Kind::External | Kind::Unsupported => {}
+    }
+}
+
+/// Boot out and remove `canonical`'s unit under `kind` if one was written;
+/// best-effort, and a no-op when there is none.
+pub fn retire_unit(kind: Kind, canonical: &Path) {
+    if let Ok(unit) = plan(canonical, kind)
+        && unit.path.exists()
+    {
+        remove(kind, &unit);
     }
 }
 
