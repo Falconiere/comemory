@@ -42,10 +42,9 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   with the default `GITHUB_TOKEN` does **not** trigger downstream workflows, so
   the bot must push the tag with its own token, or `release.yml` never fires.
   Both release-plz jobs mint a short-lived installation token for the
-  `toolu-release` App from its Client ID (`Iv23cthPzC6Oci4iBLZV`, a public
-  identifier written into the workflows as a literal) +
-  `HOMEBREW_APP_PRIVATE_KEY` — the same App the tap step
-  below uses, so this is the *same* installation with `comemory` added
+  `toolu-release` App from its Client ID (a public identifier written into the
+  workflows as a literal) + `HOMEBREW_APP_PRIVATE_KEY` — the same App the tap
+  step below uses, so this is the *same* installation with `comemory` added
   alongside `homebrew-tap`, not a second one. Unlike the `RELEASE_PLZ_TOKEN` PAT
   it replaces, an App key is not tied to a person's account and cannot silently
   expire.
@@ -53,11 +52,20 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   The mint steps pass no `owner`/`repositories`, unlike the tap step which has to
   cross repos, so each token is scoped to `comemory` alone.
 
-  Note that a GitHub App has one installation per account with a single shared
-  permission grant, so adding **Pull requests: read and write** here also exposes
-  that permission on `homebrew-tap` and on git-better, which need only
-  `Contents`. Accepted knowingly: one already-synced key beats a second key to
-  install, sync and rotate.
+  `toolu-release` is a shared App owned by CodaSignal, and its grant is much
+  wider than releasing needs: write on actions, workflows, packages,
+  deployments, issues, repository advisories and merge queues, plus
+  organization administration and organization secrets wherever it is
+  installed on an organization. Every mint step therefore narrows its token
+  with `permission-*` inputs — Contents + Pull requests write for the
+  release-PR job, Contents write (Pull requests read) for the tag job,
+  Contents write for the tap — so release-plz and the build scripts
+  cargo-semver-checks compiles never hold more. The private key is not
+  narrowed that way: it is App-wide, so anything that can read
+  `HOMEBREW_APP_PRIVATE_KEY` can mint a token for any `toolu-release`
+  installation by naming a different `owner`. Treat it as a credential for the
+  whole App. Accepted knowingly: one already-synced key beats a second App to
+  create, install, sync and rotate.
 
   If a `v*` tag-protection ruleset exists, add the App as a bypass actor (branch
   protection on `main` does not cover tags).
@@ -75,11 +83,14 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   Infisical) is installed on `Falconiere/homebrew-tap` with
   **Contents: read and write**. The `publish-homebrew-formula` job mints a
   short-lived installation token from it via `actions/create-github-app-token`
-  — no expiring PAT to rotate. The Client ID is a literal in the workflows; if
-  the App is ever replaced, update it in all three mint steps (two in
-  `release-plz.yml`, one in `release.yml`). `HOMEBREW_APP_ID` is still synced
-  but no workflow reads it since the deprecated `app-id` input was dropped.
-  Verify the key exists and the Client ID still matches:
+  — no expiring PAT to rotate. The Client ID is a literal in the workflows.
+  Rotating the private key of the same App leaves it unchanged, but replacing
+  the App with a different one means updating it in all three mint steps (two in
+  `release-plz.yml`, one in `release.yml`) in the same change as the new key:
+  a mismatch only surfaces after merge, when release-plz or the tap job fails
+  to mint. `HOMEBREW_APP_ID` is still synced but no workflow reads it since the
+  deprecated `app-id` input was dropped. Verify the key exists and the Client
+  ID still matches:
   ```bash
   gh secret list --repo Falconiere/comemory | grep HOMEBREW_APP_PRIVATE_KEY
   gh api /apps/toolu-release --jq .client_id   # expect Iv23cthPzC6Oci4iBLZV

@@ -26,9 +26,29 @@
 # Contents: read+write and Pull requests: read+write — not only on
 # Falconiere/homebrew-tap, which is all the tap step needs.
 #
-# Unlike that tap step, these mint steps pass no owner/repositories inputs: the
-# action then defaults to the current repository, so each token is scoped to
-# comemory alone even though the App can also reach the tap.
+# toolu-release is a shared App (owned by CodaSignal) whose grant is far wider
+# than this workflow needs: actions, workflows, packages, issues and more, plus
+# org administration and org secrets where it is installed on an organisation.
+# So every mint step narrows its token with `permission-*` inputs to exactly
+# what that job does, and the token release-plz (and every build script
+# cargo-semver-checks compiles) can see carries no more. Unlike the tap step,
+# these mint steps pass no owner/repositories inputs: the action then defaults
+# to the current repository, so each token is scoped to comemory alone.
+#
+# The private key, though, is App-wide: anything that can read
+# HOMEBREW_APP_PRIVATE_KEY can mint a token for ANY toolu-release installation.
+# Treat it as a credential for the whole App, not a tap-only one.
+#
+# The jobs themselves run on a read-only GITHUB_TOKEN. Checkout only fetches
+# (persist-credentials: false) and release-plz writes with the App token alone,
+# so the default token needs no write scope.
+#
+# release-plz/action is pinned to v0.5.139, which installs release-plz 0.3.169:
+# the last version that produced this repo's release PRs (v0.55.0–v0.57.0).
+# v0.5.145+ moved to release-plz 0.4.x, whose 0.4.0 reworked the changelog
+# config conversion, untested against the custom commit_parsers / pr_body /
+# body templates in release-plz.toml. Bump deliberately, after a local
+# `release-plz update` under the new version renders the same changelog.
 #
 # Both jobs are gated behind the `RELEASE_PLZ_ENABLED` repo variable so merging
 # this file does not immediately start cutting releases. Flip it on (Actions →
@@ -53,9 +73,6 @@ jobs:
     name: Release-plz PR
     if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-      pull-requests: write
     concurrency:
       group: release-plz-pr-${{ github.ref }}
       cancel-in-progress: false
@@ -66,6 +83,9 @@ jobs:
         with:
           client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          # Push the release branch, open/update/close release PRs.
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
@@ -75,7 +95,7 @@ jobs:
         with:
           toolchain: "1.95"
       - name: Run release-plz (release-pr)
-        uses: release-plz/action@b2baf303c463c223526d52a8a91b0777f052cf3f # v0.5.146
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
         with:
           command: release-pr
         env:
@@ -87,8 +107,6 @@ jobs:
     name: Release-plz release
     if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
     steps:
       - name: Mint release token
         id: app-token
@@ -96,6 +114,9 @@ jobs:
         with:
           client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          # Push the vX.Y.Z tag; read the merged release PR.
+          permission-contents: write
+          permission-pull-requests: read
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
@@ -105,7 +126,7 @@ jobs:
         with:
           toolchain: "1.95"
       - name: Run release-plz (release)
-        uses: release-plz/action@b2baf303c463c223526d52a8a91b0777f052cf3f # v0.5.146
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
         with:
           command: release
         env:
