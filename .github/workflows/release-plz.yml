@@ -16,32 +16,15 @@
 # means the release PR also triggers CI checks. Unlike a PAT it is not tied to a
 # person's account and cannot silently expire.
 #
-# The Client ID (`Iv23cthPzC6Oci4iBLZV`) is written into each mint step as a
-# literal. It is a public identifier, not a credential — anyone can read it from
-# GET /apps/toolu-release — so it needs no secret, and the private key stays the
-# only credential. It replaces the deprecated `app-id` input, which took the
-# numeric App ID from secrets.HOMEBREW_APP_ID; that secret is no longer read.
-#
-# The App must therefore be installed on Falconiere/comemory ITSELF with
-# Contents: read+write and Pull requests: read+write — not only on
-# Falconiere/homebrew-tap, which is all the tap step needs.
-#
-# toolu-release is a shared App (owned by CodaSignal) whose grant is far wider
-# than this workflow needs: actions, workflows, packages, issues and more, plus
-# org administration and org secrets where it is installed on an organisation.
-# So every mint step narrows its token with `permission-*` inputs to exactly
-# what that job does, and the token release-plz (and every build script
-# cargo-semver-checks compiles) can see carries no more. Unlike the tap step,
-# these mint steps pass no owner/repositories inputs: the action then defaults
-# to the current repository, so each token is scoped to comemory alone.
-#
-# The private key, though, is App-wide: anything that can read
-# HOMEBREW_APP_PRIVATE_KEY can mint a token for ANY toolu-release installation.
-# Treat it as a credential for the whole App, not a tap-only one.
+# The App must therefore be installed on Falconiere/comemory ITSELF, not only on
+# Falconiere/homebrew-tap. Each mint step passes the App's public Client ID as a
+# literal and narrows its token with `permission-*` inputs to what that job
+# does, because the shared App's own grant is far wider; the private key is
+# App-wide. docs/release.md § one-time setup is the one full account of the
+# App, its grant, the key and replacing it — keep the detail there.
 #
 # The jobs themselves run on a read-only GITHUB_TOKEN. Checkout only fetches
-# (persist-credentials: false) and release-plz writes with the App token alone,
-# so the default token needs no write scope.
+# (persist-credentials: false) and release-plz writes with the App token alone.
 #
 # release-plz/action is pinned to v0.5.139, which installs release-plz 0.3.169:
 # the last version that produced this repo's release PRs (v0.55.0–v0.57.0).
@@ -83,9 +66,13 @@ jobs:
         with:
           client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
-          # Push the release branch, open/update/close release PRs.
+          # Push the release branch, open/update/close release PRs. Workflows
+          # write too: refreshing an open release PR force-moves its branch onto
+          # the new main, and GitHub refuses that ref update from an App without
+          # it whenever main changed a .github/workflows file in between.
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
@@ -107,6 +94,12 @@ jobs:
     name: Release-plz release
     if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
+    # Two pushes to main close together would otherwise both see no vX.Y.Z tag
+    # and both try to create it; the loser fails with 422 "Reference already
+    # exists" on a release that worked. Queue them instead.
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - name: Mint release token
         id: app-token

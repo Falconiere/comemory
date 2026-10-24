@@ -778,10 +778,11 @@ cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
 `publish=false` — crates.io stays off). bot is gated behind 
 `RELEASE_PLZ_ENABLED` repo variable (*variable*, not secret — `vars` cannot
 read secrets, so secret of that name leaves both jobs silently skipping) and
-mints GitHub App installation token (`toolu-release` App: its public
-Client ID as literal `client-id` in workflow + `HOMEBREW_APP_PRIVATE_KEY`,
-Contents + Pull requests read/write, App installed on this repo) so pushed
-tag triggers downstream workflows. 
+mints GitHub App installation token (`toolu-release` App installed on this
+repo; public Client ID as literal `client-id` + `HOMEBREW_APP_PRIVATE_KEY`;
+each job's token narrowed with `permission-*` to what it does — see
+`docs/release.md` § one-time setup) so pushed tag triggers downstream
+workflows. 
 `just release` recipe remains manual fallback. See `docs/release.md`.
 
 ## Claude Code Hooks
@@ -870,12 +871,13 @@ intent; several make local rule strictly stronger than one it replaces.
   hand edits, not `cargo dist`, pushed it there from 295 (#181, #236,
   #300, #311, #401). override therefore also absorbs hand-written lines
   ceiling exists to catch: keep hand blocks in this file minimal. Gate's
-  count is `GR_FS_AWK` in `scripts/guardrails/checks/file-size.sh`; besides
-  blanks and `#` comments it skips `//` lines, `/* … */` blocks, `*`
-  continuation lines and `---` fences. This approximation matches it on
-  YAML without those:
+  count is `GR_FS_AWK` in `scripts/guardrails/checks/file-size.sh` (it also
+  skips `//`, `/* … */`, `*`-led and `---` lines, and counts `#[`/`#![`
+  attributes as code), so re-measure with gate's own awk rather than 
+  hand-rolled one:
 
-      awk 'NF && $1 !~ /^#/' <file> | wc -l
+      eval "$(sed -n "/^GR_FS_AWK=/,/^'\$/p" scripts/guardrails/checks/file-size.sh)"
+      awk "$GR_FS_AWK" <file>
 
 - **D3 — `barrelNames: ["mod.rs"]`** is inherited unchanged from pinned
   Rust conventions, not local deviation. It makes `<dir>.rs` beside

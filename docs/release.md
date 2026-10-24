@@ -57,15 +57,20 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   deployments, issues, repository advisories and merge queues, plus
   organization administration and organization secrets wherever it is
   installed on an organization. Every mint step therefore narrows its token
-  with `permission-*` inputs — Contents + Pull requests write for the
-  release-PR job, Contents write (Pull requests read) for the tag job,
-  Contents write for the tap — so release-plz and the build scripts
-  cargo-semver-checks compiles never hold more. The private key is not
-  narrowed that way: it is App-wide, so anything that can read
-  `HOMEBREW_APP_PRIVATE_KEY` can mint a token for any `toolu-release`
-  installation by naming a different `owner`. Treat it as a credential for the
-  whole App. Accepted knowingly: one already-synced key beats a second App to
-  create, install, sync and rotate.
+  with `permission-*` inputs — Contents + Pull requests + Workflows write for
+  the release-PR job (Workflows because refreshing an open release PR
+  force-moves its branch, and GitHub refuses that from an App without it when
+  `main` changed a workflow file meanwhile), Contents write + Pull requests
+  read for the tag job, Contents write for the tap — so release-plz and the
+  build scripts cargo-semver-checks compiles never hold more. The private key
+  is not narrowed that way: it is App-wide, so anything that can read
+  `HOMEBREW_APP_PRIVATE_KEY` — including a workflow step anyone with push
+  access adds — can mint a token for any `toolu-release` installation, at its
+  full grant, by naming a different `owner`. Treat it as a credential for the
+  whole App. A dedicated App holding only Contents + Pull requests + Workflows
+  would remove that exposure; until one exists this is accepted knowingly, as
+  one already-synced key beats a second App to create, install, sync and
+  rotate.
 
   If a `v*` tag-protection ruleset exists, add the App as a bypass actor (branch
   protection on `main` does not cover tags).

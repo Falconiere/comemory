@@ -778,10 +778,11 @@ cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
 `publish=false` — crates.io stays off). The bot is gated behind the
 `RELEASE_PLZ_ENABLED` repo variable (a *variable*, not a secret — `vars` cannot
 read secrets, so a secret of that name leaves both jobs silently skipping) and
-mints a GitHub App installation token (the `toolu-release` App: its public
-Client ID as a literal `client-id` in the workflow + `HOMEBREW_APP_PRIVATE_KEY`,
-Contents + Pull requests read/write, the App installed on this repo) so the
-pushed tag triggers downstream workflows. The
+mints a GitHub App installation token (the `toolu-release` App installed on
+this repo; its public Client ID as a literal `client-id` +
+`HOMEBREW_APP_PRIVATE_KEY`; each job's token narrowed with `permission-*` to
+what it does — see `docs/release.md` § one-time setup) so the pushed tag
+triggers downstream workflows. The
 `just release` recipe remains a manual fallback. See `docs/release.md`.
 
 ## Claude Code Hooks
@@ -871,11 +872,12 @@ intent; several make the local rule strictly stronger than the one it replaces.
   not `cargo dist`, pushed it there from 295 (#181, #236, #300, #311, #401).
   The override therefore also absorbs hand-written lines the ceiling exists to
   catch: keep hand blocks in this file minimal. The gate's count is `GR_FS_AWK`
-  in `scripts/guardrails/checks/file-size.sh`; besides blanks and `#` comments
-  it skips `//` lines, `/* … */` blocks, `*` continuation lines and `---`
-  fences. This approximation matches it on YAML without those:
+  in `scripts/guardrails/checks/file-size.sh` (it also skips `//`, `/* … */`,
+  `*`-led and `---` lines, and counts `#[`/`#![` attributes as code), so
+  re-measure with the gate's own awk rather than a hand-rolled one:
 
-      awk 'NF && $1 !~ /^#/' <file> | wc -l
+      eval "$(sed -n "/^GR_FS_AWK=/,/^'\$/p" scripts/guardrails/checks/file-size.sh)"
+      awk "$GR_FS_AWK" <file>
 
 - **D3 — `barrelNames: ["mod.rs"]`** is inherited unchanged from the pinned
   Rust conventions, not a local deviation. It makes the `<dir>.rs` beside
