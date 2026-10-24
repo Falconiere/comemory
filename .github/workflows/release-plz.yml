@@ -16,6 +16,11 @@
 # means the release PR also triggers CI checks. Unlike a PAT it is not tied to a
 # person's account and cannot silently expire.
 #
+# The mint steps pass that secret through `client-id`, not the deprecated
+# `app-id` input. The action reads both inputs into the same JWT issuer, and
+# GitHub accepts either the App's numeric ID or its Client ID there, so the
+# numeric App ID still mints the token.
+#
 # The App must therefore be installed on Falconiere/comemory ITSELF with
 # Contents: read+write and Pull requests: read+write — not only on
 # Falconiere/homebrew-tap, which is all the tap step needs.
@@ -58,7 +63,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          client-id: ${{ secrets.HOMEBREW_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -89,7 +94,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          client-id: ${{ secrets.HOMEBREW_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
