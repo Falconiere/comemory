@@ -94,12 +94,6 @@ jobs:
     name: Release-plz release
     if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
-    # Two pushes to main close together would otherwise both see no vX.Y.Z tag
-    # and both try to create it; the loser fails with 422 "Reference already
-    # exists" on a release that worked. Queue them instead.
-    concurrency:
-      group: release-plz-release-${{ github.ref }}
-      cancel-in-progress: false
     steps:
       - name: Mint release token
         id: app-token
@@ -107,9 +101,14 @@ jobs:
         with:
           client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
-          # Push the vX.Y.Z tag; read the merged release PR.
+          # Push the vX.Y.Z tag; read the merged release PR. Workflows write
+          # because the tagged commit usually follows workflow edits, and every
+          # tag so far was created by a token that held it — whether GitHub's
+          # workflow-file check also covers tag refs is unverified, and a refusal
+          # here would silently stop the release.
           permission-contents: write
           permission-pull-requests: read
+          permission-workflows: write
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0

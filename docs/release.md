@@ -38,7 +38,9 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
 ## 1. One-time setup
 
 - [ ] **The publish App is installed on `Falconiere/comemory` itself** with
-  **Contents: read and write** + **Pull requests: read and write**. A tag pushed
+  **Contents: read and write** + **Pull requests: read and write** +
+  **Workflows: write** (a token cannot be narrowed to a permission the
+  installation lacks, and both release-plz jobs request Workflows). A tag pushed
   with the default `GITHUB_TOKEN` does **not** trigger downstream workflows, so
   the bot must push the tag with its own token, or `release.yml` never fires.
   Both release-plz jobs mint a short-lived installation token for the
@@ -58,11 +60,14 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   organization administration and organization secrets wherever it is
   installed on an organization. Every mint step therefore narrows its token
   with `permission-*` inputs — Contents + Pull requests + Workflows write for
-  the release-PR job (Workflows because refreshing an open release PR
-  force-moves its branch, and GitHub refuses that from an App without it when
-  `main` changed a workflow file meanwhile), Contents write + Pull requests
-  read for the tag job, Contents write for the tap — so release-plz and the
-  build scripts cargo-semver-checks compiles never hold more. The private key
+  the release-PR job, Contents + Workflows write and Pull requests read for
+  the tag job, Contents write for the tap — so release-plz and the build
+  scripts cargo-semver-checks compiles never hold the rest. Workflows stays on
+  both release-plz jobs because refreshing an open release PR force-moves its
+  branch, which GitHub refuses from an App without it when `main` changed a
+  workflow file meanwhile, and because every tag so far was created by a token
+  that held it; whether the same check covers tag refs is unverified, and a
+  refusal there would silently stop a release. The private key
   is not narrowed that way: it is App-wide, so anything that can read
   `HOMEBREW_APP_PRIVATE_KEY` — including a workflow step anyone with push
   access adds — can mint a token for any `toolu-release` installation, at its
