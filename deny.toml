@@ -2,7 +2,12 @@
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-ignore = []
+ignore = [
+  # unsafe-libyaml is unmaintained (not a vulnerability). It reaches us only
+  # through the direct dep serde_yaml 0.9, which is itself deprecated and has
+  # no release that drops it, so there is no safe upgrade.
+  { id = "RUSTSEC-2024-0449", reason = "unmaintained unsafe-libyaml via serde_yaml 0.9; no safe upgrade" },
+]
 
 [licenses]
 # Permissive FOSS licenses present in the transitive dep tree. Each is
