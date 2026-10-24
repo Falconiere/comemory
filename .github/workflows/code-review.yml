@@ -67,7 +67,7 @@ jobs:
           # `high` and `critical` only: the severities the reviewer reserves
           # for a defect. `medium`/`low`/`nit` stay informational.
           FAIL_ON: none
-          # CLAUDE.md is only a pointer. Include the canonical AGENTS.md and
+          # AGENTS.md is the canonical agent guide. Include it and
           # guardrails.config.json explicitly so the reviewer reads the rules.
           # RULES_REF stays "base" so a PR cannot rewrite its review rules.
           RULES_GLOB: AGENTS.md,guardrails.config.json
