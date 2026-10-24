@@ -182,6 +182,26 @@ test_source_hook_regressions() {
       and (contains("then feedback") | not)
       and (contains("Call find") | not)' <<<"$push_out" >/dev/null
 
+  # PreCompact: Codex pre-compact.command.output forbids hookSpecificOutput
+  # (only continue/stopReason/suppressOutput/systemMessage), so the Codex
+  # path must emit systemMessage while Claude keeps additionalContext (#398).
+  precompact_payload=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,hook_event_name:"PreCompact",session_id:"s",turn_id:"t",transcript_path:null,model:"m",trigger:"manual"}')
+  precompact_claude=$(printf '%s' "$precompact_payload" \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  jq -e '.hookSpecificOutput.additionalContext | contains("Before compaction")' <<<"$precompact_claude" >/dev/null
+  precompact_codex=$(printf '%s' "$precompact_payload" \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=codex \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  jq -e 'has("hookSpecificOutput") | not' <<<"$precompact_codex" >/dev/null
+  jq -e '.systemMessage | contains("Before compaction")' <<<"$precompact_codex" >/dev/null
+  precompact_plugin=$(printf '%s' "$precompact_payload" \
+    | TOOLU_CONFIG_DIR="$source_cfg" env -u TOOLU_HOST_OVERRIDE PLUGIN_ROOT=/tmp/plugin \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  jq -e 'has("hookSpecificOutput") | not' <<<"$precompact_plugin" >/dev/null
+  jq -e '.systemMessage | contains("Before compaction")' <<<"$precompact_plugin" >/dev/null
+
   printf 'agent-install: source hook disable, concurrent Stop, bounded advisory, maintenance, hint, empty-result, marker-sweep, and advisory-race regressions passed\n'
 }
 
