@@ -875,7 +875,7 @@ intent; several make local rule strictly stronger than one it replaces.
 - **D3 — `barrelNames: ["mod.rs"]`** is inherited unchanged from pinned
   Rust conventions, not local deviation. It makes `<dir>.rs` beside
   `<dir>/` layout permanent and machine-checked.
-- **D4 — `src.nested` replaces starter map** with exact, project-specific
+- **D4 — `src.nested` replaces the starter map** with exact, project-specific
   folder policy below. It retains kit's test separation while replacing its
   generic `model`/`service`/`store` domain shape with comemory's staged
   capabilities and delivery adapters:
@@ -891,7 +891,7 @@ intent; several make local rule strictly stronger than one it replaces.
   `serve` remains HTTP adapter, `mcp` is stdio MCP adapter, and
   `store` remains SQLite exception; no template name controls their
   project ownership.
-- **D5 — `src.requireReadme` replaces pinned single-`domains` rule during staging with exactly 47 folders.**
+- **D5 — `src.requireReadme` replaces the pinned single-`domains` rule during staging with exactly 47 folders.**
   `domains` entry returned with #167, first real capability domain to
   land, and every capability folder gains its own entry as it lands. It names
   folders, not files: each listed grown folder has `README.md` that indexes
