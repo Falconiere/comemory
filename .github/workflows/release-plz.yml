@@ -7,19 +7,20 @@
 #                         tag (which is what fires release.yml).
 #
 # Both jobs authenticate with a short-lived GitHub App installation token minted
-# from secrets.HOMEBREW_APP_ID / secrets.HOMEBREW_APP_PRIVATE_KEY — the same
-# publish App the release.yml tap step uses. (The HOMEBREW_ prefix is a misnomer
-# here: it is one App wearing two hats. The names are what Infisical syncs, so
-# they stay.) An App token is REQUIRED on the release job:
+# for the `toolu-release` App — the same publish App the release.yml tap step
+# uses — from its Client ID and secrets.HOMEBREW_APP_PRIVATE_KEY. (The HOMEBREW_
+# prefix is a misnomer here: it is one App wearing two hats. The name is what
+# Infisical syncs, so it stays.) An App token is REQUIRED on the release job:
 # a tag pushed with the default GITHUB_TOKEN does NOT trigger downstream
 # workflows, so release.yml would never fire. Using it on the release-pr job too
 # means the release PR also triggers CI checks. Unlike a PAT it is not tied to a
 # person's account and cannot silently expire.
 #
-# The mint steps pass secrets.HOMEBREW_APP_ID through `client-id`, not the
-# deprecated `app-id` input. The action reads both inputs into the same JWT
-# issuer, and GitHub accepts either the App's numeric ID or its Client ID there,
-# so the numeric App ID still mints the token.
+# The Client ID (`Iv23cthPzC6Oci4iBLZV`) is written into each mint step as a
+# literal. It is a public identifier, not a credential — anyone can read it from
+# GET /apps/toolu-release — so it needs no secret, and the private key stays the
+# only credential. It replaces the deprecated `app-id` input, which took the
+# numeric App ID from secrets.HOMEBREW_APP_ID; that secret is no longer read.
 #
 # The App must therefore be installed on Falconiere/comemory ITSELF with
 # Contents: read+write and Pull requests: read+write — not only on
@@ -63,7 +64,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ secrets.HOMEBREW_APP_ID }}
+          client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -93,7 +94,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ secrets.HOMEBREW_APP_ID }}
+          client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:

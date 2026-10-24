@@ -326,16 +326,15 @@ jobs:
       # NOTE: this token step + the checkout `token:` below are hand-maintained
       # (the rest of the file is dist-generated). We mint a short-lived GitHub
       # App installation token scoped to the tap repo instead of a long-lived
-      # PAT, so tap pushes stop breaking when a PAT silently expires. The App
-      # behind secrets.HOMEBREW_APP_ID must be installed on Falconiere/homebrew-tap
-      # with Contents: write. On a future `cargo dist init`, re-apply this block.
-      # `client-id` replaces the deprecated `app-id` input; the numeric App ID
-      # still works there (see the release-plz.yml header).
+      # PAT, so tap pushes stop breaking when a PAT silently expires. The
+      # toolu-release App must be installed on Falconiere/homebrew-tap with
+      # Contents: write. Its Client ID is public, so it is a literal here (see the
+      # release-plz.yml header). On a future `cargo dist init`, re-apply this block.
       - name: Mint homebrew-tap token
         id: tap-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ secrets.HOMEBREW_APP_ID }}
+          client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           owner: "Falconiere"
           repositories: "homebrew-tap"

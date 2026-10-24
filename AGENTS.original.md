@@ -778,9 +778,10 @@ cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
 `publish=false` — crates.io stays off). The bot is gated behind the
 `RELEASE_PLZ_ENABLED` repo variable (a *variable*, not a secret — `vars` cannot
 read secrets, so a secret of that name leaves both jobs silently skipping) and
-mints a GitHub App installation token (`HOMEBREW_APP_ID` +
-`HOMEBREW_APP_PRIVATE_KEY`, Contents + Pull requests read/write, the App
-installed on this repo) so the pushed tag triggers downstream workflows. The
+mints a GitHub App installation token (the `toolu-release` App: its public
+Client ID as a literal `client-id` in the workflow + `HOMEBREW_APP_PRIVATE_KEY`,
+Contents + Pull requests read/write, the App installed on this repo) so the
+pushed tag triggers downstream workflows. The
 `just release` recipe remains a manual fallback. See `docs/release.md`.
 
 ## Claude Code Hooks
@@ -864,10 +865,10 @@ intent; several make the local rule strictly stronger than the one it replaces.
   only ever fired in lefthook's file mode (the repo-mode sweep scans
   `srcRoot: src` and never saw it), blocking any commit that touched the
   workflow. Every hand-written workflow stays under the 300 default — the
-  next largest is `.github/workflows/release-image.yml` at 139. The override
-  stays even though the file currently measures 295 — it dipped under 300 only
-  because the hand-maintained `await-review` job was deleted from it, and the
-  next `cargo dist init` puts the generated bulk back. Re-measure
+  next largest is `.github/workflows/test.yml` at 199. `release.yml` measures
+  313 (2026-10-24), so the override is what keeps it passing; it only briefly
+  dipped under 300 after the hand-maintained `await-review` job was deleted
+  from it. Re-measure
   any of these the way the gate does, blanks and comments excluded:
 
       awk 'NF && $1 !~ /^#/' <file> | wc -l
