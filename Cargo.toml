@@ -207,6 +207,23 @@ struct_field_names = "allow"  # 1 — `eval::bandit::Arm::arm_id`; the field is
 # tests/eval__bandit_rng.rs. Renaming to drop the struct-name prefix is a
 # CLI-output/test-file change, not a lint fix, so it stays out of scope here.
 
+# `unused_async_trait_impl`: 2 hits, both in `src/mcp/server.rs` — the
+# `ServerHandler::initialize` override and the `tool_handler` macro
+# expansion. The rmcp trait mandates `async fn`, so the `async` cannot be
+# removed to satisfy the lint; like `unused_async` above this is dispatcher
+# uniformity, not dead code. Fires on the pinned 1.95 toolchain and newer.
+unused_async_trait_impl = "allow"  # 2 — rmcp trait mandates `async fn`
+
+# `assert_is_empty` (style, default-warn; fires on the pinned 1.95 toolchain
+# and newer): 151 hits, all `assert!(x.is_empty())` in test files.
+# Allowed rather than fixed because clippy's own suggestions are wrong at
+# 65 of those sites — `[] as [store|domains|utilities::...]` paths that do
+# not resolve at the use site (`tests/*.rs` needs a `comemory::` prefix,
+# unit tests need `crate::`) — so mechanical application breaks the build
+# and each of the 151 sites needs a hand-written path. That is a dedicated
+# burn-down PR, not drive-by scope; see docs/lint-debt.md.
+assert_is_empty = "allow"  # 151 — clippy's suggestions mis-resolve paths
+
 [dev-dependencies]
 assert_cmd = "2"
 # The MCP journey drives the real `comemory mcp` binary through the real rmcp

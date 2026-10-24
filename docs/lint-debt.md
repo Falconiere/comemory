@@ -49,6 +49,24 @@ part of the D7 debt above and should not be merged into it:
   `tests/eval__bandit_rng.rs`. Renaming it to drop the struct-name prefix is
   a CLI-output/test-file change, not a lint fix, so it is tracked separately
   and is not counted in the "Total: 487" above.
+- `unused_async_trait_impl = "allow"` — 2 hits, both in
+  `src/mcp/server.rs`: the `ServerHandler::initialize` override and the
+  `tool_handler` macro expansion. The rmcp trait mandates `async fn`, so the
+  `async` cannot be removed; dispatcher uniformity, not dead code. Fires on
+  the pinned 1.95 toolchain and newer; allowed rather than fixed
+  because there is no code change that satisfies both the lint and the
+  trait. Also tracked separately from the D7 total.
+- `assert_is_empty = "allow"` — 151 hits, all `assert!(x.is_empty())` /
+  `assert!(!x.is_empty())` in test files (`src/**/tests/*.rs` and
+  `tests/*.rs`). Fires on the pinned 1.95 toolchain and newer.
+  Allowed rather than fixed because clippy's own machine-applicable
+  suggestions are wrong at 65 of the 151 sites: they spell the empty-array
+  type with definition-site paths (`[] as [store::...]`) that do not
+  resolve at the use site, so applying them breaks compilation
+  (`E0433`/`E0282`, verified 2026-10-24). Burn-down: hand-write each site
+  with the use-site path (`comemory::...` in integration tests,
+  `crate::...` in unit tests) in a dedicated PR, then delete the line.
+  Also tracked separately from the D7 total.
 
 ## Suggested burn-down order
 

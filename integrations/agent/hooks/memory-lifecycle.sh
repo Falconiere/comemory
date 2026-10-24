@@ -74,4 +74,11 @@ case "$event" in
     ;;
   *) exit 0 ;;
 esac
-jq -n --arg event "$event" --arg ctx "$ctx" '{hookSpecificOutput:{hookEventName:$event,additionalContext:$ctx}}'
+if [ "$event" = PreCompact ] && { [ "${TOOLU_HOST_OVERRIDE:-}" = codex ] || { [ -z "${TOOLU_HOST_OVERRIDE:-}" ] && [ -n "${PLUGIN_ROOT:-}" ]; }; }; then
+  # Codex pre-compact.command.output allows only continue, stopReason,
+  # suppressOutput and systemMessage (additionalProperties: false), so the
+  # Claude-style hookSpecificOutput.additionalContext is rejected there.
+  jq -n --arg ctx "$ctx" '{systemMessage:$ctx}'
+else
+  jq -n --arg event "$event" --arg ctx "$ctx" '{hookSpecificOutput:{hookEventName:$event,additionalContext:$ctx}}'
+fi
