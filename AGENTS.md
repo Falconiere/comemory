@@ -779,7 +779,7 @@ cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
 `RELEASE_PLZ_ENABLED` repo variable (*variable*, not secret — `vars` cannot
 read secrets, so secret of that name leaves both jobs silently skipping) and
 mints GitHub App installation token (`toolu-release` App installed on this
-repo; `RELEASE_APP_ID` as `client-id` + `HOMEBREW_APP_PRIVATE_KEY`;
+repo; `HOMEBREW_APP_ID` as `client-id` + `HOMEBREW_APP_PRIVATE_KEY`;
 each job's token narrowed with `permission-*` to what it does — see
 `docs/release.md` § one-time setup) so pushed tag triggers downstream
 workflows. 
