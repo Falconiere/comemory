@@ -46,12 +46,20 @@ fn index_repo(home: &tempfile::TempDir, repo: &std::path::Path) {
         .success();
 }
 
+/// Access tracking is off, as in `cli__search_3.rs` and the HTTP twin
+/// `serve__routes__code_2.rs`. The fixture's symbols tie on relevance, so
+/// activation breaks the ties. Before any search it comes from each
+/// row's own `indexed_at`, which can straddle a second boundary; the first
+/// head-page call then bumps every returned row to one `last_accessed`, so
+/// the single-shot window and the later pages would be ranked against two
+/// different states and disagree whenever indexing crossed a second.
 fn search_code_json(home: &tempfile::TempDir, extra: &[&str]) -> Value {
     let mut args = vec!["search-code", "handle request", "--json"];
     args.extend_from_slice(extra);
     let assert = Command::cargo_bin("comemory")
         .expect("bin")
         .env("COMEMORY_DATA_DIR", home.path())
+        .env("COMEMORY_DISABLE_ACCESS_TRACKING", "true")
         .args(&args)
         .assert()
         .success();

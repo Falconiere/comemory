@@ -7,27 +7,33 @@
 #                         tag (which is what fires release.yml).
 #
 # Both jobs authenticate with a short-lived GitHub App installation token minted
-# from secrets.HOMEBREW_APP_ID / secrets.HOMEBREW_APP_PRIVATE_KEY — the same
-# publish App the release.yml tap step uses. (The HOMEBREW_ prefix is a misnomer
-# here: it is one App wearing two hats. The names are what Infisical syncs, so
-# they stay.) An App token is REQUIRED on the release job:
+# for the `toolu-release` App — the same publish App the release.yml tap step
+# uses — from secrets.TOOLU_RELEASE_CLIENT_ID and
+# secrets.TOOLU_RELEASE_PRIVATE_KEY. An App token is REQUIRED on the release job:
 # a tag pushed with the default GITHUB_TOKEN does NOT trigger downstream
 # workflows, so release.yml would never fire. Using it on the release-pr job too
 # means the release PR also triggers CI checks. Unlike a PAT it is not tied to a
 # person's account and cannot silently expire.
 #
-# The App must therefore be installed on Falconiere/comemory ITSELF with
-# Contents: read+write and Pull requests: read+write — not only on
-# Falconiere/homebrew-tap, which is all the tap step needs.
+# The App must therefore be installed on Falconiere/comemory ITSELF, not only on
+# Falconiere/homebrew-tap. Each mint step narrows its token with `permission-*`
+# inputs to what that job does, because the shared App's own grant is far
+# wider; the private key is App-wide. docs/release.md § one-time setup is the
+# one full account of the App, its grant and its secrets — keep the detail there.
 #
-# Unlike that tap step, these mint steps pass no owner/repositories inputs: the
-# action then defaults to the current repository, so each token is scoped to
-# comemory alone even though the App can also reach the tap.
+# `client-id` is an input of the pinned create-github-app-token v3.2.0 itself
+# (its action.yml defines it and marks `app-id` "deprecated: Use 'client-id'
+# instead"); it is not a v4-only input.
 #
-# Both jobs are gated behind the `RELEASE_PLZ_ENABLED` repo variable so merging
-# this file does not immediately start cutting releases. Flip it on (Actions →
-# Variables → RELEASE_PLZ_ENABLED=true) only AFTER the App is installed here.
-# See docs/release.md § one-time setup.
+# The jobs themselves run on a read-only GITHUB_TOKEN. Checkout only fetches
+# (persist-credentials: false) and release-plz writes with the App token alone.
+#
+# release-plz/action is pinned to v0.5.139, which installs release-plz 0.3.169:
+# the last version that produced this repo's release PRs (v0.55.0–v0.57.0).
+# v0.5.145+ moved to release-plz 0.4.x, whose 0.4.0 reworked the changelog
+# config conversion, untested against the custom commit_parsers / pr_body /
+# body templates in release-plz.toml. Bump deliberately, after a local
+# `release-plz update` under the new version renders the same changelog.
 #
 # config: release-plz.toml (git_release_enable=false, publish=false — cargo-dist
 # owns build + GitHub Release; release-plz owns version + CHANGELOG + tag).
@@ -45,21 +51,24 @@ jobs:
   # Open / maintain the release PR.
   release-plz-pr:
     name: Release-plz PR
-    if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-      pull-requests: write
     concurrency:
       group: release-plz-pr-${{ github.ref }}
       cancel-in-progress: false
     steps:
       - name: Mint release token
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.HOMEBREW_APP_ID }}
-          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.TOOLU_RELEASE_CLIENT_ID }}
+          private-key: ${{ secrets.TOOLU_RELEASE_PRIVATE_KEY }}
+          # Push the release branch, open/update/close release PRs. Workflows
+          # write too: refreshing an open release PR force-moves its branch onto
+          # the new main, and GitHub refuses that ref update from an App without
+          # it whenever main changed a .github/workflows file in between.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
@@ -69,8 +78,7 @@ jobs:
         with:
           toolchain: "1.95"
       - name: Run release-plz (release-pr)
-        # TODO(release-plz): pin to a commit SHA before flipping RELEASE_PLZ_ENABLED on.
-        uses: release-plz/action@v0.5
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
         with:
           command: release-pr
         env:
@@ -80,17 +88,22 @@ jobs:
   # The App token is mandatory here — see the header note.
   release-plz-release:
     name: Release-plz release
-    if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
     steps:
       - name: Mint release token
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.HOMEBREW_APP_ID }}
-          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.TOOLU_RELEASE_CLIENT_ID }}
+          private-key: ${{ secrets.TOOLU_RELEASE_PRIVATE_KEY }}
+          # Push the vX.Y.Z tag; read the merged release PR. Workflows write
+          # because the tagged commit usually follows workflow edits, and every
+          # tag so far was created by a token that held it — whether GitHub's
+          # workflow-file check also covers tag refs is unverified, and a refusal
+          # here would silently stop the release.
+          permission-contents: write
+          permission-pull-requests: read
+          permission-workflows: write
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
@@ -100,8 +113,7 @@ jobs:
         with:
           toolchain: "1.95"
       - name: Run release-plz (release)
-        # TODO(release-plz): pin to a commit SHA before flipping RELEASE_PLZ_ENABLED on.
-        uses: release-plz/action@v0.5
+        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
         with:
           command: release
         env:

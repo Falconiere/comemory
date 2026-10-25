@@ -38,12 +38,15 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
 ## 1. One-time setup
 
 - [ ] **The publish App is installed on `Falconiere/comemory` itself** with
-  **Contents: read and write** + **Pull requests: read and write**. A tag pushed
+  **Contents: read and write** + **Pull requests: read and write** +
+  **Workflows: write** (a token cannot be narrowed to a permission the
+  installation lacks, and both release-plz jobs request Workflows). A tag pushed
   with the default `GITHUB_TOKEN` does **not** trigger downstream workflows, so
   the bot must push the tag with its own token, or `release.yml` never fires.
-  Both release-plz jobs mint a short-lived installation token from
-  `HOMEBREW_APP_ID` + `HOMEBREW_APP_PRIVATE_KEY` — the same App the tap step
-  below uses, so this is the *same* installation with `comemory` added
+  Both release-plz jobs mint a short-lived installation token for the
+  `toolu-release` App from `TOOLU_RELEASE_CLIENT_ID` (the action's `client-id`
+  input) + `TOOLU_RELEASE_PRIVATE_KEY` — the same App the tap
+  step below uses, so this is the *same* installation with `comemory` added
   alongside `homebrew-tap`, not a second one. Unlike the `RELEASE_PLZ_TOKEN` PAT
   it replaces, an App key is not tied to a person's account and cannot silently
   expire.
@@ -51,31 +54,47 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   The mint steps pass no `owner`/`repositories`, unlike the tap step which has to
   cross repos, so each token is scoped to `comemory` alone.
 
-  Note that a GitHub App has one installation per account with a single shared
-  permission grant, so adding **Pull requests: read and write** here also exposes
-  that permission on `homebrew-tap` and on git-better, which need only
-  `Contents`. Accepted knowingly: one already-synced key beats a second key to
-  install, sync and rotate.
+  `toolu-release` is a shared App owned by CodaSignal, and its grant is much
+  wider than releasing needs: write on actions, workflows, packages,
+  deployments, issues, repository advisories and merge queues, plus
+  organization administration and organization secrets wherever it is
+  installed on an organization. Every mint step therefore narrows its token
+  with `permission-*` inputs — Contents + Pull requests + Workflows write for
+  the release-PR job, Contents + Workflows write and Pull requests read for
+  the tag job, Contents write for the tap — so release-plz and the build
+  scripts cargo-semver-checks compiles never hold the rest. Workflows stays on
+  both release-plz jobs because refreshing an open release PR force-moves its
+  branch, which GitHub refuses from an App without it when `main` changed a
+  workflow file meanwhile, and because every tag so far was created by a token
+  that held it; whether the same check covers tag refs is unverified, and a
+  refusal there would silently stop a release. The private key
+  is not narrowed that way: it is App-wide, so anything that can read
+  `TOOLU_RELEASE_PRIVATE_KEY` — including a workflow step anyone with push
+  access adds — can mint a token for any `toolu-release` installation, at its
+  full grant, by naming a different `owner`. Treat it as a credential for the
+  whole App. A dedicated App holding only Contents + Pull requests + Workflows
+  would remove that exposure; until one exists this is accepted knowingly, as
+  one already-synced key beats a second App to create, install, sync and
+  rotate.
 
   If a `v*` tag-protection ruleset exists, add the App as a bypass actor (branch
   protection on `main` does not cover tags).
-- [ ] **Enable the bot.** Set the repo **variable** `RELEASE_PLZ_ENABLED=true`
-  (Actions → Variables). Both release-plz jobs are gated behind it so merging
-  the workflow doesn't start cutting releases before the App is installed. It
-  must be a variable, not a secret — the `vars` context cannot read secrets, so a
-  secret of the same name leaves both jobs silently skipping.
-  ```bash
-  gh variable set RELEASE_PLZ_ENABLED --body true --repo Falconiere/comemory
-  ```
 - [ ] The `Falconiere/homebrew-tap` repo exists.
-- [ ] The homebrew-publish GitHub App (`HOMEBREW_APP_ID` +
-  `HOMEBREW_APP_PRIVATE_KEY` secrets, synced onto `Falconiere/comemory` by
+- [ ] The homebrew-publish GitHub App (`toolu-release`, whose
+  `TOOLU_RELEASE_APP_ID`, `TOOLU_RELEASE_CLIENT_ID` and
+  `TOOLU_RELEASE_PRIVATE_KEY` secrets are synced onto `Falconiere/comemory` by
   Infisical) is installed on `Falconiere/homebrew-tap` with
   **Contents: read and write**. The `publish-homebrew-formula` job mints a
   short-lived installation token from it via `actions/create-github-app-token`
-  — no expiring PAT to rotate. Verify the secrets exist:
+  — no expiring PAT to rotate. Every mint step passes the Client ID through
+  `client-id` and the private key. The pinned action (v3.2.0) defines both
+  `client-id` and `app-id` and marks `app-id` deprecated ("Use 'client-id'
+  instead"), so the workflows no longer use `app-id`; `client-id` is not a
+  v4-only input. `TOOLU_RELEASE_APP_ID` is synced for anything that needs the
+  numeric ID.
+  Verify the secrets exist:
   ```bash
-  gh secret list --repo Falconiere/comemory | grep -E 'HOMEBREW_APP_ID|HOMEBREW_APP_PRIVATE_KEY'
+  gh secret list --repo Falconiere/comemory | grep TOOLU_RELEASE_
   ```
   If the App is not installed on the tap, the job fails with "not installed";
   install it from the App's settings page.
@@ -340,11 +359,11 @@ re-tag once `main` is fixed.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| release PR never opens | `RELEASE_PLZ_ENABLED` unset, or the `release-plz-pr` job failed | Check the variable is `true`; read the Release-plz workflow logs |
+| release PR never opens, job green | the log says `no commit matches the release_commits regex`: every commit since the last tag was squash-merged under a non-conventional or skipped (`docs:`/`ci:`/`chore:`) title | Merge the next PR under a `feat:`/`fix:` title; commits with non-conventional subjects also drop out of the changelog, so add them to the release PR's CHANGELOG by hand |
+| release PR never opens, job red | the `release-plz-pr` job failed | Read the Release-plz workflow logs |
 | release PR body looks like a cargo-semver-checks crash (`--- failure ---`, `/tmp/.tmp…`) | default `pr_body` pasted the lint stdout as the hero section (PR #94) | Already fixed: `pr_body` in `release-plz.toml` leads with the changelog. Do not hand-edit the GitHub description — the next push to `main` regenerates it |
 | PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN`, not the App token | Confirm the `release` job's `GITHUB_TOKEN` is `steps.app-token.outputs.token` |
-| release-plz jobs fail `403 Resource not accessible` | the App is not installed on this repo, or a permission is read-only | Install it here with Contents + Pull requests read/write; the secrets existing is not sufficient, the sync is repo-wide but the install is per-repo |
-| both release-plz jobs report `skipped` with no steps | `RELEASE_PLZ_ENABLED` was set as a *secret*, not a variable | `gh variable set RELEASE_PLZ_ENABLED --body true`; `vars` cannot read secrets |
+| release-plz jobs fail `403 Resource not accessible` | the App is not installed on this repo, or a permission is read-only | Install it here with Contents + Pull requests read/write + Workflows write; the secrets existing is not sufficient, the sync is repo-wide but the install is per-repo |
 | `plan` job fails on "Validate release preflight" | One of the 4 hard checks failed | Read the `validate-release` step log; the failing check is named |
 | `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check the job's `GITHUB_TOKEN` permissions |
 | `release-finalize.yml` smoke test fails | The tarball is malformed (missing binary, too small) | Delete the release, investigate the build artifacts (downloaded to the `artifacts-*` workflow run artifacts) |
