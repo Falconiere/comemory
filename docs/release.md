@@ -87,8 +87,11 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   **Contents: read and write**. The `publish-homebrew-formula` job mints a
   short-lived installation token from it via `actions/create-github-app-token`
   — no expiring PAT to rotate. Every mint step passes the Client ID through
-  `client-id` (the deprecated `app-id` input is gone) and the private key;
-  `TOOLU_RELEASE_APP_ID` is synced for anything that needs the numeric ID.
+  `client-id` and the private key. The pinned action (v3.2.0) defines both
+  `client-id` and `app-id` and marks `app-id` deprecated ("Use 'client-id'
+  instead"), so the workflows no longer use `app-id`; `client-id` is not a
+  v4-only input. `TOOLU_RELEASE_APP_ID` is synced for anything that needs the
+  numeric ID.
   Verify the secrets exist:
   ```bash
   gh secret list --repo Falconiere/comemory | grep TOOLU_RELEASE_

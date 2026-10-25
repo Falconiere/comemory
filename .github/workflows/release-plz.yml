@@ -18,9 +18,12 @@
 # The App must therefore be installed on Falconiere/comemory ITSELF, not only on
 # Falconiere/homebrew-tap. Each mint step narrows its token with `permission-*`
 # inputs to what that job does, because the shared App's own grant is far
-# wider; the private key is
-# App-wide. docs/release.md § one-time setup is the one full account of the
-# App, its grant, the key and replacing it — keep the detail there.
+# wider; the private key is App-wide. docs/release.md § one-time setup is the
+# one full account of the App, its grant and its secrets — keep the detail there.
+#
+# `client-id` is an input of the pinned create-github-app-token v3.2.0 itself
+# (its action.yml defines it and marks `app-id` "deprecated: Use 'client-id'
+# instead"); it is not a v4-only input.
 #
 # The jobs themselves run on a read-only GITHUB_TOKEN. Checkout only fetches
 # (persist-credentials: false) and release-plz writes with the App token alone.
