@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.1] - 2026-10-25
+
+### Fixed
+
+- run the sync daemon under a process supervisor, not a persistent LaunchAgent or systemd unit, when its data directory is under a temporary root ([#397](https://github.com/Falconiere/comemory/pull/397))
+- emit Codex-valid PreCompact hook output, so compaction under Codex no longer fails with "invalid PreCompact hook JSON output" ([#400](https://github.com/Falconiere/comemory/pull/400))
+
 ## [0.57.0] - 2026-10-06
 
 ### Added
