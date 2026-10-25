@@ -44,10 +44,8 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   with the default `GITHUB_TOKEN` does **not** trigger downstream workflows, so
   the bot must push the tag with its own token, or `release.yml` never fires.
   Both release-plz jobs mint a short-lived installation token for the
-  `toolu-release` App from `HOMEBREW_APP_ID` (passed through the action's
-  `client-id` input, which takes the App ID or the Client ID) +
-  `HOMEBREW_APP_PRIVATE_KEY` — the pair `Falconiere/toolu-ghrunner` releases
-  with, and the same App the tap
+  `toolu-release` App from `TOOLU_RELEASE_CLIENT_ID` (the action's `client-id`
+  input) + `TOOLU_RELEASE_PRIVATE_KEY` — the same App the tap
   step below uses, so this is the *same* installation with `comemory` added
   alongside `homebrew-tap`, not a second one. Unlike the `RELEASE_PLZ_TOKEN` PAT
   it replaces, an App key is not tied to a person's account and cannot silently
@@ -71,7 +69,7 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   that held it; whether the same check covers tag refs is unverified, and a
   refusal there would silently stop a release. The private key
   is not narrowed that way: it is App-wide, so anything that can read
-  `HOMEBREW_APP_PRIVATE_KEY` — including a workflow step anyone with push
+  `TOOLU_RELEASE_PRIVATE_KEY` — including a workflow step anyone with push
   access adds — can mint a token for any `toolu-release` installation, at its
   full grant, by naming a different `owner`. Treat it as a credential for the
   whole App. A dedicated App holding only Contents + Pull requests + Workflows
@@ -90,16 +88,18 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   gh variable set RELEASE_PLZ_ENABLED --body true --repo Falconiere/comemory
   ```
 - [ ] The `Falconiere/homebrew-tap` repo exists.
-- [ ] The homebrew-publish GitHub App (`toolu-release`; its ID is the
-  `HOMEBREW_APP_ID` secret and its private key the `HOMEBREW_APP_PRIVATE_KEY`
-  secret, both synced onto `Falconiere/comemory` by Infisical, as on
-  `Falconiere/toolu-ghrunner`) is installed on `Falconiere/homebrew-tap` with
+- [ ] The homebrew-publish GitHub App (`toolu-release`, whose
+  `TOOLU_RELEASE_APP_ID`, `TOOLU_RELEASE_CLIENT_ID` and
+  `TOOLU_RELEASE_PRIVATE_KEY` secrets are synced onto `Falconiere/comemory` by
+  Infisical) is installed on `Falconiere/homebrew-tap` with
   **Contents: read and write**. The `publish-homebrew-formula` job mints a
   short-lived installation token from it via `actions/create-github-app-token`
-  — no expiring PAT to rotate. The ID goes through the action's `client-id`
-  input; `app-id` is deprecated. Verify both secrets exist:
+  — no expiring PAT to rotate. Every mint step passes the Client ID through
+  `client-id` (the deprecated `app-id` input is gone) and the private key;
+  `TOOLU_RELEASE_APP_ID` is synced for anything that needs the numeric ID.
+  Verify the secrets exist:
   ```bash
-  gh secret list --repo Falconiere/comemory | grep -E 'HOMEBREW_APP_ID|HOMEBREW_APP_PRIVATE_KEY'
+  gh secret list --repo Falconiere/comemory | grep TOOLU_RELEASE_
   ```
   If the App is not installed on the tap, the job fails with "not installed";
   install it from the App's settings page.
