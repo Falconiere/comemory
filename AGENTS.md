@@ -775,10 +775,8 @@ least one commit since last tag would render changelog line (`release_commits`;
 `ci:`/`docs:`/`chore:`-only push opens nothing); merging it pushes 
 `vX.Y.Z` tag, which fires `release.yml`. release-plz owns version + changelog + tag;
 cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
-`publish=false` — crates.io stays off). bot is gated behind 
-`RELEASE_PLZ_ENABLED` repo variable (*variable*, not secret — `vars` cannot
-read secrets, so secret of that name leaves both jobs silently skipping) and
-mints GitHub App installation token (`toolu-release` App installed on this
+`publish=false` — crates.io stays off). bot mints GitHub App installation
+token (`toolu-release` App installed on this
 repo; `TOOLU_RELEASE_CLIENT_ID` + `TOOLU_RELEASE_PRIVATE_KEY`;
 each job's token narrowed with `permission-*` to what it does — see
 `docs/release.md` § one-time setup) so pushed tag triggers downstream

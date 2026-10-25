@@ -79,14 +79,6 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
 
   If a `v*` tag-protection ruleset exists, add the App as a bypass actor (branch
   protection on `main` does not cover tags).
-- [ ] **Enable the bot.** Set the repo **variable** `RELEASE_PLZ_ENABLED=true`
-  (Actions → Variables). Both release-plz jobs are gated behind it so merging
-  the workflow doesn't start cutting releases before the App is installed. It
-  must be a variable, not a secret — the `vars` context cannot read secrets, so a
-  secret of the same name leaves both jobs silently skipping.
-  ```bash
-  gh variable set RELEASE_PLZ_ENABLED --body true --repo Falconiere/comemory
-  ```
 - [ ] The `Falconiere/homebrew-tap` repo exists.
 - [ ] The homebrew-publish GitHub App (`toolu-release`, whose
   `TOOLU_RELEASE_APP_ID`, `TOOLU_RELEASE_CLIENT_ID` and
@@ -364,11 +356,11 @@ re-tag once `main` is fixed.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| release PR never opens | `RELEASE_PLZ_ENABLED` unset, or the `release-plz-pr` job failed | Check the variable is `true`; read the Release-plz workflow logs |
+| release PR never opens, job green | the log says `no commit matches the release_commits regex`: every commit since the last tag was squash-merged under a non-conventional or skipped (`docs:`/`ci:`/`chore:`) title | Merge the next PR under a `feat:`/`fix:` title; commits with non-conventional subjects also drop out of the changelog, so add them to the release PR's CHANGELOG by hand |
+| release PR never opens, job red | the `release-plz-pr` job failed | Read the Release-plz workflow logs |
 | release PR body looks like a cargo-semver-checks crash (`--- failure ---`, `/tmp/.tmp…`) | default `pr_body` pasted the lint stdout as the hero section (PR #94) | Already fixed: `pr_body` in `release-plz.toml` leads with the changelog. Do not hand-edit the GitHub description — the next push to `main` regenerates it |
 | PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN`, not the App token | Confirm the `release` job's `GITHUB_TOKEN` is `steps.app-token.outputs.token` |
-| release-plz jobs fail `403 Resource not accessible` | the App is not installed on this repo, or a permission is read-only | Install it here with Contents + Pull requests read/write; the secrets existing is not sufficient, the sync is repo-wide but the install is per-repo |
-| both release-plz jobs report `skipped` with no steps | `RELEASE_PLZ_ENABLED` was set as a *secret*, not a variable | `gh variable set RELEASE_PLZ_ENABLED --body true`; `vars` cannot read secrets |
+| release-plz jobs fail `403 Resource not accessible` | the App is not installed on this repo, or a permission is read-only | Install it here with Contents + Pull requests read/write + Workflows write; the secrets existing is not sufficient, the sync is repo-wide but the install is per-repo |
 | `plan` job fails on "Validate release preflight" | One of the 4 hard checks failed | Read the `validate-release` step log; the failing check is named |
 | `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check the job's `GITHUB_TOKEN` permissions |
 | `release-finalize.yml` smoke test fails | The tarball is malformed (missing binary, too small) | Delete the release, investigate the build artifacts (downloaded to the `artifacts-*` workflow run artifacts) |

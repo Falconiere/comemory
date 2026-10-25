@@ -32,11 +32,6 @@
 # body templates in release-plz.toml. Bump deliberately, after a local
 # `release-plz update` under the new version renders the same changelog.
 #
-# Both jobs are gated behind the `RELEASE_PLZ_ENABLED` repo variable so merging
-# this file does not immediately start cutting releases. Flip it on (Actions →
-# Variables → RELEASE_PLZ_ENABLED=true) only AFTER the App is installed here.
-# See docs/release.md § one-time setup.
-#
 # config: release-plz.toml (git_release_enable=false, publish=false — cargo-dist
 # owns build + GitHub Release; release-plz owns version + CHANGELOG + tag).
 
@@ -53,7 +48,6 @@ jobs:
   # Open / maintain the release PR.
   release-plz-pr:
     name: Release-plz PR
-    if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
     concurrency:
       group: release-plz-pr-${{ github.ref }}
@@ -91,7 +85,6 @@ jobs:
   # The App token is mandatory here — see the header note.
   release-plz-release:
     name: Release-plz release
-    if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Mint release token
