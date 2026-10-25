@@ -329,13 +329,13 @@ jobs:
       # PAT, so tap pushes stop breaking when a PAT silently expires. The
       # toolu-release App must be installed on Falconiere/homebrew-tap with
       # Contents: write; the token is narrowed to exactly that (docs/release.md
-      # § one-time setup explains the App, its grant and the literal Client ID).
+      # § one-time setup explains the App, its grant and its two secrets).
       # On a future `cargo dist init`, re-apply this block.
       - name: Mint homebrew-tap token
         id: tap-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
+          client-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           owner: "Falconiere"
           repositories: "homebrew-tap"

@@ -8,17 +8,20 @@
 #
 # Both jobs authenticate with a short-lived GitHub App installation token minted
 # for the `toolu-release` App — the same publish App the release.yml tap step
-# uses — from its Client ID and secrets.HOMEBREW_APP_PRIVATE_KEY. (The HOMEBREW_
-# prefix is a misnomer here: it is one App wearing two hats. The name is what
-# Infisical syncs, so it stays.) An App token is REQUIRED on the release job:
+# uses — from secrets.RELEASE_APP_ID and secrets.HOMEBREW_APP_PRIVATE_KEY.
+# (The HOMEBREW_ prefix is a misnomer here: it is one App wearing two hats.
+# Both names are what Infisical syncs, so they stay.) An App token is REQUIRED
+# on the release job:
 # a tag pushed with the default GITHUB_TOKEN does NOT trigger downstream
 # workflows, so release.yml would never fire. Using it on the release-pr job too
 # means the release PR also triggers CI checks. Unlike a PAT it is not tied to a
 # person's account and cannot silently expire.
 #
 # The App must therefore be installed on Falconiere/comemory ITSELF, not only on
-# Falconiere/homebrew-tap. Each mint step passes the App's public Client ID as a
-# literal and narrows its token with `permission-*` inputs to what that job
+# Falconiere/homebrew-tap. Each mint step passes secrets.RELEASE_APP_ID through
+# `client-id` (the action takes the App ID or the Client ID there, and GitHub
+# accepts either as the JWT issuer) and narrows its token with `permission-*`
+# inputs to what that job
 # does, because the shared App's own grant is far wider; the private key is
 # App-wide. docs/release.md § one-time setup is the one full account of the
 # App, its grant, the key and replacing it — keep the detail there.
@@ -64,7 +67,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
+          client-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           # Push the release branch, open/update/close release PRs. Workflows
           # write too: refreshing an open release PR force-moves its branch onto
@@ -99,7 +102,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: Iv23cthPzC6Oci4iBLZV # toolu-release
+          client-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
           # Push the vX.Y.Z tag; read the merged release PR. Workflows write
           # because the tagged commit usually follows workflow edits, and every

@@ -44,8 +44,9 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   with the default `GITHUB_TOKEN` does **not** trigger downstream workflows, so
   the bot must push the tag with its own token, or `release.yml` never fires.
   Both release-plz jobs mint a short-lived installation token for the
-  `toolu-release` App from its Client ID (a public identifier written into the
-  workflows as a literal) + `HOMEBREW_APP_PRIVATE_KEY` — the same App the tap
+  `toolu-release` App from `RELEASE_APP_ID` (passed through the action's
+  `client-id` input, which takes the App ID or the Client ID) +
+  `HOMEBREW_APP_PRIVATE_KEY` — the same App the tap
   step below uses, so this is the *same* installation with `comemory` added
   alongside `homebrew-tap`, not a second one. Unlike the `RELEASE_PLZ_TOKEN` PAT
   it replaces, an App key is not tied to a person's account and cannot silently
@@ -88,22 +89,19 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   gh variable set RELEASE_PLZ_ENABLED --body true --repo Falconiere/comemory
   ```
 - [ ] The `Falconiere/homebrew-tap` repo exists.
-- [ ] The homebrew-publish GitHub App (`toolu-release`; its private key is the
-  `HOMEBREW_APP_PRIVATE_KEY` secret, synced onto `Falconiere/comemory` by
-  Infisical) is installed on `Falconiere/homebrew-tap` with
-  **Contents: read and write**. The `publish-homebrew-formula` job mints a
-  short-lived installation token from it via `actions/create-github-app-token`
-  — no expiring PAT to rotate. The Client ID is a literal in the workflows.
-  Rotating the private key of the same App leaves it unchanged, but replacing
-  the App with a different one means updating it in all three mint steps (two in
-  `release-plz.yml`, one in `release.yml`) in the same change as the new key:
-  a mismatch only surfaces after merge, when release-plz or the tap job fails
-  to mint. `HOMEBREW_APP_ID` is still synced but no workflow reads it since the
-  deprecated `app-id` input was dropped. Verify the key exists and the Client
-  ID still matches:
+- [ ] The homebrew-publish GitHub App (`toolu-release`; its identifier is the
+  `RELEASE_APP_ID` secret and its private key the `HOMEBREW_APP_PRIVATE_KEY`
+  secret, both synced onto `Falconiere/comemory` by Infisical) is installed on
+  `Falconiere/homebrew-tap` with **Contents: read and write**. The
+  `publish-homebrew-formula` job mints a short-lived installation token from it
+  via `actions/create-github-app-token` — no expiring PAT to rotate. The two
+  secrets must name the same App: replacing the App means updating both in
+  Infisical together, and a mismatch only surfaces after merge, when release-plz
+  or the tap job fails to mint. `HOMEBREW_APP_ID` is still synced but no
+  workflow reads it since the deprecated `app-id` input was dropped. Verify both
+  secrets exist:
   ```bash
-  gh secret list --repo Falconiere/comemory | grep HOMEBREW_APP_PRIVATE_KEY
-  gh api /apps/toolu-release --jq .client_id   # expect Iv23cthPzC6Oci4iBLZV
+  gh secret list --repo Falconiere/comemory | grep -E 'RELEASE_APP_ID|HOMEBREW_APP_PRIVATE_KEY'
   ```
   If the App is not installed on the tap, the job fails with "not installed";
   install it from the App's settings page.
