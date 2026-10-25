@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- mint release tokens with client-id instead of deprecated app-id ([#401](https://github.com/Falconiere/comemory/pull/401))
+- run the sync daemon under a process supervisor, not a persistent LaunchAgent or systemd unit, when its data directory is under a temporary root ([#397](https://github.com/Falconiere/comemory/pull/397))
+- emit Codex-valid PreCompact hook output, so compaction under Codex no longer fails with "invalid PreCompact hook JSON output" ([#400](https://github.com/Falconiere/comemory/pull/400))
 
 ## [0.57.0] - 2026-10-06
 
