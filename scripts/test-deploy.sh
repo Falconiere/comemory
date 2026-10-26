@@ -182,9 +182,18 @@ case_skill() {
 }
 
 case_plan() {
-  local tag dir rel="$WORK/release.json" out first
+  local tag dir rel="$WORK/release.json" out first rc=0
   tag="$(latest_tag)"; dir="$WORK/assets/$tag"
   fetch_release "$tag" "$dir" "$rel"
+  # GitHub's own answers: an absent release is 1 (not an error), the real one 0.
+  DEPLOY_TAG=v0.0.0 in_lib "$ROOT" "deploy_release_json '$WORK/none.json'" 2>"$WORK/err" || rc=$?
+  [[ $rc -eq 1 ]] || fail "an absent release returned $rc, expected 1: $(cat "$WORK/err")"
+  DEPLOY_TAG="$tag" in_lib "$ROOT" "deploy_release_json '$WORK/view.json'" || fail "release $tag not found"
+  jq -e '.assets | length > 0' "$WORK/view.json" >/dev/null || fail "release $tag JSON lists no assets"
+  # The real tap is ahead of 0.0.1, so finishing 0.0.1 stops (exit 2) instead of downgrading it.
+  rc=0
+  DEPLOY_TAG=v0.0.1 DEPLOY_VERSION=0.0.1 in_lib "$ROOT" deploy_finish_tap 2>"$WORK/err" || rc=$?
+  [[ $rc -eq 2 ]] && grep -q "ahead of 0.0.1" "$WORK/err" || fail "tap downgrade not refused ($rc): $(cat "$WORK/err")"
   plan_for() { DEPLOY_TAG="$tag" DEPLOY_ASSETS="$dir" in_lib "$ROOT" "deploy_release_plan '$1'"; }
   out="$(plan_for "$rel")" || fail "planning the complete $tag release failed"
   [[ -z "$out" ]] || fail "the complete $tag release still planned: $out"

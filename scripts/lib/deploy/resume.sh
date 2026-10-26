@@ -50,7 +50,8 @@ deploy_resume_preflight() {
   DEPLOY_VERSION="${DEPLOY_TAG#v}"
   tags="$(git -C "$root" ls-remote --tags --refs "$DEPLOY_REMOTE")" \
     || die deploy:resume "cannot list tags on $DEPLOY_REMOTE"
-  grep -q "refs/tags/$DEPLOY_TAG\$" <<<"$tags" || die deploy:resume "$DEPLOY_TAG is not on $DEPLOY_REMOTE; nothing to resume"
+  awk -v r="refs/tags/$DEPLOY_TAG" '$2 == r { found = 1 } END { exit !found }' <<<"$tags" \
+    || die deploy:resume "$DEPLOY_TAG is not on $DEPLOY_REMOTE; nothing to resume"
   newest="$(deploy_newest_tag "$tags")"
   [[ "$DEPLOY_TAG" == "$newest" ]] \
     || die deploy:resume "$DEPLOY_TAG is not the newest release tag on $DEPLOY_REMOTE ($newest is)"
@@ -68,17 +69,27 @@ deploy_resume_preflight() {
   log_ok deploy:resume "$DEPLOY_TAG at ${commit:0:12}; assets verified"
 }
 
+# deploy_release_json <file> — write the release's JSON to <file>: returns 0
+# when the release exists, 1 when GitHub has none ("release not found", gh's
+# wording), and exits 2 on any other error, since the state is then unknown.
+deploy_release_json() {
+  local err
+  if gh release view "$DEPLOY_TAG" --repo "$DEPLOY_REPO" --json assets,isDraft >"$1" 2>"$1.err"; then
+    rm -f "$1.err"; return 0
+  fi
+  err="$(cat "$1.err")"; rm -f "$1.err"
+  [[ "$err" == *"release not found"* ]] || deploy_published_failure "cannot read release $DEPLOY_TAG: $err"
+  return 1
+}
+
 # Create the GitHub Release, or upload what an earlier attempt left out.
 deploy_finish_release() {
-  local tmp json actions verb path argv=() a uploads=() replaces=()
+  local tmp json actions rc=0 verb path argv=() a uploads=() replaces=()
   tmp="$(mktemp -d)"; json="$tmp/release.json"
-  if ! gh release view "$DEPLOY_TAG" --repo "$DEPLOY_REPO" --json assets,isDraft >"$json" 2>"$tmp/err"; then
-    grep -q 'release not found' "$tmp/err" \
-      || deploy_published_failure "cannot read release $DEPLOY_TAG: $(cat "$tmp/err")"
-    json=""
-  fi
-  actions="$(deploy_release_plan "$json")" || deploy_published_failure "release $DEPLOY_TAG cannot be completed"
+  deploy_release_json "$json" || json=""
+  actions="$(deploy_release_plan "$json")" || rc=$?
   rm -rf "$tmp"
+  ((rc == 0)) || deploy_published_failure "release $DEPLOY_TAG cannot be completed"
   if [[ -z "$actions" ]]; then log_ok deploy:release "already complete"; return 0; fi
   if [[ "$actions" == create ]]; then
     while IFS= read -r a; do argv+=("$a"); done < <(deploy_release_argv)
