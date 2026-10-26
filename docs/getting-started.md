@@ -24,12 +24,14 @@ Pick whichever channel fits your machine. The one-liner is the shortest path on
 Apple Silicon macOS and glibc ≥ 2.34 Linux (RHEL 9 / Amazon Linux 2023, Ubuntu
 22.04, Debian bookworm and newer) — `install.sh` is attached to every release,
 and `latest/download` resolves to the newest one. Those are the only prebuilt
-targets, and the installer refuses anything else before it downloads: an Intel
-Mac gets `no prebuilt comemory for …`, a musl distro such as Alpine (`gcompat`
-or not) gets `this is a musl system`, and an older glibc (Debian bullseye 2.31,
-Ubuntu 20.04 2.31) gets `glibc 2.31 is older than 2.34`, each with the
-source-install recipe. A glibc distro that merely has the `musl` package
-installed is not refused. All three need the source install below.
+targets: before it downloads, the installer refuses an Intel Mac (`no prebuilt
+comemory for …`) and a musl distro such as Alpine, `gcompat` or not (`this is a
+musl system`), each with the source-install recipe; a glibc distro that merely
+has the `musl` package installed is not refused. An older glibc (Debian
+bullseye 2.31, Ubuntu 20.04 2.31) downloads fine and then fails the installer's
+own `--version` run of the binary, whose error names the `GLIBC_` version the
+build needs — before anything is installed. All three need the source install
+below.
 
 ```bash
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \

@@ -715,9 +715,9 @@ gate did not run, names pinned install command, and **exits 0**. So green
 not "this gate passed" — CI is run that decides.
 
 `just qa` also runs `scripts/test-install-libc.sh` — `install.sh`'s libc gate
-on real distro images, plus `GLIBC_MIN` held against latest release. It needs
-reachable docker daemon and network, follows same missing-tool rule (warn
-and exit 0 locally, fail under `$CI`), and is NOT `test.yml` step.
+on real distro images. It needs reachable docker daemon and network; missing
+daemon, or case whose image or packages cannot be fetched, follows same
+missing-tool rule (warn locally, fail under `$CI`). It is NOT `test.yml` step.
 
 Two of them assert that their tool ingested tree, because gate
 that reports success while checking nothing is this repo's recurring failure
@@ -739,13 +739,12 @@ reported all four of its checks.
   — repo-root `install.sh`, hand-written (POSIX sh, ≤ 300 code lines like
   every other file), attached to every release by `release-finalize.yml`
   (which also smoke-runs it against fresh release on Linux runner).
-  Platform detection plus libc gate before any download (musl and glibc
-  below `GLIBC_MIN` = 2.34 refused; glibc read from `getconf
-  GNU_LIBC_VERSION`, musl from `/bin/sh`'s ELF interpreter, never from mere
-  `/lib/ld-musl-*` presence — `scripts/test-install-libc.sh` runs it on real
-  distro images under `just qa` and holds `GLIBC_MIN` against the newest
-  `GLIBC_` symbol the latest release's binaries need), `latest` via release
-  redirect, SHA-256 sidecar
+  Platform detection plus musl refusal before any download (glibc read from
+  `getconf GNU_LIBC_VERSION`, musl from `/bin/sh`'s ELF interpreter, never
+  from mere `/lib/ld-musl-*` presence; glibc version is left to `--version`
+  run, since only each release's binary knows `GLIBC_` it needs —
+  `scripts/test-install-libc.sh` runs gate on real distro images under
+  `just qa`), `latest` via release redirect, SHA-256 sidecar
   verification (never skipped), `--version` run of downloaded binary
   before atomic rename, in-place replacement of `comemory` already on
   `PATH`, once-only rc-file `PATH` line. It finishes by running just-placed

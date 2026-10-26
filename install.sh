@@ -29,9 +29,7 @@ set -eu
 APP=comemory
 REPO_URL=https://github.com/Falconiere/comemory
 RELEASES="${COMEMORY_RELEASES_URL:-$REPO_URL/releases}"
-# Newest GLIBC_ symbol version the published Linux binaries need;
-# scripts/test-install-libc.sh holds it against the latest release.
-GLIBC_MIN=2.34
+SRC_HINT="build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
 VERSION="${COMEMORY_VERSION:-}"
 DIR="${COMEMORY_INSTALL_DIR:-}"
 MODIFY_PATH=1
@@ -103,30 +101,23 @@ detect_target() {
     Darwin:arm64)              TARGET=aarch64-apple-darwin;      PRETTY="macOS Apple Silicon" ;;
     Linux:x86_64)              TARGET=x86_64-unknown-linux-gnu;  PRETTY="Linux x86_64" ;;
     Linux:aarch64|Linux:arm64) TARGET=aarch64-unknown-linux-gnu; PRETTY="Linux aarch64" ;;
-    *) die "no prebuilt $APP for $os $arch" \
-         "build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh" ;;
+    *) die "no prebuilt $APP for $os $arch" "$SRC_HINT" ;;
   esac
   [ "$os" != Linux ] || detect_libc
 }
 
-# Refuse a libc the gnu builds cannot run on, before downloading anything.
-# Only glibc answers GNU_LIBC_VERSION, whatever loader shims (Alpine's
-# gcompat) sit at glibc's paths. With no answer, the system shell's own ELF
-# interpreter tells musl apart from a glibc host that merely has Debian's
-# `musl` package; failing both, the downloaded binary's --version run decides.
+# Refuse musl before downloading anything. Only glibc answers
+# GNU_LIBC_VERSION, whatever loader shims (Alpine's gcompat) sit at glibc's
+# paths; with no answer, the system shell's own ELF interpreter tells musl apart
+# from a glibc host that merely has Debian's `musl` package. Which glibc is new
+# enough is left to the downloaded binary's --version run: only each release's
+# binary knows the GLIBC_ version it needs, and a --version pin can pick any.
 detect_libc() {
-  src="build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
   glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
-  v="${glibc#glibc }"; major="${v%%.*}"; minor="${v#*.}"; minor="${minor%%[!0-9]*}"
-  case "$major.$minor" in *[!0-9.]*|.*|*.) glibc="" ;; esac
   case "$glibc" in
-    "glibc "*)
-      [ "$major" -gt "${GLIBC_MIN%.*}" ] || { [ "$major" -eq "${GLIBC_MIN%.*}" ] \
-        && [ "$minor" -ge "${GLIBC_MIN#*.}" ]; } \
-        || die "glibc $v is older than $GLIBC_MIN, the oldest the Linux builds run on" "$src"
-      PRETTY="$PRETTY, glibc $v" ;;
+    "glibc "*) PRETTY="$PRETTY, $glibc" ;;
     *) ! grep -q /lib/ld-musl- /bin/sh 2>/dev/null \
-        || die "this is a musl system; only glibc (>= $GLIBC_MIN) Linux builds are published" "$src" ;;
+        || die "this is a musl system; only glibc Linux builds are published" "$SRC_HINT" ;;
   esac
 }
 
@@ -256,7 +247,7 @@ install_bin() {
   [ -f "$bin" ] || die "$ARCHIVE does not contain $APP-$TARGET/$APP"
   chmod 755 "$bin"
   REPORTED="$("$bin" --version 2>&1)" || die "the downloaded binary does not run here: $REPORTED" \
-    "Linux builds need glibc >= $GLIBC_MIN, not musl; other systems need the source install"
+    "Linux builds need glibc at the GLIBC_ version named above, not musl; else $SRC_HINT"
   mkdir -p "$DIR" 2>/dev/null || die "cannot create $DIR" "re-run with --dir <a directory you can write to>"
   [ -w "$DIR" ] || die "cannot write to $DIR" "re-run with --dir <a directory you can write to>"
   lock_dir
