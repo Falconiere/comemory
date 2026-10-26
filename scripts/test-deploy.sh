@@ -7,7 +7,7 @@
 # Uncommitted work never reaches the clone.
 #
 # Usage: bash scripts/test-deploy.sh [case...]
-#   args preflight bump formula push skill   fast, offline (the default set)
+#   args preflight bump formula push skill toolchain   fast, offline (the default set)
 #   rehearsal   real three-target build through `--dry-run` (Docker, slow)
 #   smoke       installs the already-published v0.57.1 release (network)
 #   plan        release planner over the latest real release (network, read-only)
@@ -127,18 +127,19 @@ case_push() {
   git clone --quiet --bare "$c" "$bare"
   git -C "$c" remote set-url origin "$bare"; git -C "$c" fetch --quiet origin
   cur="$(version_of "$c")"; next="$(bumped "$cur" minor)"; later="$(bumped "$next" patch)"
-  # A real pre-push hook records the toolchain lefthook's check-all would lint with.
+  # A real pre-push hook records the cargo lefthook's check-all would lint with
+  # (on this Mac a Homebrew cargo first on PATH would otherwise win).
   mkdir -p "$WORK/push-hooks"
-  printf '#!/bin/sh\nprintf "%%s\\n" "${RUSTUP_TOOLCHAIN:-unset}" >"%s"\n' "$WORK/push-toolchain" \
-    >"$WORK/push-hooks/pre-push"
+  printf '#!/bin/sh\ncommand -v cargo >"%s"\n' "$WORK/push-toolchain" >"$WORK/push-hooks/pre-push"
   chmod +x "$WORK/push-hooks/pre-push"
   git -C "$c" config core.hooksPath "$WORK/push-hooks"
   unset RUSTUP_TOOLCHAIN # the deploy must pin it itself, whatever the caller's shell has
   commit="$(DEPLOY_TAG="v$next" DEPLOY_NOTES=x in_lib "$c" \
     'trap deploy_cleanup EXIT; deploy_validate_args; deploy_prepare_bump >&2
      deploy_push >&2; printf "%s\n" "$DEPLOY_COMMIT"')" || fail "push failed"
-  [[ "$(cat "$WORK/push-toolchain")" == 1.95.0 ]] \
-    || fail "pre-push hook ran on toolchain '$(cat "$WORK/push-toolchain")', expected 1.95.0"
+  local rust; rust="$(in_lib "$c" 'printf %s "$DEPLOY_RUST"')"
+  [[ "$(cat "$WORK/push-toolchain")" == "$(rustup which --toolchain "$rust" cargo)" ]] \
+    || fail "pre-push hook ran $(cat "$WORK/push-toolchain"), not rustup's $rust cargo"
   [[ "$(git -C "$bare" rev-parse main)" == "$commit" ]] || fail "remote main is not the release commit"
   [[ "$(git -C "$bare" rev-parse "v$next^{commit}")" == "$commit" ]] || fail "remote tag missing"
   [[ "$(git -C "$c" rev-parse main)" == "$commit" ]] || fail "local main not fast-forwarded"
@@ -180,6 +181,21 @@ case_skill() {
   for s in 'scripts/deploy.sh --tag' '--dry-run' '--resume vX.Y.Z' 'env -u GH_TOKEN' 'git log'; do
     grep -qF -- "$s" "$f" || fail "skill does not mention '$s'"
   done
+}
+
+# The pin must hold whatever PATH puts first: a Homebrew cargo ignores RUSTUP_TOOLCHAIN.
+case_toolchain() {
+  local out rc=0 rust
+  rust="$(in_lib "$ROOT" 'printf %s "$DEPLOY_RUST"')"
+  printf 'plain cargo here: %s (%s)\n' "$(command -v cargo)" "$(cargo --version)" >&2
+  # The path, not only the version: Homebrew may ship the same version number.
+  out="$(in_lib "$ROOT" 'deploy_with_rust sh -c "command -v cargo"')" || fail "pinned cargo did not resolve"
+  [[ "$out" == "$(rustup which --toolchain "$rust" cargo)" ]] || fail "pinned cargo is $out, not rustup's $rust"
+  out="$(in_lib "$ROOT" 'deploy_with_rust cargo clippy --version')" || fail "pinned clippy did not run"
+  [[ "$out" == "clippy 0.1.$(cut -d. -f2 <<<"$rust") "* ]] || fail "pinned clippy is '$out', expected $rust's"
+  in_lib "$ROOT" 'DEPLOY_RUST=0.0.1; deploy_with_rust true' 2>"$WORK/err" || rc=$?
+  [[ $rc -eq 1 ]] && grep -qF 'rustup toolchain install 0.0.1' "$WORK/err" \
+    || fail "a missing toolchain exited $rc: $(cat "$WORK/err")"
 }
 
 case_plan() {
@@ -276,6 +292,9 @@ case_rehearsal() {
   for a in "run the gates" "git push --atomic" "gh release create" "Homebrew tap"; do
     grep -qF "$a" <<<"$out" || fail "dry run did not name the skipped '$a'"
   done
+  # A measurement, not a bound: a cold cache or another session's Docker load must not fail it.
+  t="$(grep -oE '\[deploy:build\] OK linux \([0-9]+s\)' <<<"$out")" || fail "no linux build time logged"
+  printf 'rehearsal %s\n' "$t" >&2
   argv="$(DEPLOY_TAG="$tag" DEPLOY_ASSETS="$dir" in_lib "$c" deploy_release_argv)"
   grep -A1 -x -- --repo <<<"$argv" | grep -qx Falconiere/comemory || fail "release argv lacks --repo"
   for a in --verify-tag --notes-file --latest "$dir/sha256.sum" "$dir/install.sh" \
@@ -287,7 +306,7 @@ case_rehearsal() {
 }
 
 cases=("$@")
-[[ ${#cases[@]} -gt 0 ]] || cases=(args preflight bump formula push skill)
+[[ ${#cases[@]} -gt 0 ]] || cases=(args preflight bump formula push skill toolchain)
 for CASE in "${cases[@]}"; do
   declare -F "case_$CASE" >/dev/null || fail "unknown case"
   "case_$CASE"

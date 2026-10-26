@@ -91,6 +91,11 @@ check_archive() {
     x86_64-*) out="$(run_linux linux/amd64 "$x/comemory-$t/comemory")" ;;
   esac
   [[ "$out" == "comemory $v" ]] || fail "$t binary reports '$out'"
+  if [[ "$t" == *-linux-gnu ]]; then
+    grep -aqE 'GLIBC_2\.(3[5-9]|[4-9][0-9])' "$x/comemory-$t/comemory" \
+      && fail "$t binary needs a glibc above the published 2.34 floor"
+  fi
+  return 0
 }
 
 # latest_tag — the tag GitHub's releases/latest redirect points at right now.

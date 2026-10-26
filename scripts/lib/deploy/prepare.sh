@@ -8,8 +8,18 @@
 
 DEPLOY_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEPLOY_REMOTE="${DEPLOY_REMOTE:-origin}"
-# The toolchain CI pins (clippy 1.95) and every release build uses.
-DEPLOY_RUST="1.95.0"
+# The toolchain CI pins (the latest stable when chosen) and every release build uses.
+DEPLOY_RUST="1.99.1"
+
+# deploy_with_rust <cmd...> — run <cmd> on DEPLOY_RUST. RUSTUP_TOOLCHAIN alone
+# is not enough: a Homebrew cargo first on PATH ignores it (and so does
+# `rustup run`), so the toolchain's own bin goes first.
+deploy_with_rust() {
+  local cargo
+  cargo="$(rustup which --toolchain "$DEPLOY_RUST" cargo 2>/dev/null)" \
+    || die deploy:rust "Rust $DEPLOY_RUST is not installed; run: rustup toolchain install $DEPLOY_RUST --component clippy rustfmt"
+  PATH="${cargo%/cargo}:$PATH" RUSTUP_TOOLCHAIN="$DEPLOY_RUST" "$@"
+}
 
 # deploy_cargo_version <dir> — the [package] version (the first `version =`).
 deploy_cargo_version() {
@@ -85,6 +95,7 @@ deploy_preflight() {
     || die deploy:preflight "main is not equal to $DEPLOY_REMOTE/main; pull or push first"
   [[ "$(uname -sm)" == "Darwin arm64" ]] \
     || die deploy:preflight "builds aarch64-apple-darwin natively, so it must run on an Apple Silicon Mac"
+  deploy_with_rust true
   deploy_require_gh
   docker info >/dev/null 2>&1 || die deploy:preflight "docker daemon not reachable; start Docker"
   if ((DEPLOY_DRY_RUN)); then
@@ -98,8 +109,8 @@ deploy_preflight() {
 deploy_run_gates() {
   log_info deploy:gates "running the full local gate set"
   (cd "$PROJECT_ROOT" \
-    && RUSTUP_TOOLCHAIN="$DEPLOY_RUST" bash scripts/check-all.sh \
-    && cargo nextest run --all-features \
+    && deploy_with_rust bash scripts/check-all.sh \
+    && deploy_with_rust cargo nextest run --all-features \
     && bash scripts/dup-check.sh \
     && bash scripts/deny-check.sh \
     && bash scripts/machete-check.sh) \
@@ -136,7 +147,7 @@ deploy_prepare_bump() {
   git -C "$PROJECT_ROOT" worktree add --quiet --detach "$DEPLOY_WORKTREE" HEAD \
     || die deploy:bump "cannot create a temp worktree"
   deploy_set_version "$DEPLOY_WORKTREE/Cargo.toml" "$DEPLOY_VERSION"
-  (cd "$DEPLOY_WORKTREE" && RUSTUP_TOOLCHAIN="$DEPLOY_RUST" cargo update --workspace --offline --quiet) \
+  (cd "$DEPLOY_WORKTREE" && deploy_with_rust cargo update --workspace --offline --quiet) \
     || die deploy:bump "cargo update --workspace failed"
   deploy_insert_changelog "$DEPLOY_WORKTREE/CHANGELOG.md" "$DEPLOY_VERSION" "$(date -u +%F)" "$DEPLOY_NOTES"
   git -C "$DEPLOY_WORKTREE" add Cargo.toml Cargo.lock CHANGELOG.md

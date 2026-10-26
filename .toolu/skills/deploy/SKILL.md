@@ -25,9 +25,11 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
 1. Prerequisites: the main checkout, not a linked worktree (`main` is checked
    out there and `deploy.sh` refuses any other branch; leave a worktree session
    first, or work in `$(git rev-parse --path-format=absolute --git-common-dir)/..`),
-   Apple Silicon Mac, Docker running with free disk space, clean tracked files,
-   `gh api user` succeeds. If `GH_TOKEN` is set but stale, prefix every command
-   below with `env -u GH_TOKEN`.
+   Apple Silicon Mac, the pinned Rust (1.99.1) installed through rustup (`deploy.sh` puts
+   its `bin` first on `PATH` itself, so a Homebrew `cargo` is harmless), Docker
+   running with free disk space, clean tracked files, `gh api user` succeeds.
+   If `GH_TOKEN` is set but stale, prefix every command below with
+   `env -u GH_TOKEN`.
 2. `git fetch --tags origin && git switch main && git pull --ff-only`.
 3. Pick the version from the conventional commits since the last tag:
    `git log --oneline "$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*')"..HEAD`.
@@ -47,8 +49,9 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
    `bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes" --dry-run`
 7. Release: `bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"`.
    Pass multi-line notes with `$'...'` or a variable, never a literal `\n`.
-   Run it in the background: it first runs every quality gate, and the
-   emulated x86_64 Linux build takes tens of minutes on a cold cache.
+   Run it in the background: it first runs every quality gate, then the
+   macOS build and one Linux build of both targets (a few minutes warm, longer
+   on the first run after a toolchain change).
 8. Report the release URL (the last stdout line) and the version to the user.
 
 ## Pitfalls
@@ -64,9 +67,10 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
   user before running any of them, and never delete a tag or release on your
   own.
 - Do not bypass git hooks: lefthook pre-push runs `check-all.sh` on the push.
-  The script pushes with `RUSTUP_TOOLCHAIN=1.95.0`, CI's clippy pin, because a
-  newer default clippy rejects `main`. A push that exits 141 after that slow
-  hook did not land: the run exits 1, so re-run with the same tag.
+  The script pushes with the pinned toolchain's `bin` first on `PATH`, so the
+  hook lints on the same Rust as the gates even when a Homebrew `cargo` is
+  first. A push that exits 141 after that slow hook did not land: the run
+  exits 1, so re-run with the same tag.
 - Never re-use a tag, even a deleted one: pick the next patch.
 - The script refuses anything but `main` equal to `origin/main`; do not work
   around it with a branch named main.

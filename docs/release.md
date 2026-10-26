@@ -320,17 +320,30 @@ bash scripts/deploy.sh --resume v0.58.0                               # finish a
 ```
 
 It runs from `main` equal to `origin/main`, runs the full local gate set
-(check-all on Rust 1.95, nextest, dup-check, deny-check, machete-check), lands
-`chore(release): vX.Y.Z` on `main` together with the tag in one atomic push,
-marks the GitHub Release latest and updates the Homebrew tap.
+(check-all, nextest, dup-check, deny-check, machete-check, all on the pinned
+Rust 1.99.1), lands `chore(release): vX.Y.Z` on `main` together with the tag
+in one atomic push, marks the GitHub Release latest and updates the Homebrew
+tap.
 
 Requirements: an Apple Silicon Mac (`aarch64-apple-darwin` builds natively),
-Docker running (both Linux targets build in a local `ubuntu:22.04` + Rust
-1.95.0 image, the same glibc 2.35 build host cargo-dist's runners had, whose
-binaries need glibc 2.34; x86_64 runs
-emulated and is slow on a cold cache), a clean tree, an empty
-`## [Unreleased]`, and `gh api user` succeeding (`env -u GH_TOKEN` when the env
-token is stale).
+the pinned Rust (1.99.1, `DEPLOY_RUST` in `scripts/lib/deploy/prepare.sh`)
+installed through rustup, Docker running, a clean tree, an empty
+`## [Unreleased]`, and `gh api user` succeeding (`env -u GH_TOKEN` when the
+env token is stale). The pin is the latest stable Rust when chosen; moving it
+means updating `DEPLOY_RUST`, the workflows' `toolchain:`, the `Dockerfile`,
+`Cargo.toml`'s `rust-version` and the README badge together, then running the
+full gate set on the new toolchain.
+
+Both Linux targets build in one native arm64 `ubuntu:22.04` container with
+Rust 1.99.1: aarch64 natively and x86_64 through Ubuntu's
+`crossbuild-essential-amd64`, in a single `cargo build` with two `--target`s.
+That is the same glibc 2.35 build host cargo-dist's runners had, and
+`deploy_verify_assets` refuses any Linux binary needing a glibc symbol above
+2.34, the published floor. On this Mac the x86_64 build took 306 s warm under
+colima's Rosetta and 189 s cross-compiled (2026-10-26). Every cargo call
+(gates, macOS build, bump, and the push's pre-push hook) runs with the 1.99.1
+toolchain's own `bin` first on `PATH`: `RUSTUP_TOOLCHAIN` alone does nothing
+when a Homebrew `cargo` comes first, as it does here.
 
 Order of work: arguments → preflight → gates → bump commit (`Cargo.toml`,
 `Cargo.lock`, the `--change-log` text as the new CHANGELOG section) in a temp

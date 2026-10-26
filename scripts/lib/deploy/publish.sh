@@ -65,7 +65,7 @@ deploy_push_refs() {
 
 deploy_print_skipped() {
   log_info deploy:dry-run "skipped — a real run would also:"
-  printf '  run the gates: check-all (Rust 1.95), nextest, dup-check, deny-check, machete-check\n'
+  printf '  run the gates (Rust %s): check-all, nextest, dup-check, deny-check, machete-check\n' "$DEPLOY_RUST"
   printf '  git tag -a %s -m %s %s\n' "$DEPLOY_TAG" "$DEPLOY_TAG" "$DEPLOY_COMMIT"
   printf '  git push --atomic %s %s\n' "$DEPLOY_REMOTE" "$(deploy_push_refs | tr '\n' ' ')"
   printf '  then finish, skipping what is already done (what --resume %s re-runs):\n' "$DEPLOY_TAG"
@@ -84,7 +84,7 @@ deploy_push() {
     || die deploy:push "cannot create tag $DEPLOY_TAG"
   # lefthook's pre-push check-all must lint on the CI-pinned toolchain; a newer
   # default clippy rejects main and would refuse every release here.
-  if ! RUSTUP_TOOLCHAIN="$DEPLOY_RUST" git -C "$PROJECT_ROOT" push --atomic "$DEPLOY_REMOTE" "${refs[@]}"; then
+  if ! deploy_with_rust git -C "$PROJECT_ROOT" push --atomic "$DEPLOY_REMOTE" "${refs[@]}"; then
     git -C "$PROJECT_ROOT" tag -d "$DEPLOY_TAG" >/dev/null
     die deploy:push "push rejected; nothing was published (local tag $DEPLOY_TAG removed)"
   fi
