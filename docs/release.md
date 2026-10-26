@@ -12,6 +12,10 @@
 > No `just release`, no hand-edited version, no babysitting. The manual
 > `just release` flow (§3) survives only as a fallback for when the bot is down.
 
+> **GitHub Actions disabled?** Then a pushed tag builds nothing and the bot
+> never runs. Release from your Mac with `scripts/deploy.sh` instead (§3b);
+> agents load the `manual-deploy` project skill for it.
+
 The release-plz bot (`.github/workflows/release-plz.yml`, config
 `release-plz.toml`) owns **version + CHANGELOG + tag**. cargo-dist owns
 everything after the tag: push `vX.Y.Z` → `release.yml` builds the
@@ -299,6 +303,51 @@ For pre-release tags (`X.Y.Z-rc.N`), use **`just release-rc X.Y.Z-rc.N`**
 The Homebrew tap is gated off by `publish-prereleases = false` in
 `[workspace.metadata.dist]`, and the release-finalize smoke test
 treats the RC tarball identically to a stable one.
+
+---
+
+## 3b. Local deploy (Actions disabled)
+
+While every workflow is disabled, `scripts/deploy.sh` does locally what
+`release.yml` and `release-finalize.yml` did, for stable releases only (no
+pre-release or RC builds). Agents follow `.toolu/skills/manual-deploy/SKILL.md`.
+
+```bash
+bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"            # release
+bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes" --dry-run  # rehearse
+```
+
+It runs from `main` equal to `origin/main`, runs the full local gate set
+(check-all on Rust 1.95, nextest, dup-check, deny-check, machete-check), lands
+`chore(release): vX.Y.Z` on `main` together with the tag in one atomic push,
+marks the GitHub Release latest and updates the Homebrew tap.
+
+Requirements: an Apple Silicon Mac (`aarch64-apple-darwin` builds natively),
+Docker running (both Linux targets build in a local `ubuntu:22.04` + Rust
+1.95.0 image, the same glibc 2.35 floor cargo-dist's runners had; x86_64 runs
+emulated and is slow on a cold cache), a clean tree, an empty
+`## [Unreleased]`, and `gh api user` succeeding (`env -u GH_TOKEN` when the env
+token is stale).
+
+Order of work: arguments → preflight → gates → bump commit (`Cargo.toml`,
+`Cargo.lock`, the `--change-log` text as the new CHANGELOG section) in a temp
+detached worktree → three builds → archives with cargo-dist's names and layout,
+`.sha256` files, `sha256.sum`, `install.sh`, `comemory-installer.sh` (the name
+`get.comemory.io` still redirects to) → each binary checked with `--version`
+(Linux ones inside `ubuntu:22.04`) → `comemory.rb` rewritten from the tap's
+formula → push → `gh release create` → tap → `install.sh` smoke install into a
+temp dir. `--dry-run` skips the gates, stops before the push and prints the
+skipped commands; assets stay in `target/deploy/<tag>/`.
+
+Exit `1` means nothing was pushed. Exit `2` means the tag is public and a later
+step failed; the output ends with the §5 rollback commands, and the script
+never deletes anything itself. Not produced while Actions are off: the GHCR
+image, the minisign signature and `dist-manifest.json`.
+
+Self-check after editing the script: `bash scripts/test-deploy.sh` (offline
+cases), `bash scripts/test-deploy.sh rehearsal` (real builds through
+`--dry-run`) and `bash scripts/test-deploy.sh smoke` (installs the published
+v0.57.1).
 
 ---
 
