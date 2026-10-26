@@ -128,7 +128,7 @@ deploy_binary_version() {
 
 # deploy_glibc_max <binary> — the highest GLIBC_2.N symbol version it references.
 deploy_glibc_max() {
-  grep -ao 'GLIBC_2\.[0-9]*' "$1" | sort -t. -k2,2n -u | tail -1
+  { grep -ao 'GLIBC_2\.[0-9]*' "$1" || true; } | sort -t. -k2,2n -u | tail -1
 }
 
 deploy_verify_assets() {
@@ -150,6 +150,7 @@ deploy_verify_assets() {
     if [[ "$t" == *-linux-gnu ]]; then
       # README and docs/getting-started.md publish glibc >= 2.34; a newer symbol breaks those hosts.
       max="$(deploy_glibc_max "$x/comemory-$t/comemory")"
+      [[ -n "$max" ]] || die deploy:verify "$t binary references no GLIBC_ symbol; not the expected glibc build"
       ((${max#GLIBC_2.} <= 34)) || die deploy:verify "$t binary needs $max, above the published GLIBC_2.34 floor"
       out="$out, $max"
     fi
