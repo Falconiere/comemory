@@ -29,6 +29,9 @@ set -eu
 APP=comemory
 REPO_URL=https://github.com/Falconiere/comemory
 RELEASES="${COMEMORY_RELEASES_URL:-$REPO_URL/releases}"
+# Newest GLIBC_ symbol version the published Linux binaries need;
+# scripts/test-install-libc.sh holds it against the latest release.
+GLIBC_MIN=2.34
 VERSION="${COMEMORY_VERSION:-}"
 DIR="${COMEMORY_INSTALL_DIR:-}"
 MODIFY_PATH=1
@@ -111,18 +114,19 @@ detect_target() {
 # gcompat) sit at glibc's paths. With no answer, the system shell's own ELF
 # interpreter tells musl apart from a glibc host that merely has Debian's
 # `musl` package; failing both, the downloaded binary's --version run decides.
-# 2.35 is the release build host's glibc (ubuntu-22.04 in release.yml).
 detect_libc() {
   src="build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
   glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
+  v="${glibc#glibc }"; major="${v%%.*}"; minor="${v#*.}"; minor="${minor%%[!0-9]*}"
+  case "$major.$minor" in *[!0-9.]*|.*|*.) glibc="" ;; esac
   case "$glibc" in
-    "glibc "[0-9]*.[0-9]*)
-      v="${glibc#glibc }"; major="${v%%.*}"; minor="${v#*.}"; minor="${minor%%[!0-9]*}"
-      [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 35 ]; } \
-        || die "glibc $v is older than 2.35, the oldest the Linux builds run on" "$src"
+    "glibc "*)
+      [ "$major" -gt "${GLIBC_MIN%.*}" ] || { [ "$major" -eq "${GLIBC_MIN%.*}" ] \
+        && [ "$minor" -ge "${GLIBC_MIN#*.}" ]; } \
+        || die "glibc $v is older than $GLIBC_MIN, the oldest the Linux builds run on" "$src"
       PRETTY="$PRETTY, glibc $v" ;;
     *) ! grep -q /lib/ld-musl- /bin/sh 2>/dev/null \
-        || die "this is a musl system; only glibc (>= 2.35) Linux builds are published" "$src" ;;
+        || die "this is a musl system; only glibc (>= $GLIBC_MIN) Linux builds are published" "$src" ;;
   esac
 }
 
@@ -252,7 +256,7 @@ install_bin() {
   [ -f "$bin" ] || die "$ARCHIVE does not contain $APP-$TARGET/$APP"
   chmod 755 "$bin"
   REPORTED="$("$bin" --version 2>&1)" || die "the downloaded binary does not run here: $REPORTED" \
-    "Linux builds need glibc >= 2.35; older distros need the source install"
+    "Linux builds need glibc >= $GLIBC_MIN, not musl; other systems need the source install"
   mkdir -p "$DIR" 2>/dev/null || die "cannot create $DIR" "re-run with --dir <a directory you can write to>"
   [ -w "$DIR" ] || die "cannot write to $DIR" "re-run with --dir <a directory you can write to>"
   lock_dir

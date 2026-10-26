@@ -104,7 +104,7 @@ comemory setup                  # detect + apply this machine's/repo's onboardin
 comemory completions --install  # install + register bash/zsh/fish/powershell completions
 just check                      # umbrella gate (alias of scripts/check-all.sh)
 just test                       # cargo nextest run --all-features
-just qa                         # check-all + cargo-deny + dup-check + machete
+just qa                         # check-all + cargo-deny + dup-check + machete + install.sh libc gate (docker)
 just e2e                        # real-binary end-to-end harness
 bash scripts/check-all.sh       # the umbrella gate (CI parity)
 bash scripts/guardrails/run.sh  # structure gate alone (file size, folder tree,
@@ -735,10 +735,12 @@ reported all four of its checks.
   every other file), attached to every release by `release-finalize.yml`
   (which also smoke-runs it against fresh release on Linux runner).
   Platform detection plus libc gate before any download (musl and glibc
-  < 2.35 refused; glibc read from `getconf GNU_LIBC_VERSION`, musl from
-  `/bin/sh`'s ELF interpreter, never from mere `/lib/ld-musl-*` presence —
-  `scripts/test-install-libc.sh` runs it on real distro images under
-  `just qa`), `latest` via release redirect, SHA-256 sidecar
+  below `GLIBC_MIN` = 2.34 refused; glibc read from `getconf
+  GNU_LIBC_VERSION`, musl from `/bin/sh`'s ELF interpreter, never from mere
+  `/lib/ld-musl-*` presence — `scripts/test-install-libc.sh` runs it on real
+  distro images under `just qa` and holds `GLIBC_MIN` against the newest
+  `GLIBC_` symbol the latest release's binaries need), `latest` via release
+  redirect, SHA-256 sidecar
   verification (never skipped), `--version` run of downloaded binary
   before atomic rename, in-place replacement of `comemory` already on
   `PATH`, once-only rc-file `PATH` line. It finishes by running just-placed

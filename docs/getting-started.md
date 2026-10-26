@@ -21,15 +21,15 @@ step has variations, this guide picks one happy path and links out.
 ## 1. Install
 
 Pick whichever channel fits your machine. The one-liner is the shortest path on
-Apple Silicon macOS and glibc ≥ 2.35 Linux — `install.sh` is attached to every
-release, and `latest/download` resolves to the newest one. Those are the only
-prebuilt targets, and the installer refuses anything else before it downloads:
-an Intel Mac gets `no prebuilt comemory for …`, a musl distro such as Alpine
-(`gcompat` or not) gets `this is a musl system`, and an older glibc (Debian
-bullseye 2.31, Ubuntu 20.04 2.31, RHEL 9 / Amazon Linux 2023 2.34) gets
-`glibc 2.31 is older than 2.35`, each with the source-install recipe. A glibc
-distro that merely has the `musl` package installed is not refused. All three
-need the source install below.
+Apple Silicon macOS and glibc ≥ 2.34 Linux (RHEL 9 / Amazon Linux 2023, Ubuntu
+22.04, Debian bookworm and newer) — `install.sh` is attached to every release,
+and `latest/download` resolves to the newest one. Those are the only prebuilt
+targets, and the installer refuses anything else before it downloads: an Intel
+Mac gets `no prebuilt comemory for …`, a musl distro such as Alpine (`gcompat`
+or not) gets `this is a musl system`, and an older glibc (Debian bullseye 2.31,
+Ubuntu 20.04 2.31) gets `glibc 2.31 is older than 2.34`, each with the
+source-install recipe. A glibc distro that merely has the `musl` package
+installed is not refused. All three need the source install below.
 
 ```bash
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
@@ -69,7 +69,7 @@ releases.
 
 The script is POSIX `sh` — it runs under dash, ash, bash, and zsh — so `| sh`
 is right on a glibc image that ships no bash. (Only gnu targets are published
-and only for glibc ≥ 2.35, so Alpine or an older-glibc base image needs the
+and only for glibc ≥ 2.34, so Alpine or an older-glibc base image needs the
 source install either way.)
 
 Scripting the install — a Dockerfile `RUN`, or any CI whose shell lacks
