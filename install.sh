@@ -29,6 +29,7 @@ set -eu
 APP=comemory
 REPO_URL=https://github.com/Falconiere/comemory
 RELEASES="${COMEMORY_RELEASES_URL:-$REPO_URL/releases}"
+SRC_HINT="build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
 VERSION="${COMEMORY_VERSION:-}"
 DIR="${COMEMORY_INSTALL_DIR:-}"
 MODIFY_PATH=1
@@ -100,13 +101,24 @@ detect_target() {
     Darwin:arm64)              TARGET=aarch64-apple-darwin;      PRETTY="macOS Apple Silicon" ;;
     Linux:x86_64)              TARGET=x86_64-unknown-linux-gnu;  PRETTY="Linux x86_64" ;;
     Linux:aarch64|Linux:arm64) TARGET=aarch64-unknown-linux-gnu; PRETTY="Linux aarch64" ;;
-    *) die "no prebuilt $APP for $os $arch" \
-         "build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh" ;;
+    *) die "no prebuilt $APP for $os $arch" "$SRC_HINT" ;;
   esac
-  if [ "$os" = Linux ] && ls /lib/ld-musl-* >/dev/null 2>&1; then
-    die "this is a musl system; only glibc (>= 2.35) Linux builds are published" \
-      "build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
-  fi
+  [ "$os" != Linux ] || detect_libc
+}
+
+# Refuse musl before downloading anything. Only glibc answers
+# GNU_LIBC_VERSION, whatever loader shims (Alpine's gcompat) sit at glibc's
+# paths; with no answer, the system shell's own ELF interpreter tells musl apart
+# from a glibc host that merely has Debian's `musl` package. Which glibc is new
+# enough is left to the downloaded binary's --version run: only each release's
+# binary knows the GLIBC_ version it needs, and a --version pin can pick any.
+detect_libc() {
+  glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
+  case "$glibc" in
+    "glibc "*) PRETTY="$PRETTY, $glibc" ;;
+    *) ! grep -q /lib/ld-musl- /bin/sh 2>/dev/null \
+        || die "this is a musl system; only glibc Linux builds are published" "$SRC_HINT" ;;
+  esac
 }
 
 # ---------------------------------------------------------- download ----
@@ -234,8 +246,10 @@ install_bin() {
   bin="$TMP/$APP-$TARGET/$APP"
   [ -f "$bin" ] || die "$ARCHIVE does not contain $APP-$TARGET/$APP"
   chmod 755 "$bin"
-  REPORTED="$("$bin" --version 2>&1)" || die "the downloaded binary does not run here: $REPORTED" \
-    "Linux builds need glibc >= 2.35; older distros need the source install"
+  if ! REPORTED="$("$bin" --version 2>&1)"; then
+    case "$REPORTED" in *GLIBC_*) why="this glibc is older than the GLIBC_ versions named above; " ;; *) why="" ;; esac
+    die "the downloaded binary does not run here: $REPORTED" "$why$SRC_HINT"
+  fi
   mkdir -p "$DIR" 2>/dev/null || die "cannot create $DIR" "re-run with --dir <a directory you can write to>"
   [ -w "$DIR" ] || die "cannot write to $DIR" "re-run with --dir <a directory you can write to>"
   lock_dir

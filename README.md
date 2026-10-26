@@ -90,7 +90,7 @@ layout, and edge graph.
 ## Install
 
 ```bash
-# One-liner (macOS aarch64 + Linux gnu, glibc >= 2.35 — the only prebuilt
+# One-liner (macOS aarch64 + Linux gnu, glibc >= 2.34 — the only prebuilt
 # targets; anything else needs the source install below). `install.sh` is
 # attached to every release; `latest/download` resolves to the newest one.
 # `--proto '=https'` binds the redirect too — curl(1) on --proto-redir:
@@ -113,12 +113,13 @@ git clone https://github.com/Falconiere/comemory && cd comemory
 bash scripts/dev-install.sh
 ```
 
-The installer detects the platform, resolves the newest release (or the one
-you pin with `--version`), downloads the archive with a progress bar,
-verifies it against the SHA-256 sidecar every release ships (`sha256sum`,
-`shasum -a 256`, or `openssl` — it refuses to install unverified), checks the
-binary actually runs on this machine (an old glibc fails here, with a
-message, not later), swaps it into place atomically, and adds the bin
+The installer detects the platform and refuses a musl libc before
+downloading anything, resolves the newest release (or the one you pin with
+`--version`), downloads the archive with a progress bar, verifies it against
+the SHA-256 sidecar every release ships (`sha256sum`, `shasum -a 256`, or
+`openssl` — it refuses to install unverified), checks the binary actually
+runs on this machine (an old glibc fails here, naming the `GLIBC_` version the
+build needs, not later), swaps it into place atomically, and adds the bin
 directory to your shell rc once, if it is not already on `PATH`. It also
 installs and registers Bash, Zsh, Fish, and PowerShell completions. Both steps
 are idempotent: a `comemory` already on `PATH` and the generated completions
@@ -188,7 +189,7 @@ lives in **[docs/build-perf.md](docs/build-perf.md)**.
 | Platform | Install |
 |---|---|
 | **macOS aarch64** (Apple Silicon) | Prebuilt: `brew install Falconiere/tap/comemory`, the shell installer above, or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
-| **Linux x86_64 / aarch64** (gnu, **glibc ≥ 2.35**) | Prebuilt: the shell installer above, `brew install Falconiere/tap/comemory` (Linuxbrew), or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
+| **Linux x86_64 / aarch64** (gnu, **glibc ≥ 2.34**) | Prebuilt: the shell installer above, `brew install Falconiere/tap/comemory` (Linuxbrew), or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
 | **Linux (other arch/libc, e.g. musl)** | Fork the repo and `cargo install --path .` |
 | **Windows** | Fork the repo and `cargo install --path .` |
 

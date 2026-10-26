@@ -324,7 +324,8 @@ marks the GitHub Release latest and updates the Homebrew tap.
 
 Requirements: an Apple Silicon Mac (`aarch64-apple-darwin` builds natively),
 Docker running (both Linux targets build in a local `ubuntu:22.04` + Rust
-1.95.0 image, the same glibc 2.35 floor cargo-dist's runners had; x86_64 runs
+1.95.0 image, the same glibc 2.35 build host cargo-dist's runners had, whose
+binaries need glibc 2.34; x86_64 runs
 emulated and is slow on a cold cache), a clean tree, an empty
 `## [Unreleased]`, and `gh api user` succeeding (`env -u GH_TOKEN` when the env
 token is stale).

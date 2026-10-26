@@ -104,7 +104,7 @@ comemory setup                  # detect + apply this machine's/repo's onboardin
 comemory completions --install  # install + register bash/zsh/fish/powershell completions
 just check                      # umbrella gate (alias of scripts/check-all.sh)
 just test                       # cargo nextest run --all-features
-just qa                         # check-all + cargo-deny + dup-check + machete
+just qa                         # check-all + cargo-deny + dup-check + machete + install.sh libc gate (docker)
 just e2e                        # real-binary end-to-end harness
 bash scripts/check-all.sh       # the umbrella gate (CI parity)
 bash scripts/guardrails/run.sh  # structure gate alone (file size, folder tree,
@@ -714,6 +714,11 @@ gate did not run, names pinned install command, and **exits 0**. So green
 `just qa` on machine without tool means "this gate was skipped, loudly",
 not "this gate passed" — CI is run that decides.
 
+`just qa` also runs `scripts/test-install-libc.sh` — `install.sh`'s libc gate
+on real distro images. It needs reachable docker daemon and network; missing
+daemon, or case whose image or packages cannot be fetched, follows same
+missing-tool rule (warn locally, fail under `$CI`). It is NOT `test.yml` step.
+
 Two of them assert that their tool ingested tree, because gate
 that reports success while checking nothing is this repo's recurring failure
 mode: `dup-check` parses `similarity-rs`'s `Checking N files` line and fails
@@ -734,7 +739,12 @@ reported all four of its checks.
   — repo-root `install.sh`, hand-written (POSIX sh, ≤ 300 code lines like
   every other file), attached to every release by `release-finalize.yml`
   (which also smoke-runs it against fresh release on Linux runner).
-  Platform detection, `latest` via release redirect, SHA-256 sidecar
+  Platform detection plus musl refusal before any download (glibc read from
+  `getconf GNU_LIBC_VERSION`, musl from `/bin/sh`'s ELF interpreter, never
+  from mere `/lib/ld-musl-*` presence; glibc version is left to `--version`
+  run, since only each release's binary knows `GLIBC_` it needs —
+  `scripts/test-install-libc.sh` runs gate on real distro images under
+  `just qa`), `latest` via release redirect, SHA-256 sidecar
   verification (never skipped), `--version` run of downloaded binary
   before atomic rename, in-place replacement of `comemory` already on
   `PATH`, once-only rc-file `PATH` line. It finishes by running just-placed

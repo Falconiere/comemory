@@ -265,7 +265,7 @@ fn help_and_unknown_option_exit_codes() {
 
 /// TEXT check: no supported CI host reaches `detect_target`'s unsupported
 /// branch without faking `uname`, so this reads install.sh's source instead
-/// of running it.
+/// of running it. Every refusal names the one `SRC_HINT`.
 #[test]
 fn unsupported_platform_hints_name_the_wrapper() {
     let text = std::fs::read_to_string(SCRIPT).unwrap();
@@ -273,9 +273,9 @@ fn unsupported_platform_hints_name_the_wrapper() {
         .lines()
         .filter(|l| l.contains("build from source"))
         .collect();
-    assert!(hints.len() >= 2, "{text}");
-    for hint in &hints {
-        assert!(hint.contains("bash scripts/dev-install.sh"), "{hint}");
-    }
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    let hint = hints[0];
+    assert!(hint.starts_with("SRC_HINT=\""), "{hint}");
+    assert!(hint.contains("bash scripts/dev-install.sh"), "{hint}");
     assert!(!text.contains("cargo install --path ."), "{text}");
 }
