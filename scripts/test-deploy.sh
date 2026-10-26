@@ -198,9 +198,13 @@ case_push() {
 }
 
 case_skill() {
-  local f="$ROOT/.toolu/skills/manual-deploy/SKILL.md" s
+  local f="$ROOT/.toolu/skills/deploy/SKILL.md" s
   [[ -f "$f" ]] || fail "missing $f"
-  grep -qx 'name: manual-deploy' "$f" || fail "frontmatter name"
+  grep -qx 'name: deploy' "$f" || fail "frontmatter name"
+  # Claude Code turns .claude/skills/<name> into /<name>; the link keeps one copy.
+  [[ "$(readlink "$ROOT/.claude/skills/deploy")" == ../../.toolu/skills/deploy ]] \
+    || fail ".claude/skills/deploy must link to ../../.toolu/skills/deploy"
+  [[ -f "$ROOT/.claude/skills/deploy/SKILL.md" ]] || fail ".claude/skills/deploy link is broken"
   grep -q '^description: Use when' "$f" || fail "description must start with 'Use when'"
   for s in '## When to Use' '## Procedure' '## Pitfalls' '## Verification'; do
     grep -qx "$s" "$f" || fail "missing section $s"

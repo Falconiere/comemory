@@ -1,5 +1,5 @@
 ---
-name: manual-deploy
+name: deploy
 description: Use when releasing, deploying or shipping a comemory version from this machine while GitHub Actions are disabled — runs scripts/deploy.sh to publish a stable vX.Y.Z.
 metadata:
   toolu:

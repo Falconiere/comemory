@@ -14,7 +14,7 @@
 
 > **GitHub Actions disabled?** Then a pushed tag builds nothing and the bot
 > never runs. Release from your Mac with `scripts/deploy.sh` instead (§3b);
-> agents load the `manual-deploy` project skill for it.
+> agents run it with `/deploy` (the `deploy` project skill).
 
 The release-plz bot (`.github/workflows/release-plz.yml`, config
 `release-plz.toml`) owns **version + CHANGELOG + tag**. cargo-dist owns
@@ -310,7 +310,8 @@ treats the RC tarball identically to a stable one.
 
 While every workflow is disabled, `scripts/deploy.sh` does locally what
 `release.yml` and `release-finalize.yml` did, for stable releases only (no
-pre-release or RC builds). Agents follow `.toolu/skills/manual-deploy/SKILL.md`.
+pre-release or RC builds). Agents follow `.toolu/skills/deploy/SKILL.md`;
+`.claude/skills/deploy` links to it, so Claude Code offers it as `/deploy`.
 
 ```bash
 bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"            # release
