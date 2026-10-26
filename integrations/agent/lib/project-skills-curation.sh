@@ -40,6 +40,8 @@ ps_curate() {
   for name in $(ps_list_skill_names "$dir"); do
     origin=$(jq -r --arg n "$name" '.[$n].origin // empty' <<<"$usage"); [ -n "$origin" ] || origin=$(ps_skill_origin "$dir/$name/SKILL.md"); [ "$origin" = agent ] || continue
     pinned=$(jq -r --arg n "$name" '.[$n].pinned // false' <<<"$usage"); [ "$pinned" != true ] || continue
+    # A .claude/skills/<name> link makes it a Claude Code slash command; Skill-tool loads are never counted as use.
+    [ "$(ps_realpath "$root/.claude/skills/$name")" != "$(ps_realpath "$dir/$name")" ] || continue
     ts=$(jq -r --arg n "$name" '.[$n].last_used_at // .[$n].first_seen_at // .[$n].created_at // empty' <<<"$usage"); [ -n "$ts" ] && [ "$ts" != null ] || continue; days=$(ps_idle_days "$ts")
     if ps_idle_at_least "$ts" "$PS_ARCHIVE"; then
       local use_count

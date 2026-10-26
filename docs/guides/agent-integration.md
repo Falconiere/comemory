@@ -206,8 +206,10 @@ values):
 
 Set `skills.comemory` to `false` to suppress integration context and project-skill
 hooks, or disable the plugin in the host. Set `projectSkills.enabled` to `false`
-to disable only the project-skill loop. The optional memory-count marker remains
-compatible with toolu's statusline.
+to disable only the project-skill loop. The curator never archives a project
+skill that a `.claude/skills/<name>` link exposes as a Claude Code slash command,
+because loading it as `/<name>` is not counted as use. The optional
+memory-count marker remains compatible with toolu's statusline.
 
 The `recall` section controls the prompt-time recall injection and Stop-time
 reminders described above, all defaulting on:

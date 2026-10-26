@@ -43,6 +43,6 @@ SessionStart injects at most 20 `- name: description` lines. To follow a procedu
 
 ## Curator
 
-A daily Stop hook archives agent-created skills idle 90 days (stale at 30). **Never deletes.** Marketplace `plugins/*/skills/` are never touched. `skills.sh pin` / `restore` / `adopt` / `status` / `curate --dry-run` for manual control.
+A daily Stop hook archives agent-created skills idle 90 days (stale at 30), except one a `.claude/skills/<name>` link exposes as a Claude Code slash command. **Never deletes.** Marketplace `plugins/*/skills/` are never touched. `skills.sh pin` / `restore` / `adopt` / `status` / `curate --dry-run` for manual control.
 
 Disable: `skills.comemory: false` (whole plugin) or `projectSkills.enabled: false`.
