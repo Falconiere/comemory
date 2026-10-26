@@ -70,7 +70,9 @@ deploy_push() {
   while IFS= read -r ref; do refs+=("$ref"); done < <(deploy_push_refs)
   git -C "$PROJECT_ROOT" tag -a "$DEPLOY_TAG" -m "$DEPLOY_TAG" "$DEPLOY_COMMIT" \
     || die deploy:push "cannot create tag $DEPLOY_TAG"
-  if ! git -C "$PROJECT_ROOT" push --atomic "$DEPLOY_REMOTE" "${refs[@]}"; then
+  # lefthook's pre-push check-all must lint on the CI-pinned toolchain; a newer
+  # default clippy rejects main and would refuse every release here.
+  if ! RUSTUP_TOOLCHAIN="$DEPLOY_RUST" git -C "$PROJECT_ROOT" push --atomic "$DEPLOY_REMOTE" "${refs[@]}"; then
     git -C "$PROJECT_ROOT" tag -d "$DEPLOY_TAG" >/dev/null
     die deploy:push "push rejected; nothing was published (local tag $DEPLOY_TAG removed)"
   fi
@@ -98,7 +100,8 @@ deploy_publish_tap() {
   gh repo clone "$DEPLOY_TAP" "$tmp/tap" -- --quiet --depth 1 \
     && cp "$DEPLOY_ASSETS/comemory.rb" "$tmp/tap/Formula/comemory.rb" \
     && git -C "$tmp/tap" commit --quiet -am "comemory $DEPLOY_VERSION" \
-    && git -C "$tmp/tap" push --quiet origin HEAD || rc=1
+    && git -C "$tmp/tap" -c credential.helper='!gh auth git-credential' push --quiet origin HEAD \
+    || rc=1
   rm -rf "$tmp"
   return "$rc"
 }
@@ -133,6 +136,16 @@ deploy_latest_is() {
   [[ "${final##*/}" == "$1" ]]
 }
 
+# GitHub's releases/latest redirect can trail a fresh release by a few seconds.
+deploy_wait_latest() {
+  local i
+  for i in 1 2 3 4 5 6; do
+    if deploy_latest_is "$1"; then return 0; fi
+    sleep "$((i * 5))"
+  done
+  return 1
+}
+
 deploy_publish() {
   local argv=() a url="https://github.com/$DEPLOY_REPO/releases/tag/$DEPLOY_TAG"
   deploy_push
@@ -142,7 +155,8 @@ deploy_publish() {
   deploy_publish_tap || deploy_published_failure \
     "Homebrew tap not updated; retry: copy $DEPLOY_ASSETS/comemory.rb to $DEPLOY_TAP Formula/ and push"
   log_ok deploy:tap "$DEPLOY_TAP → $DEPLOY_VERSION"
-  deploy_latest_is "$DEPLOY_TAG" || deploy_published_failure "releases/latest does not point at $DEPLOY_TAG"
+  deploy_wait_latest "$DEPLOY_TAG" \
+    || deploy_published_failure "releases/latest still does not point at $DEPLOY_TAG after ~2 minutes"
   deploy_smoke "$DEPLOY_TAG" || deploy_published_failure "smoke install of $DEPLOY_TAG failed"
   printf '%s\n' "$url"
 }

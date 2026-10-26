@@ -162,9 +162,18 @@ case_push() {
   git clone --quiet --bare "$c" "$bare"
   git -C "$c" remote set-url origin "$bare"; git -C "$c" fetch --quiet origin
   cur="$(version_of "$c")"; next="$(bumped "$cur" minor)"; later="$(bumped "$next" patch)"
+  # A real pre-push hook records the toolchain lefthook's check-all would lint with.
+  mkdir -p "$WORK/push-hooks"
+  printf '#!/bin/sh\nprintf "%%s\\n" "${RUSTUP_TOOLCHAIN:-unset}" >"%s"\n' "$WORK/push-toolchain" \
+    >"$WORK/push-hooks/pre-push"
+  chmod +x "$WORK/push-hooks/pre-push"
+  git -C "$c" config core.hooksPath "$WORK/push-hooks"
+  unset RUSTUP_TOOLCHAIN # the deploy must pin it itself, whatever the caller's shell has
   commit="$(DEPLOY_TAG="v$next" DEPLOY_NOTES=x in_lib "$c" \
     'trap deploy_cleanup EXIT; deploy_validate_args; deploy_prepare_bump >&2
      deploy_push >&2; printf "%s\n" "$DEPLOY_COMMIT"')" || fail "push failed"
+  [[ "$(cat "$WORK/push-toolchain")" == 1.95.0 ]] \
+    || fail "pre-push hook ran on toolchain '$(cat "$WORK/push-toolchain")', expected 1.95.0"
   [[ "$(git -C "$bare" rev-parse main)" == "$commit" ]] || fail "remote main is not the release commit"
   [[ "$(git -C "$bare" rev-parse "v$next^{commit}")" == "$commit" ]] || fail "remote tag missing"
   [[ "$(git -C "$c" rev-parse main)" == "$commit" ]] || fail "local main not fast-forwarded"

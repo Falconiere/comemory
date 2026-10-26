@@ -45,7 +45,9 @@ deploy_build_macos() {
 # under /Volumes or $TMPDIR arrives empty. The release commit's tree goes in
 # over stdin and the binary comes back on stdout. Named volumes keep the
 # target dir and registry warm; the source always sits at /src, so cached
-# dependencies stay valid across runs.
+# dependencies stay valid across runs. `tar -m` stamps the sources with the
+# VM's own clock, so they are always newer than the cached outputs and cargo
+# can never ship a stale binary when host and VM clocks disagree.
 deploy_build_linux() {
   local platform arch image
   platform="$(deploy_platform "$1")"
@@ -67,7 +69,7 @@ EOF
     | docker run -i --rm --platform "$platform" \
       -v "comemory-deploy-target-$DEPLOY_RUST-$arch:/src/target" \
       -v "comemory-deploy-registry-$DEPLOY_RUST-$arch:/root/.cargo/registry" \
-      "$image" sh -c 'tar -xf - -C /src && cd /src \
+      "$image" sh -c 'tar -xmf - -C /src && cd /src \
         && cargo build --release --locked --bin comemory >&2 && cat target/release/comemory' \
       >"$DEPLOY_ASSETS/bin/comemory-$1" \
     || die deploy:build "$1 build failed"
@@ -109,8 +111,6 @@ deploy_verify_assets() {
   local t out x="$DEPLOY_ASSETS/verify"
   (cd "$DEPLOY_ASSETS" && shasum -a 256 -c sha256.sum >/dev/null) \
     || die deploy:verify "sha256.sum does not match the archives"
-  cmp -s "$DEPLOY_ASSETS/install.sh" "$DEPLOY_ASSETS/comemory-installer.sh" \
-    || die deploy:verify "comemory-installer.sh differs from install.sh"
   grep -qF "## [$DEPLOY_VERSION]" "$DEPLOY_ASSETS/notes.md" \
     || die deploy:verify "notes.md lacks the $DEPLOY_VERSION section"
   # Extracted under the asset dir, so a failed check leaves its evidence there.

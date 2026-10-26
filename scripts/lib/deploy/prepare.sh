@@ -136,7 +136,7 @@ deploy_prepare_bump() {
   git -C "$PROJECT_ROOT" worktree add --quiet --detach "$DEPLOY_WORKTREE" HEAD \
     || die deploy:bump "cannot create a temp worktree"
   deploy_set_version "$DEPLOY_WORKTREE/Cargo.toml" "$DEPLOY_VERSION"
-  (cd "$DEPLOY_WORKTREE" && cargo update --workspace --offline --quiet) \
+  (cd "$DEPLOY_WORKTREE" && RUSTUP_TOOLCHAIN="$DEPLOY_RUST" cargo update --workspace --offline --quiet) \
     || die deploy:bump "cargo update --workspace failed"
   deploy_insert_changelog "$DEPLOY_WORKTREE/CHANGELOG.md" "$DEPLOY_VERSION" "$(date -u +%F)" "$DEPLOY_NOTES"
   git -C "$DEPLOY_WORKTREE" add Cargo.toml Cargo.lock CHANGELOG.md

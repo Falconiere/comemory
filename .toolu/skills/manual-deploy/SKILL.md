@@ -49,6 +49,9 @@ updated. Production releases only — there are no dev or RC builds.
   with the rollback commands; ask the user before running any of them, and
   never delete a tag or release on your own.
 - Do not bypass git hooks: lefthook pre-push runs `check-all.sh` on the push.
+  The script pushes with `RUSTUP_TOOLCHAIN=1.95.0`, CI's clippy pin, because a
+  newer default clippy rejects `main`. A push that exits 141 after that slow
+  hook did not land: the run exits 1, so re-run with the same tag.
 - Never re-use a tag, even a deleted one: pick the next patch.
 - The script refuses anything but `main` equal to `origin/main`; do not work
   around it with a branch named main.
