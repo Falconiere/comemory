@@ -40,8 +40,8 @@ deploy_stage_formula() {
 # deploy_release_argv — the `gh` arguments of the release, one per line.
 deploy_release_argv() {
   local t
-  printf '%s\n' release create "$DEPLOY_TAG" --verify-tag --title "$DEPLOY_TAG" \
-    --notes-file "$DEPLOY_ASSETS/notes.md" --latest
+  printf '%s\n' release create "$DEPLOY_TAG" --repo "$DEPLOY_REPO" --verify-tag \
+    --title "$DEPLOY_TAG" --notes-file "$DEPLOY_ASSETS/notes.md" --latest
   for t in "${DEPLOY_TARGETS[@]}"; do
     printf '%s\n' "$DEPLOY_ASSETS/comemory-$t.tar.xz" "$DEPLOY_ASSETS/comemory-$t.tar.xz.sha256"
   done
@@ -93,12 +93,14 @@ EOF
 }
 
 deploy_publish_tap() {
-  local tap
-  tap="$(mktemp -d)/homebrew-tap"
-  gh repo clone "$DEPLOY_TAP" "$tap" -- --quiet --depth 1 \
-    && cp "$DEPLOY_ASSETS/comemory.rb" "$tap/Formula/comemory.rb" \
-    && git -C "$tap" commit --quiet -am "comemory $DEPLOY_VERSION" \
-    && git -C "$tap" push --quiet origin HEAD
+  local tmp rc=0
+  tmp="$(mktemp -d)"
+  gh repo clone "$DEPLOY_TAP" "$tmp/tap" -- --quiet --depth 1 \
+    && cp "$DEPLOY_ASSETS/comemory.rb" "$tmp/tap/Formula/comemory.rb" \
+    && git -C "$tmp/tap" commit --quiet -am "comemory $DEPLOY_VERSION" \
+    && git -C "$tmp/tap" push --quiet origin HEAD || rc=1
+  rm -rf "$tmp"
+  return "$rc"
 }
 
 # deploy_smoke <tag> [dir] — install <tag> with the release's own install.sh
@@ -135,7 +137,7 @@ deploy_publish() {
   local argv=() a url="https://github.com/$DEPLOY_REPO/releases/tag/$DEPLOY_TAG"
   deploy_push
   while IFS= read -r a; do argv+=("$a"); done < <(deploy_release_argv)
-  (cd "$PROJECT_ROOT" && gh "${argv[@]}" >/dev/null) || deploy_published_failure "gh release create failed"
+  gh "${argv[@]}" >/dev/null || deploy_published_failure "gh release create failed"
   log_ok deploy:release "$url"
   deploy_publish_tap || deploy_published_failure \
     "Homebrew tap not updated; retry: copy $DEPLOY_ASSETS/comemory.rb to $DEPLOY_TAP Formula/ and push"

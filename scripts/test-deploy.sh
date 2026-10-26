@@ -179,7 +179,13 @@ case_push() {
   git -C "$c" rev-parse -q --verify "refs/tags/v$later" >/dev/null && fail "local tag kept after rejection"
   [[ "$(git -C "$c" rev-parse main)" == "$commit" ]] || fail "local main moved after rejection"
   git -C "$bare" rev-parse -q --verify "refs/tags/v$later" >/dev/null && fail "remote got the tag"
-  return 0
+  local rc=0
+  DEPLOY_TAG="v$next" in_lib "$c" 'deploy_published_failure "release create failed"' 2>"$WORK/err" || rc=$?
+  [[ $rc -eq 2 ]] || fail "a post-push failure exited $rc, expected 2"
+  for a in "release create failed" "gh release delete v$next --repo Falconiere/comemory --yes" \
+    "git push --delete origin v$next && git tag --delete v$next"; do
+    grep -qF -- "$a" "$WORK/err" || fail "rollback output lacks '$a'"
+  done
 }
 
 case_skill() {
@@ -196,7 +202,10 @@ case_skill() {
 }
 
 case_smoke() {
-  local d="$WORK/smoke"
+  local d="$WORK/smoke" latest
+  latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/Falconiere/comemory/releases/latest)"
+  in_lib "$ROOT" "deploy_latest_is '${latest##*/}'" || fail "deploy_latest_is rejects the real latest ${latest##*/}"
+  in_lib "$ROOT" "deploy_latest_is v0.0.0" && fail "deploy_latest_is accepted v0.0.0"
   in_lib "$ROOT" "deploy_smoke v0.57.1 '$d'" || fail "smoke of v0.57.1 failed"
   pgrep -f "$d/" >/dev/null && fail "a coordinator still runs for the smoke data dir"
   if in_lib "$ROOT" "deploy_smoke v0.0.0-none.1 '$WORK/smoke-none'" 2>"$WORK/err"; then
@@ -215,7 +224,7 @@ run_linux() {
 # check_archive <dir> <target> <version> — layout, checksum and `--version` of one archive.
 check_archive() {
   local dir="$1" t="$2" v="$3" x="$WORK/x-$2" listing out
-  listing="$(tar -tJf "$dir/comemory-$t.tar.xz" | sed 's#/$##' | sort | tr '\n' ' ')"
+  listing="$(tar -tJf "$dir/comemory-$t.tar.xz" | sed 's#/$##' | LC_ALL=C sort | tr '\n' ' ')"
   [[ "$listing" == "comemory-$t comemory-$t/CHANGELOG.md comemory-$t/LICENSE comemory-$t/README.md comemory-$t/comemory " ]] \
     || fail "$t archive layout: $listing"
   (cd "$dir" && shasum -a 256 -c "comemory-$t.tar.xz.sha256" >/dev/null) || fail "$t .sha256 mismatch"
@@ -232,12 +241,16 @@ case_rehearsal() {
   local c cur tag dir before after out argv t a
   c="$(fresh_clone rehearsal)"; cur="$(version_of "$c")"
   git -C "$c" checkout --quiet main
+  # A bare snapshot as origin: this checkout's own refs may move during the long build.
+  git clone --quiet --bare "$c" "$WORK/rehearsal-origin.git"
+  git -C "$c" remote set-url origin "$WORK/rehearsal-origin.git"
   tag="v$(bumped "$cur" minor)"; dir="$c/target/deploy/$tag"
   before="$(state "$c"; git -C "$c" ls-remote origin)"
   out="$(cd "$c" && bash "$DEPLOY" --tag "$tag" \
     --change-log $'### Changed\n\n- dry-run rehearsal' --dry-run)" || fail "dry run failed"
   after="$(state "$c"; git -C "$c" ls-remote origin)"
-  [[ "$before" == "$after" ]] || fail "dry run changed refs, files or the remote"
+  [[ "$before" == "$after" ]] \
+    || fail "dry run changed refs, files or the remote: $(diff <(echo "$before") <(echo "$after"))"
   [[ "$(worktrees "$c")" -eq 1 ]] || fail "temp worktree left behind"
   for t in "${TARGETS[@]}"; do check_archive "$dir" "$t" "${tag#v}"; done
   (cd "$dir" && shasum -a 256 -c sha256.sum >/dev/null) || fail "sha256.sum mismatch"
@@ -253,6 +266,7 @@ case_rehearsal() {
     grep -qF "$a" <<<"$out" || fail "dry run did not name the skipped '$a'"
   done
   argv="$(DEPLOY_TAG="$tag" DEPLOY_ASSETS="$dir" in_lib "$c" deploy_release_argv)"
+  grep -A1 -x -- --repo <<<"$argv" | grep -qx Falconiere/comemory || fail "release argv lacks --repo"
   for a in --verify-tag --notes-file --latest "$dir/sha256.sum" "$dir/install.sh" \
     "$dir/comemory-installer.sh" "$dir/comemory.rb" "${TARGETS[@]/#/$dir/comemory-}"; do
     grep -qF -- "$a" <<<"$argv" || fail "release argv lacks $a"

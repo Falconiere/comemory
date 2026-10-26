@@ -8,17 +8,19 @@
 
 DEPLOY_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEPLOY_REMOTE="${DEPLOY_REMOTE:-origin}"
+# The toolchain CI pins (clippy 1.95) and every release build uses.
+DEPLOY_RUST="1.95.0"
 
 # deploy_cargo_version <dir> — the [package] version (the first `version =`).
 deploy_cargo_version() {
   awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }' "$1/Cargo.toml"
 }
 
-# deploy_version_gt <a> <b> — true when X.Y.Z <a> is newer than <b>.
+# deploy_version_gt <a> <b> — true when X.Y.Z <a> is newer than <b>'s X.Y.Z part.
 deploy_version_gt() {
   local a b i
   IFS=. read -r -a a <<<"$1"
-  IFS=. read -r -a b <<<"$2"
+  IFS=. read -r -a b <<<"${2%%-*}"
   for i in 0 1 2; do
     if ((10#${a[i]} > 10#${b[i]})); then return 0; fi
     if ((10#${a[i]} < 10#${b[i]})); then return 1; fi
@@ -96,7 +98,7 @@ deploy_preflight() {
 deploy_run_gates() {
   log_info deploy:gates "running the full local gate set"
   (cd "$PROJECT_ROOT" \
-    && RUSTUP_TOOLCHAIN=1.95.0 bash scripts/check-all.sh \
+    && RUSTUP_TOOLCHAIN="$DEPLOY_RUST" bash scripts/check-all.sh \
     && cargo nextest run --all-features \
     && bash scripts/dup-check.sh \
     && bash scripts/deny-check.sh \
@@ -126,7 +128,7 @@ deploy_insert_changelog() {
 }
 
 # The bump commit is made in a detached temp worktree, so the caller's branch
-# only moves when a real prod push succeeds.
+# only moves when a real (non --dry-run) push succeeds.
 deploy_prepare_bump() {
   local wt
   wt="$(mktemp -d "${TMPDIR:-/tmp}/comemory-deploy.XXXXXX")"

@@ -2,15 +2,15 @@
 # scripts/lib/deploy/build.sh — build, package and verify the release archives
 # for scripts/deploy.sh. Sourced after prepare.sh; defines functions only.
 #
-# Builds from the bump commit's temp worktree (DEPLOY_WORKTREE) and writes
-# every asset to DEPLOY_ASSETS = <repo>/target/deploy/<tag>/.
+# macOS builds in the bump commit's temp worktree (DEPLOY_WORKTREE), Linux from
+# `git archive` of that commit (DEPLOY_COMMIT); every asset is written to
+# DEPLOY_ASSETS = <repo>/target/deploy/<tag>/.
 
 DEPLOY_TARGETS=(aarch64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu)
 # Linux builds run on ubuntu:22.04, the image cargo-dist's runners used, so the
 # glibc floor stays 2.35: older Debian images cannot link close_range (glibc
 # 2.34+, used by the sync daemon's spawn), bookworm would raise it to 2.36.
 DEPLOY_RUN_IMAGE="ubuntu:22.04"
-DEPLOY_RUST="1.95.0"
 
 # deploy_platform <target> — the Docker platform a Linux target builds and runs on.
 deploy_platform() {
@@ -35,7 +35,7 @@ deploy_build_all() {
 
 deploy_build_macos() {
   local cache="$PROJECT_ROOT/target/deploy-cache/macos"
-  (cd "$DEPLOY_WORKTREE" && RUSTUP_TOOLCHAIN=1.95.0 CARGO_TARGET_DIR="$cache" \
+  (cd "$DEPLOY_WORKTREE" && RUSTUP_TOOLCHAIN="$DEPLOY_RUST" CARGO_TARGET_DIR="$cache" \
     cargo build --release --locked --bin comemory --target "$1") \
     || die deploy:build "$1 build failed"
   cp "$cache/$1/release/comemory" "$DEPLOY_ASSETS/bin/comemory-$1"
@@ -106,14 +106,16 @@ deploy_binary_version() {
 }
 
 deploy_verify_assets() {
-  local t out x
+  local t out x="$DEPLOY_ASSETS/verify"
   (cd "$DEPLOY_ASSETS" && shasum -a 256 -c sha256.sum >/dev/null) \
     || die deploy:verify "sha256.sum does not match the archives"
   cmp -s "$DEPLOY_ASSETS/install.sh" "$DEPLOY_ASSETS/comemory-installer.sh" \
     || die deploy:verify "comemory-installer.sh differs from install.sh"
   grep -qF "## [$DEPLOY_VERSION]" "$DEPLOY_ASSETS/notes.md" \
     || die deploy:verify "notes.md lacks the $DEPLOY_VERSION section"
-  x="$(mktemp -d)"
+  # Extracted under the asset dir, so a failed check leaves its evidence there.
+  rm -rf "$x"
+  mkdir -p "$x"
   for t in "${DEPLOY_TARGETS[@]}"; do
     tar -xJf "$DEPLOY_ASSETS/comemory-$t.tar.xz" -C "$x" || die deploy:verify "$t archive does not extract"
     # stdout only: a first `docker run` also prints image-pull progress on stderr.
