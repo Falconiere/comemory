@@ -316,6 +316,7 @@ pre-release or RC builds). Agents follow `.toolu/skills/deploy/SKILL.md`;
 ```bash
 bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"            # release
 bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes" --dry-run  # rehearse
+bash scripts/deploy.sh --resume v0.58.0                               # finish after exit 2
 ```
 
 It runs from `main` equal to `origin/main`, runs the full local gate set
@@ -337,19 +338,30 @@ detached worktree → three builds → archives with cargo-dist's names and layo
 `.sha256` files, `sha256.sum`, `install.sh`, `comemory-installer.sh` (the name
 `get.comemory.io` still redirects to) → each binary checked with `--version`
 (Linux ones inside `ubuntu:22.04`) → `comemory.rb` rewritten from the tap's
-formula → push → `gh release create` → tap → `install.sh` smoke install into a
-temp dir. `--dry-run` skips the gates, stops before the push and prints the
-skipped commands; assets stay in `target/deploy/<tag>/`.
+formula → push → finish: the GitHub Release (created, or only its missing
+assets uploaded) → tap (skipped when already at the version) → `latest` mark
+→ `install.sh` smoke install into a temp dir. `--dry-run` skips the gates,
+stops before the push and prints the skipped commands; assets stay in
+`target/deploy/<tag>/`.
 
 Exit `1` means nothing was pushed. Exit `2` means the tag is public and a later
-step failed; the output ends with the §5 rollback commands, and the script
-never deletes anything itself. Not produced while Actions are off: the GHCR
-image, the minisign signature and `dist-manifest.json`.
+step failed; the output names `bash scripts/deploy.sh --resume vX.Y.Z`, which
+re-runs the same finish from the assets in `target/deploy/<tag>/`: it skips
+the gates, the bump and the builds, re-verifies the archives, and does only
+what is still missing. It refuses (exit 1, nothing written) unless the tag is
+the newest release tag on `origin`, on `origin/main`, with its asset directory
+intact, and stops (exit 2) when a release asset differs from the local file,
+so a release never mixes two builds. The script never deletes anything itself;
+§5's rollback is only for withdrawing a bad release. Not produced while
+Actions are off: the GHCR image, the minisign signature and
+`dist-manifest.json`.
 
 Self-check after editing the script: `bash scripts/test-deploy.sh` (offline
 cases), `bash scripts/test-deploy.sh rehearsal` (real builds through
-`--dry-run`) and `bash scripts/test-deploy.sh smoke` (installs the published
-v0.57.1).
+`--dry-run`), `bash scripts/test-deploy.sh smoke` (installs the published
+v0.57.1), `bash scripts/test-deploy.sh plan` (the release planner over the
+latest real release) and `bash scripts/test-deploy.sh resume` (a read-only
+`--resume` of the latest release; a guard fails the case on any GitHub write).
 
 ---
 
@@ -382,6 +394,11 @@ v0.57.1).
 ---
 
 ## 5. Rollback
+
+A local deploy that exited `2` is not a reason to roll back: the tag is good
+and only a later step failed, so finish it with `bash scripts/deploy.sh
+--resume vX.Y.Z` (§3b). Roll back only to withdraw a bad release — and pick
+the next patch for the fix, because a tag is never re-used.
 
 If a bad tag was pushed:
 

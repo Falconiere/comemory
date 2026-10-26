@@ -9,6 +9,8 @@
 #   args preflight bump formula push skill   fast, offline (the default set)
 #   rehearsal   real three-target build through `--dry-run` (Docker, slow)
 #   smoke       installs the already-published v0.57.1 release (network)
+#   plan        release planner over the latest real release (network, read-only)
+#   resume      `--resume` of the latest release; any GitHub write fails it (network, Docker)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEPLOY="$ROOT/scripts/deploy.sh"
@@ -20,59 +22,8 @@ trap 'rm -rf "$WORK"' EXIT
 if [[ -n "${GH_TOKEN:-}" ]] && ! gh api user >/dev/null 2>&1; then unset GH_TOKEN; fi
 CASE=""
 
-fail() { printf 'FAIL %s: %s\n' "$CASE" "$1" >&2; exit 1; }
-
-# fresh_clone <name> — a clone of this checkout with no git hooks; prints its path.
-fresh_clone() {
-  local dir="$WORK/$1"
-  git clone --quiet "$ROOT" "$dir"
-  mkdir -p "$WORK/no-hooks"
-  git -C "$dir" config core.hooksPath "$WORK/no-hooks"
-  git -C "$dir" config user.name deploy-test
-  git -C "$dir" config user.email deploy-test@example.invalid
-  git -C "$dir" config commit.gpgsign false
-  git -C "$dir" config tag.gpgsign false
-  printf '%s\n' "$dir"
-}
-
-# version_of <dir> — the [package] version in <dir>/Cargo.toml.
-version_of() { awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }' "$1/Cargo.toml"; }
-
-# bumped <version> <part> — next minor (part=minor) or patch (part=patch).
-bumped() {
-  local maj min pat
-  IFS=. read -r maj min pat <<<"$1"
-  if [[ "$2" == minor ]]; then printf '%s.%s.0\n' "$maj" "$((min + 1))"
-  else printf '%s.%s.%s\n' "$maj" "$min" "$((pat + 1))"; fi
-}
-
-# state <dir> — branch tips, tags and tracked-file status: what a refusal must not change.
-state() {
-  git -C "$1" for-each-ref --format='%(refname) %(objectname)' refs/heads refs/tags
-  git -C "$1" status --porcelain
-}
-
-# expect_refusal <dir> <exit> <message> <deploy args...>
-expect_refusal() {
-  local dir="$1" code="$2" msg="$3" before after err rc=0
-  shift 3
-  before="$(state "$dir")"
-  err="$(cd "$dir" && bash "$DEPLOY" "$@" 2>&1 >/dev/null)" || rc=$?
-  after="$(state "$dir")"
-  [[ $rc -eq $code ]] || fail "deploy $* exited $rc, expected $code: $err"
-  [[ "$err" == *"$msg"* ]] || fail "deploy $* said '$err', expected '$msg'"
-  [[ "$before" == "$after" ]] || fail "deploy $* changed refs or tracked files"
-}
-
-# in_lib <dir> <code> — run <code> with the deploy libraries loaded, cwd = <dir>.
-in_lib() {
-  (cd "$1" && bash -c 'set -euo pipefail
-    source "$0/lib/common.sh"
-    for f in "$0"/lib/deploy/*.sh; do source "$f"; done
-    eval "$1"' "$ROOT/scripts" "$2")
-}
-
-worktrees() { git -C "$1" worktree list --porcelain | grep -c '^worktree '; }
+# shellcheck source=scripts/lib/test_deploy.sh
+source "$ROOT/scripts/lib/test_deploy.sh"
 
 case_args() {
   local c cur next
@@ -85,6 +36,19 @@ case_args() {
   expect_refusal "$c" 1 "--change-log is empty" --tag "v$(bumped "$next" patch)" --change-log '  '
   expect_refusal "$c" 1 "v$cur is not newer than Cargo.toml's $cur" --tag "v$cur" --change-log x
   expect_refusal "$c" 1 "tag v$next already exists" --tag "v$next" --change-log x
+  # --resume: conflicts are usage errors; every preflight refusal writes nothing.
+  local tags newest older
+  tags="$(git -C "$c" ls-remote --tags --refs origin | sed 's#.*refs/tags/##' \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n)"
+  newest="$(tail -1 <<<"$tags")"; older="$(tail -2 <<<"$tags" | head -1)"
+  expect_refusal "$c" 64 "--resume needs a value" --resume
+  expect_refusal "$c" 64 "--resume excludes" --resume "$newest" --tag "v$next"
+  expect_refusal "$c" 64 "--resume excludes" --resume "$newest" --change-log x
+  expect_refusal "$c" 64 "--resume excludes" --dry-run --resume "$newest"
+  expect_refusal "$c" 1 "--resume needs a stable vX.Y.Z" --resume "$newest-rc.1"
+  expect_refusal "$c" 1 "v9.9.9 is not on origin" --resume v9.9.9
+  expect_refusal "$c" 1 "$older is not the newest release tag on origin ($newest is)" --resume "$older"
+  expect_refusal "$c" 1 "no target/deploy/$newest/" --resume "$newest"
 }
 
 case_preflight() {
@@ -156,7 +120,7 @@ case_formula() {
 }
 
 case_push() {
-  local c bare other cur next later commit
+  local c bare other cur next later commit out
   c="$(fresh_clone push)"; bare="$WORK/remote.git"
   git -C "$c" checkout --quiet main
   git clone --quiet --bare "$c" "$bare"
@@ -191,10 +155,13 @@ case_push() {
   local rc=0
   DEPLOY_TAG="v$next" in_lib "$c" 'deploy_published_failure "release create failed"' 2>"$WORK/err" || rc=$?
   [[ $rc -eq 2 ]] || fail "a post-push failure exited $rc, expected 2"
-  for a in "release create failed" "gh release delete v$next --repo Falconiere/comemory --yes" \
-    "git push --delete origin v$next && git tag --delete v$next"; do
-    grep -qF -- "$a" "$WORK/err" || fail "rollback output lacks '$a'"
-  done
+  in_order "$(cat "$WORK/err")" "release create failed" "bash scripts/deploy.sh --resume v$next" \
+    "gh release delete v$next --repo Falconiere/comemory --yes" \
+    "git push --delete origin v$next && git tag --delete v$next"
+  out="$(DEPLOY_TAG="v$next" DEPLOY_COMMIT="$commit" DEPLOY_ASSETS="$WORK/assets" \
+    in_lib "$c" deploy_print_skipped)" || fail "dry-run list failed"
+  in_order "$out" "git push --atomic origin" "--resume v$next" "gh release create v$next" \
+    "Homebrew tap" "releases/latest" "smoke: install.sh --version v$next"
 }
 
 case_skill() {
@@ -209,9 +176,53 @@ case_skill() {
   for s in '## When to Use' '## Procedure' '## Pitfalls' '## Verification'; do
     grep -qx "$s" "$f" || fail "missing section $s"
   done
-  for s in 'scripts/deploy.sh --tag' '--dry-run' 'env -u GH_TOKEN' 'git log'; do
+  for s in 'scripts/deploy.sh --tag' '--dry-run' '--resume vX.Y.Z' 'env -u GH_TOKEN' 'git log'; do
     grep -qF -- "$s" "$f" || fail "skill does not mention '$s'"
   done
+}
+
+case_plan() {
+  local tag dir rel="$WORK/release.json" out first
+  tag="$(latest_tag)"; dir="$WORK/assets/$tag"
+  fetch_release "$tag" "$dir" "$rel"
+  plan_for() { DEPLOY_TAG="$tag" DEPLOY_ASSETS="$dir" in_lib "$ROOT" "deploy_release_plan '$1'"; }
+  out="$(plan_for "$rel")" || fail "planning the complete $tag release failed"
+  [[ -z "$out" ]] || fail "the complete $tag release still planned: $out"
+  [[ "$(plan_for "")" == create ]] || fail "an absent release is not planned as create"
+  jq '.assets |= map(select(.name != "install.sh"))' "$rel" >"$WORK/missing.json"
+  [[ "$(plan_for "$WORK/missing.json")" == "upload $dir/install.sh" ]] || fail "missing asset not uploaded"
+  jq '(.assets[] | select(.name == "sha256.sum")).state = "new"' "$rel" >"$WORK/partial.json"
+  [[ "$(plan_for "$WORK/partial.json")" == "replace $dir/sha256.sum" ]] || fail "interrupted asset not replaced"
+  jq '.isDraft = true' "$rel" >"$WORK/draft.json"
+  plan_for "$WORK/draft.json" >/dev/null 2>&1 && fail "a draft release was planned"
+  first="comemory-${TARGETS[0]}.tar.xz"
+  printf x >>"$dir/$first"
+  if out="$(plan_for "$rel" 2>"$WORK/err")"; then fail "a tampered $first was planned: $out"; fi
+  [[ -z "$out" ]] || fail "actions printed before the digest refusal: $out"
+  grep -q digest "$WORK/err" && grep -qF "$first" "$WORK/err" || fail "refusal not named: $(cat "$WORK/err")"
+}
+
+# The clone fetches from GitHub but has no push URL, and a gh guard first on
+# PATH records and refuses every write, so a misjudged step fails this case
+# instead of publishing anything.
+case_resume() {
+  local c tag newest out real_gh guard="$WORK/guard"
+  tag="$(latest_tag)"; c="$(fresh_clone resume)"
+  git -C "$c" remote set-url origin https://github.com/Falconiere/comemory.git
+  git -C "$c" remote set-url --push origin "$WORK/no-push.git"
+  newest="$(in_lib "$c" 'deploy_newest_tag "$(git ls-remote --tags --refs origin)"')"
+  [[ "$newest" == "$tag" ]] \
+    || fail "releases/latest is $tag but the newest tag is $newest: a release is half-published"
+  fetch_release "$tag" "$c/target/deploy/$tag" "$WORK/release.json"
+  real_gh="$(command -v gh)"; mkdir -p "$guard"
+  printf '#!/bin/sh\ncase "$1 $2" in\n  "release create"|"release upload"|"release edit"|"repo clone")\n    printf "%%s\\n" "$*" >>"%s"; exit 1 ;;\nesac\nexec "%s" "$@"\n' \
+    "$WORK/gh-writes" "$real_gh" >"$guard/gh"
+  chmod +x "$guard/gh"
+  out="$(cd "$c" && PATH="$guard:$PATH" bash "$DEPLOY" --resume "$tag" 2>&1)" || fail "resume of $tag failed: $out"
+  [[ ! -e "$WORK/gh-writes" ]] || fail "resume attempted GitHub writes: $(cat "$WORK/gh-writes")"
+  in_order "$out" "[deploy:resume] OK $tag" "[deploy:release] OK already complete" \
+    "[deploy:tap] OK already at ${tag#v}" "[deploy:latest] OK $tag" "[deploy:smoke] OK $tag" \
+    "https://github.com/Falconiere/comemory/releases/tag/$tag"
 }
 
 case_smoke() {
@@ -225,29 +236,6 @@ case_smoke() {
     fail "smoke passed for an unpublished tag"
   fi
   grep -q "download" "$WORK/err" || fail "unpublished-tag failure not named: $(cat "$WORK/err")"
-}
-
-# run_linux <platform> <binary> — `<binary> --version` inside ubuntu:22.04; the
-# binary goes in over stdin because colima shares only $HOME with its VM.
-run_linux() {
-  docker run -i --rm --platform "$1" ubuntu:22.04 \
-    sh -c 'cat >/tmp/comemory && chmod +x /tmp/comemory && /tmp/comemory --version' <"$2"
-}
-
-# check_archive <dir> <target> <version> — layout, checksum and `--version` of one archive.
-check_archive() {
-  local dir="$1" t="$2" v="$3" x="$WORK/x-$2" listing out
-  listing="$(tar -tJf "$dir/comemory-$t.tar.xz" | sed 's#/$##' | LC_ALL=C sort | tr '\n' ' ')"
-  [[ "$listing" == "comemory-$t comemory-$t/CHANGELOG.md comemory-$t/LICENSE comemory-$t/README.md comemory-$t/comemory " ]] \
-    || fail "$t archive layout: $listing"
-  (cd "$dir" && shasum -a 256 -c "comemory-$t.tar.xz.sha256" >/dev/null) || fail "$t .sha256 mismatch"
-  mkdir -p "$x"; tar -xJf "$dir/comemory-$t.tar.xz" -C "$x"
-  case "$t" in
-    aarch64-apple-darwin) out="$("$x/comemory-$t/comemory" --version)" ;;
-    aarch64-*) out="$(run_linux linux/arm64 "$x/comemory-$t/comemory")" ;;
-    x86_64-*) out="$(run_linux linux/amd64 "$x/comemory-$t/comemory")" ;;
-  esac
-  [[ "$out" == "comemory $v" ]] || fail "$t binary reports '$out'"
 }
 
 case_rehearsal() {

@@ -55,9 +55,14 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
 
 - Exit `1` means nothing was pushed: read the `[deploy:<phase>] FAIL` line, fix,
   and re-run with the same tag.
-- Exit `2` means the tag is public but a later step failed. The output ends
-  with the rollback commands; ask the user before running any of them, and
-  never delete a tag or release on your own.
+- Exit `2` means the tag is public but a later step failed. Fix the cause the
+  `[deploy:publish] FAIL` line names, then finish with `bash scripts/deploy.sh
+  --resume vX.Y.Z` from the same checkout: it reuses `target/deploy/vX.Y.Z/`
+  and skips every step already done. It stops when a release asset differs
+  from the local file; report that to the user instead of replacing it. The
+  rollback commands at the end are only for withdrawing a bad release: ask the
+  user before running any of them, and never delete a tag or release on your
+  own.
 - Do not bypass git hooks: lefthook pre-push runs `check-all.sh` on the push.
   The script pushes with `RUSTUP_TOOLCHAIN=1.95.0`, CI's clippy pin, because a
   newer default clippy rejects `main`. A push that exits 141 after that slow
@@ -81,6 +86,6 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
 - The script's own smoke step already installed the release through its
   `install.sh` into a temp dir; its `[deploy:smoke] OK` line is the evidence.
 - After changing the script itself: `bash scripts/test-deploy.sh` (fast cases)
-  and `bash scripts/test-deploy.sh rehearsal smoke`.
+  and `bash scripts/test-deploy.sh rehearsal smoke plan resume`.
 - After changing this skill or its `.claude/skills/deploy` link (what makes it
   `/deploy`): `bash scripts/test-deploy.sh skill`.
