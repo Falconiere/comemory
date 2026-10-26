@@ -27,6 +27,8 @@ deploy_build_all() {
   DEPLOY_ASSETS="$PROJECT_ROOT/target/deploy/$DEPLOY_TAG"
   rm -rf "${DEPLOY_ASSETS:?}"
   mkdir -p "$DEPLOY_ASSETS/bin"
+  # --resume compares this with the pushed tag, so a dry run's build is never published.
+  printf '%s\n' "$DEPLOY_COMMIT" >"$DEPLOY_ASSETS/commit"
   log_info deploy:build aarch64-apple-darwin
   deploy_build_macos aarch64-apple-darwin
   log_ok deploy:build aarch64-apple-darwin

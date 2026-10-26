@@ -111,9 +111,9 @@ deploy_run_gates() {
   (cd "$PROJECT_ROOT" \
     && deploy_with_rust bash scripts/check-all.sh \
     && deploy_with_rust cargo nextest run --all-features \
-    && bash scripts/dup-check.sh \
-    && bash scripts/deny-check.sh \
-    && bash scripts/machete-check.sh) \
+    && deploy_with_rust bash scripts/dup-check.sh \
+    && deploy_with_rust bash scripts/deny-check.sh \
+    && deploy_with_rust bash scripts/machete-check.sh) \
     || die deploy:gates "a quality gate failed; nothing was released"
   log_ok deploy:gates
 }

@@ -363,8 +363,9 @@ re-runs the same finish from the assets in `target/deploy/<tag>/`: it skips
 the gates, the bump and the builds, re-verifies the archives, and does only
 what is still missing. It refuses (exit 1, nothing written) unless the tag is
 the newest release tag on `origin`, on `origin/main`, with its asset directory
-intact, and stops (exit 2) when a release asset differs from the local file,
-so a release never mixes two builds. The script never deletes anything itself;
+intact and built from that tag's commit (its `commit` file; a `--dry-run`'s
+build never matches), and stops (exit 2) when a release asset differs from
+the local file, so a release never mixes two builds. The script never deletes anything itself;
 §5's rollback is only for withdrawing a bad release. Not produced while
 Actions are off: the GHCR image, the minisign signature and
 `dist-manifest.json`.

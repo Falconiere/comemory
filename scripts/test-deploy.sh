@@ -50,6 +50,8 @@ case_args() {
   expect_refusal "$c" 1 "v9.9.9 is not on origin" --resume v9.9.9
   expect_refusal "$c" 1 "$older is not the newest release tag on origin ($newest is)" --resume "$older"
   expect_refusal "$c" 1 "no target/deploy/$newest/" --resume "$newest"
+  mkdir -p "$c/target/deploy/$newest"; printf 'deadbeef\n' >"$c/target/deploy/$newest/commit"
+  expect_refusal "$c" 1 "target/deploy/$newest/ was not built from $newest's commit" --resume "$newest"
 }
 
 case_preflight() {
@@ -221,9 +223,10 @@ case_plan() {
   [[ "$(plan_for "$WORK/partial.json")" == "upload $dir/sha256.sum" ]] || fail "half-uploaded asset not re-uploaded"
   jq '.isDraft = true' "$rel" >"$WORK/draft.json"
   plan_for "$WORK/draft.json" >/dev/null 2>&1 && fail "a draft release was planned"
-  first="comemory-${TARGETS[0]}.tar.xz"
+  # The last asset checked, behind install.sh's pending upload, so a streamed action would show.
+  first="comemory.rb"
   printf x >>"$dir/$first"
-  if out="$(plan_for "$rel" 2>"$WORK/err")"; then fail "a tampered $first was planned: $out"; fi
+  if out="$(plan_for "$WORK/missing.json" 2>"$WORK/err")"; then fail "a tampered $first was planned: $out"; fi
   [[ -z "$out" ]] || fail "actions printed before the digest refusal: $out"
   grep -q digest "$WORK/err" && grep -qF "$first" "$WORK/err" || fail "refusal not named: $(cat "$WORK/err")"
 }
@@ -240,6 +243,7 @@ case_resume() {
   [[ "$newest" == "$tag" ]] \
     || fail "releases/latest is $tag but the newest tag is $newest: a release is half-published"
   fetch_release "$tag" "$c/target/deploy/$tag" "$WORK/release.json"
+  git -C "$c" rev-parse "$tag^{commit}" >"$c/target/deploy/$tag/commit"
   real_gh="$(command -v gh)"; mkdir -p "$guard"
   printf '#!/bin/sh\ncase "$1 $2" in\n  "release create"|"release upload"|"release edit"|"repo clone")\n    printf "%%s\\n" "$*" >>"%s"; exit 1 ;;\nesac\nexec "%s" "$@"\n' \
     "$WORK/gh-writes" "$real_gh" >"$guard/gh"
@@ -253,8 +257,8 @@ case_resume() {
 
 case_smoke() {
   local d="$WORK/smoke" latest
-  latest="$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/Falconiere/comemory/releases/latest)"
-  in_lib "$ROOT" "deploy_latest_is '${latest##*/}'" || fail "deploy_latest_is rejects the real latest ${latest##*/}"
+  latest="$(latest_tag)"
+  in_lib "$ROOT" "deploy_latest_is '$latest'" || fail "deploy_latest_is rejects the real latest $latest"
   in_lib "$ROOT" "deploy_latest_is v0.0.0" && fail "deploy_latest_is accepted v0.0.0"
   in_lib "$ROOT" "deploy_smoke v0.57.1 '$d'" || fail "smoke of v0.57.1 failed"
   pgrep -f "$d/" >/dev/null && fail "a coordinator still runs for the smoke data dir"

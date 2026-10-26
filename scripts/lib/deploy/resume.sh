@@ -59,6 +59,8 @@ deploy_resume_preflight() {
   DEPLOY_ASSETS="$root/target/deploy/$DEPLOY_TAG"
   [[ -d "$DEPLOY_ASSETS" ]] \
     || die deploy:resume "no target/deploy/$DEPLOY_TAG/ from the failed run; resume reuses its assets and never rebuilds"
+  [[ "$(cat "$DEPLOY_ASSETS/commit" 2>/dev/null)" == "$commit" ]] \
+    || die deploy:resume "target/deploy/$DEPLOY_TAG/ was not built from $DEPLOY_TAG's commit ${commit:0:12} (a --dry-run or another checkout's build)"
   deploy_require_gh
   docker info >/dev/null 2>&1 || die deploy:resume "docker daemon not reachable; the Linux binaries are checked in it"
   deploy_verify_assets
