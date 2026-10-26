@@ -67,7 +67,7 @@ run_case() {
 
 # The newest GLIBC_ version each latest-release Linux binary references.
 check_floor() {
-  local out
+  local out got
   out="$(docker run --rm alpine:3.20 sh -c 'apk add -q --no-cache curl xz >/dev/null || exit 99
     for t in x86_64 aarch64; do
       d="comemory-$t-unknown-linux-gnu"
@@ -75,7 +75,9 @@ check_floor() {
         | grep -ao "GLIBC_2\.[0-9]*" | sed "s/GLIBC_//" | sort -t. -k2 -n | tail -n 1)"
       echo "$t ${v:-unreadable}"
     done' sh "https://github.com/Falconiere/comemory/releases/latest/download" 2>&1)" || true
-  if [[ "$out" == "x86_64 $FLOOR"$'\n'"aarch64 $FLOOR" ]]; then
+  # Only the per-target lines: docker's own pull progress shares the stream.
+  got="$(printf '%s\n' "$out" | grep -E '^(x86_64|aarch64) ' || true)"
+  if [[ "$got" == "x86_64 $FLOOR"$'\n'"aarch64 $FLOOR" ]]; then
     log_ok "$NAME" "GLIBC_MIN $FLOOR matches the latest release's binaries"
   else
     log_err "$NAME" "GLIBC_MIN $FLOOR in install.sh, but the latest release needs:"

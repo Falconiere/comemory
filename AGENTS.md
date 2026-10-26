@@ -714,6 +714,11 @@ gate did not run, names pinned install command, and **exits 0**. So green
 `just qa` on machine without tool means "this gate was skipped, loudly",
 not "this gate passed" — CI is run that decides.
 
+`just qa` also runs `scripts/test-install-libc.sh` — `install.sh`'s libc gate
+on real distro images, plus `GLIBC_MIN` held against latest release. It needs
+reachable docker daemon and network, follows same missing-tool rule (warn
+and exit 0 locally, fail under `$CI`), and is NOT `test.yml` step.
+
 Two of them assert that their tool ingested tree, because gate
 that reports success while checking nothing is this repo's recurring failure
 mode: `dup-check` parses `similarity-rs`'s `Checking N files` line and fails
