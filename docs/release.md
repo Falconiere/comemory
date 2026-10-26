@@ -308,16 +308,26 @@ treats the RC tarball identically to a stable one.
 
 ## 3b. Local deploy (Actions disabled)
 
-While every workflow is disabled, `scripts/deploy.sh` does locally what
-`release.yml` and `release-finalize.yml` did, for stable releases only (no
-pre-release or RC builds). Agents follow `.toolu/skills/deploy/SKILL.md`;
-`.claude/skills/deploy` links to it, so Claude Code offers it as `/deploy`.
+While every workflow is disabled, `scripts/deploy.sh` does locally what the
+release-plz bot, `release.yml` and `release-finalize.yml` did, for stable
+releases only (no pre-release or RC builds). Agents follow
+`.toolu/skills/deploy/SKILL.md`; `.claude/skills/deploy` links to it, so
+Claude Code offers it as `/deploy`.
 
 ```bash
-bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"            # release
-bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes" --dry-run  # rehearse
-bash scripts/deploy.sh --resume v0.58.0                               # finish after exit 2
+bash scripts/deploy.sh --dry-run          # rehearse: prints the computed tag and notes
+bash scripts/deploy.sh --tag v0.58.0      # release, asserting the rehearsed tag
+bash scripts/deploy.sh --resume v0.58.0   # finish after exit 2
 ```
+
+The version and the CHANGELOG section come from `release-plz update`, the
+pinned 0.3.169 that `.github/workflows/release-plz.yml` names, so they match
+what the bot's release PRs wrote: same `release-plz.toml` commit parsers and
+`release_commits` gate, and the same version rule (on 0.x a `feat:` is a
+patch; cargo-semver-checks reporting an incompatible library API, or a
+breaking `!`, makes it minor). PR links render from `origin`'s GitHub URL, as
+in CI. `--tag` is optional and only asserts the computed version; a run
+whose commits render no changelog line refuses with "nothing to release".
 
 It runs from `main` equal to `origin/main`, runs the full local gate set
 (check-all, nextest, dup-check, deny-check, machete-check, all on the pinned
@@ -327,7 +337,9 @@ tap.
 
 Requirements: an Apple Silicon Mac (`aarch64-apple-darwin` builds natively),
 the pinned Rust (1.99.1, `DEPLOY_RUST` in `scripts/lib/deploy/prepare.sh`)
-installed through rustup, Docker running, a clean tree, an empty
+installed through rustup, `release-plz` 0.3.169 and `cargo-semver-checks`
+0.51.0 (`cargo install --locked <tool> --version <v>`; preflight names the
+command), Docker running, a clean tree, an empty
 `## [Unreleased]`, and `gh api user` succeeding (`env -u GH_TOKEN` when the
 env token is stale). The pin is the latest stable Rust when chosen; moving it
 means updating `DEPLOY_RUST`, the workflows' `toolchain:`, the `Dockerfile`,
@@ -345,9 +357,11 @@ colima's Rosetta and 189 s cross-compiled (2026-10-26). Every cargo call
 toolchain's own `bin` first on `PATH`: `RUSTUP_TOOLCHAIN` alone does nothing
 when a Homebrew `cargo` comes first, as it does here.
 
-Order of work: arguments → preflight → gates → bump commit (`Cargo.toml`,
-`Cargo.lock`, the `--change-log` text as the new CHANGELOG section) in a temp
-detached worktree → three builds → archives with cargo-dist's names and layout,
+Order of work: arguments → preflight → bump commit (`release-plz update` in a
+temp detached worktree; only `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md` may
+change) → gates (after the bump, so "nothing to release" refuses in about
+90 s instead of after them) → three builds → archives with cargo-dist's names
+and layout,
 `.sha256` files, `sha256.sum`, `install.sh`, `comemory-installer.sh` (the name
 `get.comemory.io` still redirects to) → each binary checked with `--version`
 (Linux ones inside `ubuntu:22.04`) → `comemory.rb` rewritten from the tap's

@@ -7,7 +7,8 @@
 # Uncommitted work never reaches the clone.
 #
 # Usage: bash scripts/test-deploy.sh [case...]
-#   args preflight bump formula push skill toolchain   fast, offline (the default set)
+#   args preflight bump formula push skill toolchain   offline (the default set);
+#               bump and push run the real release-plz (~90 s a run), the rest are fast
 #   rehearsal   real three-target build through `--dry-run` (Docker, slow)
 #   smoke       installs the already-published v0.57.1 release (network)
 #   plan        release planner over the latest real release (network, read-only)
@@ -27,24 +28,20 @@ CASE=""
 source "$ROOT/scripts/lib/test_deploy.sh"
 
 case_args() {
-  local c cur next
-  c="$(fresh_clone args)"; cur="$(version_of "$c")"; next="$(bumped "$cur" minor)"
-  git -C "$c" tag -a -m existing "v$next"
-  expect_refusal "$c" 64 "unknown argument: --env" --env prod --tag "v$next" --change-log x
+  local c
+  c="$(fresh_clone args)"
+  expect_refusal "$c" 64 "unknown argument: --env" --env prod
+  # The CHANGELOG section comes from release-plz now; hand-written notes are gone.
+  expect_refusal "$c" 64 "unknown argument: --change-log" --change-log x
   expect_refusal "$c" 64 "--tag needs a value" --tag
-  expect_refusal "$c" 1 "--tag needs a stable vX.Y.Z" --change-log x
-  expect_refusal "$c" 1 "--tag needs a stable vX.Y.Z" --tag "v$next-rc.1" --change-log x
-  expect_refusal "$c" 1 "--change-log is empty" --tag "v$(bumped "$next" patch)" --change-log '  '
-  expect_refusal "$c" 1 "v$cur is not newer than Cargo.toml's $cur" --tag "v$cur" --change-log x
-  expect_refusal "$c" 1 "tag v$next already exists" --tag "v$next" --change-log x
+  expect_refusal "$c" 1 "--tag needs a stable vX.Y.Z" --tag v9.9.9-rc.1
   # --resume: conflicts are usage errors; every preflight refusal writes nothing.
   local tags newest older
   tags="$(git -C "$c" ls-remote --tags --refs origin | sed 's#.*refs/tags/##' \
     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n)"
   newest="$(tail -1 <<<"$tags")"; older="$(tail -2 <<<"$tags" | head -1)"
   expect_refusal "$c" 64 "--resume needs a value" --resume
-  expect_refusal "$c" 64 "--resume excludes" --resume "$newest" --tag "v$next"
-  expect_refusal "$c" 64 "--resume excludes" --resume "$newest" --change-log x
+  expect_refusal "$c" 64 "--resume excludes" --resume "$newest" --tag v9.9.9
   expect_refusal "$c" 64 "--resume excludes" --dry-run --resume "$newest"
   expect_refusal "$c" 1 "--resume needs a stable vX.Y.Z" --resume "$newest-rc.1"
   expect_refusal "$c" 1 "v9.9.9 is not on origin" --resume v9.9.9
@@ -55,50 +52,87 @@ case_args() {
 }
 
 case_preflight() {
-  local c next
-  c="$(fresh_clone preflight)"; next="$(bumped "$(version_of "$c")" minor)"
+  local c stub="$WORK/stub-bin"
+  c="$(fresh_clone preflight)"
+  git -C "$c" checkout --quiet main
+  # Each bump tool at another version is refused with its pinned install command
+  # (a controlled tool failure: the stub only reports a version).
+  mkdir -p "$stub"
+  printf '#!/bin/sh\necho "release-plz 0.4.0"\n' >"$stub/release-plz"; chmod +x "$stub/release-plz"
+  PATH="$stub:$PATH" expect_refusal "$c" 1 "cargo install --locked release-plz --version 0.3.169"
+  rm "$stub/release-plz"
+  printf '#!/bin/sh\necho "cargo-semver-checks 0.50.0"\n' >"$stub/cargo-semver-checks"
+  chmod +x "$stub/cargo-semver-checks"
+  PATH="$stub:$PATH" expect_refusal "$c" 1 "cargo install --locked cargo-semver-checks --version 0.51.0"
   git -C "$c" checkout --quiet -b feature
-  expect_refusal "$c" 1 "releases come from main" --tag "v$next" --change-log x
+  expect_refusal "$c" 1 "releases come from main"
   git -C "$c" checkout --quiet main
   printf '\n' >>"$c/README.md"
-  expect_refusal "$c" 1 "tracked files are modified" --tag "v$next" --change-log x
+  expect_refusal "$c" 1 "tracked files are modified"
   git -C "$c" checkout --quiet -- README.md
   git -C "$c" commit --quiet --allow-empty -m "local only"
-  expect_refusal "$c" 1 "main is not equal to origin/main" --tag "v$next" --change-log x
+  expect_refusal "$c" 1 "main is not equal to origin/main"
   awk '{ print } /^## \[Unreleased\]/ { print ""; print "- pending entry" }' "$c/CHANGELOG.md" >"$WORK/cl"
   mv "$WORK/cl" "$c/CHANGELOG.md"
   git -C "$c" commit --quiet -am "unreleased entry"
-  expect_refusal "$c" 1 "[Unreleased] has entries" --tag "v$next" --change-log x
+  expect_refusal "$c" 1 "[Unreleased] has entries"
 }
 
+# Real release-plz runs (about 90 s each, semver-checks included): the bump,
+# release-plz itself as the oracle, and the refusals.
 case_bump() {
-  local c cur next head commit day added want hooks
-  c="$(fresh_clone bump)"; cur="$(version_of "$c")"; next="$(bumped "$cur" minor)"
-  head="$(git -C "$c" rev-parse HEAD)"; day="$(date -u +%F)"
-  commit="$(DEPLOY_TAG="v$next" DEPLOY_NOTES=$'### Added\n\n- a thing\n' \
-    in_lib "$c" 'trap deploy_cleanup EXIT; deploy_validate_args
-      deploy_prepare_bump >&2; printf "%s\n" "$DEPLOY_COMMIT"')" || fail "bump failed"
+  local c o head out tag commit last pr rc=0
+  c="$(fresh_clone bump)"; head="$(git -C "$c" rev-parse HEAD)"; github_origin "$c"
+  out="$(in_lib "$c" 'trap deploy_cleanup EXIT; deploy_validate_args
+      deploy_prepare_bump >&2; printf "%s %s\n" "$DEPLOY_TAG" "$DEPLOY_COMMIT"')" || fail "bump failed"
+  tag="${out% *}"; commit="${out#* }"
   [[ "$(git -C "$c" rev-parse HEAD)" == "$head" ]] || fail "caller branch moved"
   [[ "$(worktrees "$c")" -eq 1 ]] || fail "temp worktree left behind"
-  [[ "$(git -C "$c" show "$commit:Cargo.toml" | awk -F'"' '/^version/ { print $2; exit }')" \
-    == "$next" ]] || fail "Cargo.toml not bumped"
-  git -C "$c" show "$commit:Cargo.lock" | awk '/^name = "comemory"$/ { getline; print }' \
-    | grep -qx "version = \"$next\"" || fail "Cargo.lock not bumped"
-  [[ "$(git -C "$c" show "$commit:CHANGELOG.md" | awk '/^## \[/ { if (++n == 2) { print; exit } }')" \
-    == "## [$next] - $day" ]] || fail "new section is not first under [Unreleased]"
-  git -C "$c" diff --unified=0 "$head" "$commit" -- CHANGELOG.md | grep -q '^-[^-]' \
-    && fail "existing CHANGELOG lines changed"
-  added="$(git -C "$c" diff --unified=0 "$head" "$commit" -- CHANGELOG.md \
-    | sed -n 's/^+//p' | grep -v '^++ ' | sort)"
-  want="$(printf '\n## [%s] - %s\n\n### Added\n\n- a thing\n' "$next" "$day" | sort)"
-  [[ "$added" == "$want" ]] || fail "CHANGELOG insertion differs: $added"
-  hooks="$WORK/failing-hooks"; mkdir -p "$hooks"
-  printf '#!/bin/sh\nexit 1\n' >"$hooks/pre-commit"; chmod +x "$hooks/pre-commit"
-  git -C "$c" config core.hooksPath "$hooks"
-  if DEPLOY_TAG="v$(bumped "$next" patch)" DEPLOY_NOTES=x in_lib "$c" \
-    'trap deploy_cleanup EXIT; deploy_validate_args; deploy_prepare_bump' 2>/dev/null; then
-    fail "bump succeeded despite a refusing pre-commit hook"
+  [[ "$(git -C "$c" show --format=%s -s "$commit")" == "chore(release): $tag" ]] || fail "release commit subject"
+  # Oracle: release-plz itself, run by hand in a second clone of the same commit.
+  o="$(fresh_clone bump-oracle)"; github_origin "$o"
+  in_lib "$o" 'deploy_with_rust release-plz update' >/dev/null 2>&1 || fail "the oracle release-plz run failed"
+  [[ "v$(version_of "$o")" == "$tag" ]] || fail "bump computed $tag, release-plz $(version_of "$o")"
+  diff <(git -C "$c" show "$commit:CHANGELOG.md") "$o/CHANGELOG.md" >&2 || fail "CHANGELOG differs from release-plz's"
+  diff <(git -C "$c" show "$commit:Cargo.lock") "$o/Cargo.lock" >/dev/null || fail "Cargo.lock differs from release-plz's"
+  # Independent of the tool: the newest rendered "(#N)" commit since the last tag
+  # appears with its full link, which release-plz builds from origin's GitHub URL.
+  last="$(git -C "$c" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*')"
+  pr="$(git -C "$c" log --format=%s "$last..$head" \
+    | grep -E '^(feat|fix|perf|refactor)(\(.+\))?!?: .*\(#[0-9]+\)$' | head -1 | grep -oE '[0-9]+\)$' | tr -d ')')" || pr=""
+  if [[ -n "$pr" ]]; then
+    # Read it whole first: grep -q closing a pipe early would SIGPIPE git under pipefail.
+    out="$(git -C "$c" show "$commit:CHANGELOG.md")"
+    grep -qF "([#$pr](https://github.com/Falconiere/comemory/pull/$pr))" <<<"$out" \
+      || fail "#$pr has no PR link in the new section"
+  else
+    printf 'note: no rendered (#N) commit since %s; the PR-link check did not run\n' "$last" >&2
   fi
+  # --tag asserts the computed version.
+  DEPLOY_TAG=v9.9.9 in_lib "$c" 'trap deploy_cleanup EXIT; deploy_prepare_bump' 2>"$WORK/err" >/dev/null || rc=$?
+  [[ $rc -eq 1 ]] && grep -qF "release-plz computes $tag, not the asserted v9.9.9" "$WORK/err" \
+    || fail "an asserted tag that differs was not refused ($rc): $(tail -3 "$WORK/err")"
+  # A tag that exists already is refused (a unit check: no release-plz run).
+  git -C "$c" tag -a -m existing v9.9.8
+  rc=0; DEPLOY_TAG=v9.9.8 in_lib "$c" deploy_check_new_tag 2>"$WORK/err" || rc=$?
+  [[ $rc -eq 1 ]] && grep -qF "tag v9.9.8 already exists locally" "$WORK/err" || fail "existing tag not refused"
+  # release-plz would take this fake tag as the latest release, so it goes now.
+  git -C "$c" tag -d v9.9.8 >/dev/null
+  # Only a docs: commit since the last tag: nothing to release.
+  git -C "$c" checkout --quiet --detach "$last"
+  git -C "$c" commit --quiet --allow-empty -m "docs: a note nobody releases"
+  rc=0; in_lib "$c" 'trap deploy_cleanup EXIT; deploy_prepare_bump' 2>"$WORK/err" >/dev/null || rc=$?
+  [[ $rc -eq 1 ]] && grep -qF "nothing to release" "$WORK/err" \
+    || fail "a docs-only history was released ($rc): $(tail -3 "$WORK/err")"
+  [[ "$(worktrees "$c")" -eq 1 ]] || fail "temp worktree left after nothing-to-release"
+  # A pre-commit hook refusing the release commit leaves nothing behind.
+  git -C "$c" checkout --quiet --detach "$head"
+  mkdir -p "$WORK/failing-hooks"
+  printf '#!/bin/sh\nexit 1\n' >"$WORK/failing-hooks/pre-commit"; chmod +x "$WORK/failing-hooks/pre-commit"
+  git -C "$c" config core.hooksPath "$WORK/failing-hooks"
+  rc=0; in_lib "$c" 'trap deploy_cleanup EXIT; deploy_prepare_bump' 2>"$WORK/err" >/dev/null || rc=$?
+  [[ $rc -eq 1 ]] && grep -qF "release commit refused" "$WORK/err" \
+    || fail "a refused release commit went on ($rc): $(grep -F FAIL "$WORK/err" | tail -2)"
   [[ "$(worktrees "$c")" -eq 1 ]] || fail "temp worktree left after a refused commit"
   [[ "$(git -C "$c" rev-parse HEAD)" == "$head" ]] || fail "caller branch moved after refusal"
 }
@@ -123,12 +157,11 @@ case_formula() {
 }
 
 case_push() {
-  local c bare other cur next later commit out
+  local c bare other next later=v9.9.7 commit out
   c="$(fresh_clone push)"; bare="$WORK/remote.git"
   git -C "$c" checkout --quiet main
   git clone --quiet --bare "$c" "$bare"
   git -C "$c" remote set-url origin "$bare"; git -C "$c" fetch --quiet origin
-  cur="$(version_of "$c")"; next="$(bumped "$cur" minor)"; later="$(bumped "$next" patch)"
   # A real pre-push hook records the cargo lefthook's check-all would lint with
   # (on this Mac a Homebrew cargo first on PATH would otherwise win).
   mkdir -p "$WORK/push-hooks"
@@ -136,9 +169,9 @@ case_push() {
   chmod +x "$WORK/push-hooks/pre-push"
   git -C "$c" config core.hooksPath "$WORK/push-hooks"
   unset RUSTUP_TOOLCHAIN # the deploy must pin it itself, whatever the caller's shell has
-  commit="$(DEPLOY_TAG="v$next" DEPLOY_NOTES=x in_lib "$c" \
-    'trap deploy_cleanup EXIT; deploy_validate_args; deploy_prepare_bump >&2
-     deploy_push >&2; printf "%s\n" "$DEPLOY_COMMIT"')" || fail "push failed"
+  out="$(in_lib "$c" 'trap deploy_cleanup EXIT; deploy_validate_args; deploy_prepare_bump >&2
+     deploy_push >&2; printf "%s %s\n" "${DEPLOY_TAG#v}" "$DEPLOY_COMMIT"')" || fail "push failed"
+  next="${out% *}"; commit="${out#* }"
   local rust; rust="$(in_lib "$c" 'printf %s "$DEPLOY_RUST"')"
   [[ "$(cat "$WORK/push-toolchain")" == "$(rustup which --toolchain "$rust" cargo)" ]] \
     || fail "pre-push hook ran $(cat "$WORK/push-toolchain"), not rustup's $rust cargo"
@@ -148,14 +181,14 @@ case_push() {
   other="$WORK/other"; git clone --quiet "$bare" "$other"
   git -C "$other" -c user.name=x -c user.email=x@example.invalid -c commit.gpgsign=false commit --quiet --allow-empty -m moved
   git -C "$other" push --quiet origin main
-  if DEPLOY_TAG="v$later" DEPLOY_NOTES=x in_lib "$c" \
-    'trap deploy_cleanup EXIT; deploy_validate_args; deploy_prepare_bump; deploy_push' 2>"$WORK/err"; then
+  # The same commit again under a new tag: remote main moved, so the atomic push is refused.
+  if DEPLOY_TAG="$later" DEPLOY_COMMIT="$commit" in_lib "$c" deploy_push 2>"$WORK/err"; then
     fail "push succeeded although remote main moved"
   fi
   grep -q "push rejected" "$WORK/err" || fail "rejection not named: $(cat "$WORK/err")"
-  git -C "$c" rev-parse -q --verify "refs/tags/v$later" >/dev/null && fail "local tag kept after rejection"
+  git -C "$c" rev-parse -q --verify "refs/tags/$later" >/dev/null && fail "local tag kept after rejection"
   [[ "$(git -C "$c" rev-parse main)" == "$commit" ]] || fail "local main moved after rejection"
-  git -C "$bare" rev-parse -q --verify "refs/tags/v$later" >/dev/null && fail "remote got the tag"
+  git -C "$bare" rev-parse -q --verify "refs/tags/$later" >/dev/null && fail "remote got the tag"
   local rc=0
   DEPLOY_TAG="v$next" in_lib "$c" 'deploy_published_failure "release create failed"' 2>"$WORK/err" || rc=$?
   [[ $rc -eq 2 ]] || fail "a post-push failure exited $rc, expected 2"
@@ -180,7 +213,7 @@ case_skill() {
   for s in '## When to Use' '## Procedure' '## Pitfalls' '## Verification'; do
     grep -qx "$s" "$f" || fail "missing section $s"
   done
-  for s in 'scripts/deploy.sh --tag' '--dry-run' '--resume vX.Y.Z' 'env -u GH_TOKEN' 'git log'; do
+  for s in 'scripts/deploy.sh --tag' '--dry-run' '--resume vX.Y.Z' 'env -u GH_TOKEN' 'release-plz computed'; do
     grep -qF -- "$s" "$f" || fail "skill does not mention '$s'"
   done
 }
@@ -236,9 +269,7 @@ case_plan() {
 # instead of publishing anything.
 case_resume() {
   local c tag newest out real_gh guard="$WORK/guard"
-  tag="$(latest_tag)"; c="$(fresh_clone resume)"
-  git -C "$c" remote set-url origin https://github.com/Falconiere/comemory.git
-  git -C "$c" remote set-url --push origin "$WORK/no-push.git"
+  tag="$(latest_tag)"; c="$(fresh_clone resume)"; github_origin "$c"
   newest="$(in_lib "$c" 'deploy_newest_tag "$(git ls-remote --tags --refs origin)"')"
   [[ "$newest" == "$tag" ]] \
     || fail "releases/latest is $tag but the newest tag is $newest: a release is half-published"
@@ -269,17 +300,20 @@ case_smoke() {
 }
 
 case_rehearsal() {
-  local c cur tag dir before after out argv t a
-  c="$(fresh_clone rehearsal)"; cur="$(version_of "$c")"
+  local tag dir before after out argv t a c
+  c="$(fresh_clone rehearsal)"
   git -C "$c" checkout --quiet main
   # A bare snapshot as origin: this checkout's own refs may move during the long build.
   git clone --quiet --bare "$c" "$WORK/rehearsal-origin.git"
   git -C "$c" remote set-url origin "$WORK/rehearsal-origin.git"
-  tag="v$(bumped "$cur" minor)"; dir="$c/target/deploy/$tag"
   before="$(state "$c"; git -C "$c" ls-remote origin)"
-  out="$(cd "$c" && bash "$DEPLOY" --tag "$tag" \
-    --change-log $'### Changed\n\n- dry-run rehearsal' --dry-run)" || fail "dry run failed"
+  out="$(cd "$c" && bash "$DEPLOY" --dry-run)" || fail "dry run failed"
   after="$(state "$c"; git -C "$c" ls-remote origin)"
+  # The last stdout line is the asset dir, named after the tag release-plz computed.
+  dir="$(tail -1 <<<"$out")"; tag="${dir##*/}"
+  [[ "$dir" == "$c/target/deploy/v"* ]] || fail "dry run did not end with its asset dir: $dir"
+  grep -qF "release-plz computed $tag; its CHANGELOG section:" <<<"$out" || fail "dry run did not show the tag"
+  grep -qx "## \[${tag#v}\] - .*" <<<"$out" || fail "dry run did not show the ${tag#v} section"
   [[ "$before" == "$after" ]] \
     || fail "dry run changed refs, files or the remote: $(diff <(echo "$before") <(echo "$after"))"
   [[ "$(worktrees "$c")" -eq 1 ]] || fail "temp worktree left behind"

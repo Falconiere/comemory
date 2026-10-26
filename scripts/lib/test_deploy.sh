@@ -23,14 +23,6 @@ fresh_clone() {
 # version_of <dir> — the [package] version in <dir>/Cargo.toml.
 version_of() { awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }' "$1/Cargo.toml"; }
 
-# bumped <version> <part> — next minor (part=minor) or patch (part=patch).
-bumped() {
-  local maj min pat
-  IFS=. read -r maj min pat <<<"$1"
-  if [[ "$2" == minor ]]; then printf '%s.%s.0\n' "$maj" "$((min + 1))"
-  else printf '%s.%s.%s\n' "$maj" "$min" "$((pat + 1))"; fi
-}
-
 # state <dir> — branch tips, tags and tracked-file status: what a refusal must not change.
 state() {
   git -C "$1" for-each-ref --format='%(refname) %(objectname)' refs/heads refs/tags
@@ -96,6 +88,13 @@ check_archive() {
       && fail "$t binary needs a glibc above the published 2.34 floor"
   fi
   return 0
+}
+
+# github_origin <clone> — fetch from the real repository but push nowhere: what
+# release-plz needs to render PR links, and what resume reads tags from.
+github_origin() {
+  git -C "$1" remote set-url origin https://github.com/Falconiere/comemory.git
+  git -C "$1" remote set-url --push origin "$WORK/no-push.git"
 }
 
 # latest_tag — the tag GitHub's releases/latest redirect points at right now.

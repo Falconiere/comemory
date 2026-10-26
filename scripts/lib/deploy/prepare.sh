@@ -3,13 +3,20 @@
 # the release bump commit for scripts/deploy.sh. Sourced after
 # scripts/lib/common.sh; defines functions only.
 #
-# Inputs (globals): DEPLOY_TAG, DEPLOY_NOTES, DEPLOY_DRY_RUN.
-# Outputs (globals): DEPLOY_VERSION, DEPLOY_WORKTREE, DEPLOY_COMMIT.
+# Inputs (globals): DEPLOY_TAG (optional; asserts the computed tag), DEPLOY_DRY_RUN.
+# Outputs (globals): DEPLOY_TAG, DEPLOY_VERSION, DEPLOY_WORKTREE, DEPLOY_COMMIT.
 
 DEPLOY_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEPLOY_REMOTE="${DEPLOY_REMOTE:-origin}"
 # The toolchain CI pins (the latest stable when chosen) and every release build uses.
 DEPLOY_RUST="1.99.1"
+# The version and CHANGELOG come from release-plz, as the release-PR bot made
+# them: 0.3.169 is .github/workflows/release-plz.yml's pin (0.4 reworked the
+# changelog config). Its semver check needs a cargo-semver-checks that reads
+# DEPLOY_RUST's rustdoc JSON: 0.51.0 does for 1.99.1 (the action's 0.50 was
+# picked for 1.95).
+DEPLOY_RELEASE_PLZ="0.3.169"
+DEPLOY_SEMVER_CHECKS="0.51.0"
 
 # deploy_with_rust <cmd...> — run <cmd> on DEPLOY_RUST. RUSTUP_TOOLCHAIN alone
 # is not enough: a Homebrew cargo first on PATH ignores it (and so does
@@ -38,28 +45,34 @@ deploy_version_gt() {
   return 1
 }
 
+# --tag is optional: release-plz computes the version, and a given tag only asserts it.
 deploy_validate_args() {
-  local current rc=0
   # shortcut: stable tags only; a release candidate would need a -rc.N tag rule here.
-  [[ "$DEPLOY_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+  [[ -z "${DEPLOY_TAG:-}" || "$DEPLOY_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
     || die deploy:args "--tag needs a stable vX.Y.Z, got '$DEPLOY_TAG'"
-  # Command substitution drops trailing newlines, so the section ends cleanly.
-  DEPLOY_NOTES="$(printf '%s\n' "$DEPLOY_NOTES")"
-  [[ -n "${DEPLOY_NOTES//[[:space:]]/}" ]] || die deploy:args "--change-log is empty"
-  DEPLOY_VERSION="${DEPLOY_TAG#v}"
-  current="$(deploy_cargo_version "$PROJECT_ROOT")"
-  deploy_version_gt "$DEPLOY_VERSION" "$current" \
-    || die deploy:args "$DEPLOY_TAG is not newer than Cargo.toml's $current"
+}
+
+# deploy_check_new_tag — refuse a DEPLOY_TAG that exists here or on the remote.
+deploy_check_new_tag() {
+  local rc=0
   if git -C "$PROJECT_ROOT" rev-parse -q --verify "refs/tags/$DEPLOY_TAG" >/dev/null; then
-    die deploy:args "tag $DEPLOY_TAG already exists locally"
+    die deploy:bump "tag $DEPLOY_TAG already exists locally"
   fi
   git -C "$PROJECT_ROOT" ls-remote --exit-code --tags "$DEPLOY_REMOTE" "refs/tags/$DEPLOY_TAG" \
     >/dev/null 2>&1 || rc=$?
   case "$rc" in
-    0) die deploy:args "tag $DEPLOY_TAG already exists on $DEPLOY_REMOTE" ;;
+    0) die deploy:bump "tag $DEPLOY_TAG already exists on $DEPLOY_REMOTE" ;;
     2) ;;
-    *) die deploy:args "cannot list tags on $DEPLOY_REMOTE (git ls-remote exit $rc)" ;;
+    *) die deploy:bump "cannot list tags on $DEPLOY_REMOTE (git ls-remote exit $rc)" ;;
   esac
+}
+
+# The bump's two tools, each at its pinned version (never installed from here).
+deploy_require_release_tools() {
+  [[ "$(release-plz --version 2>/dev/null)" == "release-plz $DEPLOY_RELEASE_PLZ" ]] \
+    || die deploy:preflight "needs release-plz $DEPLOY_RELEASE_PLZ; run: cargo install --locked release-plz --version $DEPLOY_RELEASE_PLZ"
+  [[ "$(cargo-semver-checks --version 2>/dev/null)" == "cargo-semver-checks $DEPLOY_SEMVER_CHECKS" ]] \
+    || die deploy:preflight "needs cargo-semver-checks $DEPLOY_SEMVER_CHECKS; run: cargo install --locked cargo-semver-checks --version $DEPLOY_SEMVER_CHECKS"
 }
 
 # deploy_unreleased_empty <changelog> — true when `## [Unreleased]` holds no entry.
@@ -88,7 +101,7 @@ deploy_preflight() {
   grep -q '^## \[Unreleased\]' "$root/CHANGELOG.md" \
     || die deploy:preflight "CHANGELOG.md has no '## [Unreleased]' heading"
   deploy_unreleased_empty "$root/CHANGELOG.md" \
-    || die deploy:preflight "CHANGELOG.md [Unreleased] has entries; fold them into --change-log and remove them first"
+    || die deploy:preflight "CHANGELOG.md [Unreleased] has entries; release-plz writes the section from the commits, so remove them first"
   git -C "$root" fetch --quiet "$DEPLOY_REMOTE" main \
     || die deploy:preflight "cannot fetch $DEPLOY_REMOTE main"
   [[ "$(git -C "$root" rev-parse HEAD)" == "$(git -C "$root" rev-parse FETCH_HEAD)" ]] \
@@ -96,17 +109,18 @@ deploy_preflight() {
   [[ "$(uname -sm)" == "Darwin arm64" ]] \
     || die deploy:preflight "builds aarch64-apple-darwin natively, so it must run on an Apple Silicon Mac"
   deploy_with_rust true
+  deploy_require_release_tools
   deploy_require_gh
   docker info >/dev/null 2>&1 || die deploy:preflight "docker daemon not reachable; start Docker"
-  if ((DEPLOY_DRY_RUN)); then
-    log_info deploy:gates "skipped in --dry-run; a real run runs them before building"
-  else
-    deploy_run_gates
-  fi
 }
 
 # Actions are disabled, so these local gates are all that stands before main.
+# They run after the bump, so "nothing to release" refuses in seconds, not after them.
 deploy_run_gates() {
+  if ((DEPLOY_DRY_RUN)); then
+    log_info deploy:gates "skipped in --dry-run; a real run runs them before building"
+    return 0
+  fi
   log_info deploy:gates "running the full local gate set"
   (cd "$PROJECT_ROOT" \
     && deploy_with_rust bash scripts/check-all.sh \
@@ -118,38 +132,41 @@ deploy_run_gates() {
   log_ok deploy:gates
 }
 
-# deploy_set_version <Cargo.toml> <version> — rewrite the [package] version.
-deploy_set_version() {
-  local tmp
-  tmp="$(mktemp)"
-  awk -v v="$2" '!done && /^version[[:space:]]*=/ { print "version = \"" v "\""; done = 1; next }
-                 { print }' "$1" >"$tmp"
-  mv "$tmp" "$1"
-}
-
-# deploy_insert_changelog <file> <version> <date> <text> — new section first under [Unreleased].
-deploy_insert_changelog() {
-  local tmp
-  tmp="$(mktemp)"
-  NOTES="$4" awk -v v="$2" -v d="$3" '
-    { print }
-    !done && /^## \[Unreleased\]/ { printf "\n## [%s] - %s\n\n%s\n", v, d, ENVIRON["NOTES"]; done = 1 }
-  ' "$1" >"$tmp"
-  mv "$tmp" "$1"
+# deploy_section_has_groups <changelog> <version> — true when `## [<version>]`
+# has at least one `### ` group, i.e. some commit rendered a changelog line.
+deploy_section_has_groups() {
+  awk -v h="## [$2]" 'index($0, h) == 1 { on = 1; next }
+       on && /^## \[/ { exit }
+       on && /^### / { found = 1; exit }
+       END { exit !found }' "$1"
 }
 
 # The bump commit is made in a detached temp worktree, so the caller's branch
-# only moves when a real (non --dry-run) push succeeds.
+# only moves when a real (non --dry-run) push succeeds. release-plz computes the
+# version (semver-checks decides minor vs patch on 0.x) and writes the section.
 deploy_prepare_bump() {
-  local wt
+  local wt current changed
   wt="$(mktemp -d "${TMPDIR:-/tmp}/comemory-deploy.XXXXXX")"
   DEPLOY_WORKTREE="$wt/src"
   git -C "$PROJECT_ROOT" worktree add --quiet --detach "$DEPLOY_WORKTREE" HEAD \
     || die deploy:bump "cannot create a temp worktree"
-  deploy_set_version "$DEPLOY_WORKTREE/Cargo.toml" "$DEPLOY_VERSION"
-  (cd "$DEPLOY_WORKTREE" && deploy_with_rust cargo update --workspace --offline --quiet) \
-    || die deploy:bump "cargo update --workspace failed"
-  deploy_insert_changelog "$DEPLOY_WORKTREE/CHANGELOG.md" "$DEPLOY_VERSION" "$(date -u +%F)" "$DEPLOY_NOTES"
+  current="$(deploy_cargo_version "$PROJECT_ROOT")"
+  # PR links render from origin's GitHub URL, as in CI (`--repo-url` does not reach them).
+  (cd "$DEPLOY_WORKTREE" && deploy_with_rust release-plz update) \
+    || die deploy:bump "release-plz update failed (output above)"
+  DEPLOY_VERSION="$(deploy_cargo_version "$DEPLOY_WORKTREE")"
+  if [[ "$DEPLOY_VERSION" == "$current" ]] \
+    || ! deploy_section_has_groups "$DEPLOY_WORKTREE/CHANGELOG.md" "$DEPLOY_VERSION"; then
+    die deploy:bump "nothing to release: no commit since v$current renders a changelog line"
+  fi
+  if [[ -n "${DEPLOY_TAG:-}" && "$DEPLOY_TAG" != "v$DEPLOY_VERSION" ]]; then
+    die deploy:bump "release-plz computes v$DEPLOY_VERSION, not the asserted $DEPLOY_TAG"
+  fi
+  DEPLOY_TAG="v$DEPLOY_VERSION"
+  deploy_check_new_tag
+  changed="$(git -C "$DEPLOY_WORKTREE" status --porcelain | awk '{ print $2 }' | LC_ALL=C sort | tr '\n' ' ')"
+  [[ "$changed" == "CHANGELOG.md Cargo.lock Cargo.toml " ]] \
+    || die deploy:bump "release-plz changed more than the bump's three files: $changed"
   git -C "$DEPLOY_WORKTREE" add Cargo.toml Cargo.lock CHANGELOG.md
   git -C "$DEPLOY_WORKTREE" commit --quiet -m "chore(release): $DEPLOY_TAG" \
     || die deploy:bump "release commit refused (see the hook output above)"

@@ -31,28 +31,28 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
    If `GH_TOKEN` is set but stale, prefix every command below with
    `env -u GH_TOKEN`.
 2. `git fetch --tags origin && git switch main && git pull --ff-only`.
-3. Pick the version from the conventional commits since the last tag:
-   `git log --oneline "$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*')"..HEAD`.
-   Any `!` or `BREAKING CHANGE` → minor while the major is 0 (release-plz's
-   rule), else any `feat:` → minor, otherwise patch.
-4. Write the change log from those commits in the CHANGELOG buckets
-   (`### Added` for feat, `### Fixed` for fix, `### Changed` for
-   refactor/perf, `### Removed`, `### Security`), one `- ` line per change with
-   its PR link. Skip `docs:`, `chore:`, `ci:`, `test:`, `build:` commits.
-   `## [Unreleased]` in CHANGELOG.md must be empty; fold any entry there into
-   this text instead.
-5. Show the user the tag and the notes, and wait for an explicit yes in this
-   conversation. Typing `/deploy` asks for a release; it approves neither the
-   version nor the notes. No yes, no release.
-6. Optional rehearsal (bump, three builds, archives, checks; no gates, nothing
-   committed to a branch or pushed):
-   `bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes" --dry-run`
-7. Release: `bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"`.
-   Pass multi-line notes with `$'...'` or a variable, never a literal `\n`.
-   Run it in the background: it first runs every quality gate, then the
-   macOS build and one Linux build of both targets (a few minutes warm, longer
-   on the first run after a toolchain change).
-8. Report the release URL (the last stdout line) and the version to the user.
+3. Rehearse: `bash scripts/deploy.sh --dry-run`, in the background. release-plz
+   (the pinned 0.3.169 with cargo-semver-checks 0.51.0) computes the version
+   and writes the CHANGELOG section from the commits since the last tag, exactly
+   as the release-PR bot did: on 0.x a `feat:` is a patch, and only an
+   incompatible library API (or a breaking `!`) makes it minor. Then three
+   builds, archives and checks; no gates, nothing committed to a branch or
+   pushed. It prints `release-plz computed vX.Y.Z; its CHANGELOG section:`
+   and the section. "nothing to release" means no commit since the last tag
+   renders a changelog line (`docs:`/`chore:`/`ci:`/`test:`/`build:` only):
+   tell the user, do not force one. `## [Unreleased]` in CHANGELOG.md must be
+   empty.
+4. Show the user that tag and that section verbatim. Never edit the notes
+   here: a wrong line is fixed in the commit subject's PR, then re-run.
+5. Wait for an explicit yes in this conversation. Typing `/deploy` asks for a
+   release; it approves neither the version nor the notes. No yes, no release.
+6. Release with the approved tag as an assertion:
+   `bash scripts/deploy.sh --tag vX.Y.Z`. If main moved and release-plz now
+   computes something else, the script refuses before anything happens; go
+   back to step 3. Run it in the background: it bumps first (about 90 s, so
+   "nothing to release" refuses early), then runs every quality gate, the
+   macOS build and one Linux build of both targets.
+7. Report the release URL (the last stdout line) and the version to the user.
 
 ## Pitfalls
 
@@ -72,6 +72,9 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
   first. A push that exits 141 after that slow hook did not land: the run
   exits 1, so re-run with the same tag.
 - Never re-use a tag, even a deleted one: pick the next patch.
+- Preflight refuses a missing or other-version release-plz or
+  cargo-semver-checks and prints the exact `cargo install --locked … --version …`
+  command; run it (ask first if the user has not asked you to install tools).
 - The script refuses anything but `main` equal to `origin/main`; do not work
   around it with a branch named main.
 - A Docker build failing inside `apt-get` with "invalid signature" usually
