@@ -2,8 +2,9 @@
 # scripts/test-deploy.sh — real-data self-check for scripts/deploy.sh.
 #
 # Every case that touches a repository runs against a fresh `git clone` of this
-# checkout whose `origin` is this local repository, so no case can push to
-# GitHub. Uncommitted work never reaches the clone.
+# checkout whose `origin` is this local repository — except `resume`, which
+# fetches from GitHub with no push URL — so no case can push to GitHub.
+# Uncommitted work never reaches the clone.
 #
 # Usage: bash scripts/test-deploy.sh [case...]
 #   args preflight bump formula push skill   fast, offline (the default set)
@@ -201,7 +202,7 @@ case_plan() {
   jq '.assets |= map(select(.name != "install.sh"))' "$rel" >"$WORK/missing.json"
   [[ "$(plan_for "$WORK/missing.json")" == "upload $dir/install.sh" ]] || fail "missing asset not uploaded"
   jq '(.assets[] | select(.name == "sha256.sum")).state = "new"' "$rel" >"$WORK/partial.json"
-  [[ "$(plan_for "$WORK/partial.json")" == "replace $dir/sha256.sum" ]] || fail "interrupted asset not replaced"
+  [[ "$(plan_for "$WORK/partial.json")" == "upload $dir/sha256.sum" ]] || fail "half-uploaded asset not re-uploaded"
   jq '.isDraft = true' "$rel" >"$WORK/draft.json"
   plan_for "$WORK/draft.json" >/dev/null 2>&1 && fail "a draft release was planned"
   first="comemory-${TARGETS[0]}.tar.xz"

@@ -43,9 +43,14 @@ deploy_stage_formula() {
 
 # deploy_release_argv — the `gh` arguments of the release, one per line.
 deploy_release_argv() {
-  local t
   printf '%s\n' release create "$DEPLOY_TAG" --repo "$DEPLOY_REPO" --verify-tag \
     --title "$DEPLOY_TAG" --notes-file "$DEPLOY_ASSETS/notes.md" --latest
+  deploy_release_assets
+}
+
+# deploy_release_assets — the files the release carries, one path per line.
+deploy_release_assets() {
+  local t
   for t in "${DEPLOY_TARGETS[@]}"; do
     printf '%s\n' "$DEPLOY_ASSETS/comemory-$t.tar.xz" "$DEPLOY_ASSETS/comemory-$t.tar.xz.sha256"
   done

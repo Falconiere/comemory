@@ -4,29 +4,25 @@
 # Sourced after publish.sh; defines functions only.
 
 # deploy_release_plan <release.json|""> — print one action per line for what the
-# GitHub Release still lacks: `create`, `upload <path>` (asset absent) or
-# `replace <path>` (asset left half-uploaded). "" means there is no release.
+# GitHub Release still lacks: `create` ("" means there is no release), or
+# `upload <path>` for an asset that is absent or was left half-uploaded.
 # Refuses a draft, and an uploaded asset that is not this exact local file, so
 # a release never mixes two builds. Nothing is printed before a refusal.
 deploy_release_plan() {
-  local json="$1" path prev="" name state digest want actions=()
+  local json="$1" path name state digest want actions=()
   if [[ -z "$json" ]]; then printf 'create\n'; return 0; fi
   if jq -e '.isDraft' "$json" >/dev/null; then
     die deploy:resume "$DEPLOY_TAG is a draft release; publish or delete it by hand"
   fi
   while IFS= read -r path; do
-    # The asset files of deploy_release_argv; its --notes-file value is not one.
-    [[ "$path" == "$DEPLOY_ASSETS"/* && "$prev" != --notes-file ]] || { prev="$path"; continue; }
-    prev="$path"
     name="${path##*/}" state="" digest=""
     IFS=$'\t' read -r state digest < <(jq -r --arg n "$name" \
       '.assets[] | select(.name == $n) | [.state, (.digest // "none")] | @tsv' "$json") || true
-    if [[ -z "$state" ]]; then actions+=("upload $path"); continue; fi
-    if [[ "$state" != uploaded ]]; then actions+=("replace $path"); continue; fi
+    if [[ "$state" != uploaded ]]; then actions+=("upload $path"); continue; fi
     want="sha256:$(shasum -a 256 "$path" | cut -d' ' -f1)"
     [[ "$digest" == "$want" ]] \
       || die deploy:resume "$name on the release has digest $digest, the local file $want; refusing to mix builds"
-  done < <(deploy_release_argv)
+  done < <(deploy_release_assets)
   if ((${#actions[@]})); then printf '%s\n' "${actions[@]}"; fi
 }
 
@@ -84,7 +80,7 @@ deploy_release_json() {
 
 # Create the GitHub Release, or upload what an earlier attempt left out.
 deploy_finish_release() {
-  local tmp json actions rc=0 verb path argv=() a uploads=() replaces=()
+  local tmp json actions rc=0 path argv=() a uploads=()
   tmp="$(mktemp -d)"; json="$tmp/release.json"
   deploy_release_json "$json" || json=""
   actions="$(deploy_release_plan "$json")" || rc=$?
@@ -96,18 +92,12 @@ deploy_finish_release() {
     gh "${argv[@]}" >/dev/null || deploy_published_failure "gh release create failed"
     log_ok deploy:release "created"; return 0
   fi
-  while read -r verb path; do
-    if [[ "$verb" == upload ]]; then uploads+=("$path"); else replaces+=("$path"); fi
-  done <<<"$actions"
-  if ((${#uploads[@]})); then
-    gh release upload "$DEPLOY_TAG" --repo "$DEPLOY_REPO" "${uploads[@]}" \
-      || deploy_published_failure "uploading ${#uploads[@]} missing asset(s) failed"
-  fi
-  if ((${#replaces[@]})); then
-    gh release upload --clobber "$DEPLOY_TAG" --repo "$DEPLOY_REPO" "${replaces[@]}" \
-      || deploy_published_failure "replacing ${#replaces[@]} half-uploaded asset(s) failed"
-  fi
-  log_ok deploy:release "uploaded $((${#uploads[@]} + ${#replaces[@]}))"
+  while read -r _ path; do uploads+=("$path"); done <<<"$actions"
+  # --clobber replaces a half-uploaded asset and uploads an absent one alike;
+  # verified assets are never in the list, so they are never replaced.
+  gh release upload --clobber "$DEPLOY_TAG" --repo "$DEPLOY_REPO" "${uploads[@]}" \
+    || deploy_published_failure "uploading ${#uploads[@]} missing asset(s) failed"
+  log_ok deploy:release "uploaded ${#uploads[@]}"
 }
 
 # Move the tap to this version unless it is there already; never downgrade it.
