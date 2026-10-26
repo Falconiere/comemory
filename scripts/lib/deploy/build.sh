@@ -7,9 +7,10 @@
 # DEPLOY_ASSETS = <repo>/target/deploy/<tag>/.
 
 DEPLOY_TARGETS=(aarch64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu)
-# Linux builds run on ubuntu:22.04, the image cargo-dist's runners used, so the
-# glibc floor stays 2.35: older Debian images cannot link close_range (glibc
-# 2.34+, used by the sync daemon's spawn), bookworm would raise it to 2.36.
+# Linux builds run on ubuntu:22.04 (glibc 2.35), the image cargo-dist's runners
+# used; the binaries reference GLIBC_2.34 at most, the published floor. Older
+# Debian images cannot link close_range (glibc 2.34+, used by the sync daemon's
+# spawn), and bookworm could raise the floor to 2.36.
 DEPLOY_RUN_IMAGE="ubuntu:22.04"
 
 # deploy_platform <target> — the Docker platform a Linux target builds and runs on.

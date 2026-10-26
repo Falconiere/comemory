@@ -246,8 +246,10 @@ install_bin() {
   bin="$TMP/$APP-$TARGET/$APP"
   [ -f "$bin" ] || die "$ARCHIVE does not contain $APP-$TARGET/$APP"
   chmod 755 "$bin"
-  REPORTED="$("$bin" --version 2>&1)" || die "the downloaded binary does not run here: $REPORTED" \
-    "Linux builds need glibc at the GLIBC_ version named above, not musl; else $SRC_HINT"
+  if ! REPORTED="$("$bin" --version 2>&1)"; then
+    case "$REPORTED" in *GLIBC_*) why="this glibc is older than the GLIBC_ versions named above; " ;; *) why="" ;; esac
+    die "the downloaded binary does not run here: $REPORTED" "$why$SRC_HINT"
+  fi
   mkdir -p "$DIR" 2>/dev/null || die "cannot create $DIR" "re-run with --dir <a directory you can write to>"
   [ -w "$DIR" ] || die "cannot write to $DIR" "re-run with --dir <a directory you can write to>"
   lock_dir

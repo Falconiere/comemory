@@ -35,26 +35,35 @@ fi
 
 PASSED="could not resolve the latest release"
 MUSL="this is a musl system"
-NO_GETCONF='rm /usr/bin/getconf'
+NO_GETCONF='premise rm /usr/bin/getconf'
 # A pocket whose index fails to verify must not sink the case: musl comes from
-# the release pocket. Each setup then proves its premise is in place.
-APT_MUSL='{ apt-get update -qq || true; } && apt-get install -y -qq musl && ls /lib/ld-musl-*'
-APK_GCOMPAT='apk add --no-cache gcompat libc6-compat && ls /lib/ld-linux-*'
+# the release pocket. Each setup then proves its premise is in place; a missing
+# premise is a FAIL (exit 98), never a skip — the case would check nothing.
+APT_MUSL='{ apt-get update -qq || true; } && apt-get install -y -qq musl && premise ls /lib/ld-musl-*'
+APK_GCOMPAT='apk add --no-cache gcompat libc6-compat && premise ls /lib/ld-linux-*'
 failed=0
 
 # run_case <name> <image> <setup shell> <want>... — a want of `!text` must be
 # absent. A refusal message alone proves the gate ran before the release was
 # resolved: resolution always fails against the closed port, and would have
 # died first. Exit 125 (docker could not pull or start the image) and 99 (the
-# setup step failed) mean the case never reached install.sh.
+# setup step failed) mean the case never reached install.sh; 98 means its setup
+# ran but the premise the case tests is absent.
 run_case() {
   local name="$1" image="$2" setup="$3" out want rc=0
   shift 3
   out="$(docker run --rm -i -e NO_COLOR=1 -e COMEMORY_RELEASES_URL=http://127.0.0.1:9 \
     "$image" sh -c 'cat > /tmp/install.sh
+      exec 3>&1
+      premise() { "$@" >/dev/null 2>&1 || { echo "premise not in place: $*" >&3; exit 98; }; }
       { eval "$1"; } > /tmp/setup.log 2>&1 || { echo "setup failed:"; cat /tmp/setup.log; exit 99; }
       sh /tmp/install.sh --dir /tmp/bin --no-modify-path --no-completions </dev/null' \
     sh "$setup" < "$PROJECT_ROOT/install.sh" 2>&1)" || rc=$?
+  if [[ "$rc" == 98 ]]; then
+    log_err "$NAME" "$name: $out"
+    failed=1
+    return
+  fi
   if [[ "$rc" == 99 || "$rc" == 125 ]]; then
     skipped "$name DID NOT RUN — could not fetch its image or packages (exit $rc)"
     printf '%s\n' "$out" | tail -n 5 | sed 's/^/    /' >&2
