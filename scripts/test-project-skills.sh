@@ -42,3 +42,14 @@ printf '%s\n' '---' 'name: imported-procedure' 'description: Imported procedure'
   >"$REPO/.toolu/skills/imported-procedure/SKILL.md"
 "$WRAPPER" adopt imported-procedure
 jq -e '."imported-procedure".origin == "agent"' "$REPO/.toolu/skills/.usage.json" >/dev/null
+
+# Both skills idle for decades: the one a .claude/skills link exposes as a slash
+# command stays, the unlinked one is archived (the control proving curate ran).
+mkdir -p "$REPO/.claude/skills"
+ln -s ../../.toolu/skills/imported-procedure "$REPO/.claude/skills/imported-procedure"
+USAGE="$REPO/.toolu/skills/.usage.json"
+jq '(."imported-procedure", ."release-check").last_used_at = "2000-01-01T00:00:00Z"' "$USAGE" >"$USAGE.tmp"
+mv "$USAGE.tmp" "$USAGE"
+"$WRAPPER" curate
+[ -f "$REPO/.toolu/skills/imported-procedure/SKILL.md" ]
+[ -f "$REPO/.toolu/skills/.archive/release-check/SKILL.md" ]

@@ -1,6 +1,10 @@
 ---
 name: deploy
-description: Use when releasing, deploying or shipping a comemory version from this machine while GitHub Actions are disabled — runs scripts/deploy.sh to publish a stable vX.Y.Z.
+description: Use when releasing a new version of the comemory CLI from this Mac while GitHub Actions are disabled — runs scripts/deploy.sh to publish a stable vX.Y.Z. Not for deploying services.
+metadata:
+  toolu:
+    origin: agent
+    created: 2026-10-26T17:04:13Z
 ---
 ## When to Use
 
@@ -12,11 +16,18 @@ from an up-to-date `main`, with the full local gate set, `chore(release):
 vX.Y.Z` landed on `main`, the GitHub Release marked latest and the Homebrew tap
 updated. Production releases only — there are no dev or RC builds.
 
+A release is permanent (tags are never reused), so the user decides. Start
+only when the user asked for a release; if this skill loaded on a hint, ask
+before step 1. Every run stops at step 5 for the user's yes on tag and notes.
+
 ## Procedure
 
-1. Prerequisites: Apple Silicon Mac, Docker running with free disk space, clean
-   tracked files, `gh api user` succeeds. If `GH_TOKEN` is set but stale,
-   prefix every command below with `env -u GH_TOKEN`.
+1. Prerequisites: the main checkout, not a linked worktree (`main` is checked
+   out there and `deploy.sh` refuses any other branch; leave a worktree session
+   first, or work in `$(git rev-parse --path-format=absolute --git-common-dir)/..`),
+   Apple Silicon Mac, Docker running with free disk space, clean tracked files,
+   `gh api user` succeeds. If `GH_TOKEN` is set but stale, prefix every command
+   below with `env -u GH_TOKEN`.
 2. `git fetch --tags origin && git switch main && git pull --ff-only`.
 3. Pick the version from the conventional commits since the last tag:
    `git log --oneline "$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*')"..HEAD`.
@@ -28,16 +39,17 @@ updated. Production releases only — there are no dev or RC builds.
    its PR link. Skip `docs:`, `chore:`, `ci:`, `test:`, `build:` commits.
    `## [Unreleased]` in CHANGELOG.md must be empty; fold any entry there into
    this text instead.
-5. Optional rehearsal (bump, three builds, archives, checks; no gates, nothing
+5. Show the user the tag and the notes, and wait for an explicit yes in this
+   conversation. Typing `/deploy` asks for a release; it approves neither the
+   version nor the notes. No yes, no release.
+6. Optional rehearsal (bump, three builds, archives, checks; no gates, nothing
    committed to a branch or pushed):
    `bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes" --dry-run`
-6. Release: `bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"`.
+7. Release: `bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"`.
    Pass multi-line notes with `$'...'` or a variable, never a literal `\n`.
    Run it in the background: it first runs every quality gate, and the
    emulated x86_64 Linux build takes tens of minutes on a cold cache.
-   It publishes for good, so run it only when the user asked for this release
-   in the conversation (`/deploy` counts); on a vague hint, ask first.
-7. Report the release URL (the last stdout line) and the version to the user.
+8. Report the release URL (the last stdout line) and the version to the user.
 
 ## Pitfalls
 

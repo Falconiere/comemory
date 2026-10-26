@@ -201,8 +201,6 @@ case_skill() {
   local f="$ROOT/.toolu/skills/deploy/SKILL.md" s
   [[ -f "$f" ]] || fail "missing $f"
   grep -qx 'name: deploy' "$f" || fail "frontmatter name"
-  # The project-skills curator archives idle `origin: agent` skills, and /deploy use is never counted.
-  grep -q '^[[:space:]]*origin:[[:space:]]*agent' "$f" && fail "origin: agent lets the curator archive /deploy"
   # Claude Code turns .claude/skills/<name> into /<name>; the link keeps one copy.
   [[ "$(readlink "$ROOT/.claude/skills/deploy")" == ../../.toolu/skills/deploy ]] \
     || fail ".claude/skills/deploy must link to ../../.toolu/skills/deploy"
