@@ -495,9 +495,11 @@ schema-migration snapshot `rebuild` shares its mechanism with.
 ## Testing
 
 - Runner: `cargo nextest run --all-features` (alias `just test`).
-- Match `.github/workflows/test.yml`'s Rust 1.95 toolchain when running 
-  quality gates (`RUSTUP_TOOLCHAIN=1.95.0 bash scripts/check-all.sh`); Clippy
-  lint inventories differ between compiler versions.
+- Match `.github/workflows/test.yml`'s pinned Rust 1.99.1 when running
+  quality gates: `PATH="$(dirname "$(rustup which --toolchain 1.99.1 cargo)"):$PATH"
+  bash scripts/check-all.sh`. `RUSTUP_TOOLCHAIN` alone is ignored when
+  Homebrew `cargo` comes first on `PATH`; Clippy lint inventories differ
+  between compiler versions.
 - Linux CI places coverage-run temporary fixtures on isolated 2 GiB `tmpfs`
   mount to avoid block-device contention from thousands of SQLite commits.
   These remain real files and databases across process restarts. Nextest starts

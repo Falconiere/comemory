@@ -53,12 +53,12 @@ part of the D7 debt above and should not be merged into it:
   `src/mcp/server.rs`: the `ServerHandler::initialize` override and the
   `tool_handler` macro expansion. The rmcp trait mandates `async fn`, so the
   `async` cannot be removed; dispatcher uniformity, not dead code. Fires on
-  the pinned 1.95 toolchain and newer; allowed rather than fixed
+  1.95 and newer (the pinned 1.99.1 included); allowed rather than fixed
   because there is no code change that satisfies both the lint and the
   trait. Also tracked separately from the D7 total.
 - `assert_is_empty = "allow"` — 151 hits, all `assert!(x.is_empty())` /
   `assert!(!x.is_empty())` in test files (`src/**/tests/*.rs` and
-  `tests/*.rs`). Fires on the pinned 1.95 toolchain and newer.
+  `tests/*.rs`). Fires on 1.95 and newer (the pinned 1.99.1 included).
   Allowed rather than fixed because clippy's own machine-applicable
   suggestions are wrong at 65 of the 151 sites: they spell the empty-array
   type with definition-site paths (`[] as [store::...]`) that do not

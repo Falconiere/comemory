@@ -6,7 +6,7 @@ description = "Agentic dev memory + code-aware semantic search via a two-layer p
 license = "MIT"
 repository = "https://github.com/Falconiere/comemory"
 homepage = "https://github.com/Falconiere/comemory"
-rust-version = "1.95"
+rust-version = "1.99"
 
 [[bin]]
 name = "comemory"
@@ -211,11 +211,11 @@ struct_field_names = "allow"  # 1 — `eval::bandit::Arm::arm_id`; the field is
 # `ServerHandler::initialize` override and the `tool_handler` macro
 # expansion. The rmcp trait mandates `async fn`, so the `async` cannot be
 # removed to satisfy the lint; like `unused_async` above this is dispatcher
-# uniformity, not dead code. Fires on the pinned 1.95 toolchain and newer.
+# uniformity, not dead code. Fires on 1.95 and newer, the pinned 1.99.1 included.
 unused_async_trait_impl = "allow"  # 2 — rmcp trait mandates `async fn`
 
-# `assert_is_empty` (style, default-warn; fires on the pinned 1.95 toolchain
-# and newer): 151 hits, all `assert!(x.is_empty())` in test files.
+# `assert_is_empty` (style, default-warn; fires on 1.95 and newer, the pinned 1.99.1
+# included): 151 hits, all `assert!(x.is_empty())` in test files.
 # Allowed rather than fixed because clippy's own suggestions are wrong at
 # 65 of those sites — `[] as [store|domains|utilities::...]` paths that do
 # not resolve at the use site (`tests/*.rs` needs a `comemory::` prefix,
