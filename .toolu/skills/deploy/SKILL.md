@@ -1,10 +1,6 @@
 ---
 name: deploy
 description: Use when releasing, deploying or shipping a comemory version from this machine while GitHub Actions are disabled — runs scripts/deploy.sh to publish a stable vX.Y.Z.
-metadata:
-  toolu:
-    origin: agent
-    created: 2026-10-26T17:04:13Z
 ---
 ## When to Use
 
@@ -39,6 +35,8 @@ updated. Production releases only — there are no dev or RC builds.
    Pass multi-line notes with `$'...'` or a variable, never a literal `\n`.
    Run it in the background: it first runs every quality gate, and the
    emulated x86_64 Linux build takes tens of minutes on a cold cache.
+   It publishes for good, so run it only when the user asked for this release
+   in the conversation (`/deploy` counts); on a vague hint, ask first.
 7. Report the release URL (the last stdout line) and the version to the user.
 
 ## Pitfalls
@@ -72,3 +70,5 @@ updated. Production releases only — there are no dev or RC builds.
   `install.sh` into a temp dir; its `[deploy:smoke] OK` line is the evidence.
 - After changing the script itself: `bash scripts/test-deploy.sh` (fast cases)
   and `bash scripts/test-deploy.sh rehearsal smoke`.
+- After changing this skill or its `.claude/skills/deploy` link (what makes it
+  `/deploy`): `bash scripts/test-deploy.sh skill`.

@@ -14,7 +14,7 @@
 
 > **GitHub Actions disabled?** Then a pushed tag builds nothing and the bot
 > never runs. Release from your Mac with `scripts/deploy.sh` instead (§3b);
-> agents run it with `/deploy` (the `deploy` project skill).
+> agents load the `deploy` project skill for it (`/deploy` in Claude Code).
 
 The release-plz bot (`.github/workflows/release-plz.yml`, config
 `release-plz.toml`) owns **version + CHANGELOG + tag**. cargo-dist owns
