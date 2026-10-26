@@ -23,11 +23,13 @@ step has variations, this guide picks one happy path and links out.
 Pick whichever channel fits your machine. The one-liner is the shortest path on
 Apple Silicon macOS and glibc ≥ 2.35 Linux — `install.sh` is attached to every
 release, and `latest/download` resolves to the newest one. Those are the only
-prebuilt targets: an Intel Mac or a musl distro gets `no prebuilt comemory for
-…` with the source-install recipe; an older glibc (Debian bullseye 2.31, Ubuntu
-20.04 2.31, RHEL 9 / Amazon Linux 2023 2.34) downloads fine and then fails the
-installer's own `--version` run of the binary, with a message naming the glibc
-floor — before anything is installed. Both need the source install below.
+prebuilt targets, and the installer refuses anything else before it downloads:
+an Intel Mac gets `no prebuilt comemory for …`, a musl distro such as Alpine
+(`gcompat` or not) gets `this is a musl system`, and an older glibc (Debian
+bullseye 2.31, Ubuntu 20.04 2.31, RHEL 9 / Amazon Linux 2023 2.34) gets
+`glibc 2.31 is older than 2.35`, each with the source-install recipe. A glibc
+distro that merely has the `musl` package installed is not refused. All three
+need the source install below.
 
 ```bash
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \

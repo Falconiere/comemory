@@ -15,6 +15,7 @@ qa:
     bash scripts/deny-check.sh
     bash scripts/dup-check.sh
     bash scripts/machete-check.sh
+    bash scripts/test-install-libc.sh
 
 # Run the test suite under cargo-llvm-cov; enforce coverage-floor.txt if present.
 coverage:

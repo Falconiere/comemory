@@ -734,7 +734,11 @@ reported all four of its checks.
   — repo-root `install.sh`, hand-written (POSIX sh, ≤ 300 code lines like
   every other file), attached to every release by `release-finalize.yml`
   (which also smoke-runs it against fresh release on Linux runner).
-  Platform detection, `latest` via release redirect, SHA-256 sidecar
+  Platform detection plus libc gate before any download (musl and glibc
+  < 2.35 refused; glibc read from `getconf GNU_LIBC_VERSION`, musl from
+  `/bin/sh`'s ELF interpreter, never from mere `/lib/ld-musl-*` presence —
+  `scripts/test-install-libc.sh` runs it on real distro images under
+  `just qa`), `latest` via release redirect, SHA-256 sidecar
   verification (never skipped), `--version` run of downloaded binary
   before atomic rename, in-place replacement of `comemory` already on
   `PATH`, once-only rc-file `PATH` line. It finishes by running just-placed

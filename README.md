@@ -113,12 +113,13 @@ git clone https://github.com/Falconiere/comemory && cd comemory
 bash scripts/dev-install.sh
 ```
 
-The installer detects the platform, resolves the newest release (or the one
+The installer detects the platform and refuses a musl libc or a glibc older
+than 2.35 before downloading anything, resolves the newest release (or the one
 you pin with `--version`), downloads the archive with a progress bar,
 verifies it against the SHA-256 sidecar every release ships (`sha256sum`,
 `shasum -a 256`, or `openssl` — it refuses to install unverified), checks the
-binary actually runs on this machine (an old glibc fails here, with a
-message, not later), swaps it into place atomically, and adds the bin
+binary actually runs on this machine (the backstop for a libc the first check
+could not identify), swaps it into place atomically, and adds the bin
 directory to your shell rc once, if it is not already on `PATH`. It also
 installs and registers Bash, Zsh, Fish, and PowerShell completions. Both steps
 are idempotent: a `comemory` already on `PATH` and the generated completions

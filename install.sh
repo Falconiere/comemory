@@ -103,10 +103,27 @@ detect_target() {
     *) die "no prebuilt $APP for $os $arch" \
          "build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh" ;;
   esac
-  if [ "$os" = Linux ] && ls /lib/ld-musl-* >/dev/null 2>&1; then
-    die "this is a musl system; only glibc (>= 2.35) Linux builds are published" \
-      "build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
-  fi
+  [ "$os" != Linux ] || detect_libc
+}
+
+# Refuse a libc the gnu builds cannot run on, before downloading anything.
+# Only glibc answers GNU_LIBC_VERSION, whatever loader shims (Alpine's
+# gcompat) sit at glibc's paths. With no answer, the system shell's own ELF
+# interpreter tells musl apart from a glibc host that merely has Debian's
+# `musl` package; failing both, the downloaded binary's --version run decides.
+# 2.35 is the release build host's glibc (ubuntu-22.04 in release.yml).
+detect_libc() {
+  src="build from source: git clone $REPO_URL && cd $APP && bash scripts/dev-install.sh"
+  glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null || true)"
+  case "$glibc" in
+    "glibc "[0-9]*.[0-9]*)
+      v="${glibc#glibc }"; major="${v%%.*}"; minor="${v#*.}"; minor="${minor%%[!0-9]*}"
+      [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 35 ]; } \
+        || die "glibc $v is older than 2.35, the oldest the Linux builds run on" "$src"
+      PRETTY="$PRETTY, glibc $v" ;;
+    *) ! grep -q /lib/ld-musl- /bin/sh 2>/dev/null \
+        || die "this is a musl system; only glibc (>= 2.35) Linux builds are published" "$src" ;;
+  esac
 }
 
 # ---------------------------------------------------------- download ----
