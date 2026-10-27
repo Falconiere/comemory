@@ -21,6 +21,8 @@
 # toolu workflow artifacts (specs/plans) — local, not committed
 /docs/toolu/
 /.toolu/tmp/
+# A hook run with its root already at .toolu/ nests its tmp one level down.
+/.toolu/.toolu/
 
 # opencode harness local state — per-session telemetry, installed hooks,
 # session markers and CLI wrappers — regenerated on every session and
