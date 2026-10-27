@@ -3,10 +3,24 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**285 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 684 production `.rs` files under `src/`. That
+**276 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 724 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number fell from 284 (M1 dedup burn, `deduplication-enforce`).**
+Five mechanical merges, each verified pair-gone with no new pair and covered
+by the modules' existing boundary tests: `tune`/`bandit` share one generic
+`spawn_learning_job` plus a macro-generated per-type glue (the hand-written
+glue paired at 100%, so the macro follows the `wire_strings!` precedent);
+`reembed_memories`/`reembed_code` share `reembed_leg` with the two call blocks
+inlined in `run` (thin wrappers re-paired at 92.10%, so no wrappers remain);
+`write_list`/`write_rows` share `write_page` over a render closure (TTY bytes
+identical); `push_direct_edges`/`push_co_citation_edges` share `push_edge_set`
+with a reverse flag; the four `copy_*` wrappers become one `DOCUMENT_TABLES`
+const plus a shared `copy_all` looper (also used for `SHARED_DOCUMENT_TABLES`,
+so the two loops cannot pair). −8 total: 284 → 276. The 285 → 284 step came
+from #408 with no doc entry; this entry restores the chain.
 
 **Why this number rose from 284 (#336, plan proposals).** The MCP transport
 gains a second project writer, so `mcp::tools_project_writes::{project_evidence,
@@ -222,9 +236,9 @@ sides of every slice, with an empty normalized pair-set diff.
   gate cannot drift. Bumping the constant is the only edit a version bump needs.
 - **Threshold:** `0.85`, via `--threshold 0.85 --fail-on-duplicates`.
 - **Scope:** every tracked `src/**/*.rs` whose path does not contain `/tests/`
-  — 414 files. Colocated tests are excluded because CORE excludes tests from
-  copy-paste detection: repeated setup there is not the duplication worth
-  chasing.
+  — 724 files (414 at #216; the tree grew). Colocated tests are excluded
+  because CORE excludes tests from copy-paste detection: repeated setup there
+  is not the duplication worth chasing.
 - **Result when #200 fixed the gate:** 242 pairs over the then-current 411
   files. The count was deterministic: three consecutive runs of the pinned build returned 242 every
   time, as did runs with the file list shuffled and reversed, so the number does
@@ -239,11 +253,11 @@ sides of every slice, with an empty normalized pair-set diff.
   at all: an inert path inflates the target count and would let the gate's
   anti-vacuous guard pass over files nobody analyzes. Duplication in `scripts/`
   is currently **unguarded**; catching it needs a shell-capable detector.
-- **Current measurement:** 235 pairs over 414 files after the runtime ORM
-  conversion and shared AST, configuration, HTTP-query and SSE helpers in #216.
-  The unchanged detector first reported 278 on the conversion; shared store
-  queries reduced it to 271, and broader cleanup reduced it to 235. The baseline
-  tightens from 242 to 235; neither the threshold nor scan scope changed.
+- **Current measurement:** 276 pairs over 724 files after the M1 dedup burn
+  (five mechanical merges, −8: learning route, reembed legs, prune output,
+  memory-rank edges, rebuild copy tables) on top of #408's undocumented
+  285 → 284 step. Neither the threshold nor scan scope changed; only the tree
+  grew (414 → 724 files) and the counted pairs fell.
 - **Every pair is intra-file.** No pair spans two files, so the rationale below
   is recorded once per file rather than once per pair.
 
@@ -267,7 +281,7 @@ addressing an individual reported pair). A per-pair allowlist would therefore
 mean reimplementing pair identity matching by hand, which is worse than the
 problem it solves. `scripts/dup-check.sh` runs a **count ratchet** instead:
 
-- The baseline count (`275`) lives in `dup-baseline.txt`, a single tracked
+- The baseline count (`276`) lives in `dup-baseline.txt`, a single tracked
   integer at the repo root — the same convention as `coverage-floor.txt` and
   `store-leak-baseline.txt`.
 - Every run re-scans and compares the current count against that baseline.
@@ -303,11 +317,15 @@ rather than advisory. When `similarity-rs` is missing, the
 gate **fails in CI** and **skips locally with a loud warning** that names the
 pinned install command and states plainly that it did not run.
 
-## The 235 pairs by area
+## The 227 pairs by area
 
 > **This table is stale and was already stale before #252.** It enumerates the
-> 235 pairs measured at #216 and was not re-authored when the ratchet rose to
-> 275, so its total no longer sums to `dup-baseline.txt`. The ratchet itself
+> 235 pairs measured at #216 and was not re-authored as the ratchet moved
+> (285 → 284 in #408, 284 → 276 in the M1 burn), so its total no longer sums
+> to `dup-baseline.txt`. The eight rows the M1 burn removed (`tune`/`bandit`,
+> `reembed_memories`/`reembed_code`, `write_list`/`write_rows`, the two
+> `push_*_edges` legs, the four `copy_*` wrappers) are deleted below rather
+> than left naming functions that no longer exist. The ratchet itself
 > re-scans and does not read this table. Re-deriving it is its own task; the
 > rows below remain accurate for the pairs they name.
 
@@ -316,21 +334,21 @@ is stale.
 
 | Area | Pairs |
 | --- | --- |
-| `src/store/` | 99 |
+| `src/store/` | 95 |
 | `src/config/` | 27 |
-| `src/serve/routes/` | 26 |
+| `src/serve/routes/` | 25 |
 | `src/domains/sync/` | 11 |
 | `src/serve/` | 9 |
 | `src/serve/routes/memories/` | 9 |
 | `src/domains/integrations/setup/` | 8 |
 | `src/domains/retrieval/` | 7 |
 | `src/serve/jobs/` | 7 |
-| `src/domains/graph/` | 6 |
+| `src/domains/graph/` | 5 |
 | `src/domains/memories/` | 3 |
 | `src/utilities/` | 3 |
 | `src/` | 2 |
 | `src/cli/` | 2 |
-| `src/cli/output/` | 2 |
+| `src/cli/output/` | 1 |
 | `src/domains/code/ast/` | 2 |
 | `src/domains/sync/exchange/` | 2 |
 | `src/domains/sync/memory_store/` | 2 |
@@ -338,12 +356,11 @@ is stale.
 | `src/domains/code/` | 1 |
 | `src/domains/documents/document/` | 1 |
 | `src/domains/learning/` | 1 |
-| `src/domains/maintenance/` | 1 |
 | `src/domains/maintenance/doctor/` | 1 |
 | `src/domains/retrieval/unified/` | 1 |
-| **Total** | **235** |
+| **Total** | **227** |
 
-## The 235 pairs, grouped by area
+## The 227 pairs, grouped by area
 
 Grouped by directory. Similarity is the pinned detector's score at threshold
 0.85; line ranges are function/method spans at scan time. The ratchet re-scans
@@ -381,7 +398,6 @@ fresh and does not depend on these line numbers.
 | `src/store/documents.rs:83-100` function `get_document` | `src/store/documents.rs:176-201` function `get_chunk` | 90.40% | parallel document fetch helpers over twin lookups |
 | `src/store/memory_meta.rs:199-225` function `fetch_extra` | `src/store/memory_meta.rs:252-280` function `rank_signals` | 90.07% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
 | `src/store/sources.rs:97-103` function `get` | `src/store/sources.rs:265-271` function `get_file` | 90.05% | parallel source-row vs. file-row accessors over twin tables |
-| `src/store/rebuild_copy_documents.rs:53-59` function `copy_document_chunks` | `src/store/rebuild_copy_documents.rs:63-69` function `copy_document_fts` | 89.86% | one `copy_*` helper per table group in the rebuild copy step, enumerated per group by design rather than generalized |
 | `src/store/code_row.rs:325-348` function `find_by_address` | `src/store/code_row.rs:353-368` function `symbol_row_exists` | 89.68% | parallel code-index row mappers; each retains its own typed projection rather than taking a dynamic table name |
 | `src/store/repo_marker.rs:94-96` function `last_head` | `src/store/repo_marker.rs:120-122` function `root_path` | 89.51% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
 | `src/store/retrieval_log.rs:147-158` function `prefix_matches` | `src/store/retrieval_log.rs:163-181` function `distinct_prefix_matches` | 89.37% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
@@ -435,9 +451,6 @@ fresh and does not depend on these line numbers.
 | `src/store/doctor_probes.rs:23-32` function `live_memory_hashes` | `src/store/doctor_probes.rs:48-51` function `live_memory_count` | 85.63% | distinct live-memory hash and count projections over the shared live scope |
 | `src/store/code_row.rs:122-141` function `purge_file_symbols` | `src/store/code_row.rs:147-157` function `upsert_indexed_file` | 85.60% | parallel code-index row mappers; each retains its own typed projection rather than taking a dynamic table name |
 | `src/store/edges.rs:144-153` function `insert_at` | `src/store/edges.rs:163-172` function `insert_weighted` | 85.55% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
-| `src/store/rebuild_copy_documents.rs:34-40` function `copy_source_files` | `src/store/rebuild_copy_documents.rs:43-49` function `copy_documents` | 85.48% | one `copy_*` helper per table group in the rebuild copy step, enumerated per group by design rather than generalized |
-| `src/store/rebuild_copy_documents.rs:43-49` function `copy_documents` | `src/store/rebuild_copy_documents.rs:53-59` function `copy_document_chunks` | 85.48% | one `copy_*` helper per table group in the rebuild copy step, enumerated per group by design rather than generalized |
-| `src/store/rebuild_copy_documents.rs:43-49` function `copy_documents` | `src/store/rebuild_copy_documents.rs:63-69` function `copy_document_fts` | 85.48% | one `copy_*` helper per table group in the rebuild copy step, enumerated per group by design rather than generalized |
 | `src/store/sources.rs:265-271` function `get_file` | `src/store/sources.rs:278-287` function `list_files_by_source` | 85.45% | parallel source-row vs. file-row accessors over twin tables |
 | `src/store/index_runs.rs:168-170` function `clamp` | `src/store/index_runs.rs:174-176` function `unsigned` | 85.44% | parallel CRUD/row-mapper pairs over twin tables; each retains its own query and row-decoding contract within `store/` |
 | `src/store/query_expansions.rs:35-46` function `insert` | `src/store/query_expansions.rs:93-99` function `count` | 85.44% | distinct expansion insertion and count projection; statement execution is shared by the ORM bridge |
@@ -488,7 +501,6 @@ fresh and does not depend on these line numbers.
 
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
-| `src/serve/routes/learning.rs:165-203` function `tune` | `src/serve/routes/learning.rs:210-248` function `bandit` | 96.51% | parallel axum handlers over twin resources — same extract-validate-respond skeleton per route |
 | `src/serve/routes/graph_nodes.rs:129-138` function `node_detail` | `src/serve/routes/graph_nodes.rs:208-217` function `node_source` | 96.28% | short typed adapters supply distinct graph queries through shared query_response |
 | `src/serve/routes/graph_nodes.rs:100-110` function `list` | `src/serve/routes/graph_nodes.rs:114-124` function `snapshot` | 95.60% | short typed adapters supply distinct graph queries through shared query_response |
 | `src/serve/routes/jobs.rs:93-103` function `cancel` | `src/serve/routes/jobs.rs:136-143` function `get_one` | 93.44% | distinct event-stream transitions retain their lifecycle rules; payload serialization is shared |
@@ -594,7 +606,6 @@ fresh and does not depend on these line numbers.
 
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
-| `src/domains/graph/memory_rank.rs:78-89` function `push_direct_edges` | `src/domains/graph/memory_rank.rs:94-106` function `push_co_citation_edges` | 95.58% | direct-relation vs. co-citation edge pushes — twin PageRank edge loaders over twin queries |
 | `src/domains/graph/imports.rs:309-324` function `python_imports` | `src/domains/graph/imports.rs:328-351` function `go_imports` | 92.74% | Python and Go line parsers handle different syntax; import collection is shared |
 | `src/domains/graph/graph_nodes.rs:300-314` function `fetch_top_symbols` | `src/domains/graph/graph_nodes.rs:319-328` function `fetch_cited_by` | 88.98% | parallel graph-page builders / row-to-DTO mappers |
 | `src/domains/graph/doc_link.rs:101-139` function `resolve_markdown_links` | `src/domains/graph/doc_link.rs:157-176` function `resolve_document_id` | 88.71% | parallel graph-page builders / row-to-DTO mappers |
@@ -634,7 +645,6 @@ fresh and does not depend on these line numbers.
 
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
-| `src/cli/output/prune.rs:36-43` function `write_list` | `src/cli/output/prune.rs:49-60` function `write_rows` | 93.08% | parallel render helpers, one per output shape |
 | `src/cli/output/graph.rs:33-37` function `write_dot` | `src/cli/output/graph.rs:40-44` function `write_html` | 89.98% | parallel render helpers, one per output shape |
 
 ### `src/domains/code/ast/`
@@ -682,12 +692,6 @@ fresh and does not depend on these line numbers.
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
 | `src/domains/learning/learning_proposals.rs:181-189` function `parse_knobs` | `src/domains/learning/learning_proposals.rs:193-200` function `require_knobs` | 87.70% | parallel proposal builders over twin signal sources |
-
-### `src/domains/maintenance/`
-
-| Pair A | Pair B | Similarity | Remaining distinction |
-| --- | --- | --- | --- |
-| `src/domains/maintenance/reembed.rs:300-320` function `reembed_memories` | `src/domains/maintenance/reembed.rs:324-340` function `reembed_code` | 92.83% | parallel maintenance checks, one per checked surface |
 
 ### `src/domains/maintenance/doctor/`
 

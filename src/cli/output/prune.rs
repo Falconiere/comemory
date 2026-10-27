@@ -23,38 +23,48 @@ pub fn emit(report: &Report, json_flag: bool) -> Result<()> {
     writeln!(out, "orphan_edges       : {}", report.orphan_edges)?;
     writeln!(out, "trash_count        : {}", report.trash_count)?;
     writeln!(out, "reclaimable_bytes  : {}", report.reclaimable_bytes)?;
-    write_list(&mut out, "stale_code_files", &report.stale_code_files)?;
-    write_rows(&mut out, "low_value_memories", &report.low_value_memories)?;
-    write_rows(&mut out, "ghost_ref_memories", &report.ghost_ref_memories)?;
+    write_page(
+        &mut out,
+        "stale_code_files",
+        &report.stale_code_files,
+        Clone::clone,
+    )?;
+    let render_row = |row: &PruneRow| {
+        format!(
+            "{} [{}] activation={:.2} age_days={} {}",
+            row.id, row.reason, row.activation, row.age_days, row.title
+        )
+    };
+    write_page(
+        &mut out,
+        "low_value_memories",
+        &report.low_value_memories,
+        render_row,
+    )?;
+    write_page(
+        &mut out,
+        "ghost_ref_memories",
+        &report.ghost_ref_memories,
+        render_row,
+    )?;
     Ok(())
 }
 
-/// Write one labelled list section: a `label : <total>` header, the
-/// page's windowed entries indented below it, then the shared
-/// [`tty::write_page_footer`] showing the list's full total. Keeps the
-/// two prune lists rendered identically (Binding Rule 1).
-fn write_list(out: &mut impl std::io::Write, label: &str, page: &Page<String>) -> Result<()> {
+/// Write one labelled list section: a `label : <total>` header, each item
+/// rendered by `render` and indented below it, then the shared
+/// [`tty::write_page_footer`] showing the list's full total. One rendering
+/// rule for every prune list shape (Binding Rule 1): string lists pass
+/// [`Clone::clone`] as `render`, [`PruneRow`] lists pass the row format.
+fn write_page<T>(
+    out: &mut impl std::io::Write,
+    label: &str,
+    page: &Page<T>,
+    render: impl Fn(&T) -> String,
+) -> Result<()> {
     let total = page.total.unwrap_or(page.items.len());
     writeln!(out, "{label:<18} : {total}")?;
-    for entry in &page.items {
-        writeln!(out, "  - {entry}")?;
-    }
-    tty::write_page_footer(out, page.items.len(), page.offset, page.total)
-}
-
-/// Write one labelled [`PruneRow`] list section: a `label : <total>` header,
-/// each row's id/reason/activation/age_days/title indented below it, then
-/// the shared [`tty::write_page_footer`]. Mirrors [`write_list`] for the two
-/// row-shaped lists (Binding Rule 1: one rendering rule per list shape).
-fn write_rows(out: &mut impl std::io::Write, label: &str, page: &Page<PruneRow>) -> Result<()> {
-    let total = page.total.unwrap_or(page.items.len());
-    writeln!(out, "{label:<18} : {total}")?;
-    for row in &page.items {
-        writeln!(
-            out,
-            "  - {} [{}] activation={:.2} age_days={} {}",
-            row.id, row.reason, row.activation, row.age_days, row.title
-        )?;
+    for item in &page.items {
+        writeln!(out, "  - {}", render(item))?;
     }
     tty::write_page_footer(out, page.items.len(), page.offset, page.total)
 }
