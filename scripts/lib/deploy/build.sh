@@ -23,57 +23,77 @@ deploy_platform() {
 }
 
 deploy_build_all() {
-  local t
+  local start
   DEPLOY_ASSETS="$PROJECT_ROOT/target/deploy/$DEPLOY_TAG"
   rm -rf "${DEPLOY_ASSETS:?}"
   mkdir -p "$DEPLOY_ASSETS/bin"
-  for t in "${DEPLOY_TARGETS[@]}"; do
-    log_info deploy:build "$t"
-    if [[ "$t" == aarch64-apple-darwin ]]; then deploy_build_macos "$t"; else deploy_build_linux "$t"; fi
-    log_ok deploy:build "$t"
-  done
+  # --resume compares this with the pushed tag, so a dry run's build is never published.
+  printf '%s\n' "$DEPLOY_COMMIT" >"$DEPLOY_ASSETS/commit"
+  log_info deploy:build aarch64-apple-darwin
+  deploy_build_macos aarch64-apple-darwin
+  log_ok deploy:build aarch64-apple-darwin
+  log_info deploy:build "linux: aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu"
+  start=$SECONDS
+  deploy_build_linux
+  log_ok deploy:build "linux ($((SECONDS - start))s)"
 }
 
 deploy_build_macos() {
   local cache="$PROJECT_ROOT/target/deploy-cache/macos"
-  (cd "$DEPLOY_WORKTREE" && RUSTUP_TOOLCHAIN="$DEPLOY_RUST" CARGO_TARGET_DIR="$cache" \
-    cargo build --release --locked --bin comemory --target "$1") \
+  (cd "$DEPLOY_WORKTREE" && CARGO_TARGET_DIR="$cache" \
+    deploy_with_rust cargo build --release --locked --bin comemory --target "$1") \
     || die deploy:build "$1 build failed"
   cp "$cache/$1/release/comemory" "$DEPLOY_ASSETS/bin/comemory-$1"
 }
 
+# Both Linux targets in one native arm64 container and one cargo run, which
+# builds them in parallel: aarch64 natively, x86_64 through Ubuntu's own cross
+# toolchain (same glibc 2.35 as the image, so the 2.34 floor holds). Measured
+# on this Mac: x86_64 under colima's Rosetta 306 s warm, cross 189 s.
+#
 # No bind mounts: colima and similar VMs share only $HOME, so a mounted repo
 # under /Volumes or $TMPDIR arrives empty. The release commit's tree goes in
-# over stdin and the binary comes back on stdout. Named volumes keep the
-# target dir and registry warm; the source always sits at /src, so cached
+# over stdin and the binaries come back as a tar on stdout. Named volumes keep
+# the target dir and registry warm; the source always sits at /src, so cached
 # dependencies stay valid across runs. `tar -m` stamps the sources with the
 # VM's own clock, so they are always newer than the cached outputs and cargo
 # can never ship a stale binary when host and VM clocks disagree.
 deploy_build_linux() {
-  local platform arch image
-  platform="$(deploy_platform "$1")"
-  arch="${platform#linux/}"
-  image="comemory-deploy-builder:$DEPLOY_RUST-$arch"
+  local image="comemory-deploy-builder:$DEPLOY_RUST-cross" out="$DEPLOY_ASSETS/bin/linux" t
   # Dockerfile on stdin, no build context; layers are cached after the first run.
-  if ! docker build --quiet --platform "$platform" --tag "$image" - >/dev/null <<EOF
+  if ! docker build --quiet --platform linux/arm64 --tag "$image" - >/dev/null <<EOF
 FROM $DEPLOY_RUN_IMAGE
 RUN apt-get update && apt-get install -y --no-install-recommends \\
-      build-essential ca-certificates curl pkg-config zlib1g-dev \\
+      build-essential ca-certificates curl pkg-config zlib1g-dev crossbuild-essential-amd64 \\
   && rm -rf /var/lib/apt/lists/*
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $DEPLOY_RUST
-ENV PATH=/root/.cargo/bin:\$PATH
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $DEPLOY_RUST \\
+      --target x86_64-unknown-linux-gnu
+ENV PATH=/root/.cargo/bin:\$PATH \\
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \\
+    CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \\
+    CXX_x86_64_unknown_linux_gnu=x86_64-linux-gnu-g++ \\
+    AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar
 EOF
   then
     die deploy:build "cannot build the $image builder image"
   fi
+  mkdir -p "$out"
   git -C "$PROJECT_ROOT" archive --format=tar "$DEPLOY_COMMIT" \
-    | docker run -i --rm --platform "$platform" \
-      -v "comemory-deploy-target-$DEPLOY_RUST-$arch:/src/target" \
-      -v "comemory-deploy-registry-$DEPLOY_RUST-$arch:/root/.cargo/registry" \
+    | docker run -i --rm --platform linux/arm64 \
+      -v "comemory-deploy-target-$DEPLOY_RUST-cross:/src/target" \
+      -v "comemory-deploy-registry-$DEPLOY_RUST-cross:/root/.cargo/registry" \
       "$image" sh -c 'tar -xmf - -C /src && cd /src \
-        && cargo build --release --locked --bin comemory >&2 && cat target/release/comemory' \
-      >"$DEPLOY_ASSETS/bin/comemory-$1" \
-    || die deploy:build "$1 build failed"
+        && cargo build --release --locked --bin comemory \
+             --target aarch64-unknown-linux-gnu --target x86_64-unknown-linux-gnu >&2 \
+        && tar -cf - -C target aarch64-unknown-linux-gnu/release/comemory \
+             x86_64-unknown-linux-gnu/release/comemory' \
+    | tar -xf - -C "$out" \
+    || die deploy:build "linux build failed"
+  for t in aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
+    [[ -x "$out/$t/release/comemory" ]] || die deploy:build "the linux build returned no $t binary"
+    mv "$out/$t/release/comemory" "$DEPLOY_ASSETS/bin/comemory-$t"
+  done
+  rm -rf "$out"
 }
 
 # Same asset names and archive layout as cargo-dist, so install.sh,
@@ -108,8 +128,13 @@ deploy_binary_version() {
   fi
 }
 
+# deploy_glibc_max <binary> — the highest GLIBC_2.N symbol version it references.
+deploy_glibc_max() {
+  { grep -ao 'GLIBC_2\.[0-9]*' "$1" || true; } | sort -t. -k2,2n -u | tail -1
+}
+
 deploy_verify_assets() {
-  local t out x="$DEPLOY_ASSETS/verify"
+  local t out max x="$DEPLOY_ASSETS/verify"
   (cd "$DEPLOY_ASSETS" && shasum -a 256 -c sha256.sum >/dev/null) \
     || die deploy:verify "sha256.sum does not match the archives"
   grep -qF "## [$DEPLOY_VERSION]" "$DEPLOY_ASSETS/notes.md" \
@@ -124,6 +149,13 @@ deploy_verify_assets() {
       || die deploy:verify "$t binary does not run: $(cat "$x/err")"
     [[ "$out" == "comemory $DEPLOY_VERSION" ]] \
       || die deploy:verify "$t binary reports '$out', expected 'comemory $DEPLOY_VERSION'"
+    if [[ "$t" == *-linux-gnu ]]; then
+      # README and docs/getting-started.md publish glibc >= 2.34; a newer symbol breaks those hosts.
+      max="$(deploy_glibc_max "$x/comemory-$t/comemory")"
+      [[ -n "$max" ]] || die deploy:verify "$t binary references no GLIBC_ symbol; not the expected glibc build"
+      ((${max#GLIBC_2.} <= 34)) || die deploy:verify "$t binary needs $max, above the published GLIBC_2.34 floor"
+      out="$out, $max"
+    fi
     log_ok deploy:verify "$t → $out"
   done
   rm -rf "$x"

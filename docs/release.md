@@ -308,48 +308,88 @@ treats the RC tarball identically to a stable one.
 
 ## 3b. Local deploy (Actions disabled)
 
-While every workflow is disabled, `scripts/deploy.sh` does locally what
-`release.yml` and `release-finalize.yml` did, for stable releases only (no
-pre-release or RC builds). Agents follow `.toolu/skills/deploy/SKILL.md`;
-`.claude/skills/deploy` links to it, so Claude Code offers it as `/deploy`.
+While every workflow is disabled, `scripts/deploy.sh` does locally what the
+release-plz bot, `release.yml` and `release-finalize.yml` did, for stable
+releases only (no pre-release or RC builds). Agents follow
+`.toolu/skills/deploy/SKILL.md`; `.claude/skills/deploy` links to it, so
+Claude Code offers it as `/deploy`.
 
 ```bash
-bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes"            # release
-bash scripts/deploy.sh --tag v0.58.0 --change-log "$notes" --dry-run  # rehearse
+bash scripts/deploy.sh --dry-run          # rehearse: prints the computed tag and notes
+bash scripts/deploy.sh --tag v0.58.0      # release, asserting the rehearsed tag
+bash scripts/deploy.sh --resume v0.58.0   # finish after exit 2
 ```
 
+The version and the CHANGELOG section come from `release-plz update`, the
+pinned 0.3.169 that `.github/workflows/release-plz.yml` names, so they match
+what the bot's release PRs wrote: same `release-plz.toml` commit parsers and
+`release_commits` gate, and the same version rule (on 0.x a `feat:` is a
+patch; cargo-semver-checks reporting an incompatible library API, or a
+breaking `!`, makes it minor). PR links render from `origin`'s GitHub URL, as
+in CI. `--tag` is optional and only asserts the computed version; a run
+whose commits render no changelog line refuses with "nothing to release".
+
 It runs from `main` equal to `origin/main`, runs the full local gate set
-(check-all on Rust 1.95, nextest, dup-check, deny-check, machete-check), lands
-`chore(release): vX.Y.Z` on `main` together with the tag in one atomic push,
-marks the GitHub Release latest and updates the Homebrew tap.
+(check-all, nextest, dup-check, deny-check, machete-check, all on the pinned
+Rust 1.99.1), lands `chore(release): vX.Y.Z` on `main` together with the tag
+in one atomic push, marks the GitHub Release latest and updates the Homebrew
+tap.
 
 Requirements: an Apple Silicon Mac (`aarch64-apple-darwin` builds natively),
-Docker running (both Linux targets build in a local `ubuntu:22.04` + Rust
-1.95.0 image, the same glibc 2.35 build host cargo-dist's runners had, whose
-binaries need glibc 2.34; x86_64 runs
-emulated and is slow on a cold cache), a clean tree, an empty
-`## [Unreleased]`, and `gh api user` succeeding (`env -u GH_TOKEN` when the env
-token is stale).
+the pinned Rust (1.99.1, `DEPLOY_RUST` in `scripts/lib/deploy/prepare.sh`)
+installed through rustup, `release-plz` 0.3.169 and `cargo-semver-checks`
+0.51.0 (`cargo install --locked <tool> --version <v>`; preflight names the
+command), Docker running, a clean tree, an empty
+`## [Unreleased]`, and `gh api user` succeeding (`env -u GH_TOKEN` when the
+env token is stale). The pin is the latest stable Rust when chosen; moving it
+means updating `DEPLOY_RUST`, the workflows' `toolchain:`, the `Dockerfile`,
+`Cargo.toml`'s `rust-version` and the README badge together, then running the
+full gate set on the new toolchain.
 
-Order of work: arguments → preflight → gates → bump commit (`Cargo.toml`,
-`Cargo.lock`, the `--change-log` text as the new CHANGELOG section) in a temp
-detached worktree → three builds → archives with cargo-dist's names and layout,
+Both Linux targets build in one native arm64 `ubuntu:22.04` container with
+Rust 1.99.1: aarch64 natively and x86_64 through Ubuntu's
+`crossbuild-essential-amd64`, in a single `cargo build` with two `--target`s.
+That is the same glibc 2.35 build host cargo-dist's runners had, and
+`deploy_verify_assets` refuses any Linux binary needing a glibc symbol above
+2.34, the published floor. On this Mac the x86_64 build took 306 s warm under
+colima's Rosetta and 189 s cross-compiled (2026-10-26). Every cargo call
+(gates, macOS build, bump, and the push's pre-push hook) runs with the 1.99.1
+toolchain's own `bin` first on `PATH`: `RUSTUP_TOOLCHAIN` alone does nothing
+when a Homebrew `cargo` comes first, as it does here.
+
+Order of work: arguments → preflight → bump commit (`release-plz update` in a
+temp detached worktree; only `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md` may
+change) → gates (after the bump, so "nothing to release" refuses in about
+90 s instead of after them) → three builds → archives with cargo-dist's names
+and layout,
 `.sha256` files, `sha256.sum`, `install.sh`, `comemory-installer.sh` (the name
 `get.comemory.io` still redirects to) → each binary checked with `--version`
 (Linux ones inside `ubuntu:22.04`) → `comemory.rb` rewritten from the tap's
-formula → push → `gh release create` → tap → `install.sh` smoke install into a
-temp dir. `--dry-run` skips the gates, stops before the push and prints the
-skipped commands; assets stay in `target/deploy/<tag>/`.
+formula → push → finish: the GitHub Release (created, or only its missing
+assets uploaded) → tap (skipped when already at the version) → `latest` mark
+→ `install.sh` smoke install into a temp dir. `--dry-run` skips the gates,
+stops before the push and prints the skipped commands; assets stay in
+`target/deploy/<tag>/`.
 
 Exit `1` means nothing was pushed. Exit `2` means the tag is public and a later
-step failed; the output ends with the §5 rollback commands, and the script
-never deletes anything itself. Not produced while Actions are off: the GHCR
-image, the minisign signature and `dist-manifest.json`.
+step failed; the output names `bash scripts/deploy.sh --resume vX.Y.Z`, which
+re-runs the same finish from the assets in `target/deploy/<tag>/`: it skips
+the gates, the bump and the builds, re-verifies the archives, and does only
+what is still missing. It refuses (exit 1, nothing written) unless the tag is
+the newest release tag on `origin`, on `origin/main`, with its asset directory
+intact and built from that tag's commit (its `commit` file; a `--dry-run`'s
+build never matches), and stops (exit 2) when a release asset differs from
+the local file, so a release never mixes two builds. The script never deletes anything itself;
+§5's rollback is only for withdrawing a bad release. Not produced while
+Actions are off: the GHCR image, the minisign signature and
+`dist-manifest.json`.
 
 Self-check after editing the script: `bash scripts/test-deploy.sh` (offline
 cases), `bash scripts/test-deploy.sh rehearsal` (real builds through
-`--dry-run`) and `bash scripts/test-deploy.sh smoke` (installs the published
-v0.57.1).
+`--dry-run`), `bash scripts/test-deploy.sh smoke` (installs the published
+v0.57.1), `bash scripts/test-deploy.sh plan` (the release planner over the
+latest real release) and `bash scripts/test-deploy.sh resume` (a read-only
+`--resume` of the latest release; a guard fails the case on any GitHub write).
 
 ---
 
@@ -382,6 +422,11 @@ v0.57.1).
 ---
 
 ## 5. Rollback
+
+A local deploy that exited `2` is not a reason to roll back: the tag is good
+and only a later step failed, so finish it with `bash scripts/deploy.sh
+--resume vX.Y.Z` (§3b). Roll back only to withdraw a bad release — and pick
+the next patch for the fix, because a tag is never re-used.
 
 If a bad tag was pushed:
 

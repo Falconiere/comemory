@@ -74,7 +74,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
-          toolchain: "1.95"
+          toolchain: "1.99.1"
       # NOTE: this `validate` step is hand-maintained (the rest of the file is
       # dist-generated). On a future `cargo dist init`, re-apply this block.
       - name: Validate release preflight

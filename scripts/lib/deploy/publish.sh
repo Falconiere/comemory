@@ -26,12 +26,16 @@ deploy_rewrite_formula() {
   ' "$1"
 }
 
+# deploy_tap_formula — print the tap's current Formula/comemory.rb (read-only).
+deploy_tap_formula() {
+  gh api "repos/$DEPLOY_TAP/contents/Formula/comemory.rb" --jq .content | base64 -d
+}
+
 # Write <assets>/comemory.rb from the tap's current formula (read-only).
 deploy_stage_formula() {
   local tmp
   tmp="$(mktemp -d)"
-  gh api "repos/$DEPLOY_TAP/contents/Formula/comemory.rb" --jq .content | base64 -d >"$tmp/current.rb" \
-    || die deploy:formula "cannot read Formula/comemory.rb from $DEPLOY_TAP"
+  deploy_tap_formula >"$tmp/current.rb" || die deploy:formula "cannot read Formula/comemory.rb from $DEPLOY_TAP"
   deploy_rewrite_formula "$tmp/current.rb" "$DEPLOY_VERSION" "$DEPLOY_ASSETS/sha256.sum" \
     >"$DEPLOY_ASSETS/comemory.rb" || die deploy:formula "cannot rewrite the formula"
   rm -rf "$tmp"
@@ -39,9 +43,14 @@ deploy_stage_formula() {
 
 # deploy_release_argv — the `gh` arguments of the release, one per line.
 deploy_release_argv() {
-  local t
   printf '%s\n' release create "$DEPLOY_TAG" --repo "$DEPLOY_REPO" --verify-tag \
     --title "$DEPLOY_TAG" --notes-file "$DEPLOY_ASSETS/notes.md" --latest
+  deploy_release_assets
+}
+
+# deploy_release_assets — the files the release carries, one path per line.
+deploy_release_assets() {
+  local t
   for t in "${DEPLOY_TARGETS[@]}"; do
     printf '%s\n' "$DEPLOY_ASSETS/comemory-$t.tar.xz" "$DEPLOY_ASSETS/comemory-$t.tar.xz.sha256"
   done
@@ -56,12 +65,15 @@ deploy_push_refs() {
 
 deploy_print_skipped() {
   log_info deploy:dry-run "skipped — a real run would also:"
-  printf '  run the gates: check-all (Rust 1.95), nextest, dup-check, deny-check, machete-check\n'
+  printf '  run the gates (Rust %s): check-all, nextest, dup-check, deny-check, machete-check\n' "$DEPLOY_RUST"
   printf '  git tag -a %s -m %s %s\n' "$DEPLOY_TAG" "$DEPLOY_TAG" "$DEPLOY_COMMIT"
   printf '  git push --atomic %s %s\n' "$DEPLOY_REMOTE" "$(deploy_push_refs | tr '\n' ' ')"
-  printf '  gh %s\n' "$(deploy_release_argv | tr '\n' ' ')"
-  printf '  Homebrew tap: push %s/comemory.rb to %s\n' "$DEPLOY_ASSETS" "$DEPLOY_TAP"
-  printf '  smoke: install.sh --version %s into a temp dir\n' "$DEPLOY_TAG"
+  printf '  then finish, skipping what is already done (what --resume %s re-runs):\n' "$DEPLOY_TAG"
+  printf '    gh %s (or upload only the missing assets)\n' "$(deploy_release_argv | tr '\n' ' ')"
+  printf '    Homebrew tap: push %s/comemory.rb to %s unless it is at %s\n' \
+    "$DEPLOY_ASSETS" "$DEPLOY_TAP" "${DEPLOY_TAG#v}"
+  printf '    mark %s latest unless releases/latest already points at it\n' "$DEPLOY_TAG"
+  printf '    smoke: install.sh --version %s into a temp dir\n' "$DEPLOY_TAG"
 }
 
 # Tag the bump commit and push it in one atomic push; a rejection leaves nothing behind.
@@ -72,7 +84,7 @@ deploy_push() {
     || die deploy:push "cannot create tag $DEPLOY_TAG"
   # lefthook's pre-push check-all must lint on the CI-pinned toolchain; a newer
   # default clippy rejects main and would refuse every release here.
-  if ! RUSTUP_TOOLCHAIN="$DEPLOY_RUST" git -C "$PROJECT_ROOT" push --atomic "$DEPLOY_REMOTE" "${refs[@]}"; then
+  if ! deploy_with_rust git -C "$PROJECT_ROOT" push --atomic "$DEPLOY_REMOTE" "${refs[@]}"; then
     git -C "$PROJECT_ROOT" tag -d "$DEPLOY_TAG" >/dev/null
     die deploy:push "push rejected; nothing was published (local tag $DEPLOY_TAG removed)"
   fi
@@ -81,11 +93,13 @@ deploy_push() {
   log_ok deploy:push "$(deploy_push_refs | tr '\n' ' ')"
 }
 
-# deploy_published_failure <message> — after the push: print rollback, exit 2.
+# deploy_published_failure <message> — after the push: print how to finish, exit 2.
 deploy_published_failure() {
   log_err deploy:publish "$1"
   cat >&2 <<EOF
-$DEPLOY_TAG is pushed. To roll back (docs/release.md §5):
+$DEPLOY_TAG is pushed. Finish it; every step skips what is already done:
+  bash scripts/deploy.sh --resume $DEPLOY_TAG
+Only to withdraw a bad release (docs/release.md §5):
   gh release delete $DEPLOY_TAG --repo $DEPLOY_REPO --yes
   git push --delete $DEPLOY_REMOTE $DEPLOY_TAG && git tag --delete $DEPLOY_TAG
 EOF
@@ -146,17 +160,8 @@ deploy_wait_latest() {
   return 1
 }
 
+# The same finish --resume runs, so every real release exercises it.
 deploy_publish() {
-  local argv=() a url="https://github.com/$DEPLOY_REPO/releases/tag/$DEPLOY_TAG"
   deploy_push
-  while IFS= read -r a; do argv+=("$a"); done < <(deploy_release_argv)
-  gh "${argv[@]}" >/dev/null || deploy_published_failure "gh release create failed"
-  log_ok deploy:release "$url"
-  deploy_publish_tap || deploy_published_failure \
-    "Homebrew tap not updated; retry: copy $DEPLOY_ASSETS/comemory.rb to $DEPLOY_TAP Formula/ and push"
-  log_ok deploy:tap "$DEPLOY_TAP → $DEPLOY_VERSION"
-  deploy_wait_latest "$DEPLOY_TAG" \
-    || deploy_published_failure "releases/latest still does not point at $DEPLOY_TAG after ~2 minutes"
-  deploy_smoke "$DEPLOY_TAG" || deploy_published_failure "smoke install of $DEPLOY_TAG failed"
-  printf '%s\n' "$url"
+  deploy_finish
 }

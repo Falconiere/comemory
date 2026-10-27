@@ -129,7 +129,8 @@ comemory mine --apply              # distill query reformulations into expansion
 comemory tune --apply              # grid-search ranking knobs into config.toml
 comemory consolidate               # advisory near-duplicate cluster report
 comemory upgrade                   # move this binary to the newest release (--check, --version, --force)
-bash scripts/deploy.sh --tag vX.Y.Z --change-log "..." [--dry-run]  # local stable release while Actions are off (docs/release.md §3b)
+bash scripts/deploy.sh [--tag vX.Y.Z] [--dry-run]  # local stable release while Actions are off; release-plz computes version + CHANGELOG (docs/release.md §3b)
+bash scripts/deploy.sh --resume vX.Y.Z  # finish a pushed release after deploy.sh exited 2; skips what is done, never rebuilds
 comemory auth login|status|logout  # org-scoped cloud login; `login` also runs the first sync
 comemory sync                      # drain the bound key both ways until caught up (replica-v1, or the old protocol + code index)
 comemory sync --action auto        # the pass hooks fire: refresh every stale hooked repo, then drain (no login needed)
@@ -494,9 +495,11 @@ schema-migration snapshot `rebuild` shares its mechanism with.
 ## Testing
 
 - Runner: `cargo nextest run --all-features` (alias `just test`).
-- Match `.github/workflows/test.yml`'s Rust 1.95 toolchain when running 
-  quality gates (`RUSTUP_TOOLCHAIN=1.95.0 bash scripts/check-all.sh`); Clippy
-  lint inventories differ between compiler versions.
+- Match `.github/workflows/test.yml`'s pinned Rust 1.99.1 when running
+  quality gates: `PATH="$(dirname "$(rustup which --toolchain 1.99.1 cargo)"):$PATH"
+  bash scripts/check-all.sh`. `RUSTUP_TOOLCHAIN` alone is ignored when
+  Homebrew `cargo` comes first on `PATH`; Clippy lint inventories differ
+  between compiler versions.
 - Linux CI places coverage-run temporary fixtures on isolated 2 GiB `tmpfs`
   mount to avoid block-device contention from thousands of SQLite commits.
   These remain real files and databases across process restarts. Nextest starts

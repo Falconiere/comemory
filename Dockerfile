@@ -12,7 +12,7 @@
 # The builder's Debian suite is pinned to the runtime's (bookworm) so the
 # binary never links a newer glibc than the runtime image provides.
 
-FROM rust:1.95-bookworm AS builder
+FROM rust:1.99.1-bookworm AS builder
 WORKDIR /src
 
 # The whole tree, because Cargo.toml declares [[bench]] and [lib] targets whose
