@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.2] - 2026-10-27
+
+### Added
+
+- resume, cross-compiled Linux builds and release-plz notes; pin Rust 1.99.1 ([#406](https://github.com/Falconiere/comemory/pull/406))
+
+### Fixed
+
+- never archive a slash-command project skill; rename manual-deploy to /deploy ([#405](https://github.com/Falconiere/comemory/pull/405))
+- stop refusing glibc hosts that have musl installed ([#403](https://github.com/Falconiere/comemory/pull/403))
+
 ## [0.57.1] - 2026-10-25
 
 ### Fixed
