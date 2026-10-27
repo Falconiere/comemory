@@ -62,8 +62,22 @@ pub fn derive_memory_graph(conn: &Connection) -> Result<MemoryGraph> {
         .map(|(i, id)| (id.as_str(), i as u32))
         .collect();
     let mut graph: Vec<(u32, u32, f64)> = Vec::new();
-    push_direct_edges(conn, &index, &mut graph)?;
-    push_co_citation_edges(conn, &index, &mut graph)?;
+    // Both edge legs run through the shared [`push_edge_set`]: directed
+    // memory→memory relations forward-only, derived co-citations expanded to
+    // both directions (the undirected in-memory expansion `co_changed` uses
+    // on the code side, so neither co-citing memory is the donor).
+    push_edge_set(
+        &index,
+        &mut graph,
+        edges::memory_direct_relation_edges(conn)?,
+        false,
+    );
+    push_edge_set(
+        &index,
+        &mut graph,
+        edges::memory_co_citation_edges(conn)?,
+        true,
+    );
     Ok((nodes, graph))
 }
 
@@ -74,35 +88,23 @@ fn live_memory_ids(conn: &Connection) -> Result<Vec<String>> {
     memory_row::live_ids(conn)
 }
 
-/// Append the directed memory→memory relation edges to `graph`.
-fn push_direct_edges(
-    conn: &Connection,
+/// Append one edge set to `graph`, resolving both endpoints through
+/// `index` (dangling or soft-deleted endpoints are skipped by [`resolve`]).
+/// `reverse` expands each edge to both directions.
+fn push_edge_set(
     index: &BTreeMap<&str, u32>,
     graph: &mut Vec<(u32, u32, f64)>,
-) -> Result<()> {
-    for (src, dst, weight) in edges::memory_direct_relation_edges(conn)? {
+    edges: Vec<(String, String, f64)>,
+    reverse: bool,
+) {
+    for (src, dst, weight) in edges {
         if let Some((s, d)) = resolve(index, &src, &dst) {
             graph.push((s, d, weight));
+            if reverse {
+                graph.push((d, s, weight));
+            }
         }
     }
-    Ok(())
-}
-
-/// Append the derived co-citation edges to `graph`, each expanded to both
-/// directions — the undirected in-memory expansion `co_changed` uses on the
-/// code side, so neither co-citing memory is the donor.
-fn push_co_citation_edges(
-    conn: &Connection,
-    index: &BTreeMap<&str, u32>,
-    graph: &mut Vec<(u32, u32, f64)>,
-) -> Result<()> {
-    for (src, dst, weight) in edges::memory_co_citation_edges(conn)? {
-        if let Some((s, d)) = resolve(index, &src, &dst) {
-            graph.push((s, d, weight));
-            graph.push((d, s, weight));
-        }
-    }
-    Ok(())
 }
 
 /// Dense indices for an edge's endpoints, or `None` when either id is not a

@@ -182,8 +182,23 @@ pub fn run(
     let total = (memories.len() + code.len()) as u64;
     let mut state = RunState::new(embed_cmd, sink, total);
     state.response.skipped_legs = skipped_legs;
-    reembed_memories(conn, &memories, &mut state)?;
-    reembed_code(conn, &code, &mut state)?;
+    // Both legs run through the shared [`reembed_leg`]; the two call blocks
+    // differ only in dim source, row type, replace fn, and counter, so they
+    // stay inline here rather than as two near-identical wrapper functions.
+    let dim = vector::dim_memory(conn)?;
+    let written = reembed_leg(
+        conn,
+        &memories,
+        &mut state,
+        dim,
+        |conn, id: &String, vec| vector::replace_memory(conn, id, vec),
+    )?;
+    state.response.memories += written;
+    let dim = vector::dim_code(conn)?;
+    let written = reembed_leg(conn, &code, &mut state, dim, |conn, id: &i64, vec| {
+        vector::replace_code(conn, *id, vec)
+    })?;
+    state.response.code += written;
     if let Some(sink) = sink {
         sink.on_log(&format!("reembed: finished {total} row(s)"));
     }
@@ -294,49 +309,31 @@ fn code_rows(conn: &Connection) -> Result<Vec<CodeRow>> {
     crate::store::code_row::parent_snippets(conn)
 }
 
-/// Re-embed every memory row, replacing its `memory_vec` row in its own
-/// transaction so a mid-run failure or cancel leaves the rows already
-/// written durable (module doc).
-fn reembed_memories(
+/// One re-embed leg: embed every row's text and replace its vector row in its
+/// own transaction, so a mid-run failure or cancel leaves the rows already
+/// written durable (module doc). Returns the rows written; the caller adds
+/// them to its own [`Response`] counter. Ill-fitting legs never reach here
+/// (see [`fit_legs`]), and an empty slice is a no-op — the same early return
+/// the old per-leg functions had, now stated once.
+fn reembed_leg<Id>(
     conn: &mut Connection,
-    rows: &[MemoryRow],
+    rows: &[(Id, String)],
     state: &mut RunState<'_>,
-) -> Result<()> {
-    if rows.is_empty() {
-        return Ok(());
-    }
-    let dim = vector::dim_memory(conn)?;
-    for (id, body) in rows {
+    dim: usize,
+    replace: impl Fn(&Connection, &Id, &[f32]) -> Result<()>,
+) -> Result<u64> {
+    let mut written = 0;
+    for (id, text) in rows {
         state.guard_cancelled()?;
-        if let Some(vec) = state.embed(body, dim)? {
+        if let Some(vec) = state.embed(text, dim)? {
             let tx = conn.transaction()?;
-            vector::replace_memory(&tx, id, &vec)?;
+            replace(&tx, id, &vec)?;
             tx.commit()?;
-            state.response.memories += 1;
+            written += 1;
         }
         state.step();
     }
-    Ok(())
-}
-
-/// Re-embed every parent code symbol, replacing its `code_vec` row in its
-/// own transaction (see [`reembed_memories`]).
-fn reembed_code(conn: &mut Connection, rows: &[CodeRow], state: &mut RunState<'_>) -> Result<()> {
-    if rows.is_empty() {
-        return Ok(());
-    }
-    let dim = vector::dim_code(conn)?;
-    for (id, snippet) in rows {
-        state.guard_cancelled()?;
-        if let Some(vec) = state.embed(snippet, dim)? {
-            let tx = conn.transaction()?;
-            vector::replace_code(&tx, *id, &vec)?;
-            tx.commit()?;
-            state.response.code += 1;
-        }
-        state.step();
-    }
-    Ok(())
+    Ok(written)
 }
 
 /// Mutable run state shared by both legs: the embed command, the optional

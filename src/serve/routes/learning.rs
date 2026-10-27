@@ -154,96 +154,130 @@ async fn eval_history(
     respond("eval.history", result, started)
 }
 
-/// `POST /api/v1/tune` — start a `tune` job (`domains::learning::tune`). The body is a
-/// raw [`Value`] read through [`split_confirm`] so the HTTP-only `confirm`
-/// flag never joins `learning::tune::Request` (AC-12 parity). Gate order:
-/// `golden` containment first (before any other check, including
-/// read-only — AC-7), then the read-only gate (`405`, this route IS
-/// mutating regardless of `apply`), then — only when `req.apply` — the
-/// confirm gate (AC-19: read-only still outranks confirm).
-async fn tune(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
-    let started = Instant::now();
-    let (mut req, confirmed) = match split_confirm::<learning::tune::Request>(body) {
-        Ok(v) => v,
-        Err(e) => return Envelope::err("tune", &e, 0),
-    };
-    let contain_state = state.clone();
-    let golden = req.golden.clone();
-    let contained = run_blocking(move || contain_golden(&contain_state, golden.as_deref())).await;
-    match contained {
-        Ok(canonical) => req.golden = canonical,
-        Err(e) => return Envelope::err("tune", &e, 0),
-    }
-    if let Err(resp) = guard_job("tune", &state) {
-        return *resp;
-    }
-    if req.apply
-        && let Err(e) = require_confirm(confirmed)
-    {
-        return Envelope::err("tune", &e, 0);
-    }
-    let job_state = state.clone();
-    let job = jobs::spawn_job(
-        state.jobs(),
-        state.write_permit().clone(),
-        "tune",
-        true,
-        move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = learning::tune::run(&mut ctx, req)?;
-            if resp.applied {
-                job_state.reload_cfg(job_state.paths())?;
-            }
-            serde_json::to_value(resp).map_err(Error::Json)
-        },
-    );
-    accepted("tune", job, started)
+/// What [`spawn_learning_job`] needs from a learning request: the containable
+/// `golden` path plus the `apply` flag. Each request type keeps its other
+/// fields to itself.
+trait LearningJobRequest: serde::de::DeserializeOwned {
+    /// Containable golden path, when the run uses one.
+    fn golden(&self) -> Option<&str>;
+    /// Store the contained golden path back onto the request.
+    fn set_golden(&mut self, golden: Option<String>);
+    /// Whether the run may rewrite `config.toml`.
+    fn apply(&self) -> bool;
 }
 
-/// `POST /api/v1/bandit` — start a `bandit` job (`domains::learning::bandit`). Same
-/// body/confirm/gate shape as [`tune`]: `golden` containment, then the
-/// read-only gate (this route is always mutating — `learning::bandit::run`
-/// upserts `bandit_arms` regardless of `apply`), then confirm only when
-/// `req.apply`.
-async fn bandit(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
+/// What [`spawn_learning_job`] needs from a learning response: serializable,
+/// plus whether `config.toml` was rewritten (triggers `reload_cfg`).
+trait LearningJobResponse: serde::Serialize {
+    /// Whether `config.toml` was rewritten.
+    fn applied(&self) -> bool;
+}
+
+/// Generate a `tune`/`bandit`-shaped route: the [`LearningJobRequest`] and
+/// [`LearningJobResponse`] impls plus the thin handler delegating to
+/// [`spawn_learning_job`].
+///
+/// One macro, two invocations, for the same reason `wire_strings!` in
+/// `domains::architecture::model` exists: writing the impls and handlers by
+/// hand gives `scripts/dup-check.sh` near-duplicate bodies to count, and a
+/// generic helper alone cannot absorb the per-type impls.
+macro_rules! learning_job_route {
+    ($handler:ident, $command:literal, $request:ty, $run:path, $response:ty) => {
+        impl LearningJobRequest for $request {
+            fn golden(&self) -> Option<&str> {
+                self.golden.as_deref()
+            }
+            fn set_golden(&mut self, golden: Option<String>) {
+                self.golden = golden;
+            }
+            fn apply(&self) -> bool {
+                self.apply
+            }
+        }
+
+        impl LearningJobResponse for $response {
+            fn applied(&self) -> bool {
+                self.applied
+            }
+        }
+
+        /// Route handler; the shared shape lives on [`spawn_learning_job`].
+        async fn $handler(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
+            spawn_learning_job(&state, $command, body, $run).await
+        }
+    };
+}
+
+learning_job_route!(
+    tune,
+    "tune",
+    learning::tune::Request,
+    learning::tune::run,
+    learning::tune::Response
+);
+learning_job_route!(
+    bandit,
+    "bandit",
+    learning::bandit::Request,
+    learning::bandit::run,
+    learning::evaluation::bandit::BanditReport
+);
+
+/// Start a `tune`/`bandit`-shaped learning job. The body is a raw [`Value`]
+/// read through [`split_confirm`] so the HTTP-only `confirm` flag never joins
+/// the domain `Request` (AC-12 parity). Gate order: `golden` containment
+/// first (before any other check, including read-only — AC-7), then the
+/// read-only gate (`405`, these routes ARE mutating regardless of `apply`),
+/// then — only when `req.apply` — the confirm gate (AC-19: read-only still
+/// outranks confirm). A successful apply job reloads `AppState.cfg` so HTTP
+/// ranking picks up the new knobs without a restart.
+async fn spawn_learning_job<Req, Resp>(
+    state: &AppState,
+    command: &'static str,
+    body: Value,
+    run: impl FnOnce(&mut Ctx<'_>, Req) -> Result<Resp> + Send + 'static,
+) -> Response
+where
+    Req: LearningJobRequest + Send + 'static,
+    Resp: LearningJobResponse,
+{
     let started = Instant::now();
-    let (mut req, confirmed) = match split_confirm::<learning::bandit::Request>(body) {
+    let (mut req, confirmed) = match split_confirm::<Req>(body) {
         Ok(v) => v,
-        Err(e) => return Envelope::err("bandit", &e, 0),
+        Err(e) => return Envelope::err(command, &e, 0),
     };
     let contain_state = state.clone();
-    let golden = req.golden.clone();
+    let golden = req.golden().map(str::to_owned);
     let contained = run_blocking(move || contain_golden(&contain_state, golden.as_deref())).await;
     match contained {
-        Ok(canonical) => req.golden = canonical,
-        Err(e) => return Envelope::err("bandit", &e, 0),
+        Ok(canonical) => req.set_golden(canonical),
+        Err(e) => return Envelope::err(command, &e, 0),
     }
-    if let Err(resp) = guard_job("bandit", &state) {
+    if let Err(resp) = guard_job(command, state) {
         return *resp;
     }
-    if req.apply
+    if req.apply()
         && let Err(e) = require_confirm(confirmed)
     {
-        return Envelope::err("bandit", &e, 0);
+        return Envelope::err(command, &e, 0);
     }
     let job_state = state.clone();
     let job = jobs::spawn_job(
         state.jobs(),
         state.write_permit().clone(),
-        "bandit",
+        command,
         true,
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = learning::bandit::run(&mut ctx, req)?;
-            if resp.applied {
+            let resp = run(&mut ctx, req)?;
+            if resp.applied() {
                 job_state.reload_cfg(job_state.paths())?;
             }
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );
-    accepted("bandit", job, started)
+    accepted(command, job, started)
 }
 
 #[cfg(test)]

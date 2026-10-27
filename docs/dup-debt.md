@@ -3,10 +3,24 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**285 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 684 production `.rs` files under `src/`. That
+**276 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 720 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless.
+
+**Why this number fell from 284 (M1 dedup burn, `deduplication-enforce`).**
+Five mechanical merges, each verified pair-gone with no new pair and covered
+by the modules' existing boundary tests: `tune`/`bandit` share one generic
+`spawn_learning_job` plus a macro-generated per-type glue (the hand-written
+glue paired at 100%, so the macro follows the `wire_strings!` precedent);
+`reembed_memories`/`reembed_code` share `reembed_leg` with the two call blocks
+inlined in `run` (thin wrappers re-paired at 92.10%, so no wrappers remain);
+`write_list`/`write_rows` share `write_page` over a render closure (TTY bytes
+identical); `push_direct_edges`/`push_co_citation_edges` share `push_edge_set`
+with a reverse flag; the four `copy_*` wrappers become one `DOCUMENT_TABLES`
+const plus a shared `copy_all` looper (also used for `SHARED_DOCUMENT_TABLES`,
+so the two loops cannot pair). −8 total: 284 → 276. The 285 → 284 step came
+from #408 with no doc entry; this entry restores the chain.
 
 **Why this number rose from 284 (#336, plan proposals).** The MCP transport
 gains a second project writer, so `mcp::tools_project_writes::{project_evidence,
@@ -222,9 +236,9 @@ sides of every slice, with an empty normalized pair-set diff.
   gate cannot drift. Bumping the constant is the only edit a version bump needs.
 - **Threshold:** `0.85`, via `--threshold 0.85 --fail-on-duplicates`.
 - **Scope:** every tracked `src/**/*.rs` whose path does not contain `/tests/`
-  — 414 files. Colocated tests are excluded because CORE excludes tests from
-  copy-paste detection: repeated setup there is not the duplication worth
-  chasing.
+  — 720 files (414 at #216; the tree grew). Colocated tests are excluded
+  because CORE excludes tests from copy-paste detection: repeated setup there
+  is not the duplication worth chasing.
 - **Result when #200 fixed the gate:** 242 pairs over the then-current 411
   files. The count was deterministic: three consecutive runs of the pinned build returned 242 every
   time, as did runs with the file list shuffled and reversed, so the number does
@@ -239,11 +253,11 @@ sides of every slice, with an empty normalized pair-set diff.
   at all: an inert path inflates the target count and would let the gate's
   anti-vacuous guard pass over files nobody analyzes. Duplication in `scripts/`
   is currently **unguarded**; catching it needs a shell-capable detector.
-- **Current measurement:** 235 pairs over 414 files after the runtime ORM
-  conversion and shared AST, configuration, HTTP-query and SSE helpers in #216.
-  The unchanged detector first reported 278 on the conversion; shared store
-  queries reduced it to 271, and broader cleanup reduced it to 235. The baseline
-  tightens from 242 to 235; neither the threshold nor scan scope changed.
+- **Current measurement:** 276 pairs over 720 files after the M1 dedup burn
+  (five mechanical merges, −8: learning route, reembed legs, prune output,
+  memory-rank edges, rebuild copy tables) on top of #408's undocumented
+  285 → 284 step. Neither the threshold nor scan scope changed; only the tree
+  grew (414 → 720 files) and the counted pairs fell.
 - **Every pair is intra-file.** No pair spans two files, so the rationale below
   is recorded once per file rather than once per pair.
 
@@ -267,7 +281,7 @@ addressing an individual reported pair). A per-pair allowlist would therefore
 mean reimplementing pair identity matching by hand, which is worse than the
 problem it solves. `scripts/dup-check.sh` runs a **count ratchet** instead:
 
-- The baseline count (`275`) lives in `dup-baseline.txt`, a single tracked
+- The baseline count (`276`) lives in `dup-baseline.txt`, a single tracked
   integer at the repo root — the same convention as `coverage-floor.txt` and
   `store-leak-baseline.txt`.
 - Every run re-scans and compares the current count against that baseline.
@@ -306,10 +320,13 @@ pinned install command and states plainly that it did not run.
 ## The 235 pairs by area
 
 > **This table is stale and was already stale before #252.** It enumerates the
-> 235 pairs measured at #216 and was not re-authored when the ratchet rose to
-> 275, so its total no longer sums to `dup-baseline.txt`. The ratchet itself
+> 235 pairs measured at #216 and was not re-authored as the ratchet moved
+> (285 → 284 in #408, 284 → 276 in the M1 burn), so its total no longer sums
+> to `dup-baseline.txt`. The M1 burn removed eight of its rows' pairs
+> (`tune`/`bandit`, `reembed_memories`/`reembed_code`, `write_list`/`write_rows`,
+> the two `push_*_edges` legs, the four `copy_*` wrappers). The ratchet itself
 > re-scans and does not read this table. Re-deriving it is its own task; the
-> rows below remain accurate for the pairs they name.
+> rows below remain accurate for the pairs they name, minus those eight.
 
 Counts sum to the recorded baseline; if they ever stop matching, one of the two
 is stale.
