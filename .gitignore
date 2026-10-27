@@ -20,6 +20,7 @@
 
 # toolu workflow artifacts (specs/plans) — local, not committed
 /docs/toolu/
+/.toolu/tmp/
 
 # opencode harness local state — per-session telemetry, installed hooks,
 # session markers and CLI wrappers — regenerated on every session and
