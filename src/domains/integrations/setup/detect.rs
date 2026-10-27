@@ -203,19 +203,29 @@ fn doc_sources(ctx: &mut Ctx<'_>, repo: Option<&RepoContext>) -> Result<usize> {
         .count())
 }
 
-/// Agent hosts whose CLI is on `PATH` and answers `--version`.
+/// Agent hosts available on this machine: CLI hosts whose binary is on
+/// `PATH` and answers `--version`, plus hermes when its config dir exists
+/// (it has no CLI to probe).
 fn hosts_present(host_filter: Option<&str>) -> Vec<&'static str> {
+    let home: Option<std::path::PathBuf> = crate::config::env::env_parse("HOME").ok().flatten();
     install::HOSTS
         .iter()
         .copied()
         .filter(|host| host_filter.is_none_or(|wanted| wanted == *host))
-        .filter(|host| {
-            std::process::Command::new(host)
-                .arg("--version")
-                .output()
-                .is_ok_and(|out| out.status.success())
-        })
+        .filter(|host| host_is_present(host, home.as_deref()))
         .collect()
+}
+
+/// Whether `host` looks usable on this machine. The `home` override exists
+/// so tests can stage a hermes config dir without touching the real `HOME`.
+fn host_is_present(host: &str, home: Option<&std::path::Path>) -> bool {
+    if host == "hermes" {
+        return home.is_some_and(|home| home.join(".hermes").is_dir());
+    }
+    std::process::Command::new(host)
+        .arg("--version")
+        .output()
+        .is_ok_and(|out| out.status.success())
 }
 
 /// Hosts that already have this comemory version's plugin registered.

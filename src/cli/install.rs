@@ -16,8 +16,8 @@ use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "Examples:
   comemory install claude
-  comemory install codex
-  comemory install claude --dry-run --config-dir /tmp/claude-preview";
+  comemory install muse
+  comemory install cursor-agent --dry-run --config-dir /tmp/cursor-preview";
 
 /// Supported native plugin managers. A CLI-only enum so `--help` and shell
 /// completion can enumerate the hosts and accept the historical aliases;
@@ -30,6 +30,16 @@ pub enum Host {
     /// Codex skills and hooks.
     #[value(alias = "codex-hooks")]
     Codex,
+    /// Muse skills and hooks.
+    #[value(alias = "muse-hooks")]
+    Muse,
+    /// Cursor skills and MCP config (hooks are a follow-up).
+    #[value(alias = "cursor")]
+    #[value(alias = "cursor-hooks")]
+    CursorAgent,
+    /// Hermes skills (no hooks or MCP story on this host).
+    #[value(alias = "hermes-hooks")]
+    Hermes,
 }
 
 impl Host {
@@ -38,6 +48,9 @@ impl Host {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::Muse => "muse",
+            Self::CursorAgent => "cursor-agent",
+            Self::Hermes => "hermes",
         }
     }
 }

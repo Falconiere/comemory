@@ -1,17 +1,24 @@
 # Agent skills and hooks
 
-Comemory owns its Claude Code and Codex integration. Install both the skills and
+Comemory owns its Claude Code, Codex and Muse integration. Install both the skills and
 lifecycle hooks with one command:
 
 ```sh
 comemory install claude
 comemory install codex
+comemory install muse
+comemory install cursor-agent
+comemory install hermes
 ```
 
-`claude-hooks` and `codex-hooks` are accepted aliases. `--dry-run` previews the
+`claude-hooks` and `codex-hooks` are accepted aliases (`muse-hooks`,
+`cursor-agent` also answers to `cursor` and `cursor-hooks`, `hermes` to
+`hermes-hooks`). `--dry-run` previews the
 bundle location without modifying anything. `--json` returns the installation
 report. `--config-dir DIR` targets an isolated host configuration directory;
-otherwise the host honors `CLAUDE_CONFIG_DIR` / `CODEX_HOME` and its usual default.
+otherwise the host honors `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `XDG_DATA_HOME`
+and its usual default. Muse appends `muse` itself, so its `--config-dir`
+names the `XDG_DATA_HOME` value.
 
 The corresponding host CLI, Bash, Git, jq, and Python 3 must be available. The
 binary embeds the integration and extracts a local marketplace beneath
@@ -94,7 +101,22 @@ tool-level `repo_required` error before anything is written.
 `read_only` error; the nine read tools still work, and a read run under
 `--read-only` writes no `retrieval_log` row.
 
-### Manual registration (Cursor, Gemini CLI, Windsurf, non-plugin Codex)
+### Host coverage: Cursor, hermes, Muse
+
+`comemory install cursor-agent` copies the four skills into
+`~/.cursor/skills-cursor/` and merges the `comemory` server into
+`~/.cursor/mcp.json`, owning only that key. Hook wiring is a follow-up:
+Cursor's native hook events do not match the shared scripts' Claude dispatch,
+so this change ships no `hooks.json` merge rather than inert entries.
+`comemory install hermes` copies the skills into `~/.hermes/skills/`; hermes
+exposes no hooks or MCP, and the skills fall back to the
+`comemory.sh` wrapper documented in each skill. Muse installs through
+`muse plugins install` with a `.muse-plugin/plugin.json` manifest; its
+SessionEnd hook stays silent (transcript capture is Claude-only) and its
+Stop-advisory and PreCompact hooks are not wired (muse requires a unique hook
+source per capability).
+
+### Manual registration (Gemini CLI, Windsurf, non-plugin Codex)
 
 Comemory ships no plugin bundle for these hosts; register `comemory mcp` by
 hand as a generic stdio MCP server:
@@ -175,8 +197,8 @@ inventing ids for a status row. Disable reminders with
 
 The shared plugin registers `hooks/session-end.sh`, but receipt capture runs
 only under **Claude Code**: the current capture/distill parser accepts Claude
-transcripts. Under Codex this hook exits silently; MCP tools, memory skills and
-local recall still work. Codex transcript capture is not implemented.
+transcripts. Under Codex and Muse this hook exits silently; MCP tools, memory skills and
+local recall still work. Neither Codex nor Muse transcript capture is implemented.
 
 For Claude, the hook launches `comemory capture session --from-hook` detached
 and exits without waiting for the platform. Capture needs `comemory auth login`
@@ -188,8 +210,9 @@ metadata/redaction information, not the raw transcript; see
 The project-skills workflow preserves `.toolu/skills/` as its storage directory
 for compatibility with existing procedures. It runs independently of toolu.
 Configure it in the host's `comemory.json` or the repository's
-`.claude/comemory.json` / `.codex/comemory.json` (project values override user
-values):
+`.claude/comemory.json` / `.codex/comemory.json` / `.muse/comemory.json`
+(project values override user values). Cursor and hermes have no
+per-project hook config in this change:
 
 ```json
 {

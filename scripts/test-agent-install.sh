@@ -521,12 +521,76 @@ PYELAPSED
   printf 'agent-install: %s SessionEnd behavior, bootstrap nudge, recall injection, and Stop advisory passed\n' "$host"
 done
 
+# Muse (AC-2/AC-3): contained real install into a throwaway XDG data home,
+# reinstall refresh, and every manifest hook id fired through muse's own
+# `plugins hook test` harness. Hook side effects stay hermetic: hook config
+# under a throwaway XDG_CONFIG_HOME and hook store writes under a throwaway
+# data dir, never the developer's real `~/.config/muse` or this script's
+# shared store. Skipped loudly where the muse CLI is absent.
+if command -v muse >/dev/null; then
+  muse_xdg="$TASK/muse-xdg"
+  muse_cfg="$TASK/muse-cfg"
+  muse_data="$TASK/muse-hook-data"
+  mkdir -p "$muse_cfg" "$muse_data"
+  XDG_DATA_HOME="$muse_xdg" "$BIN" install muse --json > "$TASK/install-muse.json"
+  jq -e '.installed and .plugin == "comemory@comemory"' "$TASK/install-muse.json" >/dev/null
+  muse_bundle="$(jq -r .bundle "$TASK/install-muse.json")/plugins/comemory"
+  [ -f "$muse_bundle/.muse-plugin/plugin.json" ]
+  version="$("$BIN" --version | awk '{print $2}')"
+  XDG_DATA_HOME="$muse_xdg" muse plugins list --json > "$TASK/list-muse.json"
+  jq -e --arg version "$version" \
+    '.plugins | map(select(.record.id == "comemory")) | length == 1 and .[0].record.version == $version' \
+    "$TASK/list-muse.json" >/dev/null
+  XDG_DATA_HOME="$muse_xdg" "$BIN" install muse --json >/dev/null
+  XDG_DATA_HOME="$muse_xdg" muse plugins list --json > "$TASK/list-muse-reinstall.json"
+  jq -e --arg version "$version" \
+    '.plugins | map(select(.record.id == "comemory")) | length == 1 and .[0].record.version == $version' \
+    "$TASK/list-muse-reinstall.json" >/dev/null
+  muse_hook_fixture() {
+    jq -nc --arg event "$1" --arg cwd "$TASK/repository" --arg sid "muse-e2e" \
+      '{event:$event,stdin:{cwd:$cwd,session_id:$sid,hook_event_name:$event}}'
+  }
+  muse_hook_test() {
+    id="$1"; event="$2"; extra="$3"
+    fixture="$TASK/muse-fixture-$id.json"
+    if [ -n "$extra" ]; then
+      muse_hook_fixture "$event" | jq -c ".stdin += $extra" > "$fixture"
+    else
+      muse_hook_fixture "$event" > "$fixture"
+    fi
+    XDG_DATA_HOME="$muse_xdg" XDG_CONFIG_HOME="$muse_cfg" COMEMORY_DATA_DIR="$muse_data" \
+      timeout 120 muse plugins hook test "comemory:$id" --fixture "$fixture" --json > "$TASK/muse-hook-$id.json"
+  }
+  for id in session-start comemory-status project-skills-index; do
+    muse_hook_test "$id" SessionStart ''
+  done
+  muse_hook_test user-prompt-submit UserPromptSubmit '{"prompt":"a short prompt"}'
+  muse_hook_test skill-use PostToolUse '{"tool_name":"Bash"}'
+  muse_hook_test project-skills-curate Stop ''
+  muse_hook_test session-end SessionEnd '{"transcript_path":"/nonexistent.jsonl"}'
+  muse_hook_test scope PreToolUse '{"tool_name":"Bash","tool_input":{"command":"comemory search lesson"}}'
+  for id in session-start comemory-status project-skills-index user-prompt-submit skill-use project-skills-curate session-end; do
+    jq -e '[.terminals[].status] | length > 0 and all(. == "completed")' "$TASK/muse-hook-$id.json" >/dev/null \
+      || { printf 'muse hook %s did not complete\n' "$id" >&2; exit 1; }
+  done
+  # Scope denies the unscoped call: the harness reports `blocked` with a deny.
+  jq -e '[.terminals[].status] == ["blocked"] and .decision.permission_decision == "deny"' \
+    "$TASK/muse-hook-scope.json" >/dev/null
+  # SessionEnd stays silent under the muse override (no transcript capture):
+  # completed, with neither envelope in any terminal's stdout.
+  jq -e '[.terminals[].stdout // ""] | join("") | test("hookSpecificOutput|systemMessage") | not' \
+    "$TASK/muse-hook-session-end.json" >/dev/null
+  printf 'agent-install: muse contained install/refresh plus hook-test per hook id passed\n'
+else
+  printf 'agent-install: muse CLI absent, skipping muse install checks\n'
+fi
+
 # AC-7: `.mcp.json` names this test binary's canonical path (`$BIN` above is
 # itself a symlink into the real target/debug binary) and the `mcp`
 # subcommand, for every host already installed above; `--dry-run` into a
 # fresh config dir reports the path but writes nothing.
 canonical_bin="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$BIN")"
-for host in claude codex; do
+for host in claude codex muse; do
   plugin="$(jq -r .bundle "$TASK/install-$host.json")/plugins/comemory"
   jq -e --arg bin "$canonical_bin" \
     '.mcpServers.comemory.command == $bin and .mcpServers.comemory.args == ["mcp"]' \

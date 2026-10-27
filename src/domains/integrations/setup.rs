@@ -53,8 +53,9 @@ pub struct Request {
     /// directory.
     #[serde(default)]
     pub repo: Option<String>,
-    /// Restrict the `agent-host` step to one host (`claude` / `codex`).
-    /// `None` means every host whose CLI answers `--version`.
+    /// Restrict the `agent-host` step to one host (`claude`, `codex`, `muse`,
+    /// `cursor-agent` or `hermes`).
+    /// `None` means every host detected on this machine.
     #[serde(default)]
     pub host: Option<String>,
     /// Step ids to run; every other step is [`StepState::Skipped`].

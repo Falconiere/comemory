@@ -1,6 +1,6 @@
 //! `domains::integrations::setup::detect` against a real temporary data directory and a real
 //! `git init` working tree.
-use super::run;
+use super::{host_is_present, run};
 use crate::config::{Config, Paths};
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
 use crate::utilities::context::Ctx;
@@ -93,6 +93,25 @@ fn a_hand_written_hook_is_reported_as_foreign_not_installed() {
         "someone else's hook is not a comemory hook"
     );
     assert_eq!(detected.hooks_foreign, vec!["post-commit".to_string()]);
+}
+
+#[test]
+fn hermes_presence_follows_its_config_dir_not_a_cli_probe() {
+    let home = tempfile::tempdir().unwrap();
+    assert!(
+        !host_is_present("hermes", Some(home.path())),
+        "no config dir means hermes is not nagged about"
+    );
+    std::fs::create_dir_all(home.path().join(".hermes")).unwrap();
+    assert!(host_is_present("hermes", Some(home.path())));
+    assert!(
+        !host_is_present("hermes", None),
+        "an unset HOME never reports hermes present"
+    );
+    assert!(
+        !host_is_present("definitely-not-a-host", Some(home.path())),
+        "an unknown binary is never present"
+    );
 }
 
 #[test]

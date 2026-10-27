@@ -26,6 +26,42 @@ fn validate_host_accepts_the_known_hosts_and_names_the_rest() {
 }
 
 #[test]
+fn scope_env_scopes_cli_hosts_and_leaves_file_hosts_alone() {
+    use std::path::Path;
+    assert_eq!(
+        super::scope_env("muse", Path::new("/tmp/xdg/muse")),
+        Some(("XDG_DATA_HOME", Path::new("/tmp/xdg").to_path_buf()))
+    );
+    assert_eq!(
+        super::scope_env("claude", Path::new("/tmp/claude")),
+        Some(("CLAUDE_CONFIG_DIR", Path::new("/tmp/claude").to_path_buf()))
+    );
+    assert_eq!(
+        super::scope_env("cursor-agent", Path::new("/tmp/cursor")),
+        None
+    );
+    assert_eq!(super::scope_env("hermes", Path::new("/tmp/hermes")), None);
+}
+
+#[test]
+fn validate_host_accepts_muse_cursor_agent_and_hermes() {
+    for host in ["muse", "cursor-agent", "hermes"] {
+        assert_eq!(
+            validate_host(host).unwrap(),
+            host,
+            "{host} must validate once host support lands"
+        );
+    }
+    let err = validate_host("emacs").unwrap_err().to_string();
+    for host in ["claude", "codex", "muse", "cursor-agent", "hermes"] {
+        assert!(
+            err.contains(host),
+            "error should list every known host, missing {host}: {err}"
+        );
+    }
+}
+
+#[test]
 fn dry_run_reports_the_bundle_under_the_ctx_data_dir_without_writing() {
     let temp = tempfile::tempdir().unwrap();
     let (paths, cfg) = ctx_for(temp.path());

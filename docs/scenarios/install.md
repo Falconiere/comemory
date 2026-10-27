@@ -14,7 +14,12 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
 ## Positionals
 
-`<HOST>`: `claude` or `codex` (aliases `claude-hooks` and `codex-hooks`).
+`<HOST>`: `claude`, `codex`, `muse`, `cursor-agent` or `hermes` (aliases
+`claude-hooks` and `codex-hooks`; `muse-hooks`; `cursor` and `cursor-hooks`;
+`hermes-hooks`). CLI-plugin hosts (`claude`, `codex`, `muse`) register
+through the host binary; `cursor-agent` and `hermes` install files into
+`~/.cursor` / `~/.hermes` (skills plus the `comemory` MCP entry for Cursor,
+skills only for hermes).
 
 ## Flags
 
@@ -54,4 +59,4 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
   install writes it with `command` equal to the installing binary's absolute
   path and `args` equal to `["mcp"]`; re-running install after the binary
   moved rewrites `command` without a `bundle differs` refusal.
-- **Covered by:** `tests/cli_scenario_install.rs::install_writes_mcp_manifest` (dry-run half); `scripts/test-agent-install.sh` (real host install, both hosts); `domains::integrations::install::bundle::tests::write_mcp_manifest_writes_the_command_and_args_for_a_fresh_bundle`, `write_mcp_manifest_rewrites_for_a_moved_binary_without_a_bundle_differs_refusal`, `write_mcp_manifest_refuses_a_symlinked_target`, `write_mcp_manifest_refuses_a_symlinked_temp_file` (a symlink planted at the `.mcp.json.tmp` temp path, not just the final path, is refused rather than written through)
+- **Covered by:** `tests/cli_scenario_install.rs::install_writes_mcp_manifest` (dry-run half); `scripts/test-agent-install.sh` (real host install for the three CLI hosts, plus a contained muse install/refresh/hook-test section); `domains::integrations::install::bundle::tests::write_mcp_manifest_writes_the_command_and_args_for_a_fresh_bundle`, `write_mcp_manifest_rewrites_for_a_moved_binary_without_a_bundle_differs_refusal`, `write_mcp_manifest_refuses_a_symlinked_target`, `write_mcp_manifest_refuses_a_symlinked_temp_file` (a symlink planted at the `.mcp.json.tmp` temp path, not just the final path, is refused rather than written through)

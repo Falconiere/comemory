@@ -18,9 +18,15 @@ use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
 mod bundle;
+mod cursor;
+mod dirs;
+mod hermes;
 
 /// The agent hosts `comemory install` knows how to register a plugin with.
-pub const HOSTS: &[&str] = &["claude", "codex"];
+/// Each name is the invocable host binary where one exists: `run_host`
+/// executes `Command::new(host)`, so registration and the setup presence
+/// probe both depend on it.
+pub const HOSTS: &[&str] = &["claude", "codex", "muse", "cursor-agent", "hermes"];
 
 /// `comemory install` request. `host` is one of [`HOSTS`].
 #[derive(Deserialize, Debug)]
@@ -104,10 +110,14 @@ pub fn validate_host(name: &str) -> Result<&'static str> {
 }
 
 /// The environment variable a host reads its configuration directory from.
-fn config_env_key(host: &str) -> &'static str {
+/// `None` for hosts without one: their config dir derives from `HOME`
+/// unless explicitly overridden.
+fn config_env_key(host: &str) -> Option<&'static str> {
     match host {
-        "codex" => "CODEX_HOME",
-        _ => "CLAUDE_CONFIG_DIR",
+        "claude" => Some("CLAUDE_CONFIG_DIR"),
+        "codex" => Some("CODEX_HOME"),
+        "muse" => Some("XDG_DATA_HOME"),
+        _ => None,
     }
 }
 
@@ -115,6 +125,8 @@ fn config_env_key(host: &str) -> &'static str {
 fn config_dir_name(host: &str) -> &'static str {
     match host {
         "codex" => ".codex",
+        "cursor-agent" => ".cursor",
+        "hermes" => ".hermes",
         _ => ".claude",
     }
 }
@@ -122,12 +134,24 @@ fn config_dir_name(host: &str) -> &'static str {
 /// Resolve the host configuration directory: an explicit override wins, then
 /// the host's own environment variable, then `$HOME/<default>`.
 ///
+/// Muse appends `muse` itself, so for that host an explicit override names
+/// the `XDG_DATA_HOME` value rather than the exact directory.
+///
 /// # Errors
 /// [`Error::Usage`] when neither an override nor `HOME` is available.
 pub fn config_dir(host: &str, explicit: Option<PathBuf>) -> Result<PathBuf> {
-    let configured = explicit.or(crate::config::env::env_parse::<PathBuf>(config_env_key(
-        host,
-    ))?);
+    if host == "muse" {
+        let base = explicit
+            .or(crate::config::env::env_parse::<PathBuf>("XDG_DATA_HOME")?)
+            .or(crate::config::env::env_parse::<PathBuf>("HOME")?
+                .map(|home| home.join(".local/share")))
+            .ok_or_else(|| Error::Usage("HOME is unset; pass --config-dir".into()))?;
+        return Ok(std::path::absolute(base.join("muse"))?);
+    }
+    let configured = explicit.or(match config_env_key(host) {
+        Some(key) => crate::config::env::env_parse::<PathBuf>(key)?,
+        None => None,
+    });
     let root = if let Some(root) = configured {
         root
     } else {
@@ -136,6 +160,21 @@ pub fn config_dir(host: &str, explicit: Option<PathBuf>) -> Result<PathBuf> {
             .join(config_dir_name(host))
     };
     Ok(std::path::absolute(root)?)
+}
+
+/// The environment scoping for one host CLI invocation: the variable to set
+/// and the value scoping it at `config_dir`. Muse owns the `muse` leaf, so
+/// the child sees its parent as `XDG_DATA_HOME`; every other CLI host is
+/// scoped at the config dir itself. File-based hosts never invoke a CLI, so
+/// they have no scoping.
+fn scope_env(host: &str, config_dir: &Path) -> Option<(&'static str, PathBuf)> {
+    let key = config_env_key(host)?;
+    let value = if host == "muse" {
+        config_dir.parent()?.to_path_buf()
+    } else {
+        config_dir.to_path_buf()
+    };
+    Some((key, value))
 }
 
 /// Extract the embedded integration and register it with the native host CLI.
@@ -179,12 +218,15 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     })
 }
 
-/// Probe the host CLI and the hook dependencies, extract the bundle, write
-/// its `.mcp.json`, then register it as a local marketplace plugin. Returns
-/// the `.mcp.json` path so the caller's report matches what was written.
+/// Probe the hook dependencies, extract the bundle, then register it through
+/// the host's own mechanism: the native plugin CLI where one accepts a local
+/// bundle, a file-based install otherwise. Returns the `.mcp.json` path so
+/// the caller's report matches what was written.
 fn install(host: &str, config_dir: &Path, root: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(config_dir)?;
-    run_host(host, Some(config_dir), &["--version"])?;
+    if matches!(host, "claude" | "codex" | "muse") {
+        run_host(host, Some(config_dir), &["--version"])?;
+    }
     for dependency in HOOK_DEPENDENCIES {
         let status = Command::new(dependency).arg("--version").output()?;
         if !status.status.success() {
@@ -196,6 +238,25 @@ fn install(host: &str, config_dir: &Path, root: &Path) -> Result<PathBuf> {
     bundle::extract(root)?;
     let binary = std::fs::canonicalize(std::env::current_exe()?)?;
     let manifest = bundle::write_mcp_manifest(&root.join("plugins/comemory"), &binary)?;
+    match host {
+        "claude" | "codex" => install_cli_plugin(host, config_dir, root)?,
+        "muse" => install_muse_plugin(host, config_dir, root)?,
+        "cursor-agent" => cursor::install(config_dir, root)?,
+        "hermes" => hermes::install(config_dir, root)?,
+        _ => {
+            return Err(Error::Usage(format!(
+                "unknown agent host `{host}` (known: {})",
+                HOSTS.join(", ")
+            )));
+        }
+    }
+    Ok(manifest)
+}
+
+/// Register through the Claude/Codex `plugin` CLI: marketplace first, then
+/// the plugin itself. `run` validated the host, so the dispatch above is the
+/// only caller.
+fn install_cli_plugin(host: &str, config_dir: &Path, root: &Path) -> Result<()> {
     let marketplace = root
         .parent()
         .ok_or_else(|| Error::Usage("bundle needs a parent".into()))?;
@@ -212,7 +273,19 @@ fn install(host: &str, config_dir: &Path, root: &Path) -> Result<PathBuf> {
     if host == "claude" {
         run_host(host, Some(config_dir), &["plugin", "update", PLUGIN])?;
     }
-    Ok(manifest)
+    Ok(())
+}
+
+/// Register through the muse `plugins` CLI by direct path install: no
+/// marketplace catalog is needed, and installs already report enabled
+/// trust, so no approve step follows.
+fn install_muse_plugin(host: &str, config_dir: &Path, root: &Path) -> Result<()> {
+    let plugin = root.join("plugins/comemory");
+    let path = plugin
+        .to_str()
+        .ok_or_else(|| Error::Usage("integration path must be UTF-8".into()))?;
+    run_host(host, Some(config_dir), &["plugins", "install", path])?;
+    Ok(())
 }
 
 /// Invoke the host's own CLI with `args`, scoped to `config_dir` through the
@@ -220,8 +293,10 @@ fn install(host: &str, config_dir: &Path, root: &Path) -> Result<PathBuf> {
 fn run_host(host: &str, config_dir: Option<&Path>, args: &[&str]) -> Result<()> {
     let mut command = Command::new(host);
     command.args(args);
-    if let Some(dir) = config_dir {
-        command.env(config_env_key(host), dir);
+    if let Some(dir) = config_dir
+        && let Some((key, value)) = scope_env(host, dir)
+    {
+        command.env(key, value);
     }
     let output = command.output().map_err(|error| {
         Error::Unavailable(format!(

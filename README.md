@@ -628,12 +628,15 @@ A task isn't done until `scripts/check-all.sh` exits 0.
 
 ## Agent integration
 
-`comemory install claude` and `comemory install codex` install the bundled skills
-and hooks through the host plugin manager, and write the plugin's `.mcp.json` so
-the host spawns `comemory mcp` — a nineteen-tool MCP stdio server over the same
-command cores as the CLI and `comemory serve`. Use `--dry-run` to preview. Any
-other MCP host (Cursor, Gemini CLI, Windsurf) registers `comemory mcp` by hand
-with a one-line stdio server entry. `comemory recall-status` reports unjudged
+`comemory install claude`, `comemory install codex` and `comemory install muse`
+install the bundled skills and hooks through the host plugin manager, and write
+the plugin's `.mcp.json` so the host spawns `comemory mcp` — a nineteen-tool MCP
+stdio server over the same command cores as the CLI and `comemory serve`. Use
+`--dry-run` to preview. `comemory install cursor-agent` installs skills plus the
+MCP server entry into the Cursor config (hooks are a follow-up);
+`comemory install hermes` installs skills only. Any other MCP host (Gemini CLI,
+Windsurf) registers `comemory mcp` by hand with a one-line stdio server entry.
+`comemory recall-status` reports unjudged
 recalls in shared repository activity. For concise recall, start with
 `find(k=3)` and `show` only selected memories; `context` returns full bodies
 without a token cap. Stop reminders are advisory across concurrent agents.

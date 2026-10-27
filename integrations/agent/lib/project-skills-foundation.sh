@@ -4,12 +4,14 @@
 
 ps_config_root() {
   if [ -n "${TOOLU_CONFIG_DIR:-}" ]; then printf '%s' "$TOOLU_CONFIG_DIR"
+  elif [ "${TOOLU_HOST_OVERRIDE:-}" = muse ]; then printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/muse"
   elif [ "${TOOLU_HOST_OVERRIDE:-}" = codex ] || { [ -z "${TOOLU_HOST_OVERRIDE:-}" ] && [ -n "${PLUGIN_ROOT:-}" ]; }; then printf '%s' "${CODEX_HOME:-$HOME/.codex}"
   else printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; fi
 }
 
 ps_project_dirname() {
   if [ -n "${TOOLU_PROJECT_CONFIG_DIRNAME:-}" ]; then printf '%s' "$TOOLU_PROJECT_CONFIG_DIRNAME"
+  elif [ "${TOOLU_HOST_OVERRIDE:-}" = muse ]; then printf '.muse'
   elif [ "${TOOLU_HOST_OVERRIDE:-}" = codex ] || { [ -z "${TOOLU_HOST_OVERRIDE:-}" ] && [ -n "${PLUGIN_ROOT:-}" ]; }; then printf '.codex'
   else printf '.claude'; fi
 }

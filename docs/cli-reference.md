@@ -1503,7 +1503,7 @@ Options:
       --dry-run              Report the plan and change nothing
       --only <ONLY>          Comma-separated step ids to run; every other step is skipped
       --skip <SKIP>          Comma-separated step ids to skip
-      --host <HOST>          Restrict the agent-host step to one host (`claude` or `codex`)
+      --host <HOST>          Restrict the agent-host step to one host (`claude`, `codex`, `muse`, `cursor-agent` or `hermes`)
       --repo <REPO>          Repo root for the repo-scoped steps. Defaults to the working directory
   -h, --help                 Print help
 
@@ -1854,8 +1854,11 @@ Arguments:
           Agent host; installs both skills and lifecycle hooks
 
           Possible values:
-          - claude: Claude Code skills and hooks
-          - codex:  Codex skills and hooks
+          - claude:       Claude Code skills and hooks
+          - codex:        Codex skills and hooks
+          - muse:         Muse skills and hooks
+          - cursor-agent: Cursor skills and MCP config (hooks are a follow-up)
+          - hermes:       Hermes skills (no hooks or MCP story on this host)
 
 Options:
       --dry-run
@@ -1877,8 +1880,8 @@ Options:
 
 Examples:
   comemory install claude
-  comemory install codex
-  comemory install claude --dry-run --config-dir /tmp/claude-preview
+  comemory install muse
+  comemory install cursor-agent --dry-run --config-dir /tmp/cursor-preview
 ```
 
 ---

@@ -53,7 +53,8 @@ pub struct Args {
     /// Comma-separated step ids to skip.
     #[arg(long)]
     pub skip: Option<String>,
-    /// Restrict the agent-host step to one host (`claude` or `codex`).
+    /// Restrict the agent-host step to one host (`claude`, `codex`, `muse`,
+    /// `cursor-agent` or `hermes`).
     #[arg(long)]
     pub host: Option<String>,
     /// Repo root for the repo-scoped steps. Defaults to the working directory.

@@ -33,6 +33,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/agent/.codex-plugin/plugin.json"),
     ),
     (
+        ".muse-plugin/plugin.json",
+        include_str!("../../../../integrations/agent/.muse-plugin/plugin.json"),
+    ),
+    (
         "hooks/comemory-status.sh",
         include_str!("../../../../integrations/agent/hooks/comemory-status.sh"),
     ),
@@ -235,14 +239,15 @@ pub(super) fn write_mcp_manifest(plugin_root: &Path, binary: &Path) -> Result<Pa
     Ok(path)
 }
 
-/// Write `body` to `temp`, refusing to follow a symlink planted there.
+/// Write `body` to `temp`, refusing to follow a symlink planted there. Shared
+/// with the cursor `mcp.json` merge, which needs the same refusal.
 /// A stale *regular* file left over from a crashed prior install is
 /// removed first (the rename that follows always replaces it anyway);
 /// a stale *symlink* is refused outright rather than opened, since
 /// `OpenOptions::create_new` failing on an existing symlink still leaves
 /// an attacker-controlled path for a caller who instead reached for
 /// `std::fs::write` (which follows it and writes through).
-fn write_new_file_no_symlink(temp: &Path, body: &[u8]) -> Result<()> {
+pub(super) fn write_new_file_no_symlink(temp: &Path, body: &[u8]) -> Result<()> {
     match temp.symlink_metadata() {
         Ok(meta) if meta.file_type().is_symlink() => {
             return Err(Error::Usage(format!(
