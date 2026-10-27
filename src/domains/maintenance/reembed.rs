@@ -183,19 +183,19 @@ pub fn run(
     let mut state = RunState::new(embed_cmd, sink, total);
     state.response.skipped_legs = skipped_legs;
     // Both legs run through the shared [`reembed_leg`]; the two call blocks
-    // differ only in dim source, row type, replace fn, and counter, so they
-    // stay inline here rather than as two near-identical wrapper functions.
-    let dim = vector::dim_memory(conn)?;
+    // differ only in row type, replace fn, and counter, so they stay inline
+    // here rather than as two near-identical wrapper functions. `width` is
+    // the dim for both: [`fit_legs`] only lets a leg through when its table
+    // dim equals the probed width, and an empty leg never consults its dim.
     let written = reembed_leg(
         conn,
         &memories,
         &mut state,
-        dim,
+        width,
         |conn, id: &String, vec| vector::replace_memory(conn, id, vec),
     )?;
     state.response.memories += written;
-    let dim = vector::dim_code(conn)?;
-    let written = reembed_leg(conn, &code, &mut state, dim, |conn, id: &i64, vec| {
+    let written = reembed_leg(conn, &code, &mut state, width, |conn, id: &i64, vec| {
         vector::replace_code(conn, *id, vec)
     })?;
     state.response.code += written;
@@ -312,9 +312,10 @@ fn code_rows(conn: &Connection) -> Result<Vec<CodeRow>> {
 /// One re-embed leg: embed every row's text and replace its vector row in its
 /// own transaction, so a mid-run failure or cancel leaves the rows already
 /// written durable (module doc). Returns the rows written; the caller adds
-/// them to its own [`Response`] counter. Ill-fitting legs never reach here
-/// (see [`fit_legs`]), and an empty slice is a no-op — the same early return
-/// the old per-leg functions had, now stated once.
+/// them to its own [`Response`] counter. `dim` is the width every row must
+/// produce — the probed width, which [`fit_legs`] has already matched to the
+/// leg's table dim, so ill-fitting legs never reach here and an empty slice
+/// is a no-op without touching `schema_meta`.
 fn reembed_leg<Id>(
     conn: &mut Connection,
     rows: &[(Id, String)],
