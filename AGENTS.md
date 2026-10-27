@@ -173,7 +173,9 @@ scripts/architecture-check.sh    # module ownership and dependency policy
 scripts/store-chokepoint-check.sh # rusqlite confined to src/store/
 scripts/typos-check.sh           # typos
 scripts/cli-docs-check.sh        # docs/cli-reference.md vs the real --help output
+scripts/http-docs-check.sh       # docs/guides/http-api.md documents every live /api/v1 route
 scripts/migration-check.sh       # shipped migrations/*.sql byte-identical to first release tag
+scripts/replication-coverage-check.sh # replication harness coverage
 ```
 
 `guardrails.config.json` is the single declaration of every structural
