@@ -583,8 +583,8 @@ Runtime queries use the declared toolu-orm tables. See the
 [runtime query guide](docs/guides/runtime-orm.md) for supported builders,
 behavior-preserving conversions, and upstream issues for retained SQL.
 
-Read **[AGENTS.md](AGENTS.md)** first — it documents the architecture, the
-module map, the frontmatter schema, and the **binding rules** every
+Read **[AGENTS.md](AGENTS.md)** first — it points into the architecture,
+module, and frontmatter docs, and states the **binding rules** every
 contribution must satisfy (comemory follows the
 [toolu-conventions](https://github.com/Falconiere/toolu-conventions) Rust
 stack, plus its own stricter local ceilings):
@@ -607,7 +607,7 @@ stack, plus its own stricter local ceilings):
 The umbrella quality gate is one command — CI runs the same scripts:
 
 ```bash
-bash scripts/check-all.sh     # fmt · type · lint · guardrails · typos · cli-docs · migration-check
+bash scripts/check-all.sh     # fmt · type · lint · guardrails · architecture · store-chokepoint · typos · cli-docs · http-docs · migration · replication-coverage
 just check                    # alias of the above
 just test                     # cargo nextest run --all-features
 just qa                       # check-all + cargo-deny + dup-check + machete
