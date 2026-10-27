@@ -40,13 +40,18 @@ file (`comemory.db`) backs FTS5 + `sqlite-vec` + edges.
 ## Key Commands
 
 ```bash
-cargo install --path .          # build + install the binary locally
+bash scripts/dev-install.sh     # source install: cargo install --path . + sync daemon ensure + completions
 comemory setup                  # detect + apply this machine's/repo's onboarding
 just check                      # umbrella gate (alias of scripts/check-all.sh)
 just test                       # cargo nextest run --all-features
 just qa                         # check-all + cargo-deny + dup-check + machete + install.sh libc gate (docker)
 just e2e                        # real-binary end-to-end harness
+bash scripts/deploy.sh [--tag vX.Y.Z] [--dry-run]  # local stable release while Actions are off (docs/release.md §3b)
+bash scripts/deploy.sh --resume vX.Y.Z             # finish a pushed release after deploy.sh exited 2; never rebuilds
 ```
+
+Bare `cargo install --path .` places the binary and starts nothing (no
+daemon, no completions) — prefer `scripts/dev-install.sh`.
 
 Full command/flag inventory: `docs/cli-reference.md` (mechanically checked
 against `--help`; every flag needs a scenario citing a test). Prefer
@@ -125,9 +130,12 @@ narrative here — each folder's `README.md` is the authoritative file index
 
 Layered: `Config::defaults` → config file → environment
 (`src/config/env.rs`). Full table (every variable, default, validation) is
-in `docs/configuration.md` — read it instead of guessing. Knobs under
-`[tune]` / `[reinforce]` are file-only; vector dims (1024/768) are baked into
-vec0 DDL, not env-configurable. `--data-dir` and `--json` are global CLI flags.
+in `docs/configuration.md` — read it instead of guessing. `[tune]` knobs and
+`[reinforce] enabled` are file-only (`COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`
+still overrides the `[reinforce]` lookback); vector dims (1024/768) are baked
+into vec0 DDL, not env-configurable. Read env only through `src/config/` —
+direct `std::env::var` elsewhere fails `no-direct-env-var`. `--data-dir` and
+`--json` are global CLI flags, valid before or after the subcommand.
 
 ## Memory Data Model and Save Flow
 
@@ -163,6 +171,11 @@ pushes inline best-effort after local writes.
   it imports through
   `use comemory::...` (`extern crate self as comemory;` in `lib.rs`), addresses
   data via `concat!(env!("CARGO_MANIFEST_DIR"), "/tests/...")`. Real data only.
+- `.config/nextest.toml` serializes two groups: `embedder`
+  (`embedder|memory_index|code_index`, so the model download cannot race) and
+  `config::env::tests*`. Colocated tests share one lib test binary, so only
+  that name filter isolates env mutation — a test that calls
+  `std::env::set_var` must live under `config::env::tests`.
 
 ## Quality Gates
 
@@ -184,7 +197,25 @@ scripts/replication-coverage-check.sh # replication harness coverage
 ```
 
 `guardrails.config.json` is the single declaration of every structural
-ceiling; nothing else declares a competing number. `just qa` adds the three
+ceiling; nothing else declares a competing number. One rule, one enforcer:
+
+| Rule | Owner |
+| --- | --- |
+| Formatting / type-check | `rustfmt.toml` + `scripts/fmt-check.sh`; `scripts/type-check.sh` |
+| unwrap/expect/panic/todo/unimplemented/print_*/`too_many_lines`/pedantic | `Cargo.toml [lints]` + `clippy.toml`, `scripts/lint-check.sh` |
+| File size 300 / function size 100 | `guardrails.config.json` (`fileSize`, `functionSize`), `file-size` check + `clippy::too_many_lines` |
+| No `mod.rs` barrels; folder tree shape; `snake_case` names; folder READMEs | `guardrails.config.json` (`barrelNames`, `src.nested`, `filenameCase`, `src.requireReadme`), guardrails checks |
+| No inline `#[cfg(test)] mod tests { ... }` | `scripts/guardrails/patterns/rust/no-inline-test-module.yml` |
+| No direct `std::env::var` outside `config/` / `tests/` | `scripts/guardrails/patterns/rust/no-direct-env-var.yml` |
+| No `unsafe` without `// SAFETY:` (D1); no `#[allow(...)]` in production (D6) | `no-unsafe-without-safety.yml`, `no-allow-attribute.yml` |
+| Committed secrets, shadow configs | `guardrails.config.json` (`secrets`, `shadowConfigs`) |
+| Typos | `typos.toml`, `scripts/typos-check.sh` |
+| `docs/cli-reference.md` / `docs/guides/http-api.md` drift | `scripts/cli-docs-check.sh`, `scripts/http-docs-check.sh` |
+| Shipped migration SQL immutable | `scripts/migration-check.sh` |
+| Duplication ratchet | `scripts/dup-check.sh` vs `dup-baseline.txt` (pinned `similarity-rs`) |
+| rusqlite confined to `src/store/` | `scripts/store-chokepoint-check.sh`, `store-leak-baseline.txt` |
+
+`just qa` adds the three
 tool-pinned gates (`deny-check`, `dup-check`, `machete-check` — version
 mismatch hard-fails everywhere, missing tool warns locally but fails in CI)
 plus the `install.sh` libc gate on real distro images. Task is not "done"
@@ -195,8 +226,9 @@ until `scripts/check-all.sh` exits 0.
 Releases are driven by the **release-plz** bot (version + changelog + tag)
 with **cargo-dist** building artifacts; see `docs/release.md`. `install.sh`
 (hand-written, POSIX sh) is the supported installer; `comemory upgrade`
-drives it. `cargo install --path .` builds locally (not published to
-crates.io); Homebrew via `Falconiere/tap/comemory`.
+drives it. While GitHub Actions are off, `scripts/deploy.sh` cuts the release
+locally (see Key Commands). Not published to crates.io; Homebrew via
+`Falconiere/tap/comemory`.
 
 ## Claude Code Hooks
 
@@ -208,18 +240,21 @@ enforcement surface, not two:
 - **Stop** — `bash scripts/guardrails/run.sh --stop`
 
 The hook writes to stderr and exits **2** (Claude Code ignores `1`). The
-retired checks (destructive-command/package-manager/formatter blocks) were a
-tool-call interceptor, never a repo-state checker — load-bearing gates were
-never there: `lefthook.yml` (fmt/guardrails/typos pre-commit, `check_all`
-pre-push) and CI's `scripts/check-all.sh` cover them. What the dispatcher
-blocked is now **convention only** — nothing enforces it:
+retired dispatcher was a tool-call interceptor, never a repo-state checker, so
+guardrails did not absorb it. Only its `--no-verify` / `--no-gpg-sign` block
+has a replacement: `lefthook.yml` (fmt/guardrails/typos pre-commit,
+`check_all` pre-push) and CI's `scripts/check-all.sh`, so a local bypass
+cannot land. Everything else it blocked is now **unguarded**:
 
+- `rm -rf`, `git reset --hard`, `git checkout .`, `chmod -R 777` — only the
+  agent harness's own destructive-command confirmation.
+- `git push --force` — nothing. Use `--force-with-lease` for a rebased branch.
 - `scripts/guardrails/` is vendored verbatim from the kit — never hand-edit
   it; `guardrails.config.json` and `scripts/guardrails/patterns/rust/` are the
-  sanctioned knobs.
-- Rust project: no `npm` / `bun` / `pip` / `uv`.
+  sanctioned knobs. Convention only.
+- Rust project: no `npm` / `bun` / `pip` / `uv`. Convention only.
 - Run `rustfmt` / `cargo clippy` through `scripts/fmt-check.sh` /
-  `scripts/lint-check.sh`, the canonical invocations.
+  `scripts/lint-check.sh`, the canonical invocations. Convention only.
 
 User-facing docs live under `docs/`, in Diátaxis tiers indexed by
 `docs/README.md`: tutorial (`getting-started.md`), how-tos (`guides/`),
@@ -280,7 +315,7 @@ D3/D4/D5 policy lines — keep them verbatim.
   copy. Its `#![allow(dead_code)]` is the one sanctioned exception.
 - **D10 — `extern crate self as comemory;`** in `src/lib.rs` keeps colocated
   test imports identical to the crate-root suite's.
-- **D11 — 106 of 300 test files remain crate-root integration tests** (kit's
+- **D11 — 192 of 692 test files remain crate-root integration tests** (kit's
   "one file per public surface" category): pinned by the
   `CARGO_BIN_EXE_comemory` constraint — see "Testing".
 - **D12 — RESOLVED.** Dispatcher retired; `.claude/settings.json` matches kit.

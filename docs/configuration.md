@@ -36,7 +36,7 @@ project-skill settings, and migration from toolu.
 | `COMEMORY_OBSERVATIONS_ENABLED` | Opt in to candidate observation capture: `comemory find` records its whole candidate pool and prints the `o-<yyyymmdd>-<8hex>` handle `comemory judge` takes. Off by default (capture stores passage snapshots); suppressed under read-only `serve` and `COMEMORY_DISABLE_ACCESS_TRACKING`; a failed capture never fails search (`[observations] enabled`). | `false` |
 | `COMEMORY_OBSERVATIONS_MAX_TEXT_BYTES` | Per-candidate passage bound in bytes; the digest always covers the full passage. Validated `> 0` (`[observations] max_text_bytes`). | `4096` |
 | `COMEMORY_OBSERVATIONS_MAX_CANDIDATES` | Ceiling on candidates persisted per captured query; raised when it would cut into the returned page, and a cut pool is recorded `truncated`. Validated `> 0` (`[observations] max_candidates`). | `100` |
-| `COMEMORY_DISABLE_ACCESS_TRACKING` | Test hook (truthy) disabling `search` / `context` access tracking and `retrieval_log` writes for one run. Not a user knob. | `false` |
+| `COMEMORY_DISABLE_ACCESS_TRACKING` | Test hook (`true`/`false` only — parsed as a Rust `bool`, so `1` is an error) disabling `search` / `context` access tracking and `retrieval_log` writes for one run. Not a user knob. | `false` |
 | `COMEMORY_ACTOR` | Caller label a terminal run reports as the `actor` of the rows it records in the activity feed (`GET /api/v1/activity`). Trimmed; blank means no actor. Env-only: it names the wrapper or agent invoking one process, which a shared config file cannot. | unset |
 | `COMEMORY_ACTIVITY_ENABLED` | `false` turns the activity feed's recording off entirely; the routes still serve what is already stored. | `true` |
 | `COMEMORY_ACTIVITY_SUMMARIES` | `false` records each run without its per-command summary, so no query text or memory title is persisted. | `true` |
@@ -131,9 +131,11 @@ letter.
 |------|---------|---------|
 | `prune.trash_retention_days` | Days a soft-deleted memory stays in `memories/.trash/` before `comemory gc` reaps it. Must be ≥ 1. Editable live through `PUT /api/v1/gc/policy`. | `30` |
 | `indexing.auto_reindex_threshold_ms` | Debounce (ms) that suppresses spawning bursts of `lazy` auto-reindex processes during rapid successive searches: a new background `index-code` is only spawned if at least this long elapsed since the last trigger. | `200` |
-| `tune.rrf_k_grid` / `tune.decay_grid` / `tune.mmr_lambda_grid` / `tune.bm25_grid` | The `[tune]` grid-search axes consumed by `comemory tune` and `comemory bandit`. | — |
+| `tune.rrf_k_grid` / `tune.decay_grid` / `tune.mmr_lambda_grid` / `tune.bm25_grid` / `tune.graph_hops_grid` / `tune.graph_seeds_grid` | The six `[tune]` grid-search axes consumed by `comemory tune` and `comemory bandit` — 729 candidates at defaults. File-only, no env override. | — |
+| `tune.samples` | How many distinct grid candidates `comemory tune` scores, drawn by a derived-or-`--seed`-pinned PRNG; `0` restores the exhaustive cartesian sweep. `comemory bandit` ignores it — its arms stay the full grid. | `64` |
 | `bandit.enabled` | When `false`, `comemory bandit --apply` refuses; report still works. | `true` |
 | `reinforce.search_edit_days` | File overlay for the search→edit lookback (same as `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`). | `7` |
+| `reinforce.enabled` | On/off bit for search→edit auto-reinforcement, toggled by `comemory hooks --enable\|--disable search-edit-reinforcement`. File-only, no env override: the lookback window is validated `≥ 1`, so it cannot express "off". | `true` |
 | `sync.push_on_save` | Push the outbox inline after `save` / `delete`, so continuous sync needs no resident process. Env: `COMEMORY_SYNC_PUSH_ON_SAVE`. | `true` |
 | `sync.push_on_save_timeout` | Budget for that inline push only — far below the 30s every other platform call takes, because a save must return on a captive-portal network. Validated `> 0`; disable the hook with `push_on_save = false` rather than a zero budget. Env: `COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT`. | `"2s"` |
 | `sync.after_save` | **Deprecated, ignored.** Superseded by `sync.push_on_save`. | `false` |

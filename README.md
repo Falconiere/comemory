@@ -607,7 +607,7 @@ stack, plus its own stricter local ceilings):
 The umbrella quality gate is one command — CI runs the same scripts:
 
 ```bash
-bash scripts/check-all.sh     # fmt · type · lint · guardrails · typos · cli-docs · migration-check
+bash scripts/check-all.sh     # fmt · type · lint · guardrails · architecture · store-chokepoint · typos · cli-docs · http-docs · migration · replication-coverage
 just check                    # alias of the above
 just test                     # cargo nextest run --all-features
 just qa                       # check-all + cargo-deny + dup-check + machete
