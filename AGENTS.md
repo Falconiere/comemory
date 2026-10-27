@@ -61,7 +61,8 @@ Deviations are enumerated under "Deviations from toolu-conventions" — nowhere 
 1. **No duplication / redundancy.** Shared logic is extracted into helper.
    Enforced by `scripts/dup-check.sh` (excludes test trees) and review.
 2. **No barrels — no `mod.rs`.** A module that grows into a folder keeps its
-   file beside it (`src/store.rs` declares `mod migrate;`). A file whose only
+   file beside it (`src/store.rs` declares `mod migrate;`,
+   `src/store/migrate.rs` holds it). A file whose only
    content is `pub use` re-exports is banned; `pub use` is legitimate only in
    `src/lib.rs`. Enforced by the `no-barrels` guardrails check.
 3. **One responsibility per file; filename matches content.** `snake_case`,
@@ -73,7 +74,7 @@ Deviations are enumerated under "Deviations from toolu-conventions" — nowhere 
 5. **Zero errors, zero warnings, no silencing.** Clippy over all targets and
    features with `-D warnings` must be clean. No `#[allow(...)]` in
    production code; no `.unwrap()` / `.expect(...)` / `panic!` / `todo!` /
-   `println!` / `dbg!` outside tests and benches — return `Result` with `?`,
+   `unimplemented!` / `println!` / `eprintln!` / `dbg!` outside tests and benches — return `Result` with `?`,
    diagnose through `tracing`. Every `unsafe` block/fn carries a `// SAFETY:`
    line directly above it.
 6. **Tests never share a file with production logic, and colocate by
@@ -81,14 +82,16 @@ Deviations are enumerated under "Deviations from toolu-conventions" — nowhere 
    See "Testing" for the placement rule.
 7. **Doc line on every module and public item.** `//!` on every module,
    `///` on every `pub` item (`missing_docs = "warn"` under `-D warnings`).
-   Folder READMEs are separate (Binding Rule 7, second half): see D5.
+   Folder READMEs are a separate, folder-only rule: see D5.
 8. **Docs in sync.** A user-facing change (CLI flags, public API, config, env
    vars) updates `README.md`, `AGENTS.md`, `docs/`, and the module's own
    `src/<module>/README.md` in the same change.
 9. **Real data, no mock-data tests.** A test that only proves a mock returns
    what it was told is banned.
 10. **`rusqlite` is confined to the store module.** Only `src/store.rs` and
-    `src/store/` may name the driver; every other module takes
+    `src/store/` may name the driver — sole permanent exception:
+    `src/errors.rs`'s `Error::Sqlite(#[from] rusqlite::Error)`, kept so `?`
+    works inside `store/` without `.map_err`; every other module takes
     `store::Connection` / `store::Transaction` and reads back owned `Vec<T>`,
     `Option<T>`, or scalars. Two-way: `store/` calls no domain logic either —
     callers pass row data in (`store::CreatedWindow`, `store::MemoryLinks`,
@@ -155,7 +158,9 @@ pushes inline best-effort after local writes.
   integration targets (colocated `assert_cmd` goes stale-binary green);
   `insta` resolves snapshots from the test file's location; shared fixtures
   live once in `tests/common/` (bridged via `src/test_common.rs`).
-- Every test file starts with the shared lint header, imports through
+- Every test and bench file's first line is the shared lint header
+  `#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::float_cmp, clippy::too_many_lines)]`;
+  it imports through
   `use comemory::...` (`extern crate self as comemory;` in `lib.rs`), addresses
   data via `concat!(env!("CARGO_MANIFEST_DIR"), "/tests/...")`. Real data only.
 
@@ -206,7 +211,15 @@ The hook writes to stderr and exits **2** (Claude Code ignores `1`). The
 retired checks (destructive-command/package-manager/formatter blocks) were a
 tool-call interceptor, never a repo-state checker — load-bearing gates were
 never there: `lefthook.yml` (fmt/guardrails/typos pre-commit, `check_all`
-pre-push) and CI's `scripts/check-all.sh` cover them.
+pre-push) and CI's `scripts/check-all.sh` cover them. What the dispatcher
+blocked is now **convention only** — nothing enforces it:
+
+- `scripts/guardrails/` is vendored verbatim from the kit — never hand-edit
+  it; `guardrails.config.json` and `scripts/guardrails/patterns/rust/` are the
+  sanctioned knobs.
+- Rust project: no `npm` / `bun` / `pip` / `uv`.
+- Run `rustfmt` / `cargo clippy` through `scripts/fmt-check.sh` /
+  `scripts/lint-check.sh`, the canonical invocations.
 
 User-facing docs live under `docs/`, in Diátaxis tiers indexed by
 `docs/README.md`: tutorial (`getting-started.md`), how-tos (`guides/`),
@@ -220,8 +233,8 @@ D3/D4/D5 policy lines — keep them verbatim.
 
 - **D1 — `unsafe_code = "forbid"` is NOT set.** 7 FFI-necessary `unsafe`
   blocks + 3 `unsafe extern "C" fn` items (FTS5 tokenizer via
-  `libsqlite3-sys`, `sqlite-vec` auto-extension, `Command::pre_exec` between
-  `fork`/`exec`) have no safe wrapper; `forbid` admits no local override.
+  `libsqlite3-sys`, `sqlite-vec` auto-extension), plus 1 `Command::pre_exec`
+  block between `fork`/`exec`, have no safe wrapper; `forbid` admits no local override.
   Stronger replacement: `no-unsafe-without-safety.yml` fails any `unsafe`
   lacking `// SAFETY:` directly above it.
 - **D2 — `fileSize.max` is 300, not kit's 500**, with one override: 400 for

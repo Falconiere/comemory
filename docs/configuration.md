@@ -30,7 +30,13 @@ project-skill settings, and migration from toolu.
 | `COMEMORY_RETRIEVAL_GRAPH_SEEDS` | How many provisional top hits seed that walk. Validated `≥ 1`. | `8` |
 | `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `"body,tags"` BM25 column weights for `memory_fts` (both finite ≥ 0, at least one > 0). | `1.0,3.0` |
 | `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | `"symbol,snippet,path_tokens"` BM25 column weights for `code_fts` (all finite ≥ 0, at least one > 0). | `2.0,1.0,1.5` |
+| `COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT` | Weighted-RRF contribution of the document leg, relative to the memory and code legs (both fixed at `1.0`). Finite, in `(0.0, 10.0]`. Absent from `[tune]` grids — `tune`/`bandit` pin memory-only scope. | `0.5` |
+| `COMEMORY_INDEXING_MAX_FILE_BYTES` | Ceiling (bytes) above which a candidate document file is recorded `too_large` and skipped by the `comemory index` document writer. Must be `> 0`. | `16777216` (16 MiB) |
 | `COMEMORY_LEARNING_RETENTION_DAYS` | `comemory gc` retention window (days) for raw `retrieval_log`, `feedback_events` and `activity_log` rows; aggregated `feedback` counters and mined `query_expansions` never expire. | `90` |
+| `COMEMORY_OBSERVATIONS_ENABLED` | Opt in to candidate observation capture: `comemory find` records its whole candidate pool and prints the `o-<yyyymmdd>-<8hex>` handle `comemory judge` takes. Off by default (capture stores passage snapshots); suppressed under read-only `serve` and `COMEMORY_DISABLE_ACCESS_TRACKING`; a failed capture never fails search (`[observations] enabled`). | `false` |
+| `COMEMORY_OBSERVATIONS_MAX_TEXT_BYTES` | Per-candidate passage bound in bytes; the digest always covers the full passage. Validated `> 0` (`[observations] max_text_bytes`). | `4096` |
+| `COMEMORY_OBSERVATIONS_MAX_CANDIDATES` | Ceiling on candidates persisted per captured query; raised when it would cut into the returned page, and a cut pool is recorded `truncated`. Validated `> 0` (`[observations] max_candidates`). | `100` |
+| `COMEMORY_DISABLE_ACCESS_TRACKING` | Test hook (truthy) disabling `search` / `context` access tracking and `retrieval_log` writes for one run. Not a user knob. | `false` |
 | `COMEMORY_ACTOR` | Caller label a terminal run reports as the `actor` of the rows it records in the activity feed (`GET /api/v1/activity`). Trimmed; blank means no actor. Env-only: it names the wrapper or agent invoking one process, which a shared config file cannot. | unset |
 | `COMEMORY_ACTIVITY_ENABLED` | `false` turns the activity feed's recording off entirely; the routes still serve what is already stored. | `true` |
 | `COMEMORY_ACTIVITY_SUMMARIES` | `false` records each run without its per-command summary, so no query text or memory title is persisted. | `true` |

@@ -583,8 +583,8 @@ Runtime queries use the declared toolu-orm tables. See the
 [runtime query guide](docs/guides/runtime-orm.md) for supported builders,
 behavior-preserving conversions, and upstream issues for retained SQL.
 
-Read **[AGENTS.md](AGENTS.md)** first — it documents the architecture, the
-module map, the frontmatter schema, and the **binding rules** every
+Read **[AGENTS.md](AGENTS.md)** first — it points into the architecture,
+module, and frontmatter docs, and states the **binding rules** every
 contribution must satisfy (comemory follows the
 [toolu-conventions](https://github.com/Falconiere/toolu-conventions) Rust
 stack, plus its own stricter local ceilings):
