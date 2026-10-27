@@ -310,8 +310,10 @@ case_rehearsal() {
   out="$(cd "$c" && bash "$DEPLOY" --dry-run)" || fail "dry run failed"
   after="$(state "$c"; git -C "$c" ls-remote origin)"
   # The last stdout line is the asset dir, named after the tag release-plz computed.
+  # Shape, not a string match: git prints a normalized path, $c can hold "tmp//" from TMPDIR.
   dir="$(tail -1 <<<"$out")"; tag="${dir##*/}"
-  [[ "$dir" == "$c/target/deploy/v"* ]] || fail "dry run did not end with its asset dir: $dir"
+  [[ "$dir" == */target/deploy/v* && -d "$dir" && "$dir" -ef "$c/target/deploy/$tag" ]] \
+    || fail "dry run did not end with its asset dir: $dir"
   grep -qF "release-plz computed $tag; its CHANGELOG section:" <<<"$out" || fail "dry run did not show the tag"
   grep -qx "## \[${tag#v}\] - .*" <<<"$out" || fail "dry run did not show the ${tag#v} section"
   [[ "$before" == "$after" ]] \
