@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 
 const FILES: &[(&str, &str)] = &[
     (
+        "bin/mcp-server.sh",
+        include_str!("../../../../integrations/agent/bin/mcp-server.sh"),
+    ),
+    (
         "hooks/memory-lifecycle.sh",
         include_str!("../../../../integrations/agent/hooks/memory-lifecycle.sh"),
     ),
@@ -33,6 +37,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/agent/.codex-plugin/plugin.json"),
     ),
     (
+        ".muse-plugin/plugin.json",
+        include_str!("../../../../integrations/agent/.muse-plugin/plugin.json"),
+    ),
+    (
         "hooks/comemory-status.sh",
         include_str!("../../../../integrations/agent/hooks/comemory-status.sh"),
     ),
@@ -49,12 +57,20 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/agent/hooks/project-skills-index.sh"),
     ),
     (
+        "hooks/pre-compact.sh",
+        include_str!("../../../../integrations/agent/hooks/pre-compact.sh"),
+    ),
+    (
         "hooks/session-start.sh",
         include_str!("../../../../integrations/agent/hooks/session-start.sh"),
     ),
     (
         "hooks/skill-use.sh",
         include_str!("../../../../integrations/agent/hooks/skill-use.sh"),
+    ),
+    (
+        "hooks/stop.sh",
+        include_str!("../../../../integrations/agent/hooks/stop.sh"),
     ),
     (
         "lib/project-skills.sh",
@@ -193,6 +209,19 @@ fn write_catalogs(parent: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The `comemory` MCP server entry every host config names: `binary`
+/// running `comemory mcp`. Shared by the bundle's `.mcp.json` and the
+/// cursor `mcp.json` merge so the two can never disagree.
+///
+/// # Errors
+/// [`Error::Usage`] for a non-UTF-8 binary path.
+pub(super) fn mcp_server(binary: &Path) -> Result<serde_json::Value> {
+    let command = binary
+        .to_str()
+        .ok_or_else(|| Error::Usage("binary path must be UTF-8".into()))?;
+    Ok(serde_json::json!({ "command": command, "args": ["mcp"] }))
+}
+
 /// Write `<plugin_root>/.mcp.json`, the manifest Claude Code and Codex read
 /// to launch `comemory mcp` for this plugin. Written on **every** install —
 /// including a re-run over an already-extracted, byte-identical bundle — so
@@ -215,14 +244,7 @@ pub(super) fn write_mcp_manifest(plugin_root: &Path, binary: &Path) -> Result<Pa
             path.display()
         )));
     }
-    let command = binary
-        .to_str()
-        .ok_or_else(|| Error::Usage("binary path must be UTF-8".into()))?;
-    let manifest = serde_json::json!({
-        "mcpServers": {
-            "comemory": { "command": command, "args": ["mcp"] }
-        }
-    });
+    let manifest = serde_json::json!({ "mcpServers": { "comemory": mcp_server(binary)? } });
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -230,19 +252,25 @@ pub(super) fn write_mcp_manifest(plugin_root: &Path, binary: &Path) -> Result<Pa
     write_new_file_no_symlink(
         &temp,
         format!("{}\n", serde_json::to_string_pretty(&manifest)?).as_bytes(),
+        None,
     )?;
     std::fs::rename(&temp, &path)?;
     Ok(path)
 }
 
-/// Write `body` to `temp`, refusing to follow a symlink planted there.
+/// Write `body` to `temp`, refusing to follow a symlink planted there. Shared
+/// with the cursor `mcp.json` merge, which needs the same refusal.
 /// A stale *regular* file left over from a crashed prior install is
 /// removed first (the rename that follows always replaces it anyway);
 /// a stale *symlink* is refused outright rather than opened, since
 /// `OpenOptions::create_new` failing on an existing symlink still leaves
 /// an attacker-controlled path for a caller who instead reached for
 /// `std::fs::write` (which follows it and writes through).
-fn write_new_file_no_symlink(temp: &Path, body: &[u8]) -> Result<()> {
+///
+/// `mode` (unix permission bits) is applied at creation, so a file holding
+/// secrets is never readable more widely than intended, not even before a
+/// later `set_permissions`.
+pub(super) fn write_new_file_no_symlink(temp: &Path, body: &[u8], mode: Option<u32>) -> Result<()> {
     match temp.symlink_metadata() {
         Ok(meta) if meta.file_type().is_symlink() => {
             return Err(Error::Usage(format!(
@@ -254,10 +282,16 @@ fn write_new_file_no_symlink(temp: &Path, body: &[u8]) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
     }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temp)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    let mut file = options.open(temp)?;
     file.write_all(body)?;
     Ok(())
 }

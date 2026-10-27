@@ -58,8 +58,13 @@ published wrapper for the active host:
 
 - Claude Code: `"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/comemory/comemory.sh"`
 - Codex: `"${CODEX_HOME:-$HOME/.codex}/comemory/comemory.sh"`
+- Muse: `"${XDG_CONFIG_HOME:-$HOME/.config}/muse/comemory/comemory.sh"`
+- Cursor: `"$HOME/.cursor/skills/agent-memory/scripts/comemory.sh"`
+- Hermes: `"${HERMES_HOME:-$HOME/.hermes}/skills/agent-memory/scripts/comemory.sh"`
 
-SessionStart publishes that path. Do not use plugin-root environment variables
+SessionStart publishes the Claude Code, Codex and Muse paths. Cursor and
+hermes have no SessionStart hook, so they use the installed skill's own
+script — the skill dir links into the comemory bundle, so it works as is. Do not use plugin-root environment variables
 in agent shell commands. The wrapper scopes to the canonical Git repository,
 shared across worktrees. `--repo NAME` overrides it explicitly.
 
@@ -82,5 +87,6 @@ when the verdict is explicitly manual or MCP is unavailable.
 `search`, `context`, `list`, and `save` accept `--json`. The wrapper also exposes
 `delete`, `search-code`, `index-code`, `graph`, and local retrieval maintenance.
 Use `comemory.sh --help` for the full interface. Installation is explicit:
-`comemory install claude` or `comemory install codex`. Git indexing hooks remain
+`comemory install <host>` (`claude`, `codex`, `muse`, `cursor-agent` or
+`hermes`). Git indexing hooks remain
 an independent choice: `comemory install-hooks`.

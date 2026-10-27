@@ -74,7 +74,7 @@ case "$event" in
     ;;
   *) exit 0 ;;
 esac
-if [ "$event" = PreCompact ] && { [ "${TOOLU_HOST_OVERRIDE:-}" = codex ] || { [ -z "${TOOLU_HOST_OVERRIDE:-}" ] && [ -n "${PLUGIN_ROOT:-}" ]; }; }; then
+if [ "$event" = PreCompact ] && { [ "${TOOLU_HOST_OVERRIDE:-}" = codex ] || [ "${TOOLU_HOST_OVERRIDE:-}" = muse ] || { [ -z "${TOOLU_HOST_OVERRIDE:-}" ] && [ -n "${PLUGIN_ROOT:-}" ]; }; }; then
   # Codex pre-compact.command.output allows only continue, stopReason,
   # suppressOutput and systemMessage (additionalProperties: false), so the
   # Claude-style hookSpecificOutput.additionalContext is rejected there.

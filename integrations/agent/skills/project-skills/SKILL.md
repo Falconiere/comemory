@@ -6,7 +6,7 @@ description: "ALWAYS ACTIVE — Write a project skill to .toolu/skills/ after a 
 
 Procedural memory for **this repo**. Facts stay in comemory (`agent-memory`). Procedures live as `SKILL.md` files the SessionStart index lists by name+description; `Read` the file to load the body.
 
-Install with `comemory install claude` or `comemory install codex`. Committed skills in a clone are indexed when the integration starts.
+Install with `comemory install <host>` (`claude`, `codex`, `muse`, `cursor-agent` or `hermes`). Committed skills in a clone are indexed when the integration starts.
 
 ## Wrapper — `skills.sh`
 
@@ -15,6 +15,12 @@ Install with `comemory install claude` or `comemory install codex`. Committed sk
 "${CODEX_HOME:-$HOME/.codex}/comemory/skills.sh" <subcmd> …
 # Claude Code
 "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/comemory/skills.sh" <subcmd> …
+# Muse
+"${XDG_CONFIG_HOME:-$HOME/.config}/muse/comemory/skills.sh" <subcmd> …
+# Cursor (no SessionStart hook: the linked skill's own script)
+"$HOME/.cursor/skills/project-skills/scripts/skills.sh" <subcmd> …
+# Hermes (no hooks: the linked skill's own script)
+"${HERMES_HOME:-$HOME/.hermes}/skills/project-skills/scripts/skills.sh" <subcmd> …
 ```
 
 Repo-checkout fallback: `integrations/agent/skills/project-skills/scripts/skills.sh`.

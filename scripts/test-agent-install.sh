@@ -521,10 +521,114 @@ PYELAPSED
   printf 'agent-install: %s SessionEnd behavior, bootstrap nudge, recall injection, and Stop advisory passed\n' "$host"
 done
 
+# Muse (AC-2/AC-3): contained real install into a throwaway XDG data home,
+# reinstall refresh, and every manifest hook id fired through muse's own
+# `plugins hook test` harness. Hook side effects stay hermetic: hook config
+# under a throwaway XDG_CONFIG_HOME and hook store writes under a throwaway
+# data dir, never the developer's real `~/.config/muse` or this script's
+# shared store. Skipped loudly where the muse CLI is absent.
+if command -v muse >/dev/null; then
+  muse_xdg="$TASK/muse-xdg"
+  muse_cfg="$TASK/muse-cfg"
+  muse_data="$TASK/muse-hook-data"
+  mkdir -p "$muse_cfg" "$muse_data"
+  # Upgrade path: a comemory registration from another bundle version (a
+  # copy of this bundle under an older version dir) is removed and replaced;
+  # muse itself refuses the same id from a different source.
+  XDG_DATA_HOME="$muse_xdg" "$BIN" install muse --dry-run --json > "$TASK/install-muse-preview.json"
+  muse_old="$(jq -r .marketplace "$TASK/install-muse-preview.json")/0.0.0-previous/plugins"
+  mkdir -p "$muse_old"
+  cp -R "$ROOT/integrations/agent" "$muse_old/comemory"
+  XDG_DATA_HOME="$muse_xdg" muse plugins install "$muse_old/comemory" >/dev/null
+  XDG_DATA_HOME="$muse_xdg" "$BIN" install muse --json > "$TASK/install-muse.json"
+  jq -e '.installed and .plugin == "comemory@comemory"' "$TASK/install-muse.json" >/dev/null
+  # Muse holds third-party hooks for review; the report names the command.
+  jq -e '.next_steps | any(test("muse plugins approve comemory"))' "$TASK/install-muse.json" >/dev/null
+  muse_bundle="$(jq -r .bundle "$TASK/install-muse.json")/plugins/comemory"
+  [ -f "$muse_bundle/.muse-plugin/plugin.json" ]
+  # Muse's manifest launches bin/mcp-server.sh, which runs the absolute
+  # binary the install recorded in the bundle's .mcp.json.
+  [ "$(jq -r .mcp_manifest "$TASK/install-muse.json")" = "$muse_bundle/.mcp.json" ]
+  jq -e '.capabilities.mcpServers == [{"id":"comemory","transport":"stdio","command":["bash","bin/mcp-server.sh"]}]' \
+    "$muse_bundle/.muse-plugin/plugin.json" >/dev/null
+  [ -x "$muse_bundle/bin/mcp-server.sh" ]
+  XDG_DATA_HOME="$muse_xdg" muse plugins inspect comemory > "$TASK/inspect-muse.txt"
+  grep -q 'mcp=1' "$TASK/inspect-muse.txt"
+  grep -q 'hooks=10' "$TASK/inspect-muse.txt"
+  version="$("$BIN" --version | awk '{print $2}')"
+  XDG_DATA_HOME="$muse_xdg" muse plugins list --json > "$TASK/list-muse.json"
+  jq -e --arg version "$version" \
+    '.plugins | map(select(.record.id == "comemory")) | length == 1 and .[0].record.version == $version' \
+    "$TASK/list-muse.json" >/dev/null
+  XDG_DATA_HOME="$muse_xdg" "$BIN" install muse --json >/dev/null
+  XDG_DATA_HOME="$muse_xdg" muse plugins list --json > "$TASK/list-muse-reinstall.json"
+  jq -e --arg version "$version" \
+    '.plugins | map(select(.record.id == "comemory")) | length == 1 and .[0].record.version == $version' \
+    "$TASK/list-muse-reinstall.json" >/dev/null
+  muse_hook_fixture() {
+    jq -nc --arg event "$1" --arg cwd "$TASK/repository" --arg sid "muse-e2e" \
+      '{event:$event,stdin:{cwd:$cwd,session_id:$sid,hook_event_name:$event}}'
+  }
+  muse_hook_test() {
+    id="$1"; event="$2"; extra="$3"
+    fixture="$TASK/muse-fixture-$id.json"
+    if [ -n "$extra" ]; then
+      muse_hook_fixture "$event" | jq -c ".stdin += $extra" > "$fixture"
+    else
+      muse_hook_fixture "$event" > "$fixture"
+    fi
+    XDG_DATA_HOME="$muse_xdg" XDG_CONFIG_HOME="$muse_cfg" COMEMORY_DATA_DIR="$muse_data" \
+      timeout 120 muse plugins hook test "comemory:$id" --fixture "$fixture" --json > "$TASK/muse-hook-$id.json"
+  }
+  for id in session-start comemory-status project-skills-index; do
+    muse_hook_test "$id" SessionStart ''
+  done
+  muse_hook_test user-prompt-submit UserPromptSubmit '{"prompt":"a short prompt"}'
+  muse_hook_test skill-use PostToolUse '{"tool_name":"Bash"}'
+  muse_hook_test project-skills-curate Stop ''
+  muse_hook_test stop Stop ''
+  muse_hook_test pre-compact PreCompact ''
+  muse_hook_test session-end SessionEnd '{"transcript_path":"/nonexistent.jsonl"}'
+  muse_hook_test scope PreToolUse '{"tool_name":"Bash","tool_input":{"command":"comemory search lesson"}}'
+  for id in session-start comemory-status project-skills-index user-prompt-submit skill-use project-skills-curate stop pre-compact session-end; do
+    jq -e '[.terminals[].status] | length > 0 and all(. == "completed")' "$TASK/muse-hook-$id.json" >/dev/null \
+      || { printf 'muse hook %s did not complete\n' "$id" >&2; exit 1; }
+  done
+  # Scope denies the unscoped call: the harness reports `blocked` with a deny.
+  jq -e '[.terminals[].status] == ["blocked"] and .decision.permission_decision == "deny"' \
+    "$TASK/muse-hook-scope.json" >/dev/null
+  # SessionEnd stays silent under the muse override (no transcript capture):
+  # completed, with neither envelope in any terminal's stdout.
+  jq -e '[.terminals[].stdout // ""] | join("") | test("hookSpecificOutput|systemMessage") | not' \
+    "$TASK/muse-hook-session-end.json" >/dev/null
+  # PreCompact reaches the lifecycle hook through its own entry point and
+  # keeps the plain systemMessage shape.
+  jq -e '[.terminals[].stdout // ""] | join("") | test("systemMessage")' \
+    "$TASK/muse-hook-pre-compact.json" >/dev/null
+  # A `comemory` plugin from a source comemory did not write is refused,
+  # never removed.
+  XDG_DATA_HOME="$muse_xdg" muse plugins remove comemory >/dev/null
+  mkdir -p "$TASK/foreign-plugins"
+  cp -R "$ROOT/integrations/agent" "$TASK/foreign-plugins/comemory"
+  XDG_DATA_HOME="$muse_xdg" muse plugins install "$TASK/foreign-plugins/comemory" >/dev/null
+  if XDG_DATA_HOME="$muse_xdg" "$BIN" install muse --json > "$TASK/install-muse-foreign.json" 2> "$TASK/install-muse-foreign.err"; then
+    printf 'muse install replaced a foreign comemory plugin\n' >&2; exit 1
+  fi
+  grep -q 'which comemory did not write' "$TASK/install-muse-foreign.err"
+  # Dry run with an explicit muse dir reports the manifest but writes none.
+  "$BIN" install muse --data-dir "$TASK/muse data-dry-run" --config-dir "$TASK/muse config-dry-run/muse" \
+    --dry-run --json > "$TASK/install-muse-dry-run.json"
+  [ ! -e "$(jq -r .mcp_manifest "$TASK/install-muse-dry-run.json")" ]
+  printf 'agent-install: muse contained install/upgrade/refresh, MCP entry, foreign-source refusal plus hook-test per hook id passed\n'
+else
+  printf 'agent-install: muse CLI absent, skipping muse install checks\n'
+fi
+
 # AC-7: `.mcp.json` names this test binary's canonical path (`$BIN` above is
 # itself a symlink into the real target/debug binary) and the `mcp`
-# subcommand, for every host already installed above; `--dry-run` into a
-# fresh config dir reports the path but writes nothing.
+# subcommand, for the plugin-CLI hosts installed above (the muse block
+# checks its own manifest); `--dry-run` into a fresh config dir reports the
+# path but writes nothing.
 canonical_bin="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$BIN")"
 for host in claude codex; do
   plugin="$(jq -r .bundle "$TASK/install-$host.json")/plugins/comemory"

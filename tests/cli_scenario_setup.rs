@@ -269,3 +269,70 @@ fn only_runs_exactly_one_step_and_skips_the_others() {
         "a skipped data-dir step means no store is created"
     );
 }
+
+/// AC-7: with no host CLI on `PATH` but a hermes config dir under `HOME`,
+/// the agent-host step is pending for hermes rather than unavailable — the
+/// CLI-less presence path, with the child process carrying staged env.
+#[test]
+fn agent_host_step_detects_hermes_without_a_cli() {
+    let data = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".hermes")).unwrap();
+    let repo = repo_with_sources();
+    let out = Command::cargo_bin("comemory")
+        .unwrap()
+        .args([
+            "--json",
+            "setup",
+            "--dry-run",
+            "--only",
+            "agent-host",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--host",
+            "hermes",
+        ])
+        .env("COMEMORY_DATA_DIR", data.path())
+        .env("HOME", home.path())
+        .env("PATH", "/nonexistent")
+        .env_remove("COMEMORY_API_KEY")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(out.status.success(), "{stderr}");
+    let envelope: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("stdout must stay valid JSON ({e}): {stdout}\n{stderr}"));
+    assert_eq!(state_of(&envelope, "agent-host"), "pending");
+}
+
+/// AC-7: an unknown `--host` filter is refused up front (validated before
+/// anything is probed), naming the bad value and every known host.
+#[test]
+fn unknown_host_filter_is_refused_with_the_full_roster() {
+    let data = tempfile::tempdir().unwrap();
+    let repo = repo_with_sources();
+    let (code, stdout, stderr) = comemory(
+        data.path(),
+        &[
+            "--json",
+            "setup",
+            "--dry-run",
+            "--only",
+            "agent-host",
+            "--repo",
+            repo.path().to_str().unwrap(),
+            "--host",
+            "bogus",
+        ],
+    );
+    assert_eq!(
+        code, 64,
+        "unknown host is a usage error: {stdout}\n{stderr}"
+    );
+    let output = format!("{stdout}\n{stderr}");
+    for host in ["claude", "codex", "muse", "cursor-agent", "hermes", "bogus"] {
+        assert!(output.contains(host), "refusal must name {host}: {output}");
+    }
+}

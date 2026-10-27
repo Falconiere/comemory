@@ -1,7 +1,8 @@
 //! `domains::integrations::install::{Request, Response, run}` — the shared middle of
 //! `comemory install <host>`: extract the embedded agent integration, write
 //! `<bundle>/plugins/comemory/.mcp.json` with this binary's absolute path,
-//! and register the plugin with the host's native plugin manager. Moved out
+//! and register it with the host — its native plugin manager where it has
+//! one, a file-based install otherwise ([`host::TABLE`] decides). Moved out
 //! of `cli::install::run` (Binding Rule 1) so `setup` drives the same
 //! installation instead of duplicating the host probe.
 //!
@@ -18,15 +19,18 @@ use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
 mod bundle;
+mod cursor;
+pub(crate) mod host;
+mod muse;
+mod skill_links;
 
-/// The agent hosts `comemory install` knows how to register a plugin with.
-pub const HOSTS: &[&str] = &["claude", "codex"];
+use host::{Host, Mechanism};
 
-/// `comemory install` request. `host` is one of [`HOSTS`].
+/// `comemory install` request. `host` is one of [`host::TABLE`]'s names.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
-    /// Agent host name; installs both skills and lifecycle hooks.
+    /// Agent host name.
     pub host: String,
     /// Preview the bundle destination without writing files.
     #[serde(default)]
@@ -43,22 +47,26 @@ pub struct Response {
     pub marketplace: Option<PathBuf>,
     /// The validated host name.
     pub host: String,
-    /// The plugin id registered with the host (`comemory@comemory`).
-    pub plugin: &'static str,
+    /// What the install delivers to this host (skills, hooks, MCP server).
+    pub delivers: &'static str,
+    /// The plugin id registered with the host's plugin manager
+    /// (`comemory@comemory`); `None` for file-based hosts.
+    pub plugin: Option<&'static str>,
     /// Where the integration bundle was extracted.
     pub bundle: PathBuf,
-    /// Where `.mcp.json` was written (or would be written under `--dry-run`).
-    pub mcp_manifest: PathBuf,
+    /// The host config file that names the `comemory mcp` server (written,
+    /// or that would be written under `--dry-run`); `None` for a host
+    /// without MCP support.
+    pub mcp_manifest: Option<PathBuf>,
     /// The host configuration directory used.
     pub config_dir: PathBuf,
     /// Whether this was a preview.
     pub dry_run: bool,
     /// Whether files were actually written.
     pub installed: bool,
+    /// What the operator still has to do for the host to load the install.
+    pub next_steps: Vec<String>,
 }
-
-/// The plugin id every host registers the bundle under.
-const PLUGIN: &str = "comemory@comemory";
 
 /// Where a successful install records that `host` was registered at this
 /// comemory version.
@@ -80,65 +88,17 @@ pub fn is_installed(data_dir: &Path, host: &str) -> bool {
     marker_path(data_dir, host).exists()
 }
 
-/// External programs the generated agent hooks shell out to. Probed before
-/// anything is written so a missing one fails the install rather than
-/// surfacing later as a silently broken hook.
-const HOOK_DEPENDENCIES: &[&str] = &["bash", "git", "jq", "python3"];
-
-/// Validate `name` against [`HOSTS`], returning the canonical `&'static str`
-/// so downstream code never carries an unvalidated host around.
+/// Validate `name` against [`host::TABLE`], returning the canonical
+/// `&'static str` so downstream code never carries an unvalidated host
+/// around.
 ///
 /// # Errors
 /// [`Error::Usage`] naming the offending value and the known hosts.
 pub fn validate_host(name: &str) -> Result<&'static str> {
-    HOSTS
-        .iter()
-        .copied()
-        .find(|known| *known == name)
-        .ok_or_else(|| {
-            Error::Usage(format!(
-                "unknown agent host `{name}` (known: {})",
-                HOSTS.join(", ")
-            ))
-        })
+    host::lookup(name).map(|host| host.name)
 }
 
-/// The environment variable a host reads its configuration directory from.
-fn config_env_key(host: &str) -> &'static str {
-    match host {
-        "codex" => "CODEX_HOME",
-        _ => "CLAUDE_CONFIG_DIR",
-    }
-}
-
-/// The per-host default configuration directory name under `$HOME`.
-fn config_dir_name(host: &str) -> &'static str {
-    match host {
-        "codex" => ".codex",
-        _ => ".claude",
-    }
-}
-
-/// Resolve the host configuration directory: an explicit override wins, then
-/// the host's own environment variable, then `$HOME/<default>`.
-///
-/// # Errors
-/// [`Error::Usage`] when neither an override nor `HOME` is available.
-pub fn config_dir(host: &str, explicit: Option<PathBuf>) -> Result<PathBuf> {
-    let configured = explicit.or(crate::config::env::env_parse::<PathBuf>(config_env_key(
-        host,
-    ))?);
-    let root = if let Some(root) = configured {
-        root
-    } else {
-        crate::config::env::env_parse::<PathBuf>("HOME")?
-            .ok_or_else(|| Error::Usage("HOME is unset; pass --config-dir".into()))?
-            .join(config_dir_name(host))
-    };
-    Ok(std::path::absolute(root)?)
-}
-
-/// Extract the embedded integration and register it with the native host CLI.
+/// Extract the embedded integration and register it with the host.
 /// The bundle lands under the `Ctx`'s own data directory, so a test driving a
 /// temporary `Paths` never touches `$HOME/.comemory`.
 ///
@@ -147,98 +107,159 @@ pub fn config_dir(host: &str, explicit: Option<PathBuf>) -> Result<PathBuf> {
 /// [`Error::Unavailable`] when the host CLI or a hook dependency is missing or
 /// one of the host's own plugin commands fails.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
-    let host = validate_host(&req.host)?;
+    let host = host::lookup(&req.host)?;
     let root = std::path::absolute(
         ctx.paths
             .data_dir()
             .join("integrations")
             .join(env!("CARGO_PKG_VERSION")),
     )?;
-    let config_dir = config_dir(host, req.config_dir)?;
-    let mcp_manifest = if req.dry_run {
-        root.join("plugins/comemory").join(".mcp.json")
-    } else {
-        let manifest = install(host, &config_dir, &root)?;
-        // Written only after the host's own CLI accepted the plugin, so the
-        // marker never claims an install that did not finish.
+    let config_dir = host.config_dir(req.config_dir)?;
+    if !req.dry_run {
+        install(host, &config_dir, &root)?;
+        // Written only after the host accepted the install, so the marker
+        // never claims an install that did not finish.
         std::fs::write(
-            marker_path(ctx.paths.data_dir(), host),
+            marker_path(ctx.paths.data_dir(), host.name),
             env!("CARGO_PKG_VERSION"),
         )?;
-        manifest
-    };
+    }
     Ok(Response {
         marketplace: root.parent().map(Path::to_path_buf),
-        host: host.to_string(),
-        plugin: PLUGIN,
+        host: host.name.to_string(),
+        delivers: host.delivers(),
+        plugin: host.plugin(),
+        mcp_manifest: mcp_manifest(host, &config_dir, &root),
         bundle: root,
-        mcp_manifest,
         config_dir,
         dry_run: req.dry_run,
         installed: !req.dry_run,
+        next_steps: host.next_steps(),
     })
 }
 
-/// Probe the host CLI and the hook dependencies, extract the bundle, write
-/// its `.mcp.json`, then register it as a local marketplace plugin. Returns
-/// the `.mcp.json` path so the caller's report matches what was written.
-fn install(host: &str, config_dir: &Path, root: &Path) -> Result<PathBuf> {
+/// The file that names the `comemory mcp` server for `host`.
+fn mcp_manifest(host: &Host, config_dir: &Path, root: &Path) -> Option<PathBuf> {
+    let plugin = root.join("plugins/comemory");
+    match host.mechanism {
+        // Muse's manifest starts `bin/mcp-server.sh`, which reads the
+        // binary path from this same `.mcp.json`.
+        Mechanism::PluginCli { .. } | Mechanism::MusePlugins => Some(plugin.join(".mcp.json")),
+        Mechanism::CursorFiles => Some(config_dir.join("mcp.json")),
+        Mechanism::HermesFiles => None,
+    }
+}
+
+/// Probe what the host needs, extract the bundle, then register it through
+/// the host's own mechanism: the native plugin CLI where one accepts a local
+/// bundle, a file-based install otherwise.
+fn install(host: &Host, config_dir: &Path, root: &Path) -> Result<()> {
     std::fs::create_dir_all(config_dir)?;
-    run_host(host, Some(config_dir), &["--version"])?;
-    for dependency in HOOK_DEPENDENCIES {
-        let status = Command::new(dependency).arg("--version").output()?;
-        if !status.status.success() {
+    if host.installs_hooks() {
+        run_host(host, config_dir, &["--version"])?;
+    }
+    for dependency in host.dependencies() {
+        let available = Command::new(dependency)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success());
+        if !available {
             return Err(Error::Unavailable(format!(
-                "{dependency} is required for agent hooks"
+                "{dependency} is required by the {} skills and hooks",
+                host.name
             )));
         }
     }
     bundle::extract(root)?;
     let binary = std::fs::canonicalize(std::env::current_exe()?)?;
-    let manifest = bundle::write_mcp_manifest(&root.join("plugins/comemory"), &binary)?;
+    bundle::write_mcp_manifest(&root.join("plugins/comemory"), &binary)?;
+    match host.mechanism {
+        Mechanism::PluginCli {
+            install_verb,
+            refresh,
+        } => install_cli_plugin(host, config_dir, root, install_verb, refresh),
+        Mechanism::MusePlugins => muse::install(host, config_dir, root),
+        Mechanism::CursorFiles => cursor::install(config_dir, root, &bundle::mcp_server(&binary)?),
+        Mechanism::HermesFiles => skill_links::link_skills(root, &config_dir.join("skills")),
+    }
+}
+
+/// Register through the Claude/Codex `plugin` CLI: marketplace first, then
+/// the plugin itself, then a refresh where the host keeps a stale copy.
+fn install_cli_plugin(
+    host: &Host,
+    config_dir: &Path,
+    root: &Path,
+    install_verb: &str,
+    refresh: bool,
+) -> Result<()> {
     let marketplace = root
         .parent()
         .ok_or_else(|| Error::Usage("bundle needs a parent".into()))?;
     let path = marketplace
         .to_str()
         .ok_or_else(|| Error::Usage("integration path must be UTF-8".into()))?;
-    run_host(
-        host,
-        Some(config_dir),
-        &["plugin", "marketplace", "add", path],
-    )?;
-    let action = if host == "codex" { "add" } else { "install" };
-    run_host(host, Some(config_dir), &["plugin", action, PLUGIN])?;
-    if host == "claude" {
-        run_host(host, Some(config_dir), &["plugin", "update", PLUGIN])?;
+    let plugin = host
+        .plugin()
+        .ok_or_else(|| Error::Usage(format!("{} has no plugin manager", host.name)))?;
+    run_host(host, config_dir, &["plugin", "marketplace", "add", path])?;
+    run_host(host, config_dir, &["plugin", install_verb, plugin])?;
+    if refresh {
+        run_host(host, config_dir, &["plugin", "update", plugin])?;
     }
-    Ok(manifest)
+    Ok(())
+}
+
+/// `path` canonicalized through its nearest existing ancestor, with any
+/// missing tail appended — so an ownership check holds however the data
+/// dir was spelled (`/var` vs `/private/var`, a symlinked `$HOME`), even
+/// for a link to a bundle version that has since been deleted.
+fn canonical_or_raw(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut current = path;
+    loop {
+        if let Ok(canonical) = std::fs::canonicalize(current) {
+            return missing
+                .iter()
+                .rev()
+                .fold(canonical, |resolved, name| resolved.join(name));
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
 }
 
 /// Invoke the host's own CLI with `args`, scoped to `config_dir` through the
-/// host's configuration environment variable.
-fn run_host(host: &str, config_dir: Option<&Path>, args: &[&str]) -> Result<()> {
-    let mut command = Command::new(host);
+/// host's configuration environment variable, and return its stdout.
+fn run_host(host: &Host, config_dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let mut command = Command::new(host.name);
     command.args(args);
-    if let Some(dir) = config_dir {
-        command.env(config_env_key(host), dir);
+    if let Some((key, value)) = host.scope_env(config_dir) {
+        command.env(key, value);
     }
     let output = command.output().map_err(|error| {
         Error::Unavailable(format!(
-            "{host} {}: {error}. Install the host CLI before retrying.",
+            "{} {}: {error}. Install the host CLI before retrying.",
+            host.name,
             args.join(" ")
         ))
     })?;
     if !output.status.success() {
         return Err(Error::Unavailable(format!(
-            "{host} {} failed ({}): {} {}",
+            "{} {} failed ({}): {} {}",
+            host.name,
             args.join(" "),
             output.status,
             String::from_utf8_lossy(&output.stderr),
             String::from_utf8_lossy(&output.stdout)
         )));
     }
-    Ok(())
+    Ok(output.stdout)
 }
 
 #[cfg(test)]

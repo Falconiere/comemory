@@ -17,10 +17,11 @@ HOOK_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 # shellcheck source=../lib/project-skills.sh
 . "$HOOK_DIR/../lib/project-skills.sh"
 input=$(cat)
-# Capture currently accepts Claude Code JSONL transcripts only. Codex installs
-# this shared bundle too, but must leave SessionEnd silent until its transcript
-# format has a supported capture path.
+# Capture currently accepts Claude Code JSONL transcripts only. Codex and
+# muse installs of this shared bundle must leave SessionEnd silent until
+# their transcript formats have a supported capture path.
 if [ "${TOOLU_HOST_OVERRIDE:-}" = codex ] \
+  || [ "${TOOLU_HOST_OVERRIDE:-}" = muse ] \
   || { [ -z "${TOOLU_HOST_OVERRIDE:-}" ] && [ -n "${PLUGIN_ROOT:-}" ]; }; then
   exit 0
 fi

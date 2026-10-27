@@ -53,7 +53,7 @@ One line per file, named after its primary item:
 | `index.rs` | `Args` | `comemory index <PATH>...` — register document sources and reconcile them |
 | `index_code.rs` | `Args` | `comemory index-code` — incremental symbol extraction over a git repo |
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
-| `install.rs` | `Args` | `comemory install` — install the embedded agent skills and hooks through the native Claude Code or Codex plugin manager; core in `domains::integrations::install` |
+| `install.rs` | `Args` | `comemory install` — install the embedded agent skills (plus hooks and MCP where the host supports them) through the Claude Code, Codex or muse plugin manager, or as skill links for cursor-agent and hermes; core in `domains::integrations::install` |
 | `install_hooks.rs` | `Args` | `comemory install-hooks` — install the four git hooks that run `sync --action auto`, then run the shipped hook body once in the repo (`kicked`) so it is indexed and synced without a commit — the body comes from the binary, never from the repo's hooks directory |
 | `export_dataset.rs` | `Args` | `comemory export-dataset` — write the reviewed relevance dataset and its manifest as versioned JSONL, with grouped splits, a withheld holdout and the TTY summary of everything the export refused |
 | `judge.rs` | `Args` | `comemory judge` — record reviewed relevance verdicts against a captured candidate observation, or report that observation |

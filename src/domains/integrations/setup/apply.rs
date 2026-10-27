@@ -58,6 +58,9 @@ fn data_dir(ctx: &mut Ctx<'_>) -> Result<String> {
 }
 
 /// Install the bundled skills and hooks into every host that needs them.
+/// Each host is attempted even when an earlier one fails — the hosts are
+/// independent — and a failure names both what was installed and what was
+/// not, so a partial run is never reported as all-or-nothing.
 fn agent_host(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
     let pending: Vec<&'static str> = detected
         .hosts_present
@@ -66,18 +69,34 @@ fn agent_host(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
         .filter(|host| !detected.hosts_installed.contains(host))
         .collect();
     let mut installed = Vec::new();
+    let mut failed = Vec::new();
     for host in pending {
-        install::run(
+        let result = install::run(
             ctx,
             install::Request {
                 host: host.to_string(),
                 dry_run: false,
                 config_dir: None,
             },
-        )?;
-        installed.push(host);
+        );
+        match result {
+            Ok(_) => installed.push(host),
+            Err(error) => failed.push(format!("{host}: {error}")),
+        }
     }
-    Ok(format!("installed for {}", installed.join(", ")))
+    let done = if installed.is_empty() {
+        "installed for no host".to_string()
+    } else {
+        format!("installed for {}", installed.join(", "))
+    };
+    if failed.is_empty() {
+        Ok(done)
+    } else {
+        Err(Error::Unavailable(format!(
+            "{done}; failed for {}",
+            failed.join("; ")
+        )))
+    }
 }
 
 /// Write every reindex hook. Never `force`: a foreign hook was already

@@ -10,7 +10,7 @@ use super::{
     AGENT_HOST, CLOUD_AUTH, DATA_DIR, GIT_HOOKS, INDEX_CODE, INDEX_DOCS, REINFORCE, Request, Step,
     StepState,
 };
-use crate::domains::integrations::install;
+use crate::domains::integrations::install::host;
 
 /// Build the plan. Steps come back in [`super::STEP_IDS`] order, every id
 /// present exactly once, so a caller can index the list positionally and the
@@ -78,16 +78,12 @@ fn data_dir(detected: &Detected) -> Step {
 fn agent_host(detected: &Detected, req: &Request) -> Step {
     let title = "Agent skills + hooks";
     if detected.hosts_present.is_empty() {
-        let wanted = req
-            .host
-            .clone()
-            .unwrap_or_else(|| install::HOSTS.join(" or "));
         return step(
             AGENT_HOST,
             title,
             String::new(),
             StepState::Unavailable {
-                reason: format!("no {wanted} CLI found on PATH"),
+                reason: host::absence_reason(req.host.as_deref()),
             },
         );
     }
