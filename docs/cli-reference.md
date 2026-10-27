@@ -1851,12 +1851,12 @@ Usage: comemory install [OPTIONS] <HOST>
 
 Arguments:
   <HOST>
-          Agent host; installs both skills and lifecycle hooks
+          Agent host; installs skills plus whatever hooks and MCP wiring the host supports
 
           Possible values:
-          - claude:       Claude Code skills and hooks
-          - codex:        Codex skills and hooks
-          - muse:         Muse skills and hooks
+          - claude:       Claude Code skills, hooks and MCP server
+          - codex:        Codex skills, hooks and MCP server
+          - muse:         Muse skills, hooks and MCP server (approve hooks with `muse plugins approve comemory`)
           - cursor-agent: Cursor skills and MCP config (hooks are a follow-up)
           - hermes:       Hermes skills (no hooks or MCP story on this host)
 

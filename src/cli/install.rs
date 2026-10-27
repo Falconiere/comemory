@@ -19,18 +19,18 @@ const EXAMPLES: &str = "Examples:
   comemory install muse
   comemory install cursor-agent --dry-run --config-dir /tmp/cursor-preview";
 
-/// Supported native plugin managers. A CLI-only enum so `--help` and shell
-/// completion can enumerate the hosts and accept the historical aliases;
-/// `domains::integrations::install::HOSTS` is the real source of truth.
+/// Supported agent hosts. A CLI-only enum so `--help` and shell completion
+/// can enumerate the hosts and accept the historical aliases;
+/// `domains::integrations::install::host::TABLE` is the real source of truth.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Host {
-    /// Claude Code skills and hooks.
+    /// Claude Code skills, hooks and MCP server.
     #[value(alias = "claude-hooks")]
     Claude,
-    /// Codex skills and hooks.
+    /// Codex skills, hooks and MCP server.
     #[value(alias = "codex-hooks")]
     Codex,
-    /// Muse skills and hooks.
+    /// Muse skills, hooks and MCP server (approve hooks with `muse plugins approve comemory`).
     #[value(alias = "muse-hooks")]
     Muse,
     /// Cursor skills and MCP config (hooks are a follow-up).
@@ -59,7 +59,7 @@ impl Host {
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
-    /// Agent host; installs both skills and lifecycle hooks.
+    /// Agent host; installs skills plus whatever hooks and MCP wiring the host supports.
     #[arg(value_enum)]
     pub host: Host,
     /// Preview the bundle destination without writing files.
@@ -92,26 +92,27 @@ pub fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Write the three-line human report: what happened, the plugin id, and the
-/// toolu-migration note.
+/// Write the human report: what was installed where, the plugin id for a
+/// plugin-manager host, then the host's own next steps.
 fn emit(resp: &integrations::install::Response) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(
         out,
-        "{} comemory skills and hooks for {}: {}",
+        "{} comemory {} for {}: {}",
         if resp.dry_run {
             "Would install"
         } else {
             "Installed"
         },
+        resp.delivers,
         resp.host,
         resp.bundle.display()
     )?;
-    writeln!(out, "Plugin: {}. Restart the host to load it.", resp.plugin)?;
-    writeln!(
-        out,
-        "Migrating from toolu? Disable or uninstall comemory@toolu in {} to avoid duplicate hooks.",
-        resp.host
-    )?;
+    if let Some(plugin) = resp.plugin {
+        writeln!(out, "Plugin: {plugin}.")?;
+    }
+    for step in &resp.next_steps {
+        writeln!(out, "{step}")?;
+    }
     Ok(())
 }

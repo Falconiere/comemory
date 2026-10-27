@@ -328,9 +328,10 @@ D3/D4/D5 policy lines — keep them verbatim.
 ## Agent integration
 
 `comemory install claude`, `comemory install codex` and `comemory install muse`
-install bundled skills and hooks through the host plugin manager
-(`--dry-run` previews); `comemory install cursor-agent` installs skills plus
-the MCP server entry (hooks are a follow-up) and `comemory install hermes`
-installs skills only. Prefer MCP
+install bundled skills, hooks and the MCP server through the host plugin
+manager (`--dry-run` previews; muse then needs `muse plugins approve
+comemory` before its hooks run); `comemory install cursor-agent` links skills
+into `~/.cursor/skills/` plus the MCP server entry (hooks are a follow-up)
+and `comemory install hermes` links skills only. Prefer MCP
 `find` with `k: 3`, then `show`; `context` returns full bodies. See
 [installation and migration](docs/guides/agent-integration.md).

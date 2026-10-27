@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Real-binary installation preview and offline asset distribution checks.
 use assert_cmd::Command;
 use predicates::str::contains;
@@ -49,6 +56,57 @@ fn install_writes_mcp_manifest() {
         "mcp_manifest must be the plugin-root path under this data dir"
     );
     assert!(!std::path::Path::new(manifest).exists());
+}
+
+/// File-based hosts install for real with no host CLI and no hook
+/// dependencies on `PATH`: skills arrive as links into the versioned bundle,
+/// cursor gets its `mcp.json` entry, a rerun is clean, and the report makes
+/// no plugin or hook claims.
+#[cfg(unix)]
+#[test]
+fn file_hosts_install_for_real_without_a_host_cli() {
+    for (host, has_mcp) in [("hermes", false), ("cursor-agent", true)] {
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join(host);
+        for _ in 0..2 {
+            let output = Command::new(assert_cmd::cargo::cargo_bin!("comemory"))
+                .args(["install", host, "--data-dir"])
+                .arg(home.path().join("data"))
+                .arg("--config-dir")
+                .arg(&config)
+                .env("PATH", "/nonexistent")
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(output.status.success(), "{host}: {output:?}");
+            assert!(stdout.contains("Installed comemory skills"), "{stdout}");
+            assert!(
+                !stdout.contains("Plugin:")
+                    && !stdout.contains("toolu")
+                    && !stdout.contains("hooks"),
+                "{host} report must not claim a plugin or hooks: {stdout}"
+            );
+        }
+        let link = config.join("skills/agent-memory");
+        assert!(
+            link.symlink_metadata().unwrap().file_type().is_symlink(),
+            "{host} skills are links into the bundle"
+        );
+        assert!(
+            std::fs::read_link(&link)
+                .unwrap()
+                .starts_with(home.path().join("data/integrations"))
+        );
+        assert!(link.join("scripts/comemory.sh").is_file());
+        assert_eq!(config.join("mcp.json").is_file(), has_mcp, "{host}");
+        assert!(
+            home.path()
+                .join("data/integrations")
+                .join(env!("CARGO_PKG_VERSION"))
+                .join(format!(".installed-{host}"))
+                .is_file()
+        );
+    }
 }
 
 #[cfg(unix)]
@@ -106,6 +164,9 @@ fn session_end_capture_is_gated_by_host_override() {
         let mut child = std::process::Command::new("bash")
             .arg(&hook)
             .env("PATH", &path_value)
+            .env("HOME", task.path())
+            .env("CLAUDE_CONFIG_DIR", task.path().join("claude"))
+            .env_remove("TOOLU_CONFIG_DIR")
             .env("TOOLU_HOST_OVERRIDE", host)
             .env_remove("PLUGIN_ROOT")
             .env_remove("CLAUDE_PLUGIN_ROOT")
@@ -133,6 +194,9 @@ fn session_end_capture_is_gated_by_host_override() {
     let mut child = std::process::Command::new("bash")
         .arg(&hook)
         .env("PATH", &path_value)
+        .env("HOME", task.path())
+        .env("CLAUDE_CONFIG_DIR", task.path().join("claude"))
+        .env_remove("TOOLU_CONFIG_DIR")
         .env_remove("TOOLU_HOST_OVERRIDE")
         .env_remove("PLUGIN_ROOT")
         .env_remove("CLAUDE_PLUGIN_ROOT")
@@ -159,20 +223,22 @@ fn session_end_capture_is_gated_by_host_override() {
     );
 }
 
-/// PreCompact under the muse override keeps the plain `systemMessage`
-/// shape, never the Claude `hookSpecificOutput` envelope.
+/// Run one bundled hook script with `payload` on stdin under the muse
+/// override, isolated from the developer's own config, returning stdout.
 #[cfg(unix)]
-#[test]
-fn precompact_uses_plain_shape_for_muse() {
+fn run_muse_hook(script: &str, payload: &str, home: &std::path::Path) -> String {
     use std::io::Write as _;
 
-    let payload = r#"{"hook_event_name":"PreCompact","session_id":"abc123","cwd":"/tmp/x"}"#;
     let mut child = std::process::Command::new("bash")
-        .arg(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/integrations/agent/hooks/memory-lifecycle.sh"
+        .arg(format!(
+            "{}/integrations/agent/hooks/{script}",
+            env!("CARGO_MANIFEST_DIR")
         ))
         .env("TOOLU_HOST_OVERRIDE", "muse")
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .env("PATH", "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
+        .env_remove("TOOLU_CONFIG_DIR")
         .env_remove("PLUGIN_ROOT")
         .env_remove("CLAUDE_PLUGIN_ROOT")
         .env_remove("MUSE_PLUGIN_ROOT")
@@ -188,15 +254,44 @@ fn precompact_uses_plain_shape_for_muse() {
         .write_all(payload.as_bytes())
         .unwrap();
     let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        stdout.contains("systemMessage"),
-        "muse PreCompact must use the plain shape: {stdout}"
-    );
+    assert!(output.status.success(), "{script} failed");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+/// PreCompact under the muse override keeps the plain `systemMessage`
+/// shape, never the Claude `hookSpecificOutput` envelope — driven through
+/// `pre-compact.sh`, the entry point the muse manifest registers (muse
+/// refuses one hook source under two events).
+#[cfg(unix)]
+#[test]
+fn precompact_uses_plain_shape_for_muse() {
+    let home = tempfile::tempdir().unwrap();
+    let payload = r#"{"hook_event_name":"PreCompact","session_id":"abc123","cwd":"/tmp/x"}"#;
+    for script in ["memory-lifecycle.sh", "pre-compact.sh"] {
+        let stdout = run_muse_hook(script, payload, home.path());
+        assert!(
+            stdout.contains("systemMessage"),
+            "muse PreCompact via {script} must use the plain shape: {stdout}"
+        );
+        assert!(
+            !stdout.contains("hookSpecificOutput"),
+            "muse PreCompact via {script} must not use the Claude envelope: {stdout}"
+        );
+    }
+}
+
+/// The muse Stop entry point reaches memory-lifecycle.sh's Stop branch:
+/// with no `comemory` on `PATH` it exits cleanly and silently, never
+/// treating the event as unknown or failing the host's Stop.
+#[cfg(unix)]
+#[test]
+fn stop_entry_point_dispatches_to_the_lifecycle_hook() {
+    let home = tempfile::tempdir().unwrap();
+    let payload = r#"{"hook_event_name":"Stop","session_id":"abc123","cwd":"/tmp/x"}"#;
+    let stdout = run_muse_hook("stop.sh", payload, home.path());
     assert!(
         !stdout.contains("hookSpecificOutput"),
-        "muse PreCompact must not use the Claude envelope: {stdout}"
+        "Stop never emits the Claude envelope: {stdout}"
     );
 }
 
@@ -217,6 +312,18 @@ fn foundation_routes_config_home_per_host_override() {
         command.arg("-c").arg(format!(
             ". {lib}; ps_config_root; printf '|'; ps_project_dirname"
         ));
+        // A developer's own overrides would otherwise win over the routing
+        // under test.
+        for key in [
+            "TOOLU_CONFIG_DIR",
+            "TOOLU_PROJECT_CONFIG_DIRNAME",
+            "PLUGIN_ROOT",
+            "CODEX_HOME",
+            "CLAUDE_CONFIG_DIR",
+            "XDG_CONFIG_HOME",
+        ] {
+            command.env_remove(key);
+        }
         match override_value {
             Some(host) => {
                 command.env("TOOLU_HOST_OVERRIDE", host);
@@ -260,26 +367,84 @@ fn foundation_routes_config_home_per_host_override() {
 }
 
 /// AC-1/AC-7: every new host previews without writing or requiring its
-/// binary, and the `cursor` alias resolves. Mirrors the claude preview test.
+/// binary, and the `cursor` alias resolves. Muse's config dir is its own
+/// `muse` directory; only plugin-manager hosts report a plugin id, and only
+/// MCP-capable hosts an MCP config.
 #[test]
 fn installation_preview_covers_new_hosts_and_cursor_alias() {
-    for host in ["muse", "cursor-agent", "hermes", "cursor"] {
+    for (host, leaf, plugin, has_mcp) in [
+        ("muse", "muse", true, true),
+        ("cursor-agent", "host", false, true),
+        ("hermes", "host", false, false),
+        ("cursor", "host", false, true),
+    ] {
         let home = tempfile::tempdir().unwrap();
-        Command::new(assert_cmd::cargo::cargo_bin!("comemory"))
+        let output = Command::new(assert_cmd::cargo::cargo_bin!("comemory"))
             .args(["install", host, "--dry-run", "--json", "--data-dir"])
             .arg(home.path().join("data"))
             .arg("--config-dir")
-            .arg(home.path().join("host"))
-            .assert()
-            .success()
-            .stdout(contains("comemory@comemory"));
+            .arg(home.path().join("cfg").join(leaf))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{host}: {output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            report["plugin"].as_str() == Some("comemory@comemory"),
+            plugin,
+            "{host}: {report}"
+        );
+        assert_eq!(
+            !report["mcp_manifest"].is_null(),
+            has_mcp,
+            "{host}: {report}"
+        );
+        assert!(
+            report["next_steps"]
+                .as_array()
+                .is_some_and(|steps| !steps.is_empty()),
+            "{host}: {report}"
+        );
         assert!(
             !home.path().join("data").exists(),
             "host {host} must not write a data dir on preview"
         );
         assert!(
-            !home.path().join("host").exists(),
+            !home.path().join("cfg").exists(),
             "host {host} must not write a config dir on preview"
+        );
+    }
+}
+
+/// Muse is scoped through `XDG_DATA_HOME`, so a `--config-dir` that is not
+/// a `muse` directory is refused, and an empty or relative `XDG_DATA_HOME`
+/// counts as unset (XDG spec) instead of resolving against the cwd.
+#[test]
+fn muse_config_dir_follows_the_xdg_rules() {
+    let home = tempfile::tempdir().unwrap();
+    Command::new(assert_cmd::cargo::cargo_bin!("comemory"))
+        .args(["install", "muse", "--dry-run", "--json", "--data-dir"])
+        .arg(home.path().join("data"))
+        .arg("--config-dir")
+        .arg(home.path().join("share"))
+        .assert()
+        .failure()
+        .code(64)
+        .stderr(contains("`muse` directory"));
+
+    for xdg in ["", "relative/share"] {
+        let output = Command::new(assert_cmd::cargo::cargo_bin!("comemory"))
+            .args(["install", "muse", "--dry-run", "--json", "--data-dir"])
+            .arg(home.path().join("data"))
+            .env("HOME", home.path())
+            .env("XDG_DATA_HOME", xdg)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            report["config_dir"].as_str().unwrap(),
+            home.path().join(".local/share/muse").to_str().unwrap(),
+            "XDG_DATA_HOME={xdg:?} must fall back to ~/.local/share"
         );
     }
 }

@@ -6,7 +6,7 @@ description: "ALWAYS ACTIVE — Write a project skill to .toolu/skills/ after a 
 
 Procedural memory for **this repo**. Facts stay in comemory (`agent-memory`). Procedures live as `SKILL.md` files the SessionStart index lists by name+description; `Read` the file to load the body.
 
-Install with `comemory install claude` or `comemory install codex`. Committed skills in a clone are indexed when the integration starts.
+Install with `comemory install <host>` (`claude`, `codex`, `muse`, `cursor-agent` or `hermes`). Committed skills in a clone are indexed when the integration starts.
 
 ## Wrapper — `skills.sh`
 

@@ -215,7 +215,10 @@ fn supervisor_environment_child() {
             std::fs::create_dir_all(&data).unwrap();
             let canonical_home = std::fs::canonicalize(&data).unwrap();
             let inside = for_data_dir(Kind::Launchd, &canonical_home);
-            let outside = for_data_dir(Kind::Launchd, &home.parent().unwrap().join("scratch"));
+            // `for_data_dir` takes a canonical path: on macOS `$TMPDIR` is
+            // spelled `/var/folders/...` but resolves under `/private/var`.
+            let parent = std::fs::canonicalize(home.parent().unwrap()).unwrap();
+            let outside = for_data_dir(Kind::Launchd, &parent.join("scratch"));
             assert_eq!(inside, Kind::Launchd, "a home directory keeps its unit");
             assert_eq!(
                 outside,

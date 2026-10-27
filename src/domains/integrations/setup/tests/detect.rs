@@ -1,6 +1,6 @@
 //! `domains::integrations::setup::detect` against a real temporary data directory and a real
 //! `git init` working tree.
-use super::{host_is_present, run};
+use super::{host, host_is_present, run};
 use crate::config::{Config, Paths};
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
 use crate::utilities::context::Ctx;
@@ -98,18 +98,23 @@ fn a_hand_written_hook_is_reported_as_foreign_not_installed() {
 #[test]
 fn hermes_presence_follows_its_config_dir_not_a_cli_probe() {
     let home = tempfile::tempdir().unwrap();
+    let hermes = host::lookup("hermes").unwrap();
     assert!(
-        !host_is_present("hermes", Some(home.path())),
+        !host_is_present(hermes, Some(home.path())),
         "no config dir means hermes is not nagged about"
     );
     std::fs::create_dir_all(home.path().join(".hermes")).unwrap();
-    assert!(host_is_present("hermes", Some(home.path())));
+    assert!(host_is_present(hermes, Some(home.path())));
     assert!(
-        !host_is_present("hermes", None),
+        !host_is_present(hermes, None),
         "an unset HOME never reports hermes present"
     );
+    let unknown = host::Host {
+        name: "definitely-not-a-host",
+        ..*host::lookup("claude").unwrap()
+    };
     assert!(
-        !host_is_present("definitely-not-a-host", Some(home.path())),
+        !host_is_present(&unknown, Some(home.path())),
         "an unknown binary is never present"
     );
 }
@@ -122,7 +127,7 @@ fn an_unknown_host_filter_yields_no_present_hosts() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    // A name outside `domains::integrations::install::HOSTS` filters everything out, so the
+    // A name outside `domains::integrations::install::host::TABLE` filters everything out, so the
     // probe never shells out to an arbitrary program name.
     let detected = run(&mut ctx, work.path(), Some("definitely-not-a-host")).unwrap();
     assert!(detected.hosts_present.is_empty());

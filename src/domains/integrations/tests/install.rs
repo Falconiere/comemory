@@ -1,6 +1,6 @@
 //! `domains::integrations::install` host validation and dry-run reporting against a real
 //! temporary data directory.
-use super::{HOSTS, Request, config_dir, run, validate_host};
+use super::{Request, host, run, validate_host};
 use crate::config::{Config, Paths};
 use crate::utilities::context::Ctx;
 
@@ -11,52 +11,18 @@ fn ctx_for(dir: &std::path::Path) -> (Paths, Config) {
 
 #[test]
 fn validate_host_accepts_the_known_hosts_and_names_the_rest() {
-    for host in HOSTS {
-        assert_eq!(validate_host(host).unwrap(), *host);
+    for name in host::names() {
+        assert_eq!(validate_host(name).unwrap(), name);
     }
     let err = validate_host("emacs").unwrap_err().to_string();
     assert!(
         err.contains("emacs"),
         "error should name the bad host: {err}"
     );
-    assert!(
-        err.contains("claude"),
-        "error should list known hosts: {err}"
-    );
-}
-
-#[test]
-fn scope_env_scopes_cli_hosts_and_leaves_file_hosts_alone() {
-    use std::path::Path;
-    assert_eq!(
-        super::scope_env("muse", Path::new("/tmp/xdg/muse")),
-        Some(("XDG_DATA_HOME", Path::new("/tmp/xdg").to_path_buf()))
-    );
-    assert_eq!(
-        super::scope_env("claude", Path::new("/tmp/claude")),
-        Some(("CLAUDE_CONFIG_DIR", Path::new("/tmp/claude").to_path_buf()))
-    );
-    assert_eq!(
-        super::scope_env("cursor-agent", Path::new("/tmp/cursor")),
-        None
-    );
-    assert_eq!(super::scope_env("hermes", Path::new("/tmp/hermes")), None);
-}
-
-#[test]
-fn validate_host_accepts_muse_cursor_agent_and_hermes() {
-    for host in ["muse", "cursor-agent", "hermes"] {
-        assert_eq!(
-            validate_host(host).unwrap(),
-            host,
-            "{host} must validate once host support lands"
-        );
-    }
-    let err = validate_host("emacs").unwrap_err().to_string();
-    for host in ["claude", "codex", "muse", "cursor-agent", "hermes"] {
+    for name in ["claude", "codex", "muse", "cursor-agent", "hermes"] {
         assert!(
-            err.contains(host),
-            "error should list every known host, missing {host}: {err}"
+            err.contains(name),
+            "error should list every known host, missing {name}: {err}"
         );
     }
 }
@@ -79,7 +45,7 @@ fn dry_run_reports_the_bundle_under_the_ctx_data_dir_without_writing() {
     assert!(resp.dry_run);
     assert!(!resp.installed);
     assert_eq!(resp.host, "claude");
-    assert_eq!(resp.plugin, "comemory@comemory");
+    assert_eq!(resp.plugin, Some("comemory@comemory"));
     assert!(
         resp.bundle.starts_with(temp.path()),
         "bundle must live under the Ctx data dir, got {}",
@@ -96,11 +62,9 @@ fn dry_run_reports_the_bundle_under_the_ctx_data_dir_without_writing() {
     // `comemory.db` is never created — install is conn-free.
     assert!(!temp.path().join("comemory.db").exists());
     // The report still names where `.mcp.json` would land, but writes none.
-    assert_eq!(
-        resp.mcp_manifest,
-        resp.bundle.join("plugins/comemory/.mcp.json")
-    );
-    assert!(!resp.mcp_manifest.exists());
+    let manifest = resp.mcp_manifest.unwrap();
+    assert_eq!(manifest, resp.bundle.join("plugins/comemory/.mcp.json"));
+    assert!(!manifest.exists());
 }
 
 #[test]
@@ -122,12 +86,44 @@ fn run_rejects_an_unknown_host_before_touching_the_filesystem() {
 }
 
 #[test]
-fn config_dir_prefers_an_explicit_override_and_absolutizes_it() {
+fn dry_run_reports_each_hosts_own_mcp_config_and_plugin() {
     let temp = tempfile::tempdir().unwrap();
-    let explicit = temp.path().join("explicit");
-    let resolved = config_dir("claude", Some(explicit.clone())).unwrap();
-    assert!(resolved.is_absolute());
-    assert!(resolved.ends_with("explicit"));
+    let (paths, cfg) = ctx_for(temp.path());
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let preview = |ctx: &mut Ctx<'_>, host: &str, config: std::path::PathBuf| {
+        run(
+            ctx,
+            Request {
+                host: host.to_string(),
+                dry_run: true,
+                config_dir: Some(config),
+            },
+        )
+        .unwrap()
+    };
+
+    let muse = preview(&mut ctx, "muse", temp.path().join("xdg/muse"));
+    assert_eq!(
+        muse.mcp_manifest,
+        Some(
+            muse.bundle
+                .join("plugins/comemory/.muse-plugin/plugin.json")
+        )
+    );
+    assert!(muse.next_steps.iter().any(|step| step.contains("approve")));
+
+    let cursor = preview(&mut ctx, "cursor-agent", temp.path().join("cursor"));
+    assert_eq!(
+        cursor.mcp_manifest,
+        Some(temp.path().join("cursor/mcp.json"))
+    );
+    assert_eq!(cursor.plugin, None, "cursor has no plugin manager record");
+
+    let hermes = preview(&mut ctx, "hermes", temp.path().join("hermes"));
+    assert_eq!(hermes.mcp_manifest, None, "hermes has no MCP config");
+    assert_eq!(hermes.delivers, "skills");
+    assert!(!temp.path().join("cursor").exists());
+    assert!(!temp.path().join("hermes").exists());
 }
 
 #[test]
@@ -136,9 +132,9 @@ fn the_installed_marker_is_per_host_not_per_shared_bundle() {
     let data = temp.path();
 
     // Nothing installed yet.
-    for host in HOSTS {
+    for name in host::names() {
         assert!(!crate::domains::integrations::install::is_installed(
-            data, host
+            data, name
         ));
     }
 

@@ -10,6 +10,7 @@ use super::{
     AGENT_HOST, CLOUD_AUTH, DATA_DIR, GIT_HOOKS, INDEX_CODE, INDEX_DOCS, REINFORCE, Request, Step,
     StepState,
 };
+use crate::domains::integrations::install::host;
 
 /// Build the plan. Steps come back in [`super::STEP_IDS`] order, every id
 /// present exactly once, so a caller can index the list positionally and the
@@ -77,16 +78,13 @@ fn data_dir(detected: &Detected) -> Step {
 fn agent_host(detected: &Detected, req: &Request) -> Step {
     let title = "Agent skills + hooks";
     if detected.hosts_present.is_empty() {
-        let reason = match req.host.as_deref() {
-            Some("hermes") => "no hermes config dir found".to_string(),
-            Some(wanted) => format!("no {wanted} CLI found on PATH"),
-            None => "no supported agent host found: no claude, codex, muse or cursor-agent CLI on PATH and no hermes config dir".to_string(),
-        };
         return step(
             AGENT_HOST,
             title,
             String::new(),
-            StepState::Unavailable { reason },
+            StepState::Unavailable {
+                reason: host::absence_reason(req.host.as_deref()),
+            },
         );
     }
     let pending: Vec<&str> = detected

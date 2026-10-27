@@ -53,12 +53,20 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/agent/hooks/project-skills-index.sh"),
     ),
     (
+        "hooks/pre-compact.sh",
+        include_str!("../../../../integrations/agent/hooks/pre-compact.sh"),
+    ),
+    (
         "hooks/session-start.sh",
         include_str!("../../../../integrations/agent/hooks/session-start.sh"),
     ),
     (
         "hooks/skill-use.sh",
         include_str!("../../../../integrations/agent/hooks/skill-use.sh"),
+    ),
+    (
+        "hooks/stop.sh",
+        include_str!("../../../../integrations/agent/hooks/stop.sh"),
     ),
     (
         "lib/project-skills.sh",
@@ -197,6 +205,19 @@ fn write_catalogs(parent: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The `comemory` MCP server entry every host config names: `binary`
+/// running `comemory mcp`. Shared by the bundle's `.mcp.json` and the
+/// cursor `mcp.json` merge so the two can never disagree.
+///
+/// # Errors
+/// [`Error::Usage`] for a non-UTF-8 binary path.
+pub(super) fn mcp_server(binary: &Path) -> Result<serde_json::Value> {
+    let command = binary
+        .to_str()
+        .ok_or_else(|| Error::Usage("binary path must be UTF-8".into()))?;
+    Ok(serde_json::json!({ "command": command, "args": ["mcp"] }))
+}
+
 /// Write `<plugin_root>/.mcp.json`, the manifest Claude Code and Codex read
 /// to launch `comemory mcp` for this plugin. Written on **every** install —
 /// including a re-run over an already-extracted, byte-identical bundle — so
@@ -219,14 +240,7 @@ pub(super) fn write_mcp_manifest(plugin_root: &Path, binary: &Path) -> Result<Pa
             path.display()
         )));
     }
-    let command = binary
-        .to_str()
-        .ok_or_else(|| Error::Usage("binary path must be UTF-8".into()))?;
-    let manifest = serde_json::json!({
-        "mcpServers": {
-            "comemory": { "command": command, "args": ["mcp"] }
-        }
-    });
+    let manifest = serde_json::json!({ "mcpServers": { "comemory": mcp_server(binary)? } });
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

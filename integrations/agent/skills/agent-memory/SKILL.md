@@ -82,5 +82,6 @@ when the verdict is explicitly manual or MCP is unavailable.
 `search`, `context`, `list`, and `save` accept `--json`. The wrapper also exposes
 `delete`, `search-code`, `index-code`, `graph`, and local retrieval maintenance.
 Use `comemory.sh --help` for the full interface. Installation is explicit:
-`comemory install claude` or `comemory install codex`. Git indexing hooks remain
+`comemory install <host>` (`claude`, `codex`, `muse`, `cursor-agent` or
+`hermes`). Git indexing hooks remain
 an independent choice: `comemory install-hooks`.

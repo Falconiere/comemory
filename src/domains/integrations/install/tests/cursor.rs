@@ -1,40 +1,26 @@
-//! Cursor file install against a fixture bundle staged from the real skills
-//! tree, plus `mcp.json` merge rules.
+//! Cursor file install against the real embedded bundle: skill links into
+//! `skills/`, plus the `mcp.json` merge rules — ownership of only the
+//! `comemory` key, file order and foreign bytes kept, permissions kept, and
+//! no rewrite when already current.
+use std::path::{Path, PathBuf};
+
 use super::install;
 
-const SKILLS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/integrations/agent/skills");
-
-/// Stage `<task>/bundle/plugins/comemory/skills` from the real skills tree
-/// so assertions compare against genuine bundle content, not fixtures.
-fn stage_bundle(task: &std::path::Path) -> std::path::PathBuf {
-    let root = task.join("bundle");
-    let dst = root.join("plugins/comemory/skills");
-    std::fs::create_dir_all(&dst).unwrap();
-    super::super::dirs::mirror_dir(std::path::Path::new(SKILLS), &dst).unwrap();
+/// Extract the real embedded bundle under `task`.
+fn extract_bundle(task: &Path) -> PathBuf {
+    let root = task.join("integrations").join("1.0.0");
+    super::super::bundle::extract(&root).unwrap();
     root
 }
 
-fn skill_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut files = Vec::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(current) = pending.pop() {
-        for entry in std::fs::read_dir(&current).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                pending.push(path);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    files
+fn server() -> serde_json::Value {
+    serde_json::json!({"command": "/opt/comemory/bin/comemory", "args": ["mcp"]})
 }
 
 #[test]
-fn install_copies_real_skills_and_merges_mcp_server() {
+fn install_links_skills_into_the_personal_dir_and_merges_the_server() {
     let task = tempfile::tempdir().unwrap();
-    let root = stage_bundle(task.path());
+    let root = extract_bundle(task.path());
     let config = task.path().join("cursor");
     std::fs::create_dir_all(&config).unwrap();
     std::fs::write(
@@ -43,48 +29,92 @@ fn install_copies_real_skills_and_merges_mcp_server() {
     )
     .unwrap();
 
-    install(&config, &root).unwrap();
+    install(&config, &root, &server()).unwrap();
 
-    for file in skill_files(std::path::Path::new(SKILLS)) {
-        let relative = file.strip_prefix(SKILLS).unwrap();
-        let mirrored = config.join("skills-cursor").join(relative);
-        assert_eq!(
-            std::fs::read(&mirrored).unwrap(),
-            std::fs::read(&file).unwrap(),
-            "skill file must arrive byte-identical: {}",
-            relative.display()
-        );
-    }
-    let value: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(config.join("mcp.json")).unwrap()).unwrap();
-    assert_eq!(
-        value["mcpServers"]["foreign"]["command"], "/bin/other",
-        "foreign servers survive the merge"
-    );
-    assert_eq!(
-        value["mcpServers"]["comemory"]["args"],
-        serde_json::json!(["mcp"])
+    assert!(
+        config.join("skills/agent-memory/SKILL.md").is_file(),
+        "skills land in Cursor's personal skills dir"
     );
     assert!(
-        value["mcpServers"]["comemory"]["command"]
-            .as_str()
-            .is_some_and(|command| !command.is_empty()),
-        "the server command must name a binary"
+        !config.join("skills-cursor").exists(),
+        "skills-cursor/ is reserved for Cursor's built-ins"
     );
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(config.join("mcp.json")).unwrap()).unwrap();
+    assert_eq!(value["mcpServers"]["foreign"]["command"], "/bin/other");
+    assert_eq!(value["mcpServers"]["comemory"], server());
 
     let before = std::fs::read(config.join("mcp.json")).unwrap();
-    install(&config, &root).unwrap();
+    let modified = std::fs::metadata(config.join("mcp.json"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    install(&config, &root, &server()).unwrap();
+    assert_eq!(std::fs::read(config.join("mcp.json")).unwrap(), before);
     assert_eq!(
-        std::fs::read(config.join("mcp.json")).unwrap(),
-        before,
-        "rerun over identical content is byte-identical"
+        std::fs::metadata(config.join("mcp.json"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        modified,
+        "an already-current entry leaves the file untouched"
     );
+}
+
+#[test]
+fn the_merge_keeps_key_order_and_foreign_bytes() {
+    let task = tempfile::tempdir().unwrap();
+    let root = extract_bundle(task.path());
+    let config = task.path().join("cursor");
+    std::fs::create_dir_all(&config).unwrap();
+    let foreign = r#"{"command":"/bin/zeta","env":{"Z_TOKEN":"z","A_TOKEN":"a"}}"#;
+    std::fs::write(
+        config.join("mcp.json"),
+        format!(r#"{{"zz": 1, "mcpServers": {{"zeta": {foreign}, "alpha": {{"command": "/bin/alpha"}}}}, "aa": 2}}"#),
+    )
+    .unwrap();
+
+    install(&config, &root, &server()).unwrap();
+
+    let body = std::fs::read_to_string(config.join("mcp.json")).unwrap();
+    assert!(
+        body.contains(foreign),
+        "foreign server bytes survive: {body}"
+    );
+    let position = |needle: &str| body.find(needle).unwrap();
+    assert!(position("\"zz\"") < position("\"mcpServers\""));
+    assert!(position("\"mcpServers\"") < position("\"aa\""));
+    assert!(position("\"zeta\"") < position("\"alpha\""));
+    assert!(position("\"alpha\"") < position("\"comemory\""));
+}
+
+#[cfg(unix)]
+#[test]
+fn the_merge_keeps_the_files_permissions() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let task = tempfile::tempdir().unwrap();
+    let root = extract_bundle(task.path());
+    let config = task.path().join("cursor");
+    std::fs::create_dir_all(&config).unwrap();
+    let path = config.join("mcp.json");
+    std::fs::write(
+        &path,
+        r#"{"mcpServers": {"secret": {"env": {"TOKEN": "x"}}}}"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    install(&config, &root, &server()).unwrap();
+
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600, "a token-bearing config stays private");
 }
 
 #[test]
 fn install_refreshes_a_stale_comemory_command() {
     let task = tempfile::tempdir().unwrap();
-    let root = stage_bundle(task.path());
+    let root = extract_bundle(task.path());
     let config = task.path().join("cursor");
     std::fs::create_dir_all(&config).unwrap();
     std::fs::write(
@@ -93,44 +123,28 @@ fn install_refreshes_a_stale_comemory_command() {
     )
     .unwrap();
 
-    install(&config, &root).unwrap();
+    install(&config, &root, &server()).unwrap();
 
     let value: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(config.join("mcp.json")).unwrap()).unwrap();
-    assert_ne!(
-        value["mcpServers"]["comemory"]["command"], "/old/binary",
-        "a stale command must be refreshed to this binary"
-    );
+    assert_eq!(value["mcpServers"]["comemory"], server());
 }
 
 #[test]
-fn install_refuses_unparsable_mcp_json_without_touching_it() {
+fn install_refuses_unparsable_or_non_object_config_without_touching_it() {
     let task = tempfile::tempdir().unwrap();
-    let root = stage_bundle(task.path());
+    let root = extract_bundle(task.path());
     let config = task.path().join("cursor");
     std::fs::create_dir_all(&config).unwrap();
-    std::fs::write(config.join("mcp.json"), "{not json").unwrap();
+    for body in ["{not json", r#"{"mcpServers": []}"#] {
+        std::fs::write(config.join("mcp.json"), body).unwrap();
 
-    let err = install(&config, &root).unwrap_err().to_string();
+        let err = install(&config, &root, &server()).unwrap_err().to_string();
 
-    assert!(err.contains("unparsable"), "unexpected error: {err}");
-    assert_eq!(
-        std::fs::read_to_string(config.join("mcp.json")).unwrap(),
-        "{not json"
-    );
-}
-
-#[test]
-fn install_refuses_edited_skill_content() {
-    let task = tempfile::tempdir().unwrap();
-    let root = stage_bundle(task.path());
-    let config = task.path().join("cursor");
-    install(&config, &root).unwrap();
-    let first = skill_files(&config.join("skills-cursor"));
-    assert!(!first.is_empty());
-    std::fs::write(&first[0], "operator edits").unwrap();
-
-    let err = install(&config, &root).unwrap_err().to_string();
-
-    assert!(err.contains("differs"), "unexpected error: {err}");
+        assert!(err.contains("not a JSON object"), "unexpected error: {err}");
+        assert_eq!(
+            std::fs::read_to_string(config.join("mcp.json")).unwrap(),
+            body
+        );
+    }
 }

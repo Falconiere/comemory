@@ -18,6 +18,7 @@ use super::RepoContext;
 use crate::domains::code::git_utils;
 use crate::domains::documents::sources;
 use crate::domains::integrations::install;
+use crate::domains::integrations::install::host;
 use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -57,7 +58,7 @@ pub struct Detected {
 ///
 /// `host_filter` restricts the agent-host probe to one already-validated
 /// host name; `None` probes every host in
-/// [`HOSTS`](crate::domains::integrations::install::HOSTS).
+/// [`TABLE`](crate::domains::integrations::install::host::TABLE).
 ///
 /// # Errors
 /// Propagates a genuine read failure from the delegated probes. A *missing*
@@ -203,29 +204,29 @@ fn doc_sources(ctx: &mut Ctx<'_>, repo: Option<&RepoContext>) -> Result<usize> {
         .count())
 }
 
-/// Agent hosts available on this machine: CLI hosts whose binary is on
-/// `PATH` and answers `--version`, plus hermes when its config dir exists
-/// (it has no CLI to probe).
+/// Agent hosts available on this machine, each probed the way its
+/// [`host::Presence`] says: CLI hosts by `--version`, config-dir hosts by
+/// their `$HOME` directory.
 fn hosts_present(host_filter: Option<&str>) -> Vec<&'static str> {
     let home: Option<std::path::PathBuf> = crate::config::env::env_parse("HOME").ok().flatten();
-    install::HOSTS
+    host::TABLE
         .iter()
-        .copied()
-        .filter(|host| host_filter.is_none_or(|wanted| wanted == *host))
+        .filter(|host| host_filter.is_none_or(|wanted| wanted == host.name))
         .filter(|host| host_is_present(host, home.as_deref()))
+        .map(|host| host.name)
         .collect()
 }
 
 /// Whether `host` looks usable on this machine. The `home` override exists
-/// so tests can stage a hermes config dir without touching the real `HOME`.
-fn host_is_present(host: &str, home: Option<&std::path::Path>) -> bool {
-    if host == "hermes" {
-        return home.is_some_and(|home| home.join(".hermes").is_dir());
+/// so tests can stage a config-dir host without touching the real `HOME`.
+fn host_is_present(host: &host::Host, home: Option<&std::path::Path>) -> bool {
+    match host.presence {
+        host::Presence::ConfigDir => home.is_some_and(|home| home.join(host.home_dir).is_dir()),
+        host::Presence::Cli => std::process::Command::new(host.name)
+            .arg("--version")
+            .output()
+            .is_ok_and(|out| out.status.success()),
     }
-    std::process::Command::new(host)
-        .arg("--version")
-        .output()
-        .is_ok_and(|out| out.status.success())
 }
 
 /// Hosts that already have this comemory version's plugin registered.

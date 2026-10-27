@@ -60,6 +60,18 @@
         "timeoutMs": 15000
       },
       {
+        "id": "stop",
+        "event": "Stop",
+        "command": ["/usr/bin/env", "TOOLU_HOST_OVERRIDE=muse", "bash", "hooks/stop.sh"],
+        "timeoutMs": 15000
+      },
+      {
+        "id": "pre-compact",
+        "event": "PreCompact",
+        "command": ["/usr/bin/env", "TOOLU_HOST_OVERRIDE=muse", "bash", "hooks/pre-compact.sh"],
+        "timeoutMs": 15000
+      },
+      {
         "id": "project-skills-curate",
         "event": "Stop",
         "command": ["/usr/bin/env", "TOOLU_HOST_OVERRIDE=muse", "bash", "hooks/project-skills-curate.sh"],
@@ -78,7 +90,13 @@
         "timeoutMs": 15000
       }
     ],
-    "mcpServers": [],
+    "mcpServers": [
+      {
+        "id": "comemory",
+        "transport": "stdio",
+        "command": ["/usr/bin/env", "comemory", "mcp"]
+      }
+    ],
     "reminders": []
   }
 }
