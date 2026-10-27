@@ -105,10 +105,8 @@ fn dry_run_reports_each_hosts_own_mcp_config_and_plugin() {
     let muse = preview(&mut ctx, "muse", temp.path().join("xdg/muse"));
     assert_eq!(
         muse.mcp_manifest,
-        Some(
-            muse.bundle
-                .join("plugins/comemory/.muse-plugin/plugin.json")
-        )
+        Some(muse.bundle.join("plugins/comemory/.mcp.json")),
+        "muse's manifest launches bin/mcp-server.sh, which reads this file"
     );
     assert!(muse.next_steps.iter().any(|step| step.contains("approve")));
 

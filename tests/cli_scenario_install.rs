@@ -58,10 +58,11 @@ fn install_writes_mcp_manifest() {
     assert!(!std::path::Path::new(manifest).exists());
 }
 
-/// File-based hosts install for real with no host CLI and no hook
-/// dependencies on `PATH`: skills arrive as links into the versioned bundle,
-/// cursor gets its `mcp.json` entry, a rerun is clean, and the report makes
-/// no plugin or hook claims.
+/// File-based hosts install for real without invoking any host CLI: skills
+/// arrive as links into the versioned bundle, cursor gets its `mcp.json`
+/// entry, a rerun is clean, and the report makes no plugin or hook claims.
+/// `PATH` is inherited because the skill wrappers' own tools (bash, git, jq)
+/// are probed.
 #[cfg(unix)]
 #[test]
 fn file_hosts_install_for_real_without_a_host_cli() {
@@ -74,7 +75,6 @@ fn file_hosts_install_for_real_without_a_host_cli() {
                 .arg(home.path().join("data"))
                 .arg("--config-dir")
                 .arg(&config)
-                .env("PATH", "/nonexistent")
                 .output()
                 .unwrap();
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -107,6 +107,63 @@ fn file_hosts_install_for_real_without_a_host_cli() {
                 .is_file()
         );
     }
+}
+
+/// Muse's MCP launcher runs the absolute binary the install recorded in the
+/// bundle's `.mcp.json` — the binary that installed the hooks — and only
+/// falls back to `comemory` on `PATH` when that manifest names nothing
+/// runnable.
+#[cfg(unix)]
+#[test]
+fn muse_mcp_launcher_runs_the_installing_binary() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let task = tempfile::tempdir().unwrap();
+    let plugin = task.path().join("plugin");
+    std::fs::create_dir_all(plugin.join("bin")).unwrap();
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/integrations/agent/bin/mcp-server.sh"
+        ),
+        plugin.join("bin/mcp-server.sh"),
+    )
+    .unwrap();
+    let stub = |dir: &std::path::Path, label: &str| {
+        std::fs::create_dir_all(dir).unwrap();
+        let path = dir.join("comemory");
+        std::fs::write(&path, format!("#!/bin/sh\necho {label} \"$@\"\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    };
+    let installed = stub(&task.path().join("installed"), "installed");
+    let on_path = stub(&task.path().join("on-path"), "on-path");
+    let launch = || {
+        let output = std::process::Command::new("bash")
+            .arg(plugin.join("bin/mcp-server.sh"))
+            .env(
+                "PATH",
+                format!(
+                    "{}:/usr/bin:/bin:/opt/homebrew/bin",
+                    on_path.parent().unwrap().display()
+                ),
+            )
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+
+    std::fs::write(
+        plugin.join(".mcp.json"),
+        serde_json::json!({"mcpServers": {"comemory": {"command": installed, "args": ["mcp"]}}})
+            .to_string(),
+    )
+    .unwrap();
+    assert_eq!(launch().trim(), "installed mcp");
+
+    std::fs::remove_file(plugin.join(".mcp.json")).unwrap();
+    assert_eq!(launch().trim(), "on-path mcp");
 }
 
 #[cfg(unix)]

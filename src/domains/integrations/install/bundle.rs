@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 
 const FILES: &[(&str, &str)] = &[
     (
+        "bin/mcp-server.sh",
+        include_str!("../../../../integrations/agent/bin/mcp-server.sh"),
+    ),
+    (
         "hooks/memory-lifecycle.sh",
         include_str!("../../../../integrations/agent/hooks/memory-lifecycle.sh"),
     ),
@@ -248,6 +252,7 @@ pub(super) fn write_mcp_manifest(plugin_root: &Path, binary: &Path) -> Result<Pa
     write_new_file_no_symlink(
         &temp,
         format!("{}\n", serde_json::to_string_pretty(&manifest)?).as_bytes(),
+        None,
     )?;
     std::fs::rename(&temp, &path)?;
     Ok(path)
@@ -261,7 +266,11 @@ pub(super) fn write_mcp_manifest(plugin_root: &Path, binary: &Path) -> Result<Pa
 /// `OpenOptions::create_new` failing on an existing symlink still leaves
 /// an attacker-controlled path for a caller who instead reached for
 /// `std::fs::write` (which follows it and writes through).
-pub(super) fn write_new_file_no_symlink(temp: &Path, body: &[u8]) -> Result<()> {
+///
+/// `mode` (unix permission bits) is applied at creation, so a file holding
+/// secrets is never readable more widely than intended, not even before a
+/// later `set_permissions`.
+pub(super) fn write_new_file_no_symlink(temp: &Path, body: &[u8], mode: Option<u32>) -> Result<()> {
     match temp.symlink_metadata() {
         Ok(meta) if meta.file_type().is_symlink() => {
             return Err(Error::Usage(format!(
@@ -273,10 +282,16 @@ pub(super) fn write_new_file_no_symlink(temp: &Path, body: &[u8]) -> Result<()> 
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e.into()),
     }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temp)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    if let Some(mode) = mode {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(mode);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
+    let mut file = options.open(temp)?;
     file.write_all(body)?;
     Ok(())
 }

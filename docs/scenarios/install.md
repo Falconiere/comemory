@@ -67,12 +67,14 @@ through the host binary; `cursor-agent` and `hermes` link skills into
 ### install-03 File-based hosts
 
 - **Flags:** `--config-dir` `--data-dir`
-- **Setup:** a temporary data and config directory; `PATH` names no host CLI
-  and no hook dependency.
+- **Setup:** a temporary data and config directory; no host CLI is invoked.
+  The skill wrappers' tools (bash, git, jq) must be on `PATH`; python3 is
+  only probed for hook hosts.
 - **Command:** `comemory install hermes --data-dir <tmp>/data --config-dir <tmp>/hermes`, run twice; the same for `cursor-agent`.
 - **Expect:** each skill dir is a symlink into `<data>/integrations/<version>`,
   so the wrappers reach the bundle's `lib/`; cursor also gets
-  `<config>/mcp.json` with the `comemory` entry; the rerun succeeds; the
+  `<config>/mcp.json` with the `comemory` entry (a symlinked `mcp.json` is
+  merged into the file it links to); the rerun succeeds; the
   report makes no plugin or hook claims; the per-host `.installed-<host>`
   marker exists.
 - **Covered by:** `tests/cli_scenario_install.rs::file_hosts_install_for_real_without_a_host_cli`; `domains::integrations::install::skill_links::tests::an_upgrade_repoints_links_from_a_previous_bundle_version`, `refuses_a_real_directory_or_a_foreign_link_and_changes_nothing`, `wrappers_find_their_bundle_libs_through_the_link`; `domains::integrations::install::cursor::tests::the_merge_keeps_key_order_and_foreign_bytes`, `the_merge_keeps_the_files_permissions`
@@ -86,3 +88,13 @@ through the host binary; `cursor-agent` and `hermes` link skills into
   the expected `muse` directory; an empty or relative `XDG_DATA_HOME` is
   treated as unset, so `config_dir` is `$HOME/.local/share/muse`.
 - **Covered by:** `tests/cli_scenario_install.rs::muse_config_dir_follows_the_xdg_rules`
+
+### install-05 Muse MCP launcher
+
+- **Flags:** none (behavior of the installed bundle)
+- **Setup:** a plugin dir holding the bundled `bin/mcp-server.sh`, and a
+  `.mcp.json` naming a stub binary.
+- **Command:** `bash <plugin>/bin/mcp-server.sh`
+- **Expect:** the launcher runs the binary `.mcp.json` names with `mcp`; with
+  no readable `.mcp.json` it falls back to `comemory` on `PATH`.
+- **Covered by:** `tests/cli_scenario_install.rs::muse_mcp_launcher_runs_the_installing_binary`

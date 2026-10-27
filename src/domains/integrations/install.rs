@@ -88,11 +88,6 @@ pub fn is_installed(data_dir: &Path, host: &str) -> bool {
     marker_path(data_dir, host).exists()
 }
 
-/// External programs the generated agent hooks shell out to. Probed before
-/// anything is written for a host that receives hooks, so a missing one
-/// fails the install rather than surfacing later as a silently broken hook.
-const HOOK_DEPENDENCIES: &[&str] = &["bash", "git", "jq", "python3"];
-
 /// Validate `name` against [`host::TABLE`], returning the canonical
 /// `&'static str` so downstream code never carries an unvalidated host
 /// around.
@@ -147,8 +142,9 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
 fn mcp_manifest(host: &Host, config_dir: &Path, root: &Path) -> Option<PathBuf> {
     let plugin = root.join("plugins/comemory");
     match host.mechanism {
-        Mechanism::PluginCli { .. } => Some(plugin.join(".mcp.json")),
-        Mechanism::MusePlugins => Some(plugin.join(".muse-plugin/plugin.json")),
+        // Muse's manifest starts `bin/mcp-server.sh`, which reads the
+        // binary path from this same `.mcp.json`.
+        Mechanism::PluginCli { .. } | Mechanism::MusePlugins => Some(plugin.join(".mcp.json")),
         Mechanism::CursorFiles => Some(config_dir.join("mcp.json")),
         Mechanism::HermesFiles => None,
     }
@@ -161,13 +157,17 @@ fn install(host: &Host, config_dir: &Path, root: &Path) -> Result<()> {
     std::fs::create_dir_all(config_dir)?;
     if host.installs_hooks() {
         run_host(host, config_dir, &["--version"])?;
-        for dependency in HOOK_DEPENDENCIES {
-            let status = Command::new(dependency).arg("--version").output()?;
-            if !status.status.success() {
-                return Err(Error::Unavailable(format!(
-                    "{dependency} is required for agent hooks"
-                )));
-            }
+    }
+    for dependency in host.dependencies() {
+        let available = Command::new(dependency)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success());
+        if !available {
+            return Err(Error::Unavailable(format!(
+                "{dependency} is required by the {} skills and hooks",
+                host.name
+            )));
         }
     }
     bundle::extract(root)?;
@@ -210,12 +210,28 @@ fn install_cli_plugin(
     Ok(())
 }
 
-/// `path` canonicalized, or as given when it no longer exists — so an
-/// ownership check holds however the data dir was spelled (`/var` vs
-/// `/private/var`, a symlinked `$HOME`), and a vanished target still
-/// compares by its recorded spelling.
+/// `path` canonicalized through its nearest existing ancestor, with any
+/// missing tail appended — so an ownership check holds however the data
+/// dir was spelled (`/var` vs `/private/var`, a symlinked `$HOME`), even
+/// for a link to a bundle version that has since been deleted.
 fn canonical_or_raw(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    let mut missing = Vec::new();
+    let mut current = path;
+    loop {
+        if let Ok(canonical) = std::fs::canonicalize(current) {
+            return missing
+                .iter()
+                .rev()
+                .fold(canonical, |resolved, name| resolved.join(name));
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name.to_os_string());
+                current = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
 }
 
 /// Invoke the host's own CLI with `args`, scoped to `config_dir` through the

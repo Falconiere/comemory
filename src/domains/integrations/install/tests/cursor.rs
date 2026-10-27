@@ -148,3 +148,62 @@ fn install_refuses_unparsable_or_non_object_config_without_touching_it() {
         );
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_config_is_merged_into_its_target_and_stays_a_link() {
+    let task = tempfile::tempdir().unwrap();
+    let root = extract_bundle(task.path());
+    let config = task.path().join("cursor");
+    let dotfiles = task.path().join("dotfiles");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&dotfiles).unwrap();
+    std::fs::write(dotfiles.join("mcp.json"), r#"{"mcpServers": {}}"#).unwrap();
+    std::os::unix::fs::symlink(dotfiles.join("mcp.json"), config.join("mcp.json")).unwrap();
+
+    install(&config, &root, &server()).unwrap();
+
+    assert!(
+        config
+            .join("mcp.json")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "a dotfile manager's link survives the merge"
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dotfiles.join("mcp.json")).unwrap()).unwrap();
+    assert_eq!(value["mcpServers"]["comemory"], server());
+}
+
+#[test]
+fn an_empty_config_counts_as_an_empty_object() {
+    let task = tempfile::tempdir().unwrap();
+    let root = extract_bundle(task.path());
+    let config = task.path().join("cursor");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("mcp.json"), "\n").unwrap();
+
+    install(&config, &root, &server()).unwrap();
+
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(config.join("mcp.json")).unwrap()).unwrap();
+    assert_eq!(value["mcpServers"]["comemory"], server());
+}
+
+#[test]
+fn an_unmergeable_config_is_refused_before_any_skill_is_linked() {
+    let task = tempfile::tempdir().unwrap();
+    let root = extract_bundle(task.path());
+    let config = task.path().join("cursor");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("mcp.json"), "{not json").unwrap();
+
+    install(&config, &root, &server()).unwrap_err();
+
+    assert!(
+        !config.join("skills").exists(),
+        "a refused merge leaves no half-installed skills"
+    );
+}

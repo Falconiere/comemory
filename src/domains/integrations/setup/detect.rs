@@ -206,7 +206,7 @@ fn doc_sources(ctx: &mut Ctx<'_>, repo: Option<&RepoContext>) -> Result<usize> {
 
 /// Agent hosts available on this machine, each probed the way its
 /// [`host::Presence`] says: CLI hosts by `--version`, config-dir hosts by
-/// their `$HOME` directory.
+/// the directory an install would use (`HERMES_HOME`, else under `$HOME`).
 fn hosts_present(host_filter: Option<&str>) -> Vec<&'static str> {
     let home: Option<std::path::PathBuf> = crate::config::env::env_parse("HOME").ok().flatten();
     host::TABLE
@@ -221,7 +221,9 @@ fn hosts_present(host_filter: Option<&str>) -> Vec<&'static str> {
 /// so tests can stage a config-dir host without touching the real `HOME`.
 fn host_is_present(host: &host::Host, home: Option<&std::path::Path>) -> bool {
     match host.presence {
-        host::Presence::ConfigDir => home.is_some_and(|home| home.join(host.home_dir).is_dir()),
+        host::Presence::ConfigDir => host
+            .config_dir_in(None, home.map(std::path::Path::to_path_buf))
+            .is_ok_and(|dir| dir.is_dir()),
         host::Presence::Cli => std::process::Command::new(host.name)
             .arg("--version")
             .output()

@@ -111,7 +111,7 @@ pub const TABLE: &[Host] = &[
     },
     Host {
         name: "hermes",
-        config_env: ConfigEnv::Home,
+        config_env: ConfigEnv::Dir("HERMES_HOME"),
         home_dir: ".hermes",
         mechanism: Mechanism::HermesFiles,
         presence: Presence::ConfigDir,
@@ -147,6 +147,18 @@ impl Host {
             self.mechanism,
             Mechanism::PluginCli { .. } | Mechanism::MusePlugins
         )
+    }
+
+    /// External programs the install needs on `PATH`, probed before
+    /// anything is written so a missing one fails the install rather than a
+    /// later hook or skill wrapper. Every host's skill wrappers need bash,
+    /// git and jq; the lifecycle hooks add python3.
+    pub fn dependencies(&self) -> &'static [&'static str] {
+        if self.installs_hooks() {
+            &["bash", "git", "jq", "python3"]
+        } else {
+            &["bash", "git", "jq"]
+        }
     }
 
     /// The plugin id the host's own manager records, for hosts that have one.
@@ -209,6 +221,20 @@ impl Host {
     /// [`Error::Usage`] when neither an override nor `HOME` is available, or
     /// when an XDG host's override does not end in its leaf.
     pub fn config_dir(&self, explicit: Option<PathBuf>) -> Result<PathBuf> {
+        let home = crate::config::env::env_parse::<PathBuf>("HOME")?;
+        self.config_dir_in(explicit, home)
+    }
+
+    /// [`Host::config_dir`] against an explicit `home`, so `setup` detection
+    /// and its tests resolve exactly the directory an install would use.
+    ///
+    /// # Errors
+    /// As [`Host::config_dir`].
+    pub fn config_dir_in(
+        &self,
+        explicit: Option<PathBuf>,
+        home: Option<PathBuf>,
+    ) -> Result<PathBuf> {
         let configured = match (explicit, self.config_env) {
             (Some(dir), ConfigEnv::XdgBase { leaf, .. }) => {
                 if dir.file_name().is_none_or(|name| name != leaf) {
@@ -230,7 +256,7 @@ impl Host {
         };
         let dir = match configured {
             Some(dir) => dir,
-            None => crate::config::env::env_parse::<PathBuf>("HOME")?
+            None => home
                 .filter(|home| !home.as_os_str().is_empty())
                 .ok_or_else(|| Error::Usage("HOME is unset; pass --config-dir".into()))?
                 .join(self.home_dir),
@@ -250,7 +276,15 @@ fn non_empty_env(key: &str) -> Result<Option<PathBuf>> {
 pub fn absence_reason(wanted: Option<&str>) -> String {
     let describe = |host: &Host| match host.presence {
         Presence::Cli => format!("no {} CLI found on PATH", host.name),
-        Presence::ConfigDir => format!("no {} config dir found (~/{})", host.name, host.home_dir),
+        Presence::ConfigDir => match host.config_env {
+            ConfigEnv::Dir(key) => format!(
+                "no {} config dir found (${key} or ~/{})",
+                host.name, host.home_dir
+            ),
+            ConfigEnv::XdgBase { .. } | ConfigEnv::Home => {
+                format!("no {} config dir found (~/{})", host.name, host.home_dir)
+            }
+        },
     };
     if let Some(host) = wanted.and_then(|name| TABLE.iter().find(|host| host.name == name)) {
         return describe(host);

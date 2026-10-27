@@ -37,12 +37,12 @@ fn scope_env_scopes_cli_hosts_and_leaves_file_hosts_alone() {
         lookup("codex").unwrap().scope_env(Path::new("/tmp/codex")),
         Some(("CODEX_HOME", Path::new("/tmp/codex").to_path_buf()))
     );
-    for file_host in ["cursor-agent", "hermes"] {
-        assert_eq!(
-            lookup(file_host).unwrap().scope_env(Path::new("/tmp/x")),
-            None
-        );
-    }
+    assert_eq!(
+        lookup("cursor-agent")
+            .unwrap()
+            .scope_env(Path::new("/tmp/x")),
+        None
+    );
 }
 
 #[test]
@@ -139,4 +139,36 @@ fn absence_reason_follows_each_hosts_presence_probe() {
         .filter(|host| host.presence == Presence::Cli)
         .count();
     assert_eq!(cli_hosts, 4, "only hermes is probed by config dir");
+}
+
+#[test]
+fn hermes_honors_hermes_home_and_falls_back_under_home() {
+    let temp = tempfile::tempdir().unwrap();
+    let hermes = lookup("hermes").unwrap();
+    assert_eq!(hermes.config_env, super::ConfigEnv::Dir("HERMES_HOME"));
+    // An explicit dir wins over both the variable and the home fallback;
+    // `setup` detection resolves through this same function.
+    let explicit = temp.path().join("custom-hermes");
+    assert_eq!(
+        hermes
+            .config_dir_in(Some(explicit.clone()), Some(temp.path().to_path_buf()))
+            .unwrap(),
+        explicit
+    );
+}
+
+#[test]
+fn every_host_needs_the_wrapper_tools_and_only_hook_hosts_need_python() {
+    for host in TABLE {
+        let deps = host.dependencies();
+        for tool in ["bash", "git", "jq"] {
+            assert!(deps.contains(&tool), "{} needs {tool}", host.name);
+        }
+        assert_eq!(
+            deps.contains(&"python3"),
+            host.installs_hooks(),
+            "{}",
+            host.name
+        );
+    }
 }

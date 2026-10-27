@@ -45,6 +45,9 @@ pub(super) fn install(host: &Host, config_dir: &Path, root: &Path) -> Result<()>
                 source.display()
             )));
         }
+        // Validate the new bundle first: a remove followed by a failed
+        // install would leave the operator with no comemory plugin at all.
+        super::run_host(host, config_dir, &["plugins", "validate", path])?;
         super::run_host(host, config_dir, &["plugins", "remove", PLUGIN_ID])?;
     }
     super::run_host(host, config_dir, &["plugins", "install", path])?;

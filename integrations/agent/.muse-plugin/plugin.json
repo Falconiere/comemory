@@ -94,7 +94,7 @@
       {
         "id": "comemory",
         "transport": "stdio",
-        "command": ["/usr/bin/env", "comemory", "mcp"]
+        "command": ["bash", "bin/mcp-server.sh"]
       }
     ],
     "reminders": []

@@ -546,9 +546,12 @@ if command -v muse >/dev/null; then
   jq -e '.next_steps | any(test("muse plugins approve comemory"))' "$TASK/install-muse.json" >/dev/null
   muse_bundle="$(jq -r .bundle "$TASK/install-muse.json")/plugins/comemory"
   [ -f "$muse_bundle/.muse-plugin/plugin.json" ]
-  [ "$(jq -r .mcp_manifest "$TASK/install-muse.json")" = "$muse_bundle/.muse-plugin/plugin.json" ]
-  jq -e '.capabilities.mcpServers == [{"id":"comemory","transport":"stdio","command":["/usr/bin/env","comemory","mcp"]}]' \
+  # Muse's manifest launches bin/mcp-server.sh, which runs the absolute
+  # binary the install recorded in the bundle's .mcp.json.
+  [ "$(jq -r .mcp_manifest "$TASK/install-muse.json")" = "$muse_bundle/.mcp.json" ]
+  jq -e '.capabilities.mcpServers == [{"id":"comemory","transport":"stdio","command":["bash","bin/mcp-server.sh"]}]' \
     "$muse_bundle/.muse-plugin/plugin.json" >/dev/null
+  [ -x "$muse_bundle/bin/mcp-server.sh" ]
   XDG_DATA_HOME="$muse_xdg" muse plugins inspect comemory > "$TASK/inspect-muse.txt"
   grep -q 'mcp=1' "$TASK/inspect-muse.txt"
   grep -q 'hooks=10' "$TASK/inspect-muse.txt"

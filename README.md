@@ -632,7 +632,8 @@ A task isn't done until `scripts/check-all.sh` exits 0.
 install the bundled skills and hooks through the host plugin manager and
 register `comemory mcp` — a nineteen-tool MCP stdio server over the same
 command cores as the CLI and `comemory serve` — through the plugin's
-`.mcp.json` (Claude Code, Codex) or its `.muse-plugin` manifest (muse). Muse
+`.mcp.json` (Claude Code, Codex) or its `.muse-plugin` manifest (muse, via a
+launcher that reads the same `.mcp.json`). Muse
 holds a third-party plugin's hooks and MCP server for review: run
 `muse plugins approve comemory` once after installing. Use `--dry-run` to
 preview. `comemory install cursor-agent` links the skills into

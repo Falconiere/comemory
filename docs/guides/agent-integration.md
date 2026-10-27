@@ -24,8 +24,9 @@ itself and must end in `muse`, because muse is scoped through its
 `XDG_DATA_HOME` parent; an empty or relative `XDG_DATA_HOME` counts as unset.
 
 For the plugin-manager hosts (claude, codex, muse) the host CLI, Bash, Git,
-jq, and Python 3 must be available; cursor-agent and hermes need none of
-them, since they receive no hooks. The
+jq, and Python 3 must be available; cursor-agent and hermes need only Bash,
+Git and jq, which their skill wrappers use (they receive no hooks). Hermes
+honors `HERMES_HOME`. The
 binary embeds the integration and extracts a local marketplace beneath
 `$COMEMORY_DATA_DIR/integrations/<version>` (default `~/.comemory`). For
 claude, codex and muse it registers `comemory@comemory` through the host's
@@ -116,13 +117,17 @@ tool-level `repo_required` error before anything is written.
 `~/.cursor/skills/` (Cursor's personal skills dir — `skills-cursor/` is
 reserved for its built-ins) and merges the `comemory` server into
 `~/.cursor/mcp.json`, owning only that key: other servers keep their order
-and bytes, the file keeps its permissions, and an already-current entry
-leaves the file untouched. Hook wiring is a follow-up: Cursor's native hook
+and bytes, the file keeps its permissions (the replacement is created with
+them), an empty file counts as `{}`, a symlinked `mcp.json` (a dotfile
+manager's) is merged into the file it links to, and an already-current
+entry leaves the file untouched. The file is checked before any skill is
+linked, so a refusal leaves nothing half-installed. Hook wiring is a follow-up: Cursor's native hook
 events do not match the shared scripts' Claude dispatch, so this change
 ships no `hooks.json` merge rather than inert entries.
-`comemory install hermes` links the skills into `~/.hermes/skills/`; hermes
-exposes no hooks or MCP, and the skills fall back to the `comemory.sh`
-wrapper documented in each skill.
+`comemory install hermes` links the skills into
+`${HERMES_HOME:-~/.hermes}/skills/`; hermes exposes no hooks or MCP, and the
+skills fall back to their own `scripts/comemory.sh` wrapper, as documented
+in each skill.
 
 Both file-based installs **link** each skill dir to the versioned bundle
 rather than copying it, so the wrappers still find the bundle's `lib/`, and
@@ -130,11 +135,14 @@ an upgrade repoints the links atomically. A skill dir that is a real
 directory or a link comemory did not write is refused, with nothing changed.
 
 Muse installs through `muse plugins install <bundle>` with a
-`.muse-plugin/plugin.json` manifest that also declares the `comemory mcp`
-server (spawned from `PATH`, like the hooks). After an upgrade the previous
-version's registration is removed first — muse refuses one plugin id from
-two sources — but a `comemory` plugin installed from anywhere outside
-comemory's integrations dir is refused instead. Muse holds a third-party
+`.muse-plugin/plugin.json` manifest that also declares the MCP server. Its
+command is the bundled `bin/mcp-server.sh`, which runs the absolute binary
+path the install wrote to the bundle's `.mcp.json`, so muse's server is the
+binary that installed it. After an upgrade the previous version's
+registration is removed first — muse refuses one plugin id from two
+sources — once the new bundle has passed `muse plugins validate`; a
+`comemory` plugin installed from anywhere outside comemory's integrations
+dir is refused instead. Muse holds a third-party
 plugin's hooks and MCP server as `review_needed` until you run
 `muse plugins approve comemory`; the install report says so. Its SessionEnd
 hook stays silent (transcript capture is Claude-only), and its Stop and

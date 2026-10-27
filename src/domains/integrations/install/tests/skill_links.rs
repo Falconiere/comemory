@@ -91,6 +91,27 @@ fn ownership_holds_however_the_data_dir_was_spelled() {
 }
 
 #[test]
+fn a_dangling_link_to_a_deleted_version_spelled_through_an_alias_is_still_ours() {
+    let task = tempfile::tempdir().unwrap();
+    let real = task.path().join("real");
+    let old = extract_bundle(&real, "1.0.0");
+    let new = extract_bundle(&real, "2.0.0");
+    let alias = task.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let target = task.path().join("host/skills");
+    link_skills(&alias.join(old.strip_prefix(&real).unwrap()), &target).unwrap();
+    // The old version is gone: its links dangle, spelled through the alias.
+    std::fs::remove_dir_all(&old).unwrap();
+
+    link_skills(&new, &target).unwrap();
+
+    assert_eq!(
+        std::fs::read_link(target.join("agent-memory")).unwrap(),
+        new.join("plugins/comemory/skills/agent-memory")
+    );
+}
+
+#[test]
 fn refuses_a_real_directory_or_a_foreign_link_and_changes_nothing() {
     let task = tempfile::tempdir().unwrap();
     let root = extract_bundle(task.path(), "1.0.0");
