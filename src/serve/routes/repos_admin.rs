@@ -29,6 +29,7 @@ use crate::domains::code::repo_admin::{
 };
 use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx};
 use crate::serve::routes::{RouteEntry, guard_mutating, index_runs, require_confirm, respond};
 use crate::store::Connection;
 use crate::utilities::activity::Origin;
@@ -150,25 +151,17 @@ async fn patch_repo(
     UrlPath(name): UrlPath<String>,
     Json(req): Json<PatchRequest>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating(PATCH, &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let root = req
-            .root
-            .as_deref()
-            .map(|root| contain(&state, &conn, root))
-            .transpose()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::code::repo_admin::patch(&mut ctx, &name, PatchRequest { root, ..req })
+    mutate_blocking(state, PATCH, move |state| {
+        with_ctx(state, None, |ctx| {
+            let root = req
+                .root
+                .as_deref()
+                .map(|root| contain(state, ctx.conn()?, root))
+                .transpose()?;
+            crate::domains::code::repo_admin::patch(ctx, &name, PatchRequest { root, ..req })
+        })
     })
-    .await;
-    respond(PATCH, result, started)
+    .await
 }
 
 /// `POST /api/v1/repos/{name}/archive` — flip `repo_marker.archived`
@@ -179,21 +172,13 @@ async fn archive_repo(
     UrlPath(name): UrlPath<String>,
     body: Bytes,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating(ARCHIVE, &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, ARCHIVE, move |state| {
         let req = archive_body(&body)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::code::repo_admin::archive(&mut ctx, &name, req)
+        with_ctx(state, None, |ctx| {
+            crate::domains::code::repo_admin::archive(ctx, &name, req)
+        })
     })
-    .await;
-    respond(ARCHIVE, result, started)
+    .await
 }
 
 /// Parse the optional archive body. Read as raw [`Bytes`] rather than
@@ -222,21 +207,13 @@ async fn disconnect_repo(
     UrlPath(name): UrlPath<String>,
     Query(query): Query<ConfirmQuery>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating(DISCONNECT, &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, DISCONNECT, move |state| {
         require_confirm(query.confirm)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::code::repo_admin::disconnect(&mut ctx, &name)
+        with_ctx(state, None, |ctx| {
+            crate::domains::code::repo_admin::disconnect(ctx, &name)
+        })
     })
-    .await;
-    respond(DISCONNECT, result, started)
+    .await
 }
 
 /// Canonicalize `root` inside an allowed root, as the `String`

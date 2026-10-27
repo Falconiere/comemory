@@ -16,7 +16,8 @@ use serde_json::Value;
 use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond};
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx};
+use crate::serve::routes::{RouteEntry, require_confirm, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -90,26 +91,16 @@ async fn prune(
 /// (AC-12 parity), and `#[serde(flatten)]`ing it here would silently
 /// disable that check.
 async fn prune_apply(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("prune", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "prune", move |state| {
         let (body, dry_run) = split_dry_run(body)?;
         let (mut req, confirmed) = split_confirm::<maintenance::prune::Request>(body)?;
         if let Some(dry_run) = dry_run {
             req.apply = !dry_run;
         }
         require_confirm(confirmed)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        maintenance::prune::run(&mut ctx, req)
+        with_ctx(state, None, |ctx| maintenance::prune::run(ctx, req))
     })
-    .await;
-    respond("prune", result, started)
+    .await
 }
 
 /// Extract and remove the HTTP-only `"dry_run"` field from a raw JSON body
@@ -150,20 +141,13 @@ struct ConfirmBody {
 
 /// `POST /api/v1/gc` — confirm-gated trash + telemetry sweep (`maintenance::gc`).
 async fn gc(State(state): State<AppState>, Json(body): Json<ConfirmBody>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("gc", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "gc", move |state| {
         require_confirm(body.confirm)?;
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
         maintenance::gc::run(&mut ctx, maintenance::gc::Request {})
     })
-    .await;
-    respond("gc", result, started)
+    .await
 }
 
 /// Extract and remove the HTTP-only `"confirm"` field from a raw JSON body,

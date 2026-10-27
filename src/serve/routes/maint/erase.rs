@@ -4,8 +4,6 @@
 //! (`503 busy`), then `"confirm": true` (`400 confirmation_required`). An
 //! entity this engine never held answers `404 not_found`.
 
-use std::time::Instant;
-
 use axum::extract::State;
 use axum::response::Response;
 use axum::routing::post;
@@ -15,9 +13,8 @@ use serde_json::Value;
 use crate::domains::maintenance;
 use crate::serve::AppState;
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond};
-use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx};
+use crate::serve::routes::{RouteEntry, require_confirm};
 
 /// This resource's route-table entries, appended onto [`super::super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -40,20 +37,10 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// `maintenance::erase::Request` (AC-12 parity). Runs on the server's shared
 /// connection, so its next request reads the erased state.
 async fn erase(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("erase", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "erase", move |state| {
         let (req, confirmed) = split_confirm::<maintenance::erase::Request>(body)?;
         require_confirm(confirmed)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        maintenance::erase::run(&mut ctx, req)
+        with_ctx(state, None, |ctx| maintenance::erase::run(ctx, req))
     })
-    .await;
-    respond("erase", result, started)
+    .await
 }

@@ -335,6 +335,7 @@ fn ac4_every_mutating_route_405s_on_a_read_only_server() {
     let home = TempDir::new().expect("home");
     let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
     let client = reqwest::blocking::Client::new();
+    let mut refusals: Vec<String> = Vec::new();
 
     for entry in table().into_iter().filter(|e| e.mutating) {
         let res = send_mutating(&client, &base, &token, &entry);
@@ -358,7 +359,20 @@ fn ac4_every_mutating_route_405s_on_a_read_only_server() {
             entry.method,
             entry.path
         );
+        refusals.push(format!(
+            "{} {} -> {}",
+            entry.method,
+            entry.path,
+            body["meta"]["command"].as_str().unwrap_or("<missing>")
+        ));
     }
+    // The command each refusal names is what a client and the activity feed
+    // see for that route. Handlers share a helper that is handed this string,
+    // so a mistyped one would silently rename a route; the snapshot pins every
+    // route's current name (some, such as `hooks.install`, differ from the
+    // route table's `command` and that is the existing contract).
+    refusals.sort();
+    insta::assert_snapshot!("mutating_route_refusal_commands", refusals.join("\n"));
 }
 
 #[test]

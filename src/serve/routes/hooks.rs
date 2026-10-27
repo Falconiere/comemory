@@ -33,7 +33,8 @@ use serde::Deserialize;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::maint::admin::contain_repo;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond};
+use crate::serve::routes::mutate_response::mutate_blocking;
+use crate::serve::routes::{RouteEntry, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -105,17 +106,7 @@ async fn toggle_hooks(
     State(state): State<AppState>,
     Json(req): Json<crate::domains::code::hooks::Request>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("hooks", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        apply_and_report(&state, req)
-    })
-    .await;
-    respond("hooks", result, started)
+    mutate_blocking(state, "hooks", move |state| apply_and_report(state, req)).await
 }
 
 /// The shared middle of both writers: contain an explicit `repo` (a hook
@@ -183,13 +174,7 @@ async fn set_hook(
     Query(q): Query<ListQuery>,
     Json(body): Json<SetBody>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("hooks.set", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "hooks.set", move |state| {
         // Unconditional, for every name: `_` is not part of any hook's
         // spelling, so a console may send either `post_commit` or
         // `post-commit` (and either `search_edit_reinforcement` or its
@@ -202,7 +187,7 @@ async fn set_hook(
             (None, Some(hook))
         };
         apply_and_report(
-            &state,
+            state,
             crate::domains::code::hooks::Request {
                 repo: q.repo,
                 enable,
@@ -210,8 +195,7 @@ async fn set_hook(
             },
         )
     })
-    .await;
-    respond("hooks.set", result, started)
+    .await
 }
 
 #[cfg(test)]

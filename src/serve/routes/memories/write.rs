@@ -4,8 +4,6 @@
 //! here calls [`guard_mutating`] first (read-only → busy ordering, AC-19),
 //! holding the returned permit across the blocking write.
 
-use std::time::Instant;
-
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
@@ -15,9 +13,8 @@ use serde::Deserialize;
 
 use crate::domains::learning;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond};
-use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
+use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_ctx};
+use crate::serve::routes::{RouteEntry, require_confirm};
 
 /// This resource's route-table entries, appended onto [`super::table_entries`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -57,23 +54,13 @@ async fn save(
     headers: HeaderMap,
     Json(req): Json<crate::domains::memories::save::Request>,
 ) -> Response {
-    let started = Instant::now();
     let origin = state.http_origin(&headers);
-    let permit = match guard_mutating("save", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
+    mutate_response(state, "save", Some(origin), move |ctx| {
         // No CLI stdin-vs-flag ambiguity over HTTP: `req.vector` is already
         // a parsed vector off the JSON body (see `domains::memories::save::run`'s doc).
-        crate::domains::memories::save::run(&mut ctx, req, false, None)
+        crate::domains::memories::save::run(ctx, req, false, None)
     })
-    .await;
-    respond("save", result, started)
+    .await
 }
 
 /// `?confirm=true` on `DELETE /memories/{id}` — transport-level; not part of
@@ -94,22 +81,14 @@ async fn delete_memory(
     Query(query): Query<ConfirmQuery>,
     headers: HeaderMap,
 ) -> Response {
-    let started = Instant::now();
     let origin = state.http_origin(&headers);
-    let permit = match guard_mutating("delete", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "delete", move |state| {
         require_confirm(query.confirm)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
-        crate::domains::memories::delete::run(&mut ctx, &id)
+        with_ctx(state, Some(origin), |ctx| {
+            crate::domains::memories::delete::run(ctx, &id)
+        })
     })
-    .await;
-    respond("delete", result, started)
+    .await
 }
 
 /// `POST /api/v1/feedback` — record feedback (`domains::learning::feedback`).
@@ -118,19 +97,9 @@ async fn feedback(
     headers: HeaderMap,
     Json(req): Json<learning::feedback::Request>,
 ) -> Response {
-    let started = Instant::now();
     let origin = state.http_origin(&headers);
-    let permit = match guard_mutating("feedback", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
-        learning::feedback::run(&mut ctx, req)
+    mutate_response(state, "feedback", Some(origin), move |ctx| {
+        learning::feedback::run(ctx, req)
     })
-    .await;
-    respond("feedback", result, started)
+    .await
 }

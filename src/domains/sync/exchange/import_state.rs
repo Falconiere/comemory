@@ -60,20 +60,6 @@ pub(crate) fn id_collision(
     id: &str,
     content_hash: &str,
 ) -> Result<bool> {
-    id_collision_inner(paths, id, content_hash)
-}
-
-/// Test-only re-export of [`id_collision`].
-#[cfg(test)]
-pub(crate) fn id_collision_for_test(
-    paths: &crate::config::Paths,
-    id: &str,
-    content_hash: &str,
-) -> Result<bool> {
-    id_collision_inner(paths, id, content_hash)
-}
-
-fn id_collision_inner(paths: &crate::config::Paths, id: &str, content_hash: &str) -> Result<bool> {
     let store = MemoryStore::new(paths.clone());
     match store.prior(id) {
         Ok(prior) => Ok(prior.is_some_and(|prior| prior.collides_with(content_hash))),

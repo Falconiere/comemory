@@ -8,11 +8,11 @@
 
 use std::time::Instant;
 
-use axum::extract::{Query, State};
+use axum::Router;
+use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::get;
-use axum::{Json, Router};
 use serde_json::Value;
 
 use crate::domains::retrieval;
@@ -20,6 +20,7 @@ use crate::domains::retrieval::scope::ScopeEcho;
 use crate::domains::retrieval::{context_result, search_result};
 use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::query_or_json::QueryOrJson;
 use crate::serve::routes::{respond, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::activity::Origin;
@@ -31,40 +32,33 @@ pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
         .route(
             "/api/v1/memories/search",
-            get(memories_search_get).post(memories_search_post),
+            get(memories_search).post(memories_search),
         )
-        .route("/api/v1/context", get(context_get).post(context_post))
+        .route("/api/v1/context", get(context).post(context))
 }
 
-/// Every handler below folds an `X-Comemory-Repo` header into the request's
-/// own `repo` filter when the query/body omits one ([`RepoScope`]).
-async fn memories_search_get(
+/// `GET|POST /api/v1/memories/search`. `GET` reads the request from the query
+/// string (no vector); `POST` reads it from a JSON body and is
+/// vector-capable. Both handlers in this file fold an `X-Comemory-Repo`
+/// header into the request's own `repo` filter when it omits one
+/// ([`RepoScope`]).
+async fn memories_search(
     State(state): State<AppState>,
     scope: RepoScope,
     headers: HeaderMap,
-    Query(mut req): Query<retrieval::search::Request>,
+    QueryOrJson(mut req): QueryOrJson<retrieval::search::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let origin = state.http_origin(&headers);
     handle("search", state, move |state| run_search(state, req, origin)).await
 }
 
-async fn memories_search_post(
+/// `GET|POST /api/v1/context`, served the same two ways as [`memories_search`].
+async fn context(
     State(state): State<AppState>,
     scope: RepoScope,
     headers: HeaderMap,
-    Json(mut req): Json<retrieval::search::Request>,
-) -> Response {
-    req.repo = scope.resolve(req.repo);
-    let origin = state.http_origin(&headers);
-    handle("search", state, move |state| run_search(state, req, origin)).await
-}
-
-async fn context_get(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    headers: HeaderMap,
-    Query(mut req): Query<retrieval::context::Request>,
+    QueryOrJson(mut req): QueryOrJson<retrieval::context::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let origin = state.http_origin(&headers);
@@ -74,21 +68,7 @@ async fn context_get(
     .await
 }
 
-async fn context_post(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    headers: HeaderMap,
-    Json(mut req): Json<retrieval::context::Request>,
-) -> Response {
-    req.repo = scope.resolve(req.repo);
-    let origin = state.http_origin(&headers);
-    handle("context", state, move |state| {
-        run_context(state, req, origin)
-    })
-    .await
-}
-
-/// Shared spawn-blocking + envelope wiring for the four handlers above.
+/// Shared spawn-blocking + envelope wiring for the two handlers above.
 async fn handle<F>(command: &'static str, state: AppState, f: F) -> Response
 where
     F: FnOnce(AppState) -> Result<Value> + Send + 'static,

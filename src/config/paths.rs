@@ -1,10 +1,12 @@
+//! Data-directory layout: every on-disk location comemory reads or writes
+//! is resolved relative to one root (default `~/.comemory`, override via
+//! `COMEMORY_DATA_DIR`).
+
 use std::path::{Path, PathBuf};
 
 use crate::prelude::*;
 
-/// Data-directory layout: every on-disk location comemory reads or writes
-/// is resolved relative to one root (default `~/.comemory`, override via
-/// `COMEMORY_DATA_DIR`).
+/// Data-directory layout rooted at one directory.
 #[derive(Debug, Clone)]
 pub struct Paths {
     data_dir: PathBuf,
@@ -17,6 +19,24 @@ pub fn resolve_data_dir(opt: Option<PathBuf>) -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
         PathBuf::from(home).join(".comemory")
     })
+}
+
+/// One `data_dir.join(segment)` getter per row. The method name stays the
+/// typed surface callers use; the segment string is the only thing that
+/// varies, so a table replaces sixteen near-identical bodies without a
+/// lying parameter.
+macro_rules! path_joins {
+    ($(
+        $(#[$meta:meta])*
+        $name:ident => $segment:literal
+    ),+ $(,)?) => {
+        $(
+            $(#[$meta])*
+            pub fn $name(&self) -> PathBuf {
+                self.data_dir.join($segment)
+            }
+        )+
+    };
 }
 
 impl Paths {
@@ -32,19 +52,46 @@ impl Paths {
         &self.data_dir
     }
 
-    /// Directory holding `{id}-{slug}.md` memory files.
-    pub fn memories_dir(&self) -> PathBuf {
-        self.data_dir.join("memories")
+    path_joins! {
+        /// Directory holding `{id}-{slug}.md` memory files.
+        memories_dir => "memories",
+        /// Legacy index directory (retained for the on-disk layout).
+        index_dir => "index",
+        /// Single-file SQLite mirror for v0.2 (`comemory.db`). Rooted directly at
+        /// the data dir so callers that override `COMEMORY_DATA_DIR` see a
+        /// predictable path next to `memories/`.
+        db_path => "comemory.db",
+        /// Layered config-file overlay (`config.toml`) applied on top of the
+        /// shipped defaults.
+        config_file => "config.toml",
+        /// Device-login credentials written by `comemory auth login` (`auth.json`,
+        /// mode `0600` on unix).
+        auth_file => "auth.json",
+        /// Cached org-repo allowlist left behind by releases before organization
+        /// scoping. Nothing reads it any more; `comemory auth login` and
+        /// `comemory auth logout` delete it so a stale copy cannot outlive the
+        /// credential it was fetched for.
+        allowlist_file => "allowlist.json",
+        /// Durable source registry file (`src/domains/documents/source/registry.rs`), the
+        /// authoritative record of registered document roots.
+        sources_file => "sources.toml",
+        /// Sibling exclusive-flock file guarding `sources.toml`
+        /// read-modify-write cycles (`src/utilities/file_lock.rs`).
+        sources_lock_file => "sources.toml.lock",
+        /// Sibling exclusive-flock file guarding the migration preflight's
+        /// `VACUUM INTO` snapshot, since SQLite will not serialize that
+        /// statement itself (`src/store/migrate/preflight.rs`, generalized
+        /// lock in `src/utilities/file_lock.rs`).
+        migration_lock_file => "comemory.db.migrate.lock",
+        /// Pre-swap snapshot of `comemory.db`, written by `comemory rebuild`
+        /// (`src/domains/maintenance/rebuild.rs`) immediately before the rebuilt database
+        /// replaces the live one.
+        rebuild_backup => "comemory.db.pre-rebuild.bak",
     }
 
     /// Soft-delete directory under `memories/`.
     pub fn trash_dir(&self) -> PathBuf {
         self.memories_dir().join(".trash")
-    }
-
-    /// Legacy index directory (retained for the on-disk layout).
-    pub fn index_dir(&self) -> PathBuf {
-        self.data_dir.join("index")
     }
 
     /// Path to the unified SQLite database.
@@ -55,60 +102,6 @@ impl Paths {
     /// now delegates to [`crate::store::connection::open`].
     pub fn stats_db(&self) -> PathBuf {
         self.db_path()
-    }
-
-    /// Single-file SQLite mirror for v0.2 (`comemory.db`). Rooted directly at
-    /// the data dir so callers that override `COMEMORY_DATA_DIR` see a
-    /// predictable path next to `memories/`.
-    pub fn db_path(&self) -> PathBuf {
-        self.data_dir.join("comemory.db")
-    }
-
-    /// Layered config-file overlay (`config.toml`) applied on top of the
-    /// shipped defaults.
-    pub fn config_file(&self) -> PathBuf {
-        self.data_dir.join("config.toml")
-    }
-
-    /// Device-login credentials written by `comemory auth login` (`auth.json`,
-    /// mode `0600` on unix).
-    pub fn auth_file(&self) -> PathBuf {
-        self.data_dir.join("auth.json")
-    }
-
-    /// Cached org-repo allowlist left behind by releases before organization
-    /// scoping. Nothing reads it any more; `comemory auth login` and
-    /// `comemory auth logout` delete it so a stale copy cannot outlive the
-    /// credential it was fetched for.
-    pub fn allowlist_file(&self) -> PathBuf {
-        self.data_dir.join("allowlist.json")
-    }
-
-    /// Durable source registry file (`src/domains/documents/source/registry.rs`), the
-    /// authoritative record of registered document roots.
-    pub fn sources_file(&self) -> PathBuf {
-        self.data_dir.join("sources.toml")
-    }
-
-    /// Sibling exclusive-flock file guarding `sources.toml`
-    /// read-modify-write cycles (`src/utilities/file_lock.rs`).
-    pub fn sources_lock_file(&self) -> PathBuf {
-        self.data_dir.join("sources.toml.lock")
-    }
-
-    /// Sibling exclusive-flock file guarding the migration preflight's
-    /// `VACUUM INTO` snapshot, since SQLite will not serialize that
-    /// statement itself (`src/store/migrate/preflight.rs`, generalized
-    /// lock in `src/utilities/file_lock.rs`).
-    pub fn migration_lock_file(&self) -> PathBuf {
-        self.data_dir.join("comemory.db.migrate.lock")
-    }
-
-    /// Pre-swap snapshot of `comemory.db`, written by `comemory rebuild`
-    /// (`src/domains/maintenance/rebuild.rs`) immediately before the rebuilt database
-    /// replaces the live one.
-    pub fn rebuild_backup(&self) -> PathBuf {
-        self.data_dir.join("comemory.db.pre-rebuild.bak")
     }
 
     /// Create `memories/`, `trash/`, and `index/` if missing.

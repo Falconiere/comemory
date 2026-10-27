@@ -61,6 +61,17 @@ set -euo pipefail
 
 SIMILARITY_RS_VERSION="0.5.0"
 
+# Residual-duplication budget: at most 5% of the anchored original baseline
+# (285 pairs when the burn campaign started). The tool emits a pair COUNT
+# only, so the percentage is computed against that fixed anchor — never
+# against a live function total (rejected as vacuous) and never against
+# the moving ratchet file. 5% of 285 is 14; current > 14 fails even when
+# it is within dup-baseline.txt. Lowering the ratchet still happens in
+# the same PR that burns pairs (see docs/dup-debt.md).
+DUP_BUDGET_ANCHOR=285
+DUP_BUDGET_PCT_MAX=5
+DUP_BUDGET_CEILING=$((DUP_BUDGET_ANCHOR * DUP_BUDGET_PCT_MAX / 100))
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/lib/common.sh"
@@ -189,6 +200,19 @@ if ! [[ "$current_count" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+# Budget line first so every failure/success names the 5% destination.
+# Integer percent is enough for the nudge; the ceiling is the authority.
+budget_pct=$((current_count * 100 / DUP_BUDGET_ANCHOR))
+log_info "$STEP" \
+  "budget $current_count/$DUP_BUDGET_ANCHOR (${budget_pct}%), ceiling $DUP_BUDGET_CEILING (${DUP_BUDGET_PCT_MAX}% of anchor)"
+
+if (( current_count > DUP_BUDGET_CEILING )); then
+  log_err "$STEP" \
+    "near-duplicate count $current_count exceeds the ${DUP_BUDGET_PCT_MAX}% budget ceiling $DUP_BUDGET_CEILING (anchor $DUP_BUDGET_ANCHOR); see $scan_log"
+  trap - EXIT   # keep the log: its path is named above
+  exit 1
+fi
+
 if (( current_count > baseline_count )); then
   log_err "$STEP" \
     "near-duplicate count $current_count exceeds baseline $baseline_count (docs/dup-debt.md); see $scan_log"
@@ -199,4 +223,9 @@ if (( current_count < baseline_count )); then
   log_info "$STEP" \
     "near-duplicate count $current_count is below baseline $baseline_count — lower $BASELINE_FILE to lock in the improvement"
 fi
-log_ok "$STEP" "near-duplicate count $current_count within baseline $baseline_count (similarity-rs $SIMILARITY_RS_VERSION)"
+if (( baseline_count > DUP_BUDGET_CEILING )); then
+  log_err "$STEP" \
+    "$BASELINE_FILE is $baseline_count but the ${DUP_BUDGET_PCT_MAX}% budget ceiling is $DUP_BUDGET_CEILING — lower the baseline after burning pairs"
+  exit 1
+fi
+log_ok "$STEP" "near-duplicate count $current_count within baseline $baseline_count and budget ceiling $DUP_BUDGET_CEILING (similarity-rs $SIMILARITY_RS_VERSION)"

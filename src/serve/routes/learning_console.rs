@@ -27,7 +27,8 @@ use crate::domains::learning;
 use crate::serve::AppState;
 use crate::serve::routes::learning::{contain_golden, eval};
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{RouteEntry, guard_mutating, query_response, require_confirm, respond};
+use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_ctx};
+use crate::serve::routes::{RouteEntry, query_response, require_confirm, respond};
 use crate::serve::scope::RepoScope;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
@@ -192,26 +193,16 @@ async fn proposal_apply(
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("learning.proposals.apply", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "learning.proposals.apply", move |state| {
         let (ConfirmOnly {}, confirmed) = split_confirm::<ConfirmOnly>(body)?;
         require_confirm(confirmed)?;
-        let applied = {
-            let cfg = state.cfg();
-            let mut conn = state.conn()?;
-            let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-            learning::learning_proposals::apply(&mut ctx, &id)?
-        };
+        let applied = with_ctx(state, None, |ctx| {
+            learning::learning_proposals::apply(ctx, &id)
+        })?;
         state.reload_cfg(state.paths())?;
         Ok(applied)
     })
-    .await;
-    respond("learning.proposals.apply", result, started)
+    .await
 }
 
 /// `POST /api/v1/learning/proposals/{id}/discard` — stop offering a
@@ -219,20 +210,10 @@ async fn proposal_apply(
 /// confirm-gated: nothing outside the console's own list changes, and the
 /// run row itself is untouched otherwise.
 async fn proposal_discard(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("learning.proposals.discard", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        learning::learning_proposals::discard(&mut ctx, &id)
+    mutate_response(state, "learning.proposals.discard", None, move |ctx| {
+        learning::learning_proposals::discard(ctx, &id)
     })
-    .await;
-    respond("learning.proposals.discard", result, started)
+    .await
 }
 
 /// `?limit=&offset=` on `GET /learning/expansions`.

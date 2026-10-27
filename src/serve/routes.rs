@@ -23,6 +23,7 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::JobId;
+use crate::serve::routes::mutate_response::with_ctx;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -48,6 +49,9 @@ pub mod maint;
 pub mod memories;
 /// `GET /completions`, `GET /commands`.
 pub mod meta;
+/// The shared tail of every mutating handler: gates, write permit, blocking
+/// run, envelope.
+pub mod mutate_response;
 /// `GET /repos`.
 pub mod repos;
 /// `GET /sources`.
@@ -231,13 +235,7 @@ where
     T: Serialize + Send + 'static,
 {
     let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        query(&mut ctx)
-    })
-    .await;
+    let result = run_blocking(move || with_ctx(&state, None, query)).await;
     respond(command, result, started)
 }
 

@@ -21,10 +21,8 @@ use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{
-    RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond,
-};
-use crate::utilities::blocking::run_blocking;
+use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response};
+use crate::serve::routes::{RouteEntry, accepted, guard_job, require_confirm};
 use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
 
@@ -64,20 +62,10 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// `query_expansions` (`domains::learning::mine`). Not confirm-gated (§Route map): it is a
 /// bounded scan, mutating only on explicit `apply`.
 async fn mine(State(state): State<AppState>, Json(req): Json<learning::mine::Request>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("mine", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        learning::mine::run(&mut ctx, req)
+    mutate_response(state, "mine", None, move |ctx| {
+        learning::mine::run(ctx, req)
     })
-    .await;
-    respond("mine", result, started)
+    .await
 }
 
 /// `POST /api/v1/hooks/install` — install git hooks (`domains::code::install_hooks`),
@@ -86,24 +74,17 @@ async fn mine(State(state): State<AppState>, Json(req): Json<learning::mine::Req
 /// `maint::prune`'s `POST /prune`) so the HTTP-only `confirm` flag never
 /// joins `crate::domains::code::install_hooks::Request` itself (AC-12 parity).
 async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("hooks.install", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "hooks.install", move |state| {
         let (mut req, confirmed) =
             split_confirm::<crate::domains::code::install_hooks::Request>(body)?;
-        let canonical = contain_repo(&state, &req.repo)?;
+        let canonical = contain_repo(state, &req.repo)?;
         req.repo = canonical.to_string_lossy().into_owned();
         require_confirm(confirmed)?;
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
         crate::domains::code::install_hooks::run(&mut ctx, req)
     })
-    .await;
-    respond("hooks.install", result, started)
+    .await
 }
 
 /// `POST /api/v1/rebuild` — start a `rebuild` job (`maintenance::rebuild`) that

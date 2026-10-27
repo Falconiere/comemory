@@ -148,8 +148,7 @@ fn id_collision_rejects_live_hash_mismatch() {
     let id = memory_id(body);
 
     assert!(
-        exchange::import_state::id_collision_for_test(&paths, &id, &"ff".repeat(32))
-            .expect("probe"),
+        exchange::import_state::id_collision(&paths, &id, &"ff".repeat(32)).expect("probe"),
         "live memory hash must differ from a forged wire hash"
     );
 }
@@ -169,7 +168,7 @@ fn id_collision_treats_an_unreadable_local_copy_as_repairable() {
     .expect("plant broken file");
 
     assert!(
-        !exchange::import_state::id_collision_for_test(&paths, "deadbeef", &"ff".repeat(32))
+        !exchange::import_state::id_collision(&paths, "deadbeef", &"ff".repeat(32))
             .expect("an unparsable local copy is not an error for the import"),
         "unreadable copy must not read as a collision"
     );

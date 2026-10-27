@@ -25,7 +25,8 @@ use axum::{Json, Router};
 use crate::domains::sync::memory_store;
 use crate::serve::AppState;
 use crate::serve::jobs;
-use crate::serve::routes::{RouteEntry, accepted, guard_job, guard_mutating, respond};
+use crate::serve::routes::mutate_response::mutate_blocking;
+use crate::serve::routes::{RouteEntry, accepted, guard_job, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -116,13 +117,7 @@ async fn patch(
     Path(id): Path<String>,
     Json(req): Json<memory_store::PatchRequest>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("memory-stores.patch", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "memory-stores.patch", move |state| {
         {
             let cfg = state.cfg();
             let mut ctx = Ctx::lazy(state.paths(), &cfg);
@@ -133,8 +128,7 @@ async fn patch(
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
         memory_store::get(&mut ctx, &id)
     })
-    .await;
-    respond("memory-stores.patch", result, started)
+    .await
 }
 
 /// `POST /api/v1/memory-stores` — always `501 unsupported` (spec Non-Goal 3),
@@ -145,17 +139,10 @@ async fn create(
     State(state): State<AppState>,
     Json(req): Json<memory_store::CreateRequest>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("memory-stores.create", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "memory-stores.create", move |_| {
         memory_store::create(req)
     })
-    .await;
-    respond("memory-stores.create", result, started)
+    .await
 }
 
 /// `POST /api/v1/memory-stores/{id}/sync` — start the `store-sync` job
