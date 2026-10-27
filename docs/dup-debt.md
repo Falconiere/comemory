@@ -317,7 +317,7 @@ rather than advisory. When `similarity-rs` is missing, the
 gate **fails in CI** and **skips locally with a loud warning** that names the
 pinned install command and states plainly that it did not run.
 
-## The 235 pairs by area
+## The 227 pairs by area
 
 > **This table is stale and was already stale before #252.** It enumerates the
 > 235 pairs measured at #216 and was not re-authored as the ratchet moved
@@ -334,21 +334,21 @@ is stale.
 
 | Area | Pairs |
 | --- | --- |
-| `src/store/` | 99 |
+| `src/store/` | 95 |
 | `src/config/` | 27 |
-| `src/serve/routes/` | 26 |
+| `src/serve/routes/` | 25 |
 | `src/domains/sync/` | 11 |
 | `src/serve/` | 9 |
 | `src/serve/routes/memories/` | 9 |
 | `src/domains/integrations/setup/` | 8 |
 | `src/domains/retrieval/` | 7 |
 | `src/serve/jobs/` | 7 |
-| `src/domains/graph/` | 6 |
+| `src/domains/graph/` | 5 |
 | `src/domains/memories/` | 3 |
 | `src/utilities/` | 3 |
 | `src/` | 2 |
 | `src/cli/` | 2 |
-| `src/cli/output/` | 2 |
+| `src/cli/output/` | 1 |
 | `src/domains/code/ast/` | 2 |
 | `src/domains/sync/exchange/` | 2 |
 | `src/domains/sync/memory_store/` | 2 |
@@ -356,12 +356,11 @@ is stale.
 | `src/domains/code/` | 1 |
 | `src/domains/documents/document/` | 1 |
 | `src/domains/learning/` | 1 |
-| `src/domains/maintenance/` | 1 |
 | `src/domains/maintenance/doctor/` | 1 |
 | `src/domains/retrieval/unified/` | 1 |
-| **Total** | **235** |
+| **Total** | **227** |
 
-## The 235 pairs, grouped by area
+## The 227 pairs, grouped by area
 
 Grouped by directory. Similarity is the pinned detector's score at threshold
 0.85; line ranges are function/method spans at scan time. The ratchet re-scans
