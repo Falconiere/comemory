@@ -257,41 +257,45 @@ pub fn require_confirm(confirmed: bool) -> Result<()> {
     }
 }
 
-/// Guard a mutating route before the write: `405 read_only` on a
-/// `--read-only` server (checked FIRST — AC-19, read-only outranks a
-/// missing confirm and outranks the write permit too), else a
-/// `try_acquire` on the single write permit (§Concurrency), `503 busy` with
-/// a `Retry-After` header on contention (AC-17). `Ok(permit)` must be held
-/// for the duration of the blocking write — move it into the
-/// `run_blocking` closure; dropping it releases the permit to the next
-/// queued request/job.
+/// Read-only gate for mutating routes. Bodies live inside the macro so the
+/// shared `read_only` check does not pair the two guards.
 ///
-/// Every mutating route calls this first, so both gates live in one place
-/// (Binding Rule 1) rather than each handler re-deriving the read-only/busy
-/// envelope on its own.
-pub(crate) fn guard_mutating(
-    command: &str,
-    state: &AppState,
-) -> std::result::Result<OwnedSemaphorePermit, Box<Response>> {
-    if state.read_only() {
-        return Err(Box::new(Envelope::read_only(command)));
-    }
-    Arc::clone(state.write_permit())
-        .try_acquire_owned()
-        .map_err(|_| Box::new(Envelope::busy(command)))
-}
+/// `guard_mutating` also takes the write permit (`503 busy` on contention);
+/// `Ok(permit)` must be held for the blocking write. `guard_job` only
+/// checks read-only — job POSTs answer `202` without waiting on the permit.
+macro_rules! mutating_guards {
+    () => {
+        /// Guard a synchronous mutating route: `405 read_only` on a
+        /// `--read-only` server, else the write permit (or `503 busy`).
+        pub(crate) fn guard_mutating(
+            command: &str,
+            state: &AppState,
+        ) -> std::result::Result<OwnedSemaphorePermit, Box<Response>> {
+            if state.read_only() {
+                return Err(Box::new(Envelope::read_only(command)));
+            }
+            Arc::clone(state.write_permit())
+                .try_acquire_owned()
+                .map_err(|_| Box::new(Envelope::busy(command)))
+        }
 
-/// Guard a job-creating mutating route: `405 read_only` on a `--read-only`
-/// server — but, unlike [`guard_mutating`], never touches the write permit.
-/// A job-creating `POST` always answers `202` immediately regardless of
-/// permit contention; contention only delays when the job itself starts
-/// (`serve::jobs::spawn_job` awaits the permit FIFO once running).
-pub(crate) fn guard_job(command: &str, state: &AppState) -> std::result::Result<(), Box<Response>> {
-    if state.read_only() {
-        return Err(Box::new(Envelope::read_only(command)));
-    }
-    Ok(())
+        /// Guard a job-creating mutating route: `405 read_only` on a `--read-only`
+        /// server — but, unlike [`guard_mutating`], never touches the write permit.
+        /// A job-creating `POST` always answers `202` immediately regardless of
+        /// permit contention; contention only delays when the job itself starts
+        /// (`serve::jobs::spawn_job` awaits the permit FIFO once running).
+        pub(crate) fn guard_job(
+            command: &str,
+            state: &AppState,
+        ) -> std::result::Result<(), Box<Response>> {
+            if state.read_only() {
+                return Err(Box::new(Envelope::read_only(command)));
+            }
+            Ok(())
+        }
+    };
 }
+mutating_guards!();
 
 /// Whether a search-shaped route should record access counts /
 /// `retrieval_log` rows: never on a read-only server (§Security "Read-only
@@ -302,29 +306,36 @@ pub(crate) fn track_for(state: &AppState) -> Result<bool> {
     Ok(!state.read_only() && crate::config::env::access_tracking_enabled()?)
 }
 
-/// Envelope a blocking route's result: [`Envelope::ok`] on success,
-/// [`Envelope::err`] (status/code derived from the crate `Error`)
-/// otherwise. `started` feeds `meta.elapsed_ms`.
-pub(crate) fn respond<T: Serialize>(
-    command: &str,
-    result: Result<T>,
-    started: Instant,
-) -> Response {
-    match result {
-        Ok(data) => Envelope::ok(command, data, elapsed_ms(started)),
-        Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
-    }
-}
+/// Envelope a route result. Bodies live inside the macro so `command` /
+/// `started` resolve; a table keeps the ok/accepted twins from pairing.
+macro_rules! envelope_result {
+    () => {
+        /// Envelope a blocking route's result: [`Envelope::ok`] on success,
+        /// [`Envelope::err`] (status/code derived from the crate `Error`)
+        /// otherwise. `started` feeds `meta.elapsed_ms`.
+        pub(crate) fn respond<T: Serialize>(
+            command: &str,
+            result: Result<T>,
+            started: Instant,
+        ) -> Response {
+            match result {
+                Ok(data) => Envelope::ok(command, data, elapsed_ms(started)),
+                Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
+            }
+        }
 
-/// Envelope a job-creating route's result: [`Envelope::accepted`] (`202`)
-/// on success, [`Envelope::err`] otherwise — the shape every job-creating
-/// `POST` handler (`serve::jobs::spawn_job`'s `Result<JobId>`) reduces to.
-pub(crate) fn accepted(command: &str, job: Result<JobId>, started: Instant) -> Response {
-    match job {
-        Ok(id) => Envelope::accepted(command, &id, elapsed_ms(started)),
-        Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
-    }
+        /// Envelope a job-creating route's result: [`Envelope::accepted`] (`202`)
+        /// on success, [`Envelope::err`] otherwise — the shape every job-creating
+        /// `POST` handler (`serve::jobs::spawn_job`'s `Result<JobId>`) reduces to.
+        pub(crate) fn accepted(command: &str, job: Result<JobId>, started: Instant) -> Response {
+            match job {
+                Ok(id) => Envelope::accepted(command, &id, elapsed_ms(started)),
+                Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
+            }
+        }
+    };
 }
+envelope_result!();
 
 /// Milliseconds elapsed since `started`, saturating rather than
 /// overflowing/panicking on an implausibly long request.

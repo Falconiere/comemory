@@ -48,30 +48,40 @@ pub fn get(conn: &Connection, workspace_id: &str) -> Result<Option<SyncStateRow>
     )
 }
 
-/// Advance `pushed_seq` (and optionally stamp `last_sync_at`).
-pub fn set_pushed(conn: &Connection, workspace_id: &str, pushed_seq: i64, at: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        SyncState::update()
-            .set(&col::pushed_seq, pushed_seq)
-            .set(&col::last_sync_at, at)
-            .filter(col::workspace_id.eq(workspace_id))
-            .to_sql(),
-    )?;
-    Ok(())
+/// Advance one cursor column and stamp `last_sync_at`. A table keeps the
+/// pulled/pushed twins from pairing.
+macro_rules! set_cursor {
+    ($(
+        $(#[$meta:meta])*
+        pub fn $name:ident($seq_arg:ident, $col:expr);
+    )+) => {
+        $(
+            $(#[$meta])*
+            pub fn $name(
+                conn: &Connection,
+                workspace_id: &str,
+                $seq_arg: i64,
+                at: &str,
+            ) -> Result<()> {
+                orm::execute(
+                    conn,
+                    SyncState::update()
+                        .set($col, $seq_arg)
+                        .set(&col::last_sync_at, at)
+                        .filter(col::workspace_id.eq(workspace_id))
+                        .to_sql(),
+                )?;
+                Ok(())
+            }
+        )+
+    };
 }
 
-/// Advance `pulled_seq` (and stamp `last_sync_at`).
-pub fn set_pulled(conn: &Connection, workspace_id: &str, pulled_seq: i64, at: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        SyncState::update()
-            .set(&col::pulled_seq, pulled_seq)
-            .set(&col::last_sync_at, at)
-            .filter(col::workspace_id.eq(workspace_id))
-            .to_sql(),
-    )?;
-    Ok(())
+set_cursor! {
+    /// Advance `pushed_seq` (and stamp `last_sync_at`).
+    pub fn set_pushed(pushed_seq, &col::pushed_seq);
+    /// Advance `pulled_seq` (and stamp `last_sync_at`).
+    pub fn set_pulled(pulled_seq, &col::pulled_seq);
 }
 
 /// List every workspace this device has synced.

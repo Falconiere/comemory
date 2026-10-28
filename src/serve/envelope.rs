@@ -62,18 +62,6 @@ impl Envelope {
         error_response(command, status, code, e.to_string(), details, elapsed_ms)
     }
 
-    /// `401`, `code:"unauthorized"` — the versioned surface's enveloped form
-    /// of the router `guard`'s token check (legacy paths keep a plain-text
-    /// 401; AC-11).
-    pub fn unauthorized(command: &str) -> Response {
-        refusal(
-            command,
-            StatusCode::UNAUTHORIZED,
-            CODE_UNAUTHORIZED,
-            "missing or invalid token",
-        )
-    }
-
     /// `503`, `code:"busy"`, `Retry-After: 5` — the single write permit
     /// (§Concurrency) is held elsewhere; a synchronous mutating request never
     /// stalls into `SQLITE_BUSY` (AC-17). Called from
@@ -84,35 +72,6 @@ impl Envelope {
         res.headers_mut()
             .insert(header::RETRY_AFTER, HeaderValue::from_static("5"));
         res
-    }
-
-    /// `405`, `code:"read_only"` — a `mutating` route rejected on a
-    /// `--read-only` server. Called from `serve::routes::guard_mutating` and
-    /// `serve::routes::guard_job`.
-    pub fn read_only(command: &str) -> Response {
-        refusal(
-            command,
-            StatusCode::METHOD_NOT_ALLOWED,
-            CODE_READ_ONLY,
-            "server is read-only",
-        )
-    }
-
-    /// `400`, `code:"confirmation_required"` — a confirm-gated route called
-    /// without `"confirm":true` (POST body) / `?confirm=true` (DELETE).
-    /// `serve::routes::require_confirm` produces the same status/code by
-    /// returning `Error::ConfirmationRequired` through the generic
-    /// [`status_and_code`] mapping rather than calling this constructor
-    /// directly; kept as a standalone builder for tests exercising the
-    /// envelope shape in isolation.
-    pub fn confirmation_required(command: &str) -> Response {
-        let message = "this operation requires explicit confirmation";
-        refusal(
-            command,
-            StatusCode::BAD_REQUEST,
-            CODE_CONFIRMATION_REQUIRED,
-            message,
-        )
     }
 
     /// `202 Accepted`, `Location: /api/v1/jobs/{job_id}` — a job-creating
@@ -132,6 +91,55 @@ impl Envelope {
         }
         res
     }
+}
+
+/// Thin refusal constructors that only differ by status/code/message.
+/// A table keeps the near-identical twins from pairing.
+macro_rules! envelope_refusal_ctors {
+    ($(
+        $(#[$meta:meta])*
+        $name:ident => ($status:expr, $code:expr, $message:expr);
+    )+) => {
+        impl Envelope {
+            $(
+                $(#[$meta])*
+                pub fn $name(command: &str) -> Response {
+                    refusal(command, $status, $code, $message)
+                }
+            )+
+        }
+    };
+}
+
+envelope_refusal_ctors! {
+    /// `401`, `code:"unauthorized"` — the versioned surface's enveloped form
+    /// of the router `guard`'s token check (legacy paths keep a plain-text
+    /// 401; AC-11).
+    unauthorized => (
+        StatusCode::UNAUTHORIZED,
+        CODE_UNAUTHORIZED,
+        "missing or invalid token"
+    );
+    /// `405`, `code:"read_only"` — a `mutating` route rejected on a
+    /// `--read-only` server. Called from `serve::routes::guard_mutating` and
+    /// `serve::routes::guard_job`.
+    read_only => (
+        StatusCode::METHOD_NOT_ALLOWED,
+        CODE_READ_ONLY,
+        "server is read-only"
+    );
+    /// `400`, `code:"confirmation_required"` — a confirm-gated route called
+    /// without `"confirm":true` (POST body) / `?confirm=true` (DELETE).
+    /// `serve::routes::require_confirm` produces the same status/code by
+    /// returning `Error::ConfirmationRequired` through the generic
+    /// [`status_and_code`] mapping rather than calling this constructor
+    /// directly; kept as a standalone builder for tests exercising the
+    /// envelope shape in isolation.
+    confirmation_required => (
+        StatusCode::BAD_REQUEST,
+        CODE_CONFIRMATION_REQUIRED,
+        "this operation requires explicit confirmation"
+    );
 }
 
 /// Map a crate [`Error`] to its `/api/v1` HTTP status and machine-readable

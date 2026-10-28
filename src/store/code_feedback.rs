@@ -73,34 +73,48 @@ pub(crate) fn parent_identity(conn: &Connection, parent_id: i64) -> Result<Optio
     )
 }
 
-/// Upsert the `used` side of the per-symbol counter row: insert with
-/// `used_count = 1` or bump the existing count, refreshing `last_used` to
-/// `now` either way. Mirrors [`crate::store::feedback::upsert_used`].
-pub(crate) fn upsert_used(conn: &Connection, sym: &SymbolIdentity, now: &str) -> Result<()> {
-    conn.execute(
+/// Per-symbol counter upserts. A table keeps the used/irrelevant twins
+/// from pairing while each SQL stays literal.
+macro_rules! code_feedback_upserts {
+    ($(
+        $(#[$meta:meta])*
+        pub(crate) fn $name:ident($($arg:ident: &$aty:ty),* $(,)?) {
+            $sql:expr, $($bind:expr),+ $(,)?
+        }
+    )+) => {
+        $(
+            $(#[$meta])*
+            pub(crate) fn $name(conn: &Connection, $($arg: &$aty),*) -> Result<()> {
+                conn.execute($sql, params![$($bind),+])?;
+                Ok(())
+            }
+        )+
+    };
+}
+
+code_feedback_upserts! {
+    /// Upsert the `used` side of the per-symbol counter row: insert with
+    /// `used_count = 1` or bump the existing count, refreshing `last_used` to
+    /// `now` either way. Mirrors [`crate::store::feedback::upsert_used`].
+    pub(crate) fn upsert_used(sym: &SymbolIdentity, now: &str) {
         "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count, last_used)
              VALUES (?1, ?2, ?3, 1, 0, ?4)
              ON CONFLICT(repo, path, symbol)
              DO UPDATE SET used_count = used_count + 1,
                  last_used = MAX(COALESCE(last_used, ?4), ?4)",
-        params![sym.repo, sym.path, sym.symbol, now],
-    )?;
-    Ok(())
-}
-
-/// Upsert the `irrelevant` side of the per-symbol counter row: insert with
-/// `irrelevant_count = 1` or bump the existing count. `last_used` is left
-/// untouched — a dismissal is not a use. Mirrors
-/// [`crate::store::feedback::upsert_irrelevant`].
-pub(crate) fn upsert_irrelevant(conn: &Connection, sym: &SymbolIdentity) -> Result<()> {
-    conn.execute(
+        sym.repo, sym.path, sym.symbol, now,
+    }
+    /// Upsert the `irrelevant` side of the per-symbol counter row: insert with
+    /// `irrelevant_count = 1` or bump the existing count. `last_used` is left
+    /// untouched — a dismissal is not a use. Mirrors
+    /// [`crate::store::feedback::upsert_irrelevant`].
+    pub(crate) fn upsert_irrelevant(sym: &SymbolIdentity) {
         "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count)
              VALUES (?1, ?2, ?3, 0, 1)
              ON CONFLICT(repo, path, symbol)
              DO UPDATE SET irrelevant_count = irrelevant_count + 1",
-        params![sym.repo, sym.path, sym.symbol],
-    )?;
-    Ok(())
+        sym.repo, sym.path, sym.symbol,
+    }
 }
 
 #[cfg(test)]

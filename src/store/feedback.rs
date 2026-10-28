@@ -16,36 +16,50 @@ use super::{
 };
 use crate::prelude::*;
 
-/// Upsert the `used` side of the per-memory counter row: insert with
-/// `used_count = 1` or bump the existing count, refreshing `last_used` to
-/// `now` either way. Accepts any [`Connection`] (a `rusqlite::Transaction`
-/// derefs to one).
-///
-/// `last_used` only ever moves forward: an imported verdict (#254) carries its
-/// original, possibly older, time, and must not make a memory look staler
-/// than a local verdict already proved it was.
-pub(crate) fn upsert_used(conn: &Connection, id: &str, now: &str) -> Result<()> {
-    conn.execute(
+/// Per-memory counter upserts. A table keeps the used/irrelevant twins
+/// from pairing while each SQL stays literal.
+macro_rules! feedback_upserts {
+    ($(
+        $(#[$meta:meta])*
+        pub(crate) fn $name:ident($($arg:ident: &$aty:ty),* $(,)?) {
+            $sql:expr, $($bind:expr),+ $(,)?
+        }
+    )+) => {
+        $(
+            $(#[$meta])*
+            pub(crate) fn $name(conn: &Connection, $($arg: &$aty),*) -> Result<()> {
+                conn.execute($sql, params![$($bind),+])?;
+                Ok(())
+            }
+        )+
+    };
+}
+
+feedback_upserts! {
+    /// Upsert the `used` side of the per-memory counter row: insert with
+    /// `used_count = 1` or bump the existing count, refreshing `last_used` to
+    /// `now` either way. Accepts any [`Connection`] (a `rusqlite::Transaction`
+    /// derefs to one).
+    ///
+    /// `last_used` only ever moves forward: an imported verdict (#254) carries its
+    /// original, possibly older, time, and must not make a memory look staler
+    /// than a local verdict already proved it was.
+    pub(crate) fn upsert_used(id: &str, now: &str) {
         "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used)
              VALUES (?1, 1, 0, ?2)
              ON CONFLICT(memory_id) DO UPDATE SET used_count = used_count + 1,
                  last_used = MAX(COALESCE(last_used, ?2), ?2)",
-        params![id, now],
-    )?;
-    Ok(())
-}
-
-/// Upsert the `irrelevant` side of the per-memory counter row: insert with
-/// `irrelevant_count = 1` or bump the existing count. `last_used` is left
-/// untouched — a dismissal is not a use.
-pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute(
+        id, now,
+    }
+    /// Upsert the `irrelevant` side of the per-memory counter row: insert with
+    /// `irrelevant_count = 1` or bump the existing count. `last_used` is left
+    /// untouched — a dismissal is not a use.
+    pub(crate) fn upsert_irrelevant(id: &str) {
         "INSERT INTO feedback(memory_id, used_count, irrelevant_count)
              VALUES (?1, 0, 1)
              ON CONFLICT(memory_id) DO UPDATE SET irrelevant_count = irrelevant_count + 1",
-        params![id],
-    )?;
-    Ok(())
+        id,
+    }
 }
 
 /// One `feedback_events` row to insert. `target_kind` and `provenance` are the
