@@ -36,72 +36,78 @@ pub struct CodeRefRow {
     pub branch: Option<String>,
 }
 
-/// Emit reference edges for `refs` and persist their anchors.
-///
-/// Reference edges mirror the body-derived ones `memory_row::insert` writes
-/// from its [`crate::store::MemoryLinks`] input (`memory → file` /
-/// `memory → symbol`); the `edges` table dedups via `INSERT OR IGNORE`, so a
-/// ref also mentioned in the body collapses to one edge. The anchors are then
-/// written to `code_ref` via [`upsert`].
-pub fn materialize(
-    conn: &Connection,
-    memory_id: &str,
-    refs: &References,
-    created_at: &str,
-) -> Result<()> {
-    for r in &refs.files {
-        emit_edge(conn, memory_id, "file", REFERENCES_FILE, &r.id)?;
-    }
-    for r in &refs.symbols {
-        emit_edge(conn, memory_id, "symbol", REFERENCES_SYMBOL, &r.id)?;
-    }
-    upsert(conn, memory_id, refs, created_at)
+macro_rules! ref_materialization {
+    () => {
+        /// Emit reference edges for `refs` and persist their anchors.
+        ///
+        /// Reference edges mirror the body-derived ones `memory_row::insert` writes
+        /// from its [`crate::store::MemoryLinks`] input (`memory → file` /
+        /// `memory → symbol`); the `edges` table dedups via `INSERT OR IGNORE`, so a
+        /// ref also mentioned in the body collapses to one edge. The anchors are then
+        /// written to `code_ref` via [`upsert`].
+        pub fn materialize(
+            conn: &Connection,
+            memory_id: &str,
+            refs: &References,
+            created_at: &str,
+        ) -> Result<()> {
+            for r in &refs.files {
+                emit_edge(conn, memory_id, "file", REFERENCES_FILE, &r.id)?;
+            }
+            for r in &refs.symbols {
+                emit_edge(conn, memory_id, "symbol", REFERENCES_SYMBOL, &r.id)?;
+            }
+            upsert(conn, memory_id, refs, created_at)
+        }
+
+        /// Insert one reference edge (`memory → file|symbol`).
+        fn emit_edge(
+            conn: &Connection,
+            memory_id: &str,
+            dst_kind: &str,
+            rel: &str,
+            dst_id: &str,
+        ) -> Result<()> {
+            edges::insert(
+                conn,
+                EdgeKey {
+                    src_kind: "memory",
+                    src_id: memory_id,
+                    dst_kind,
+                    dst_id,
+                    rel,
+                },
+            )
+        }
+
+        /// Replace every `code_ref` row for `memory_id` with the current `refs` set.
+        ///
+        /// Full-replace (DELETE then INSERT) so a reference removed on re-save is
+        /// actually dropped — unlike the additive `edges` table.
+        pub fn upsert(
+            conn: &Connection,
+            memory_id: &str,
+            refs: &References,
+            created_at: &str,
+        ) -> Result<()> {
+            orm::execute(
+                conn,
+                CodeRef::delete()
+                    .filter(c::memory_id.eq(memory_id))
+                    .to_sql(),
+            )?;
+            for r in &refs.files {
+                insert_row(conn, memory_id, REFERENCES_FILE, r, created_at)?;
+            }
+            for r in &refs.symbols {
+                insert_row(conn, memory_id, REFERENCES_SYMBOL, r, created_at)?;
+            }
+            Ok(())
+        }
+    };
 }
 
-/// Insert one reference edge (`memory → file|symbol`).
-fn emit_edge(
-    conn: &Connection,
-    memory_id: &str,
-    dst_kind: &str,
-    rel: &str,
-    dst_id: &str,
-) -> Result<()> {
-    edges::insert(
-        conn,
-        EdgeKey {
-            src_kind: "memory",
-            src_id: memory_id,
-            dst_kind,
-            dst_id,
-            rel,
-        },
-    )
-}
-
-/// Replace every `code_ref` row for `memory_id` with the current `refs` set.
-///
-/// Full-replace (DELETE then INSERT) so a reference removed on re-save is
-/// actually dropped — unlike the additive `edges` table.
-pub fn upsert(
-    conn: &Connection,
-    memory_id: &str,
-    refs: &References,
-    created_at: &str,
-) -> Result<()> {
-    orm::execute(
-        conn,
-        CodeRef::delete()
-            .filter(c::memory_id.eq(memory_id))
-            .to_sql(),
-    )?;
-    for r in &refs.files {
-        insert_row(conn, memory_id, REFERENCES_FILE, r, created_at)?;
-    }
-    for r in &refs.symbols {
-        insert_row(conn, memory_id, REFERENCES_SYMBOL, r, created_at)?;
-    }
-    Ok(())
-}
+ref_materialization!();
 
 /// Insert a single anchor row.
 fn insert_row(
@@ -139,60 +145,66 @@ pub struct LiveRefRow {
     pub pinned_blob: Option<String>,
 }
 
-/// Every `code_ref` row of relation `rel` attached to a LIVE
-/// (`deleted_at IS NULL`) memory, ordered `(memory_id, dst_id)`.
-pub fn for_rel_live(conn: &Connection, rel: &str) -> Result<Vec<LiveRefRow>> {
-    orm::query_all(
-        conn,
-        CodeRef::select()
-            .column_expr(&c::memory_id.qualified(), "memory_id")
-            .column_expr(&c::dst_id.qualified(), "dst_id")
-            .column_expr(&c::pinned_blob.qualified(), "pinned_blob")
-            .join("memories", m::id.equals(&c::memory_id))
-            .filter(m::deleted_at.is_null())
-            .filter(c::rel.eq(rel))
-            .order_by(c::memory_id.asc())
-            .order_by(c::dst_id.asc())
-            .to_sql(),
-        |row| {
-            Ok(LiveRefRow {
-                memory_id: row.get(0)?,
-                dst_id: row.get(1)?,
-                pinned_blob: row.get(2)?,
-            })
-        },
-    )
+macro_rules! live_ref_lookups {
+    () => {
+        /// Every `code_ref` row of relation `rel` attached to a LIVE
+        /// (`deleted_at IS NULL`) memory, ordered `(memory_id, dst_id)`.
+        pub fn for_rel_live(conn: &Connection, rel: &str) -> Result<Vec<LiveRefRow>> {
+            orm::query_all(
+                conn,
+                CodeRef::select()
+                    .column_expr(&c::memory_id.qualified(), "memory_id")
+                    .column_expr(&c::dst_id.qualified(), "dst_id")
+                    .column_expr(&c::pinned_blob.qualified(), "pinned_blob")
+                    .join("memories", m::id.equals(&c::memory_id))
+                    .filter(m::deleted_at.is_null())
+                    .filter(c::rel.eq(rel))
+                    .order_by(c::memory_id.asc())
+                    .order_by(c::dst_id.asc())
+                    .to_sql(),
+                |row| {
+                    Ok(LiveRefRow {
+                        memory_id: row.get(0)?,
+                        dst_id: row.get(1)?,
+                        pinned_blob: row.get(2)?,
+                    })
+                },
+            )
+        }
+
+        /// Load every code reference attached to `memory_id`, ordered `rel, dst_id`.
+        pub fn for_memory(conn: &Connection, memory_id: &str) -> Result<Vec<CodeRefRow>> {
+            orm::query_all(
+                conn,
+                CodeRef::select()
+                    .columns_typed(&[
+                        &c::memory_id,
+                        &c::rel,
+                        &c::dst_id,
+                        &c::pinned_blob,
+                        &c::pinned_commit,
+                        &c::branch,
+                    ])
+                    .filter(c::memory_id.eq(memory_id))
+                    .order_by(c::rel.asc())
+                    .order_by(c::dst_id.asc())
+                    .to_sql(),
+                |row| {
+                    Ok(CodeRefRow {
+                        memory_id: row.get(0)?,
+                        rel: row.get(1)?,
+                        dst_id: row.get(2)?,
+                        pinned_blob: row.get(3)?,
+                        pinned_commit: row.get(4)?,
+                        branch: row.get(5)?,
+                    })
+                },
+            )
+        }
+    };
 }
 
-/// Load every code reference attached to `memory_id`, ordered `rel, dst_id`.
-pub fn for_memory(conn: &Connection, memory_id: &str) -> Result<Vec<CodeRefRow>> {
-    orm::query_all(
-        conn,
-        CodeRef::select()
-            .columns_typed(&[
-                &c::memory_id,
-                &c::rel,
-                &c::dst_id,
-                &c::pinned_blob,
-                &c::pinned_commit,
-                &c::branch,
-            ])
-            .filter(c::memory_id.eq(memory_id))
-            .order_by(c::rel.asc())
-            .order_by(c::dst_id.asc())
-            .to_sql(),
-        |row| {
-            Ok(CodeRefRow {
-                memory_id: row.get(0)?,
-                rel: row.get(1)?,
-                dst_id: row.get(2)?,
-                pinned_blob: row.get(3)?,
-                pinned_commit: row.get(4)?,
-                branch: row.get(5)?,
-            })
-        },
-    )
-}
+live_ref_lookups!();
 
 #[cfg(test)]
 #[path = "tests/code_ref.rs"]

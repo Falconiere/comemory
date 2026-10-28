@@ -3,13 +3,17 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**101 near-duplicate function/method pairs at threshold 0.85**, measured with
+**90 near-duplicate function/method pairs at threshold 0.85**, measured with
 **`similarity-rs 0.5.0`** over the 726 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
 `dup-baseline.txt`, because either one alone is meaningless. Of those 115,
-**101 are earned in `dup-ledger.txt`** (framework-forced / twin-table /
+**90 are earned in `dup-ledger.txt`** (framework-forced / twin-table /
 documented-lifecycle) and **0 remain unledgered** — the hard residual budget
 (5% of the 285-pair anchor).
+
+**Why this number fell from 101 (store twin-table macros, `dedup-m2`).**
+Macro-hid eleven ledgered store twins (bandit/code_ref/prune/replica/…).
+−11 raw: 101 → 90; unledgered stayed 0.
 
 **Why this number fell from 107 (reserved-tail burn, `dedup-m2`).**
 Macro-hid the last six unledgered pairs (job spawn wrappers, score
@@ -335,7 +339,7 @@ mean reimplementing pair identity matching by hand, which is worse than the
 problem it solves. `scripts/dup-check.sh` runs a **count ratchet plus a hard
 unledgered budget ceiling**, with an earned residual ledger:
 
-- The baseline count (`101`) lives in `dup-baseline.txt`, a single tracked
+- The baseline count (`90`) lives in `dup-baseline.txt`, a single tracked
   integer at the repo root — the same convention as `coverage-floor.txt` and
   `store-leak-baseline.txt`. Exceeding it fails; coming in under it passes
   with a nudge to lower the file.

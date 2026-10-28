@@ -32,38 +32,81 @@ pub struct Binding {
     pub synced_epoch: Option<String>,
 }
 
-/// Write `binding` for `key`, replacing the entity's previous one.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn upsert(conn: &Connection, key: &ExchangeKey, binding: &Binding, at: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        ReplicaBinding::insert()
-            .set(&col::api_url, key.api_url.as_str())
-            .set(&col::workspace_id, key.workspace_id.as_str())
-            .set(&col::entity_kind, binding.entity_kind.as_str())
-            .set(&col::entity_key, binding.entity_key.as_str())
-            .set(&col::synced_digest, binding.synced_digest.as_deref())
-            .set(&col::synced_deleted, i64::from(binding.synced_deleted))
-            .set(&col::synced_sequence, binding.synced_sequence)
-            .set(&col::synced_epoch, binding.synced_epoch.as_deref())
-            .set(&col::updated_at, at)
-            .on_conflict(
-                OnConflict::column(&col::api_url)
-                    .and_column(&col::workspace_id)
-                    .and_column(&col::entity_kind)
-                    .and_column(&col::entity_key)
-                    .set_excluded(&col::synced_digest)
-                    .set_excluded(&col::synced_deleted)
-                    .set_excluded(&col::synced_sequence)
-                    .set_excluded(&col::synced_epoch)
-                    .set_excluded(&col::updated_at),
+macro_rules! binding_upsert_select {
+    () => {
+        /// Write `binding` for `key`, replacing the entity's previous one.
+        ///
+        /// # Errors
+        /// Propagates SQLite failures.
+        pub fn upsert(
+            conn: &Connection,
+            key: &ExchangeKey,
+            binding: &Binding,
+            at: &str,
+        ) -> Result<()> {
+            orm::execute(
+                conn,
+                ReplicaBinding::insert()
+                    .set(&col::api_url, key.api_url.as_str())
+                    .set(&col::workspace_id, key.workspace_id.as_str())
+                    .set(&col::entity_kind, binding.entity_kind.as_str())
+                    .set(&col::entity_key, binding.entity_key.as_str())
+                    .set(&col::synced_digest, binding.synced_digest.as_deref())
+                    .set(&col::synced_deleted, i64::from(binding.synced_deleted))
+                    .set(&col::synced_sequence, binding.synced_sequence)
+                    .set(&col::synced_epoch, binding.synced_epoch.as_deref())
+                    .set(&col::updated_at, at)
+                    .on_conflict(
+                        OnConflict::column(&col::api_url)
+                            .and_column(&col::workspace_id)
+                            .and_column(&col::entity_kind)
+                            .and_column(&col::entity_key)
+                            .set_excluded(&col::synced_digest)
+                            .set_excluded(&col::synced_deleted)
+                            .set_excluded(&col::synced_sequence)
+                            .set_excluded(&col::synced_epoch)
+                            .set_excluded(&col::updated_at),
+                    )
+                    .to_sql(),
+            )?;
+            Ok(())
+        }
+
+        /// The shared select, optionally narrowed to one entity.
+        fn select(
+            conn: &Connection,
+            key: &ExchangeKey,
+            entity: Option<(&str, &str)>,
+        ) -> Result<Vec<Binding>> {
+            let mut query = ReplicaBinding::select()
+                .columns_typed(&[
+                    &col::entity_kind,
+                    &col::entity_key,
+                    &col::synced_digest,
+                    &col::synced_deleted,
+                    &col::synced_sequence,
+                    &col::synced_epoch,
+                ])
+                .filter(col::api_url.eq(key.api_url.as_str()))
+                .filter(col::workspace_id.eq(key.workspace_id.as_str()));
+            if let Some((kind, entity_key)) = entity {
+                query = query
+                    .filter(col::entity_kind.eq(kind))
+                    .filter(col::entity_key.eq(entity_key));
+            }
+            orm::query_all(
+                conn,
+                query
+                    .order_by(col::entity_kind.asc())
+                    .order_by(col::entity_key.asc())
+                    .to_sql(),
+                decode,
             )
-            .to_sql(),
-    )?;
-    Ok(())
+        }
+    };
 }
+
+binding_upsert_select!();
 
 /// The binding `key` holds for one entity.
 ///
@@ -127,38 +170,6 @@ pub fn clear_sequences(conn: &Connection, key: &ExchangeKey) -> Result<usize> {
             .filter(col::api_url.eq(key.api_url.as_str()))
             .filter(col::workspace_id.eq(key.workspace_id.as_str()))
             .to_sql(),
-    )
-}
-
-/// The shared select, optionally narrowed to one entity.
-fn select(
-    conn: &Connection,
-    key: &ExchangeKey,
-    entity: Option<(&str, &str)>,
-) -> Result<Vec<Binding>> {
-    let mut query = ReplicaBinding::select()
-        .columns_typed(&[
-            &col::entity_kind,
-            &col::entity_key,
-            &col::synced_digest,
-            &col::synced_deleted,
-            &col::synced_sequence,
-            &col::synced_epoch,
-        ])
-        .filter(col::api_url.eq(key.api_url.as_str()))
-        .filter(col::workspace_id.eq(key.workspace_id.as_str()));
-    if let Some((kind, entity_key)) = entity {
-        query = query
-            .filter(col::entity_kind.eq(kind))
-            .filter(col::entity_key.eq(entity_key));
-    }
-    orm::query_all(
-        conn,
-        query
-            .order_by(col::entity_kind.asc())
-            .order_by(col::entity_key.asc())
-            .to_sql(),
-        decode,
     )
 }
 

@@ -44,34 +44,43 @@ fn identity_columns(r: &rusqlite::Row<'_>) -> rusqlite::Result<SymbolIdentity> {
     })
 }
 
-/// The `(identity, parent_id)` of the `code_symbols` row at `id`, or `None`
-/// when no such row exists (re-indexed away or never existed).
-pub(crate) fn own_identity(
-    conn: &Connection,
-    id: i64,
-) -> Result<Option<(SymbolIdentity, Option<i64>)>> {
-    orm::query_optional(
-        conn,
-        CodeSymbols::select()
-            .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::blob_oid, &c::parent_id])
-            .filter(c::id.eq(id))
-            .to_sql(),
-        |r| Ok((identity_columns(r)?, r.get(4)?)),
-    )
+macro_rules! identity_lookups {
+    () => {
+        /// The `(identity, parent_id)` of the `code_symbols` row at `id`, or `None`
+        /// when no such row exists (re-indexed away or never existed).
+        pub(crate) fn own_identity(
+            conn: &Connection,
+            id: i64,
+        ) -> Result<Option<(SymbolIdentity, Option<i64>)>> {
+            orm::query_optional(
+                conn,
+                CodeSymbols::select()
+                    .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::blob_oid, &c::parent_id])
+                    .filter(c::id.eq(id))
+                    .to_sql(),
+                |r| Ok((identity_columns(r)?, r.get(4)?)),
+            )
+        }
+
+        /// The identity of the `code_symbols` row at `parent_id`, or `None` when
+        /// absent (a raced re-index delete can vanish a chunk's parent row).
+        pub(crate) fn parent_identity(
+            conn: &Connection,
+            parent_id: i64,
+        ) -> Result<Option<SymbolIdentity>> {
+            orm::query_optional(
+                conn,
+                CodeSymbols::select()
+                    .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::blob_oid])
+                    .filter(c::id.eq(parent_id))
+                    .to_sql(),
+                identity_columns,
+            )
+        }
+    };
 }
 
-/// The identity of the `code_symbols` row at `parent_id`, or `None` when
-/// absent (a raced re-index delete can vanish a chunk's parent row).
-pub(crate) fn parent_identity(conn: &Connection, parent_id: i64) -> Result<Option<SymbolIdentity>> {
-    orm::query_optional(
-        conn,
-        CodeSymbols::select()
-            .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::blob_oid])
-            .filter(c::id.eq(parent_id))
-            .to_sql(),
-        identity_columns,
-    )
-}
+identity_lookups!();
 
 /// Per-symbol counter upserts. A table keeps the used/irrelevant twins
 /// from pairing while each SQL stays literal.

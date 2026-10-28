@@ -34,19 +34,38 @@ pub struct PruneMemoryRow {
     pub last_accessed: Option<String>,
 }
 
-/// Count of `edges` rows sourced at a memory that no longer exists (or was
-/// soft-deleted) — the "orphan edges" figure in the scan report.
-pub fn count_orphan_memory_edges(conn: &Connection) -> Result<i64> {
-    conn.query_row(
-        "SELECT count(*) FROM edges e \
+macro_rules! orphan_memory_edges {
+    () => {
+        /// Count of `edges` rows sourced at a memory that no longer exists (or was
+        /// soft-deleted) — the "orphan edges" figure in the scan report.
+        pub fn count_orphan_memory_edges(conn: &Connection) -> Result<i64> {
+            conn.query_row(
+                "SELECT count(*) FROM edges e \
           WHERE e.src_kind = 'memory' \
             AND NOT EXISTS(SELECT 1 FROM memories m \
                              WHERE m.id = e.src_id AND m.deleted_at IS NULL)",
-        [],
-        |r| r.get(0),
-    )
-    .map_err(Error::from)
+                [],
+                |r| r.get(0),
+            )
+            .map_err(Error::from)
+        }
+
+        /// Delete every `edges` row sourced at a memory that no longer exists (or
+        /// was soft-deleted) — the write-side twin of
+        /// [`count_orphan_memory_edges`]'s scan.
+        pub fn delete_orphan_memory_edges(conn: &Connection) -> Result<()> {
+            conn.execute(
+                "DELETE FROM edges WHERE src_kind = 'memory' \
+           AND NOT EXISTS(SELECT 1 FROM memories m \
+                            WHERE m.id = src_id AND m.deleted_at IS NULL)",
+                [],
+            )?;
+            Ok(())
+        }
+    };
 }
+
+orphan_memory_edges!();
 
 /// `<repo>:<path>` for every distinct `code_symbols` file with no matching
 /// `indexed_files` cursor, ordered by repo then path.
@@ -94,19 +113,6 @@ pub fn memory_for_prune(conn: &Connection, id: &str) -> Result<PruneMemoryRow> {
     })
 }
 
-/// Delete every `edges` row sourced at a memory that no longer exists (or
-/// was soft-deleted) — the write-side twin of
-/// [`count_orphan_memory_edges`]'s scan.
-pub fn delete_orphan_memory_edges(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "DELETE FROM edges WHERE src_kind = 'memory' \
-           AND NOT EXISTS(SELECT 1 FROM memories m \
-                            WHERE m.id = src_id AND m.deleted_at IS NULL)",
-        [],
-    )?;
-    Ok(())
-}
-
 /// Delete the `code_vec` / `code_fts` / `code_symbols` rows for files no
 /// longer in `indexed_files` — the write-side twin of [`stale_code_files`].
 /// The two virtual tables don't participate in the FK cascade, so their
@@ -138,61 +144,67 @@ pub fn purge_stale_code_rows(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Drop edges that dangle once a file's `code_symbols` rows are purged:
-/// `references_symbol` / `references_file` (bare qualified dst) and
-/// `co_activated` (the `file:`-prefixed node id from `store::edges`). The
-/// read path tolerates a dangling dst, but the count grows every prune
-/// cycle without this.
-pub fn drop_dangling_edges(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "DELETE FROM edges \
+macro_rules! dangling_cleanup {
+    () => {
+        /// Drop edges that dangle once a file's `code_symbols` rows are purged:
+        /// `references_symbol` / `references_file` (bare qualified dst) and
+        /// `co_activated` (the `file:`-prefixed node id from `store::edges`). The
+        /// read path tolerates a dangling dst, but the count grows every prune
+        /// cycle without this.
+        pub fn drop_dangling_edges(conn: &Connection) -> Result<()> {
+            conn.execute(
+                "DELETE FROM edges \
           WHERE rel = 'references_symbol' \
             AND NOT EXISTS( \
                 SELECT 1 FROM code_symbols cs \
                  WHERE edges.dst_id = cs.repo || ':' || cs.path || ':' || cs.symbol \
             )",
-        [],
-    )?;
-    conn.execute(
-        "DELETE FROM edges \
+                [],
+            )?;
+            conn.execute(
+                "DELETE FROM edges \
           WHERE rel = 'references_file' \
             AND NOT EXISTS( \
                 SELECT 1 FROM code_symbols cs \
                  WHERE edges.dst_id = cs.repo || ':' || cs.path \
             )",
-        [],
-    )?;
-    conn.execute(
-        "DELETE FROM edges \
+                [],
+            )?;
+            conn.execute(
+                "DELETE FROM edges \
           WHERE rel = 'co_activated' \
             AND NOT EXISTS( \
                 SELECT 1 FROM code_symbols cs \
                  WHERE edges.dst_id = 'file:' || cs.repo || ':' || cs.path \
             )",
-        [],
-    )?;
-    Ok(())
-}
+                [],
+            )?;
+            Ok(())
+        }
 
-/// Drop `code_ref` rows left behind once their backing `references_file` /
-/// `references_symbol` edge is gone. `code_ref` and `edges` share the same
-/// `(memory_id, rel, dst_id)` key for these two relations, so a `code_ref`
-/// with no surviving edge is an orphan — exactly the rows
-/// [`drop_dangling_edges`] just purged (dangling dst) or that a deleted
-/// memory's edge sweep removed.
-pub fn drop_orphan_code_refs(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "DELETE FROM code_ref \
+        /// Drop `code_ref` rows left behind once their backing `references_file` /
+        /// `references_symbol` edge is gone. `code_ref` and `edges` share the same
+        /// `(memory_id, rel, dst_id)` key for these two relations, so a `code_ref`
+        /// with no surviving edge is an orphan — exactly the rows
+        /// [`drop_dangling_edges`] just purged (dangling dst) or that a deleted
+        /// memory's edge sweep removed.
+        pub fn drop_orphan_code_refs(conn: &Connection) -> Result<()> {
+            conn.execute(
+                "DELETE FROM code_ref \
           WHERE NOT EXISTS( \
               SELECT 1 FROM edges e \
                WHERE e.rel = code_ref.rel \
                  AND e.src_id = code_ref.memory_id \
                  AND e.dst_id = code_ref.dst_id \
           )",
-        [],
-    )?;
-    Ok(())
+                [],
+            )?;
+            Ok(())
+        }
+    };
 }
+
+dangling_cleanup!();
 
 #[cfg(test)]
 #[path = "tests/prune_apply.rs"]

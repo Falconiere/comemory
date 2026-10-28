@@ -72,13 +72,8 @@ src/serve/routes/memories/write.rs|feedback|save|documented-lifecycle|serve hand
 src/serve/routes/sync_replica.rs|feed_route|json_route|documented-lifecycle|serve handler twin feed_route/json_route
 src/store/activity_rollups.rs|distinct_commands|sample_durations|twin-table|store twin surface distinct_commands/sample_durations in src/store/activity_rollups.rs
 src/store/activity_rollups.rs|rollups|sample_durations|twin-table|store twin surface rollups/sample_durations in src/store/activity_rollups.rs
-src/store/bandit_arms.rs|load|seed|twin-table|store twin surface load/seed in src/store/bandit_arms.rs
-src/store/code_feedback.rs|own_identity|parent_identity|twin-table|mirror SQL helpers own_identity/parent_identity
-src/store/code_generation.rs|active|all|twin-table|store twin surface active/all in src/store/code_generation.rs
 src/store/code_graph_nodes.rs|citing_memories|fetch_node|twin-table|store twin surface citing_memories/fetch_node in src/store/code_graph_nodes.rs
 src/store/code_graph_nodes.rs|citing_memories|top_symbols|twin-table|store twin surface citing_memories/top_symbols in src/store/code_graph_nodes.rs
-src/store/code_ref.rs|for_memory|for_rel_live|twin-table|store twin surface for_memory/for_rel_live in src/store/code_ref.rs
-src/store/code_ref.rs|materialize|upsert|twin-table|store twin surface materialize/upsert in src/store/code_ref.rs
 src/store/code_sync.rs|cursor|set_cursor|twin-table|store twin accessors cursor/set_cursor
 src/store/doctor_probes.rs|live_memory_count|live_memory_hashes|twin-table|store twin accessors live_memory_count/live_memory_hashes
 src/store/feedback.rs|used_events_for_golden|used_query_ids|twin-table|store twin surface used_events_for_golden/used_query_ids in src/store/feedback.rs
@@ -86,16 +81,10 @@ src/store/index_runs.rs|clamp|unsigned|twin-table|store twin surface clamp/unsig
 src/store/memory_row.rs|live_bodies|live_ids|twin-table|store twin accessors live_bodies/live_ids
 src/store/memory_row.rs|mined_edges|restore_mined_edges|twin-table|store twin surface mined_edges/restore_mined_edges in src/store/memory_row.rs
 src/store/memory_signals.rs|bump_access|update_rank_scores|twin-table|store twin surface bump_access/update_rank_scores in src/store/memory_signals.rs
-src/store/prune_apply.rs|count_orphan_memory_edges|delete_orphan_memory_edges|twin-table|store twin surface count_orphan_memory_edges/delete_orphan_memory_edges in src/store/prune_apply.rs
-src/store/prune_apply.rs|drop_dangling_edges|drop_orphan_code_refs|twin-table|store twin surface drop_dangling_edges/drop_orphan_code_refs in src/store/prune_apply.rs
 src/store/query_expansions.rs|count|insert|twin-table|store twin surface count/insert in src/store/query_expansions.rs
 src/store/rebuild_copy_code.rs|copy_code_virtual_tables|copy_mined_edges|twin-table|store twin accessors copy_code_virtual_tables/copy_mined_edges
-src/store/replica_binding.rs|select|upsert|twin-table|store twin surface select/upsert in src/store/replica_binding.rs
-src/store/replica_pull_hold.rs|list|record|twin-table|store twin surface list/record in src/store/replica_pull_hold.rs
-src/store/replica_replay.rs|next|offer|twin-table|store twin surface next/offer in src/store/replica_replay.rs
 src/store/repository_approval.rs|canonical_for|label_for|twin-table|store twin surface canonical_for/label_for in src/store/repository_approval.rs
 src/store/retrieval_log.rs|distinct_prefix_matches|prefix_matches|twin-table|store twin surface distinct_prefix_matches/prefix_matches in src/store/retrieval_log.rs
 src/store/seed_scan.rs|live_memories_after|unshared_documents_after|twin-table|store twin accessors live_memories_after/unshared_documents_after
-src/store/sync_policy_snapshot.rs|load|save|twin-table|store twin surface load/save in src/store/sync_policy_snapshot.rs
 src/utilities/fetch.rs|download|final_url|documented-lifecycle|utility twin download/final_url
 src/utilities/fetch.rs|exchange_curl|exchange_wget|documented-lifecycle|utility twin exchange_curl/exchange_wget

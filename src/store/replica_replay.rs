@@ -30,50 +30,56 @@ pub struct ReplayRow {
     pub entry_json: String,
 }
 
-/// Offer `row`: kept when the entity has no row yet or `row` is later than the
-/// one it has. Returns whether it was kept.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn offer(conn: &Connection, key: &ExchangeKey, row: &ReplayRow) -> Result<bool> {
-    // Only a later position replaces the one held.
-    let later = Expr::raw(
-        "excluded.\"sequence\" > \"replica_replay\".\"sequence\"",
-        Vec::new(),
-    );
-    let keep_later = OnConflict::column(&col::api_url)
-        .and_column(&col::workspace_id)
-        .and_column(&col::entity_kind)
-        .and_column(&col::entity_key)
-        .set_excluded(&col::sequence)
-        .set_excluded(&col::entry_json)
-        .where_update(later);
-    let insert = ReplicaReplay::insert()
-        .set(&col::api_url, key.api_url.as_str())
-        .set(&col::workspace_id, key.workspace_id.as_str())
-        .set(&col::entity_kind, row.entity_kind.as_str())
-        .set(&col::entity_key, row.entity_key.as_str())
-        .set(&col::sequence, row.sequence)
-        .set(&col::entry_json, row.entry_json.as_str())
-        .on_conflict(keep_later);
-    Ok(orm::execute(conn, insert.to_sql())? > 0)
+macro_rules! replay_offer_next {
+    () => {
+        /// Offer `row`: kept when the entity has no row yet or `row` is later than the
+        /// one it has. Returns whether it was kept.
+        ///
+        /// # Errors
+        /// Propagates SQLite failures.
+        pub fn offer(conn: &Connection, key: &ExchangeKey, row: &ReplayRow) -> Result<bool> {
+            // Only a later position replaces the one held.
+            let later = Expr::raw(
+                "excluded.\"sequence\" > \"replica_replay\".\"sequence\"",
+                Vec::new(),
+            );
+            let keep_later = OnConflict::column(&col::api_url)
+                .and_column(&col::workspace_id)
+                .and_column(&col::entity_kind)
+                .and_column(&col::entity_key)
+                .set_excluded(&col::sequence)
+                .set_excluded(&col::entry_json)
+                .where_update(later);
+            let insert = ReplicaReplay::insert()
+                .set(&col::api_url, key.api_url.as_str())
+                .set(&col::workspace_id, key.workspace_id.as_str())
+                .set(&col::entity_kind, row.entity_kind.as_str())
+                .set(&col::entity_key, row.entity_key.as_str())
+                .set(&col::sequence, row.sequence)
+                .set(&col::entry_json, row.entry_json.as_str())
+                .on_conflict(keep_later);
+            Ok(orm::execute(conn, insert.to_sql())? > 0)
+        }
+
+        /// The next `limit` rows to apply, lowest position first.
+        ///
+        /// # Errors
+        /// Propagates SQLite failures.
+        pub fn next(conn: &Connection, key: &ExchangeKey, limit: usize) -> Result<Vec<ReplayRow>> {
+            let mine = col::api_url
+                .eq(key.api_url.as_str())
+                .and(col::workspace_id.eq(key.workspace_id.as_str()));
+            let lowest_first = ReplicaReplay::select()
+                .columns_typed(COLUMNS)
+                .filter(mine)
+                .order_by(col::sequence.asc())
+                .limit(i64::try_from(limit).unwrap_or(i64::MAX));
+            orm::query_all(conn, lowest_first.to_sql(), decode)
+        }
+    };
 }
 
-/// The next `limit` rows to apply, lowest position first.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn next(conn: &Connection, key: &ExchangeKey, limit: usize) -> Result<Vec<ReplayRow>> {
-    let mine = col::api_url
-        .eq(key.api_url.as_str())
-        .and(col::workspace_id.eq(key.workspace_id.as_str()));
-    let lowest_first = ReplicaReplay::select()
-        .columns_typed(COLUMNS)
-        .filter(mine)
-        .order_by(col::sequence.asc())
-        .limit(i64::try_from(limit).unwrap_or(i64::MAX));
-    orm::query_all(conn, lowest_first.to_sql(), decode)
-}
+replay_offer_next!();
 
 /// Every column [`decode`] reads, in order.
 const COLUMNS: &[&dyn toolu_orm::core::query_column::ColumnRef] = &[
