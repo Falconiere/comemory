@@ -142,7 +142,7 @@ fn days_until_gc(
 /// cannot be stat'd or its mtime is in the future (an unusable clock).
 fn mtime_days(path: &Path) -> Option<f64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
-    Some(modified.elapsed().ok()?.as_secs() as f64 / 86_400.0)
+    Some(modified.elapsed().ok()?.as_secs() as f64 / score::SECONDS_PER_DAY)
 }
 
 #[cfg(test)]

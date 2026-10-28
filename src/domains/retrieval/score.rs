@@ -108,6 +108,11 @@ pub fn rank_boost(raw: f64, median: f64, scale: f64, clamp: (f64, f64)) -> f64 {
 /// than any prior and must NOT be run through `bounded_boost()`.
 pub const SUPERSEDE_PENALTY: f64 = 0.2;
 
+/// Seconds in one day: the divisor behind every fractional-day age, shared
+/// by [`days_since`] and `memories::trash`'s mtime age so both count days
+/// the same way.
+pub const SECONDS_PER_DAY: f64 = 86_400.0;
+
 /// Whole-second days elapsed between an RFC 3339 timestamp and `now`, floored
 /// at zero. Shared by `retrieval::rerank`, `retrieval::code_prior`, and
 /// `maintenance::retention::low_value` so the consumers cannot drift on day
@@ -124,7 +129,7 @@ pub fn days_since(rfc3339: &str, now: OffsetDateTime) -> f64 {
     match OffsetDateTime::parse(rfc3339, &Rfc3339) {
         Ok(then) => {
             let secs = now.unix_timestamp() - then.unix_timestamp();
-            (secs as f64 / 86_400.0).max(0.0)
+            (secs as f64 / SECONDS_PER_DAY).max(0.0)
         }
         Err(e) => {
             tracing::warn!(
