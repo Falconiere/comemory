@@ -290,7 +290,7 @@ sides of every slice, with an empty normalized pair-set diff.
   coverage, which was never true. The shell paths are therefore no longer passed
   at all: an inert path inflates the target count and would let the gate's
   anti-vacuous guard pass over files nobody analyzes. Duplication in `scripts/`
-  is currently **unguarded**; catching it needs a shell-capable detector.
+  is covered by `scripts/jscpd-check.sh` (token clones), not by similarity-rs.
 - **Current measurement:** 263 pairs over 724 files after the M2 serve dedup
   (extractor + mutating helpers + test twin, −13) on top of the M1 burn
   (284 → 276) and #408's undocumented 285 → 284 step. Neither the threshold
@@ -301,13 +301,29 @@ sides of every slice, with an empty normalized pair-set diff.
 Re-run the gate, or the raw scan underneath it, yourself:
 
 ```bash
-bash scripts/dup-check.sh     # the gate: pinned-version check + ratchet
-just qa                       # check-all + deny + dup + machete
+bash scripts/dup-check.sh         # similarity-rs function pairs + 5% unledgered ceiling
+bash scripts/jscpd-check.sh       # jscpd token clones + 5% duplicated-lines ceiling
+bash scripts/cargo-dupes-check.sh # cargo-dupes AST groups + 5% near-lines ceiling
+just qa                           # check-all + deny + all three dup gates + machete
 
-# the raw scan the gate wraps
+# the raw scan the similarity-rs gate wraps
 similarity-rs --threshold 0.85 --fail-on-duplicates \
   $(git ls-files 'src/*.rs' | grep -v '/tests/')
 ```
+
+## Companion detectors (jscpd + cargo-dupes)
+
+Same **5%** project ceiling, different axes:
+
+| Gate | Tool (pinned) | Metric with 5% ceiling | Count ratchet |
+| --- | --- | --- | --- |
+| `scripts/jscpd-check.sh` | `jscpd` 5.4.2 | duplicated **lines** % over `src/` + `scripts/` | `jscpd-baseline.txt` (clone count) |
+| `scripts/cargo-dupes-check.sh` | `cargo-dupes` 0.2.1 | near-duplicate **lines** % over `src/` (`--exclude-tests`) | `cargo-dupes-exact-baseline.txt` + `cargo-dupes-near-baseline.txt` |
+
+Exact-duplicate lines % from cargo-dupes is still above 5% on this tree; that
+axis ratchets by **group count** only until burned under the ceiling (the gate
+logs the overage). `scripts/dup-check.sh` remains the function-pair /
+unledgered-ledger gate.
 
 ## How the gate treats this
 

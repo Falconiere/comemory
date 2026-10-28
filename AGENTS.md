@@ -44,7 +44,7 @@ bash scripts/dev-install.sh     # source install: cargo install --path . + sync 
 comemory setup                  # detect + apply this machine's/repo's onboarding
 just check                      # umbrella gate (alias of scripts/check-all.sh)
 just test                       # cargo nextest run --all-features
-just qa                         # check-all + cargo-deny + dup-check + machete + install.sh libc gate (docker)
+just qa                         # check-all + cargo-deny + dup-check + jscpd + cargo-dupes + machete + install.sh libc gate (docker)
 just e2e                        # real-binary end-to-end harness
 bash scripts/deploy.sh [--tag vX.Y.Z] [--dry-run]  # local stable release while Actions are off (docs/release.md §3b)
 bash scripts/deploy.sh --resume vX.Y.Z             # finish a pushed release after deploy.sh exited 2; never rebuilds
@@ -218,12 +218,12 @@ ceiling; nothing else declares a competing number. One rule, one enforcer:
 | Typos | `typos.toml`, `scripts/typos-check.sh` |
 | `docs/cli-reference.md` / `docs/guides/http-api.md` drift | `scripts/cli-docs-check.sh`, `scripts/http-docs-check.sh` |
 | Shipped migration SQL immutable | `scripts/migration-check.sh` |
-| Duplication ratchet | `scripts/dup-check.sh` vs `dup-baseline.txt` (pinned `similarity-rs`) |
+| Duplication ratchet | `scripts/dup-check.sh` vs `dup-baseline.txt` (pinned `similarity-rs`); `scripts/jscpd-check.sh` (5% lines + clone count); `scripts/cargo-dupes-check.sh` (5% near-lines + group counts) |
 | rusqlite confined to `src/store/` | `scripts/store-chokepoint-check.sh`, `store-leak-baseline.txt` |
 
-`just qa` adds the three
-tool-pinned gates (`deny-check`, `dup-check`, `machete-check` — version
-mismatch hard-fails everywhere, missing tool warns locally but fails in CI)
+`just qa` adds the tool-pinned gates (`deny-check`, `dup-check`,
+`jscpd-check`, `cargo-dupes-check`, `machete-check` — version mismatch
+hard-fails everywhere, missing tool warns locally but fails in CI)
 plus the `install.sh` libc gate on real distro images. Task is not "done"
 until `scripts/check-all.sh` exits 0.
 
