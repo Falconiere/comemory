@@ -26,8 +26,10 @@ use crate::domains::memories::Kind;
 use crate::domains::retrieval;
 use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::query_or_json::QueryOrJson;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx};
 use crate::serve::routes::search_body::body;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond, track_for};
+use crate::serve::routes::{RouteEntry, respond, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
@@ -71,7 +73,7 @@ pub fn table_entries() -> &'static [RouteEntry] {
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/api/v1/search", get(search_get).post(search_post))
+        .route("/api/v1/search", get(search).post(search))
         .route("/api/v1/search/suggest", get(suggest))
         .route("/api/v1/search/{query_id}/feedback", post(feedback))
 }
@@ -144,24 +146,14 @@ fn kinds_field<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Vec<Strin
     })
 }
 
-/// `GET /api/v1/search` — query-string form, no vector.
-async fn search_get(
+/// `GET|POST /api/v1/search`. `GET` carries the request in the query string
+/// and has no vector; `POST` carries it as a JSON body and is
+/// vector-capable.
+async fn search(
     State(state): State<AppState>,
     scope: RepoScope,
     headers: HeaderMap,
-    Query(mut req): Query<ConsoleSearch>,
-) -> Response {
-    req.repo = scope.resolve(req.repo);
-    let origin = state.http_origin(&headers);
-    execute(state, req, origin).await
-}
-
-/// `POST /api/v1/search` — body form, vector-capable.
-async fn search_post(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    headers: HeaderMap,
-    Json(mut req): Json<ConsoleSearch>,
+    QueryOrJson(mut req): QueryOrJson<ConsoleSearch>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let origin = state.http_origin(&headers);
@@ -283,22 +275,14 @@ async fn feedback(
     headers: HeaderMap,
     Json(req): Json<HitFeedback>,
 ) -> Response {
-    let started = Instant::now();
     let origin = state.http_origin(&headers);
-    let permit = match guard_mutating("search.feedback", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "search.feedback", move |state| {
         let request = into_feedback(query_id, req)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
-        learning::feedback::run(&mut ctx, request)
+        with_ctx(state, Some(origin), |ctx| {
+            learning::feedback::run(ctx, request)
+        })
     })
-    .await;
-    respond("search.feedback", result, started)
+    .await
 }
 
 /// Adapt one hit verdict onto the four-list request. `used` and `opened`

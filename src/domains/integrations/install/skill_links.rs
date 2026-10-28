@@ -126,20 +126,24 @@ fn replace_link(wanted: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Create a directory symlink. Release targets are unix-only.
-#[cfg(unix)]
+/// Create a directory symlink at `link` pointing to `wanted`. Release targets
+/// are unix-only, so the only platform-specific part is the one call inside
+/// the cfg-selected block; every other target refuses with
+/// [`Error::Unavailable`].
 fn symlink_dir(wanted: &Path, link: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(wanted, link)?;
-    Ok(())
-}
-
-/// Create a directory symlink. Release targets are unix-only.
-#[cfg(not(unix))]
-fn symlink_dir(_wanted: &Path, link: &Path) -> Result<()> {
-    Err(Error::Unavailable(format!(
-        "skill links are unix-only: {}",
-        link.display()
-    )))
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(wanted, link)?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        Err(Error::Unavailable(format!(
+            "skill links are unix-only: cannot link {} to {}",
+            link.display(),
+            wanted.display()
+        )))
+    }
 }
 
 #[cfg(test)]

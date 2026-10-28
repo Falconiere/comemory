@@ -81,6 +81,55 @@ fn import_new_upsert_is_accepted() {
 }
 
 #[test]
+fn import_of_a_near_duplicate_body_reports_the_closest_live_memory() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let local = "postgres advisory lock ordering fix for the migration runner";
+    save::run(
+        &mut ctx,
+        save::Request {
+            body: local.to_string(),
+            title: None,
+            kind: Kind::Note,
+            repo: "demo".into(),
+            tags: Vec::new(),
+            author: String::new(),
+            quality: 3,
+            supersedes: Vec::new(),
+            vector: None,
+            ref_file: Vec::new(),
+            ref_symbol: Vec::new(),
+        },
+        false,
+        None,
+    )
+    .expect("seed save");
+
+    let imported = "postgres advisory lock ordering fix for the migration runners";
+    let resp = exchange::import::run(
+        &mut ctx,
+        exchange::ImportRequest {
+            cursor: 0,
+            entries: vec![import_entry(imported, SyncOp::Upsert)],
+        },
+        Some("device-user"),
+    )
+    .expect("import");
+
+    assert_eq!(resp.results[0].status, exchange::ImportStatus::Accepted);
+    assert_eq!(
+        resp.results[0].duplicate_of.as_deref(),
+        Some(memory_id(local).as_str()),
+        "the importer flags the live local memory its body nearly repeats"
+    );
+}
+
+#[test]
 fn tombstone_unknown_id_is_deleted_status() {
     let home = tempfile::tempdir().expect("tempdir");
     let paths = Paths::new(home.path());
@@ -148,8 +197,7 @@ fn id_collision_rejects_live_hash_mismatch() {
     let id = memory_id(body);
 
     assert!(
-        exchange::import_state::id_collision_for_test(&paths, &id, &"ff".repeat(32))
-            .expect("probe"),
+        exchange::import_state::id_collision(&paths, &id, &"ff".repeat(32)).expect("probe"),
         "live memory hash must differ from a forged wire hash"
     );
 }
@@ -169,7 +217,7 @@ fn id_collision_treats_an_unreadable_local_copy_as_repairable() {
     .expect("plant broken file");
 
     assert!(
-        !exchange::import_state::id_collision_for_test(&paths, "deadbeef", &"ff".repeat(32))
+        !exchange::import_state::id_collision(&paths, "deadbeef", &"ff".repeat(32))
             .expect("an unparsable local copy is not an error for the import"),
         "unreadable copy must not read as a collision"
     );

@@ -33,9 +33,9 @@ use serde::Deserialize;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::maint::admin::contain_repo;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond};
+use crate::serve::routes::mutate_response::{mutate_blocking, with_lazy_ctx};
+use crate::serve::routes::{RouteEntry, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -83,16 +83,16 @@ struct ListQuery {
 async fn list_hooks(State(state): State<AppState>, Query(q): Query<ListQuery>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::hooks::run(
-            &mut ctx,
-            crate::domains::code::hooks::Request {
-                repo: q.repo,
-                enable: None,
-                disable: None,
-            },
-        )
+        with_lazy_ctx(&state, |ctx| {
+            crate::domains::code::hooks::run(
+                ctx,
+                crate::domains::code::hooks::Request {
+                    repo: q.repo,
+                    enable: None,
+                    disable: None,
+                },
+            )
+        })
     })
     .await;
     respond("hooks", result, started)
@@ -105,17 +105,7 @@ async fn toggle_hooks(
     State(state): State<AppState>,
     Json(req): Json<crate::domains::code::hooks::Request>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("hooks", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        apply_and_report(&state, req)
-    })
-    .await;
-    respond("hooks", result, started)
+    mutate_blocking(state, "hooks", move |state| apply_and_report(state, req)).await
 }
 
 /// The shared middle of both writers: contain an explicit `repo` (a hook
@@ -139,26 +129,22 @@ fn apply_and_report(
     let repo = req.repo.clone();
     let wrote_config = [req.enable.as_deref(), req.disable.as_deref()]
         .contains(&Some(crate::domains::code::hooks::REINFORCE_HOOK));
-    {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::hooks::run(&mut ctx, req)?;
-    }
+    with_lazy_ctx(state, |ctx| crate::domains::code::hooks::run(ctx, req))?;
     if wrote_config {
         // Only after the file is written: a failed write must not swap in
         // a config the file does not back (the `config.rs` `PUT` ordering).
         state.reload_cfg(state.paths())?;
     }
-    let cfg = state.cfg();
-    let mut ctx = Ctx::lazy(state.paths(), &cfg);
-    crate::domains::code::hooks::run(
-        &mut ctx,
-        crate::domains::code::hooks::Request {
-            repo,
-            enable: None,
-            disable: None,
-        },
-    )
+    with_lazy_ctx(state, |ctx| {
+        crate::domains::code::hooks::run(
+            ctx,
+            crate::domains::code::hooks::Request {
+                repo,
+                enable: None,
+                disable: None,
+            },
+        )
+    })
 }
 
 /// `PUT /api/v1/hooks/{name}` body: the desired state of that one hook.
@@ -183,13 +169,7 @@ async fn set_hook(
     Query(q): Query<ListQuery>,
     Json(body): Json<SetBody>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("hooks.set", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "hooks.set", move |state| {
         // Unconditional, for every name: `_` is not part of any hook's
         // spelling, so a console may send either `post_commit` or
         // `post-commit` (and either `search_edit_reinforcement` or its
@@ -202,7 +182,7 @@ async fn set_hook(
             (None, Some(hook))
         };
         apply_and_report(
-            &state,
+            state,
             crate::domains::code::hooks::Request {
                 repo: q.repo,
                 enable,
@@ -210,8 +190,7 @@ async fn set_hook(
             },
         )
     })
-    .await;
-    respond("hooks.set", result, started)
+    .await
 }
 
 #[cfg(test)]

@@ -44,30 +44,57 @@ pub fn is_loaded(conn: &Connection) -> bool {
     orm::query_one(conn, query.to_sql(), |r| r.get::<_, String>(0)).is_ok()
 }
 
-/// Read the configured memory vector dim from schema_meta.
-pub fn dim_memory(conn: &Connection) -> Result<usize> {
-    read_dimension(conn, "memory_vector_dim")
+/// Emit one `schema_meta` dimension reader per `fn => key` row; the readers
+/// share a signature and differ only in the key they look up.
+macro_rules! dim_readers {
+    ($($(#[$doc:meta])* $name:ident => $key:literal;)+) => {
+        $(
+            $(#[$doc])*
+            pub fn $name(conn: &Connection) -> Result<usize> {
+                read_dimension(conn, $key)
+            }
+        )+
+    };
 }
 
-/// Read the configured code vector dim from schema_meta.
-pub fn dim_code(conn: &Connection) -> Result<usize> {
-    read_dimension(conn, "code_vector_dim")
+dim_readers! {
+    /// Read the configured memory vector dim from schema_meta.
+    dim_memory => "memory_vector_dim";
+    /// Read the configured code vector dim from schema_meta.
+    dim_code => "code_vector_dim";
 }
 
-/// Insert a memory vector. Dim is validated against schema_meta.
-pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
-    write_vector(conn, VectorTarget::Memory(memory_id), vector, false)
+/// Emit one public vector writer per row: `name(id: Ty) => Target, replace`.
+/// The writers share a signature and differ only in the [`VectorTarget`]
+/// variant and whether [`write_vector`] drops the prior row first, so a
+/// table keeps them from reading as near-duplicate bodies.
+macro_rules! vector_writers {
+    ($($(#[$doc:meta])* $name:ident($id:ident: $ty:ty) => $target:ident, $replace:literal;)+) => {
+        $(
+            $(#[$doc])*
+            pub fn $name(conn: &Connection, $id: $ty, vector: &[f32]) -> Result<()> {
+                write_vector(conn, VectorTarget::$target($id), vector, $replace)
+            }
+        )+
+    };
 }
 
-/// Replace a memory's `memory_vec` row: drop any prior row for `memory_id`,
-/// then insert `vector` via [`insert_memory`] (dim validated there, same
-/// point it is today). `memory_vec` is a `vec0` virtual table whose primary
-/// key does not participate in SQLite's FK cascade, so a bare re-insert on
-/// an id that already has a row would leave two rows behind — every
-/// re-save (`domains::memories::save`) and re-embed (`maintenance::reembed`) of the same memory
-/// must replace, not duplicate.
-pub fn replace_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
-    write_vector(conn, VectorTarget::Memory(memory_id), vector, true)
+vector_writers! {
+    /// Insert a memory vector. Dim is validated against schema_meta.
+    insert_memory(memory_id: &str) => Memory, false;
+    /// Replace a memory's `memory_vec` row: drop any prior row for `memory_id`,
+    /// then insert `vector` via [`insert_memory`] (dim validated there, same
+    /// point it is today). `memory_vec` is a `vec0` virtual table whose primary
+    /// key does not participate in SQLite's FK cascade, so a bare re-insert on
+    /// an id that already has a row would leave two rows behind — every
+    /// re-save (`domains::memories::save`) and re-embed (`maintenance::reembed`) of the same memory
+    /// must replace, not duplicate.
+    replace_memory(memory_id: &str) => Memory, true;
+    /// Insert a code vector. Dim is validated against schema_meta.
+    insert_code(symbol_id: i64) => Code, false;
+    /// Replace a code symbol's `code_vec` row — the code-side twin of
+    /// [`replace_memory`], used by `maintenance::reembed`'s re-vectorize-in-place run.
+    replace_code(symbol_id: i64) => Code, true;
 }
 
 /// Raw `memory_vec.embedding` blob for `memory_id`, or `None` when it has no
@@ -158,17 +185,6 @@ pub struct CodeHit {
     pub symbol_id: i64,
     /// Cosine distance to the query vector (lower is closer).
     pub distance: f32,
-}
-
-/// Insert a code vector. Dim is validated against schema_meta.
-pub fn insert_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
-    write_vector(conn, VectorTarget::Code(symbol_id), vector, false)
-}
-
-/// Replace a code symbol's `code_vec` row — the code-side twin of
-/// [`replace_memory`], used by `maintenance::reembed`'s re-vectorize-in-place run.
-pub fn replace_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
-    write_vector(conn, VectorTarget::Code(symbol_id), vector, true)
 }
 
 /// Top-k nearest code symbols, optionally restricted to one `repo`

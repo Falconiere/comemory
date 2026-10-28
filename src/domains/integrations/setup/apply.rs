@@ -8,7 +8,7 @@
 //! happen here — would propagate.
 
 use super::detect::Detected;
-use super::{AGENT_HOST, DATA_DIR, GIT_HOOKS, INDEX_CODE, REINFORCE, Step, StepState};
+use super::{AGENT_HOST, DATA_DIR, GIT_HOOKS, INDEX_CODE, REINFORCE, RepoContext, Step, StepState};
 use crate::domains::integrations::install;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -68,22 +68,29 @@ fn agent_host(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
         .copied()
         .filter(|host| !detected.hosts_installed.contains(host))
         .collect();
-    let mut installed = Vec::new();
-    let mut failed = Vec::new();
+    let (mut installed, mut failed) = (Vec::new(), Vec::new());
     for host in pending {
-        let result = install::run(
-            ctx,
-            install::Request {
-                host: host.to_string(),
-                dry_run: false,
-                config_dir: None,
-            },
-        );
-        match result {
-            Ok(_) => installed.push(host),
+        match install_host(ctx, host) {
+            Ok(()) => installed.push(host),
             Err(error) => failed.push(format!("{host}: {error}")),
         }
     }
+    install_summary(&installed, &failed)
+}
+
+/// Install the bundled skills and hooks into one host, for real.
+fn install_host(ctx: &mut Ctx<'_>, host: &str) -> Result<()> {
+    let request = install::Request {
+        host: host.to_string(),
+        dry_run: false,
+        config_dir: None,
+    };
+    install::run(ctx, request).map(drop)
+}
+
+/// Fold the per-host outcomes into the step result: the "installed for ..."
+/// line, or an unavailable error that also names every failed host.
+fn install_summary(installed: &[&str], failed: &[String]) -> Result<String> {
     let done = if installed.is_empty() {
         "installed for no host".to_string()
     } else {
@@ -103,57 +110,55 @@ fn agent_host(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
 /// reported unavailable at plan time, so reaching here means the slots are
 /// free.
 fn git_hooks(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
-    let repo = repo_root(detected)?;
-    let resp = crate::domains::code::install_hooks::run(
-        ctx,
-        crate::domains::code::install_hooks::Request {
-            repo: repo.clone(),
-            force: false,
-        },
-    )?;
-    Ok(format!("installed {} in {repo}", resp.installed.join(", ")))
+    use crate::domains::code::install_hooks::{Request, run};
+    let root = &repo_context(detected, "not a git repository")?.root;
+    let request = Request {
+        repo: root.clone(),
+        force: false,
+    };
+    run(ctx, request).map(|done| format!("installed {} in {root}", done.installed.join(", ")))
 }
 
 /// Walk the repo and mirror its symbols into the code index.
 fn index_code(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
-    let repo = detected
-        .repo
-        .as_ref()
-        .ok_or_else(|| Error::Usage("index-code needs a git repository".into()))?;
-    let resp = crate::domains::code::index_code::run(
+    use crate::domains::code::index_code::{IndexMode, Request, run};
+    let repo = repo_context(detected, "index-code needs a git repository")?;
+    let (label, path) = (repo.label.clone(), repo.root.clone());
+    let done = run(
         ctx,
-        crate::domains::code::index_code::Request {
-            repo: repo.label.clone(),
-            path: repo.root.clone(),
-            mode: crate::domains::code::index_code::IndexMode::default(),
+        Request {
+            repo: label,
+            path,
+            mode: IndexMode::default(),
         },
     )?;
     Ok(format!(
         "indexed {} file(s) in {}",
-        resp.files_indexed, resp.repo
+        done.files_indexed, done.repo
     ))
 }
 
 /// Turn on the config-backed search-edit reinforcement row.
 fn reinforce(ctx: &mut Ctx<'_>) -> Result<String> {
-    crate::domains::code::hooks::run(
+    use crate::domains::code::hooks::{REINFORCE_HOOK, Request, run};
+    let enable = Some(REINFORCE_HOOK.to_string());
+    run(
         ctx,
-        crate::domains::code::hooks::Request {
+        Request {
             repo: None,
-            enable: Some(crate::domains::code::hooks::REINFORCE_HOOK.to_string()),
+            enable,
             disable: None,
         },
-    )?;
-    Ok("enabled in config.toml".to_string())
+    )
+    .map(|_| "enabled in config.toml".to_string())
 }
 
-/// The detected repo root, or a usage error naming what is missing.
-fn repo_root(detected: &Detected) -> Result<String> {
+/// The detected repo, or a usage error saying what is missing.
+fn repo_context<'a>(detected: &'a Detected, missing: &str) -> Result<&'a RepoContext> {
     detected
         .repo
         .as_ref()
-        .map(|repo| repo.root.clone())
-        .ok_or_else(|| Error::Usage("not a git repository".into()))
+        .ok_or_else(|| Error::Usage(missing.into()))
 }
 
 #[cfg(test)]

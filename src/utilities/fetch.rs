@@ -92,82 +92,93 @@ pub fn final_url(url: &str) -> Result<String> {
     }
 }
 
-fn exchange_curl(req: &Request<'_>) -> Result<Response> {
+/// Run one tool invocation that writes the response body to a private temp
+/// file and yields the HTTP status. Rejects injectable headers first, then
+/// deletes the file whether or not `run` succeeded (reading the body back only
+/// when it did), so neither backend repeats the temp-file lifecycle.
+fn exchange_via_body_file(
+    req: &Request<'_>,
+    run: impl FnOnce(&Path) -> Result<u16>,
+) -> Result<Response> {
     validate_headers(req.headers)?;
     let tmp = tempfile_path()?;
-    let mut cmd = Command::new("curl");
-    cmd.args(tls_args(req.url))
-        .args(["-sS", "-X", req.method, "-o"])
-        .arg(&tmp)
-        .args(["-w", "%{http_code}"]);
-    for (name, value) in req.headers {
-        cmd.arg("-H").arg(format!("{name}: {value}"));
+    match run(&tmp) {
+        Ok(status) => Ok(Response {
+            status,
+            body: take_body_file(&tmp, req.url)?,
+        }),
+        // The tool failed (or was never run): the status error is the one
+        // worth reporting, and whatever body it left behind is just cleanup.
+        Err(e) => {
+            remove_body_file(&tmp);
+            Err(e)
+        }
     }
-    if let Some(body) = req.body {
-        cmd.arg("--data-binary").arg(body);
-    }
-    cmd.arg(req.url);
-    let status_text = run_ok(&mut cmd, req.url);
-    let body = read_body_file(&tmp, req.url);
-    if let Err(e) = std::fs::remove_file(&tmp) {
-        tracing::debug!(error = %e, path = %tmp.display(), "fetch temp body cleanup failed");
-    }
-    let status_text = status_text?;
-    let body = body?;
-    let status: u16 = status_text.trim().parse().map_err(|_| {
-        Error::Unavailable(format!(
-            "could not parse HTTP status from curl for {}: got {status_text:?}",
-            req.url
-        ))
-    })?;
-    Ok(Response { status, body })
+}
+
+fn exchange_curl(req: &Request<'_>) -> Result<Response> {
+    exchange_via_body_file(req, |tmp| {
+        let mut cmd = Command::new("curl");
+        cmd.args(tls_args(req.url))
+            .args(["-sS", "-X", req.method, "-o"])
+            .arg(tmp)
+            .args(["-w", "%{http_code}"]);
+        for (name, value) in req.headers {
+            cmd.arg("-H").arg(format!("{name}: {value}"));
+        }
+        if let Some(body) = req.body {
+            cmd.arg("--data-binary").arg(body);
+        }
+        cmd.arg(req.url);
+        let status_text = run_ok(&mut cmd, req.url)?;
+        status_text.trim().parse().map_err(|_| {
+            Error::Unavailable(format!(
+                "could not parse HTTP status from curl for {}: got {status_text:?}",
+                req.url
+            ))
+        })
+    })
 }
 
 fn exchange_wget(req: &Request<'_>) -> Result<Response> {
-    validate_headers(req.headers)?;
-    let tmp = tempfile_path()?;
-    let mut cmd = Command::new("wget");
-    cmd.args(["-q", "-S", "-O"]).arg(&tmp);
-    for (name, value) in req.headers {
-        cmd.arg("--header").arg(format!("{name}: {value}"));
-    }
-    match (req.method, req.body) {
-        ("GET", None) => {}
-        ("POST", Some(body)) => {
-            cmd.arg("--post-data").arg(body);
+    exchange_via_body_file(req, |tmp| {
+        let mut cmd = Command::new("wget");
+        cmd.args(["-q", "-S", "-O"]).arg(tmp);
+        for (name, value) in req.headers {
+            cmd.arg("--header").arg(format!("{name}: {value}"));
         }
-        ("POST", None) => {
-            cmd.arg("--post-data").arg("");
+        match (req.method, req.body) {
+            ("GET", None) => {}
+            ("POST", Some(body)) => {
+                cmd.arg("--post-data").arg(body);
+            }
+            ("POST", None) => {
+                cmd.arg("--post-data").arg("");
+            }
+            (method, _) => {
+                return Err(Error::Unavailable(format!(
+                    "wget fallback cannot perform {method} for {}; install curl",
+                    req.url
+                )));
+            }
         }
-        (method, _) => {
-            return Err(Error::Unavailable(format!(
-                "wget fallback cannot perform {method} for {}; install curl",
-                req.url
-            )));
-        }
-    }
-    cmd.arg(req.url);
-    let out = cmd
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| unreachable(req.url, &e.to_string()))?;
-    let headers = String::from_utf8_lossy(&out.stderr);
-    let body = read_body_file(&tmp, req.url);
-    if let Err(e) = std::fs::remove_file(&tmp) {
-        tracing::debug!(error = %e, path = %tmp.display(), "fetch temp body cleanup failed");
-    }
-    let body = body?;
-    let status = http_status_from_wget_headers(&headers).ok_or_else(|| {
-        unreachable(
-            req.url,
-            if headers.trim().is_empty() {
-                "wget returned no status headers"
-            } else {
-                headers.trim()
-            },
-        )
-    })?;
-    Ok(Response { status, body })
+        cmd.arg(req.url);
+        let out = cmd
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| unreachable(req.url, &e.to_string()))?;
+        let headers = String::from_utf8_lossy(&out.stderr);
+        http_status_from_wget_headers(&headers).ok_or_else(|| {
+            unreachable(
+                req.url,
+                if headers.trim().is_empty() {
+                    "wget returned no status headers"
+                } else {
+                    headers.trim()
+                },
+            )
+        })
+    })
 }
 
 /// Reject header names/values that could inject additional HTTP headers.
@@ -271,15 +282,32 @@ fn probe(name: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// Read the curl/wget body file. Missing/unreadable after a spawn is an
-/// error (not a silent empty body).
-fn read_body_file(path: &Path, url: &str) -> Result<String> {
-    std::fs::read_to_string(path).map_err(|e| {
+/// Read the curl/wget body file, then delete it whether or not the read
+/// worked. Missing/unreadable after a spawn is an error (not a silent empty
+/// body); a failed cleanup is only logged.
+fn take_body_file(path: &Path, url: &str) -> Result<String> {
+    let body = std::fs::read_to_string(path).map_err(|e| {
         Error::Unavailable(format!(
             "could not read HTTP body for {url} from {}: {e}",
             path.display()
         ))
-    })
+    });
+    remove_body_file(path);
+    body
+}
+
+/// Delete a response temp file. [`tempfile_path`] pre-creates it, so it is
+/// there even when the request was refused before the tool ran; the tool may
+/// still have removed it itself, and an already-missing file is not worth a
+/// log line. Any other failure is.
+fn remove_body_file(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            tracing::debug!(error = %e, path = %path.display(), "fetch temp body cleanup failed");
+        }
+    }
 }
 
 /// Unpredictable path under the process temp dir for curl/wget `-o` bodies

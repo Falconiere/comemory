@@ -2,7 +2,9 @@
 //! The builders own SQL generation; this bridge retains native SQLite errors,
 //! cached statements, row decoders and caller-owned transaction boundaries.
 
-use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
+use rusqlite::{
+    CachedStatement, Connection, OptionalExtension, ParamsFromIter, Row, params_from_iter,
+};
 use toolu_orm::core::value::Value;
 
 use crate::prelude::*;
@@ -37,16 +39,27 @@ pub(super) fn execute_many<P: rusqlite::Params>(
     Ok(written)
 }
 
+/// A prepared cached statement with its generated values already bound, so
+/// every reader below shares one prepare/bind step and differs only in how it
+/// collects rows.
+type Bound<'conn> = (CachedStatement<'conn>, ParamsFromIter<Vec<Value>>);
+
+/// Prepare `query`'s SQL through the connection's statement cache and bind its
+/// generated values.
+fn prepare_bound(conn: &Connection, query: (String, Vec<Value>)) -> rusqlite::Result<Bound<'_>> {
+    let (sql, values) = query;
+    Ok((conn.prepare_cached(&sql)?, params_from_iter(values)))
+}
+
 /// Decode all rows from a generated query into owned values.
 pub(super) fn query_all<T>(
     conn: &Connection,
     query: (String, Vec<Value>),
     decode: impl FnMut(&Row<'_>) -> rusqlite::Result<T>,
 ) -> Result<Vec<T>> {
-    let (sql, values) = query;
-    Ok(conn
-        .prepare_cached(&sql)?
-        .query_map(params_from_iter(values), decode)?
+    let (mut statement, params) = prepare_bound(conn, query)?;
+    Ok(statement
+        .query_map(params, decode)?
         .collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
@@ -68,15 +81,84 @@ pub(super) fn query_optional<T>(
     Ok(query_row(conn, query, decode).optional()?)
 }
 
+/// Decode the first row, leaving SQLite's missing-row error to the caller:
+/// [`query_one`] surfaces it, [`query_optional`] turns it into `None`.
 fn query_row<T>(
     conn: &Connection,
     query: (String, Vec<Value>),
     decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
 ) -> rusqlite::Result<T> {
-    let (sql, values) = query;
-    conn.prepare_cached(&sql)?
-        .query_row(params_from_iter(values), decode)
+    let (mut statement, params) = prepare_bound(conn, query)?;
+    statement.query_row(params, decode)
 }
+
+/// Emit read-only store functions from a table of rows. Each row is
+/// `name(arg: Ty, ..) -> Ret = runner(query, decode)`: it runs one generated
+/// statement (`builder.to_sql()` / `.to_count_sql()` / `.to_exists_sql()`)
+/// through the named runner (`query_all` / `query_optional` / `query_one`)
+/// with a row decoder, so readers that differ only in
+/// arguments, filters and result shape stay one declaration each. A row may
+/// add `, empty_on slice_arg` before `=`: an empty slice then short-circuits
+/// to `Ret::default()` instead of building an empty `IN ()`.
+macro_rules! reads {
+    (
+        $($(#[$doc:meta])* $vis:vis $name:ident($($arg:ident: $aty:ty),*) -> $ret:ty
+            $(, empty_on $empty:ident)? = $runner:ident($query:expr, $decode:expr);)+
+    ) => {
+        $(
+            $(#[$doc])*
+            $vis fn $name(
+                conn: &rusqlite::Connection $(, $arg: $aty)*
+            ) -> $crate::prelude::Result<$ret> {
+                $(if $empty.is_empty() {
+                    return Ok(Default::default());
+                })?
+                $crate::store::orm::$runner(conn, $query, $decode)
+            }
+        )+
+    };
+}
+pub(super) use reads;
+
+/// Emit store functions that run one generated DML statement and discard the
+/// affected-row count. Each row is `name(arg: Ty, ..) = query;`, so deleters
+/// and flag updaters differ only in their arguments and statement.
+macro_rules! writes {
+    ($($(#[$doc:meta])* $vis:vis $name:ident($($arg:ident: $aty:ty),*) = $query:expr;)+) => {
+        $(
+            $(#[$doc])*
+            $vis fn $name(
+                conn: &rusqlite::Connection $(, $arg: $aty)*
+            ) -> $crate::prelude::Result<()> {
+                $crate::store::orm::execute(conn, $query.to_sql())?;
+                Ok(())
+            }
+        )+
+    };
+}
+pub(super) use writes;
+
+/// Emit store functions that run one hand-written parameterised SQL
+/// statement and discard the affected-row count. Each row is
+/// `name(arg: Ty, ..) = SQL, [param, ..];`, with the params bound to
+/// `?1..?N` in order, so raw upserts differ only in arguments, SQL and params.
+macro_rules! sql_writes {
+    (
+        $($(#[$doc:meta])* $vis:vis $name:ident($($arg:ident: $aty:ty),*) =
+            $sql:expr, [$($param:expr),+ $(,)?];)+
+    ) => {
+        $(
+            $(#[$doc])*
+            $vis fn $name(
+                conn: &rusqlite::Connection $(, $arg: $aty)*
+            ) -> $crate::prelude::Result<()> {
+                conn.execute($sql, rusqlite::params![$($param),+])?;
+                Ok(())
+            }
+        )+
+    };
+}
+pub(super) use sql_writes;
 
 #[cfg(test)]
 #[path = "tests/orm.rs"]

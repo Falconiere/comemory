@@ -16,6 +16,52 @@ use super::schema_code_generation::{
 };
 use crate::prelude::*;
 
+/// Emit the per-generation reads for one projection row type from an
+/// `index => field` table: `COLUMNS`, the positional `read` decoder, `load`
+/// (every row of a generation in `order` order) and `purge` (delete them).
+/// Everything comes from the same rows, so the column list and decoder cannot
+/// drift on order. `$table` / `$cols` are the table's generated builder and
+/// column module; each field shares its column's name.
+macro_rules! row_decoder {
+    (
+        $ty:ident, $table:ident, $cols:ident, order [$($ord:ident),+],
+        $($idx:literal => $field:ident),+ $(,)?
+    ) => {
+        impl $ty {
+            /// The columns [`Self::read`] expects, in order.
+            const COLUMNS: &'static [&'static dyn toolu_orm::core::query_column::ColumnRef] =
+                &[$(&$cols::$field),+];
+
+            /// One row of [`Self::COLUMNS`].
+            fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+                Ok(Self { $($field: r.get($idx)?),+ })
+            }
+
+            /// Every row of `(repo, generation_id)`, in a stable order.
+            fn load(conn: &Connection, repo: &str, generation_id: &str) -> Result<Vec<Self>> {
+                let query = $table::select()
+                    .columns_typed(Self::COLUMNS)
+                    .filter($cols::repo.eq(repo))
+                    .filter($cols::generation_id.eq(generation_id));
+                $(let query = query.order_by($cols::$ord.asc());)+
+                orm::query_all(conn, query.to_sql(), Self::read)
+            }
+
+            /// Delete every row of `(repo, generation_id)`.
+            fn purge(tx: &Connection, repo: &str, generation_id: &str) -> Result<()> {
+                orm::execute(
+                    tx,
+                    $table::delete()
+                        .filter($cols::repo.eq(repo))
+                        .filter($cols::generation_id.eq(generation_id))
+                        .to_sql(),
+                )?;
+                Ok(())
+            }
+        }
+    };
+}
+
 /// One file of a pulled manifest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct File {
@@ -25,20 +71,12 @@ pub struct File {
     pub blob_oid: String,
 }
 
-impl File {
-    /// The columns [`File::read`] expects, in order.
-    const COLUMNS: [&'static dyn toolu_orm::core::query_column::ColumnRef; 2] =
-        [&file_col::path, &file_col::blob_oid];
-
-    /// One row of [`File::COLUMNS`].
-    fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            path: r.get(0)?,
-            blob_oid: r.get(1)?,
-        })
-    }
-}
-
+row_decoder!(
+    File,
+    RemoteCodeFile,
+    file_col,
+    order [path],
+    0 => path, 1 => blob_oid);
 /// One snippet-free symbol of a pulled generation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Symbol {
@@ -56,30 +94,18 @@ pub struct Symbol {
     pub line_end: i64,
 }
 
-impl Symbol {
-    /// The columns [`Symbol::read`] expects, in order.
-    const COLUMNS: [&'static dyn toolu_orm::core::query_column::ColumnRef; 6] = [
-        &symbol_col::path,
-        &symbol_col::symbol,
-        &symbol_col::kind,
-        &symbol_col::lang,
-        &symbol_col::line_start,
-        &symbol_col::line_end,
-    ];
-
-    /// One row of [`Symbol::COLUMNS`].
-    fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            path: r.get(0)?,
-            symbol: r.get(1)?,
-            kind: r.get(2)?,
-            lang: r.get(3)?,
-            line_start: r.get(4)?,
-            line_end: r.get(5)?,
-        })
-    }
-}
-
+row_decoder!(
+    Symbol,
+    RemoteCodeSymbol,
+    symbol_col,
+    order [path, line_start],
+    0 => path,
+    1 => symbol,
+    2 => kind,
+    3 => lang,
+    4 => line_start,
+    5 => line_end,
+);
 /// One edge of a pulled generation's graph projection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edge {
@@ -95,28 +121,17 @@ pub struct Edge {
     pub anchor: Option<String>,
 }
 
-impl Edge {
-    /// The columns [`Edge::read`] expects, in order.
-    const COLUMNS: [&'static dyn toolu_orm::core::query_column::ColumnRef; 5] = [
-        &edge_col::rel,
-        &edge_col::src_path,
-        &edge_col::dst_path,
-        &edge_col::weight,
-        &edge_col::anchor,
-    ];
-
-    /// One row of [`Edge::COLUMNS`].
-    fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
-        Ok(Self {
-            rel: r.get(0)?,
-            src_path: r.get(1)?,
-            dst_path: r.get(2)?,
-            weight: r.get(3)?,
-            anchor: r.get(4)?,
-        })
-    }
-}
-
+row_decoder!(
+    Edge,
+    RemoteCodeEdge,
+    edge_col,
+    order [rel, src_path],
+    0 => rel,
+    1 => src_path,
+    2 => dst_path,
+    3 => weight,
+    4 => anchor,
+);
 /// A whole pulled projection, as one generation carries it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Projection {
@@ -188,28 +203,9 @@ pub fn replace_generation(
 /// # Errors
 /// Propagates SQLite failures.
 pub fn purge_generation(tx: &Connection, repo: &str, generation_id: &str) -> Result<()> {
-    orm::execute(
-        tx,
-        RemoteCodeFile::delete()
-            .filter(file_col::repo.eq(repo))
-            .filter(file_col::generation_id.eq(generation_id))
-            .to_sql(),
-    )?;
-    orm::execute(
-        tx,
-        RemoteCodeSymbol::delete()
-            .filter(symbol_col::repo.eq(repo))
-            .filter(symbol_col::generation_id.eq(generation_id))
-            .to_sql(),
-    )?;
-    orm::execute(
-        tx,
-        RemoteCodeEdge::delete()
-            .filter(edge_col::repo.eq(repo))
-            .filter(edge_col::generation_id.eq(generation_id))
-            .to_sql(),
-    )?;
-    Ok(())
+    File::purge(tx, repo, generation_id)?;
+    Symbol::purge(tx, repo, generation_id)?;
+    Edge::purge(tx, repo, generation_id)
 }
 
 /// Everything `(repo, generation_id)` holds, in one read.
@@ -222,38 +218,9 @@ pub fn purge_generation(tx: &Connection, repo: &str, generation_id: &str) -> Res
 /// Propagates SQLite failures.
 pub fn projection(conn: &Connection, repo: &str, generation_id: &str) -> Result<Projection> {
     Ok(Projection {
-        files: orm::query_all(
-            conn,
-            RemoteCodeFile::select()
-                .columns_typed(&File::COLUMNS)
-                .filter(file_col::repo.eq(repo))
-                .filter(file_col::generation_id.eq(generation_id))
-                .order_by(file_col::path.asc())
-                .to_sql(),
-            File::read,
-        )?,
-        symbols: orm::query_all(
-            conn,
-            RemoteCodeSymbol::select()
-                .columns_typed(&Symbol::COLUMNS)
-                .filter(symbol_col::repo.eq(repo))
-                .filter(symbol_col::generation_id.eq(generation_id))
-                .order_by(symbol_col::path.asc())
-                .order_by(symbol_col::line_start.asc())
-                .to_sql(),
-            Symbol::read,
-        )?,
-        edges: orm::query_all(
-            conn,
-            RemoteCodeEdge::select()
-                .columns_typed(&Edge::COLUMNS)
-                .filter(edge_col::repo.eq(repo))
-                .filter(edge_col::generation_id.eq(generation_id))
-                .order_by(edge_col::rel.asc())
-                .order_by(edge_col::src_path.asc())
-                .to_sql(),
-            Edge::read,
-        )?,
+        files: File::load(conn, repo, generation_id)?,
+        symbols: Symbol::load(conn, repo, generation_id)?,
+        edges: Edge::load(conn, repo, generation_id)?,
     })
 }
 

@@ -65,6 +65,38 @@ pub fn upsert(conn: &Connection, key: &ExchangeKey, binding: &Binding, at: &str)
     Ok(())
 }
 
+/// The shared select, optionally narrowed to one entity.
+fn select(
+    conn: &Connection,
+    key: &ExchangeKey,
+    entity: Option<(&str, &str)>,
+) -> Result<Vec<Binding>> {
+    let mut query = ReplicaBinding::select()
+        .columns_typed(&[
+            &col::entity_kind,
+            &col::entity_key,
+            &col::synced_digest,
+            &col::synced_deleted,
+            &col::synced_sequence,
+            &col::synced_epoch,
+        ])
+        .filter(col::api_url.eq(key.api_url.as_str()))
+        .filter(col::workspace_id.eq(key.workspace_id.as_str()));
+    if let Some((kind, entity_key)) = entity {
+        query = query
+            .filter(col::entity_kind.eq(kind))
+            .filter(col::entity_key.eq(entity_key));
+    }
+    orm::query_all(
+        conn,
+        query
+            .order_by(col::entity_kind.asc())
+            .order_by(col::entity_key.asc())
+            .to_sql(),
+        decode,
+    )
+}
+
 /// The binding `key` holds for one entity.
 ///
 /// # Errors
@@ -127,38 +159,6 @@ pub fn clear_sequences(conn: &Connection, key: &ExchangeKey) -> Result<usize> {
             .filter(col::api_url.eq(key.api_url.as_str()))
             .filter(col::workspace_id.eq(key.workspace_id.as_str()))
             .to_sql(),
-    )
-}
-
-/// The shared select, optionally narrowed to one entity.
-fn select(
-    conn: &Connection,
-    key: &ExchangeKey,
-    entity: Option<(&str, &str)>,
-) -> Result<Vec<Binding>> {
-    let mut query = ReplicaBinding::select()
-        .columns_typed(&[
-            &col::entity_kind,
-            &col::entity_key,
-            &col::synced_digest,
-            &col::synced_deleted,
-            &col::synced_sequence,
-            &col::synced_epoch,
-        ])
-        .filter(col::api_url.eq(key.api_url.as_str()))
-        .filter(col::workspace_id.eq(key.workspace_id.as_str()));
-    if let Some((kind, entity_key)) = entity {
-        query = query
-            .filter(col::entity_kind.eq(kind))
-            .filter(col::entity_key.eq(entity_key));
-    }
-    orm::query_all(
-        conn,
-        query
-            .order_by(col::entity_kind.asc())
-            .order_by(col::entity_key.asc())
-            .to_sql(),
-        decode,
     )
 }
 

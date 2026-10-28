@@ -30,9 +30,8 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
-use crate::serve::routes::{
-    RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond,
-};
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx, with_lazy_ctx};
+use crate::serve::routes::{RouteEntry, accepted, guard_job, require_confirm, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
@@ -133,9 +132,7 @@ async fn index_sources(
         "index",
         true,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = documents::index::run(&mut ctx, req)?;
+            let resp = with_lazy_ctx(&job_state, |ctx| documents::index::run(ctx, req))?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );
@@ -183,21 +180,13 @@ async fn unindex_path(
 /// closure, where the permit is held — [`require_confirm`] (AC-19) and
 /// finally `documents::unindex::run`.
 async fn unindex_target(state: AppState, target: String, confirm: bool) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("unindex", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "unindex", move |state| {
         require_confirm(confirm)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        documents::unindex::run(&mut ctx, documents::unindex::Request { target })
+        with_ctx(state, None, |ctx| {
+            documents::unindex::run(ctx, documents::unindex::Request { target })
+        })
     })
-    .await;
-    respond("unindex", result, started)
+    .await
 }
 
 #[cfg(test)]

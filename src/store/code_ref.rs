@@ -49,13 +49,24 @@ pub fn materialize(
     refs: &References,
     created_at: &str,
 ) -> Result<()> {
-    for r in &refs.files {
-        emit_edge(conn, memory_id, "file", REFERENCES_FILE, &r.id)?;
-    }
-    for r in &refs.symbols {
-        emit_edge(conn, memory_id, "symbol", REFERENCES_SYMBOL, &r.id)?;
+    for (dst_kind, rel, r) in tagged(refs) {
+        emit_edge(conn, memory_id, dst_kind, rel, &r.id)?;
     }
     upsert(conn, memory_id, refs, created_at)
+}
+
+/// Every ref in `refs` with the edge `dst_kind` and relation it is stored
+/// under — files first (`file` / `references_file`), then symbols (`symbol` /
+/// `references_symbol`). The one place that pairs a ref list with its edge
+/// vocabulary, so [`materialize`]'s edges and [`upsert`]'s anchor rows cannot
+/// disagree on a ref's relation.
+fn tagged(refs: &References) -> impl Iterator<Item = (&'static str, &'static str, &Ref)> {
+    let files = refs.files.iter().map(|r| ("file", REFERENCES_FILE, r));
+    let symbols = refs
+        .symbols
+        .iter()
+        .map(|r| ("symbol", REFERENCES_SYMBOL, r));
+    files.chain(symbols)
 }
 
 /// Insert one reference edge (`memory → file|symbol`).
@@ -94,11 +105,8 @@ pub fn upsert(
             .filter(c::memory_id.eq(memory_id))
             .to_sql(),
     )?;
-    for r in &refs.files {
-        insert_row(conn, memory_id, REFERENCES_FILE, r, created_at)?;
-    }
-    for r in &refs.symbols {
-        insert_row(conn, memory_id, REFERENCES_SYMBOL, r, created_at)?;
+    for (_, rel, r) in tagged(refs) {
+        insert_row(conn, memory_id, rel, r, created_at)?;
     }
     Ok(())
 }

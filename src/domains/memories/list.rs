@@ -73,14 +73,22 @@ pub enum Sort {
     Accessed,
 }
 
-impl From<Sort> for SortBy {
-    fn from(s: Sort) -> Self {
-        match s {
-            Sort::Created => Self::Created,
-            Sort::Quality => Self::Quality,
-            Sort::Accessed => Self::Accessed,
+/// Emit the list-surface `From` impls. A table keeps the two same-named
+/// trait methods from pairing while each conversion stays local.
+macro_rules! list_from_impls {
+    ($(
+        $Src:ty => $Dst:ty {
+            |$arg:ident| $body:expr
         }
-    }
+    )+) => {
+        $(
+            impl From<$Src> for $Dst {
+                fn from($arg: $Src) -> Self {
+                    $body
+                }
+            }
+        )+
+    };
 }
 
 /// One row of `comemory list` / `GET /api/v1/memories` output.
@@ -111,9 +119,16 @@ pub struct Row {
     pub access_count: u64,
 }
 
-impl From<ListRow> for Row {
-    fn from(r: ListRow) -> Self {
-        Self {
+list_from_impls! {
+    Sort => SortBy {
+        |s| match s {
+            Sort::Created => Self::Created,
+            Sort::Quality => Self::Quality,
+            Sort::Accessed => Self::Accessed,
+        }
+    }
+    ListRow => Row {
+        |r| Self {
             title: title_of(&r.body),
             id: r.id,
             kind: r.kind,

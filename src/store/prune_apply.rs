@@ -34,18 +34,37 @@ pub struct PruneMemoryRow {
     pub last_accessed: Option<String>,
 }
 
+/// `WHERE` body selecting `edges` rows sourced at a memory that no longer
+/// exists (or was soft-deleted). One predicate for the scan's count
+/// ([`count_orphan_memory_edges`]) and the apply's delete
+/// ([`delete_orphan_memory_edges`]), so the figure the report promises can never
+/// drift from what apply removes. Columns are qualified `edges.*` — valid in a
+/// `DELETE` as well as a `SELECT` — and the subquery is correlated on
+/// `edges.src_id`.
+const ORPHAN_MEMORY_EDGES: &str = "edges.src_kind = 'memory' \
+    AND NOT EXISTS(SELECT 1 FROM memories m \
+                     WHERE m.id = edges.src_id AND m.deleted_at IS NULL)";
+
 /// Count of `edges` rows sourced at a memory that no longer exists (or was
 /// soft-deleted) — the "orphan edges" figure in the scan report.
 pub fn count_orphan_memory_edges(conn: &Connection) -> Result<i64> {
     conn.query_row(
-        "SELECT count(*) FROM edges e \
-          WHERE e.src_kind = 'memory' \
-            AND NOT EXISTS(SELECT 1 FROM memories m \
-                             WHERE m.id = e.src_id AND m.deleted_at IS NULL)",
+        &format!("SELECT count(*) FROM edges WHERE {ORPHAN_MEMORY_EDGES}"),
         [],
         |r| r.get(0),
     )
     .map_err(Error::from)
+}
+
+/// Delete every `edges` row sourced at a memory that no longer exists (or
+/// was soft-deleted) — the write-side twin of
+/// [`count_orphan_memory_edges`]'s scan.
+pub fn delete_orphan_memory_edges(conn: &Connection) -> Result<()> {
+    conn.execute(
+        &format!("DELETE FROM edges WHERE {ORPHAN_MEMORY_EDGES}"),
+        [],
+    )?;
+    Ok(())
 }
 
 /// `<repo>:<path>` for every distinct `code_symbols` file with no matching
@@ -92,19 +111,6 @@ pub fn memory_for_prune(conn: &Connection, id: &str) -> Result<PruneMemoryRow> {
             last_accessed: r.get(3)?,
         })
     })
-}
-
-/// Delete every `edges` row sourced at a memory that no longer exists (or
-/// was soft-deleted) — the write-side twin of
-/// [`count_orphan_memory_edges`]'s scan.
-pub fn delete_orphan_memory_edges(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "DELETE FROM edges WHERE src_kind = 'memory' \
-           AND NOT EXISTS(SELECT 1 FROM memories m \
-                            WHERE m.id = src_id AND m.deleted_at IS NULL)",
-        [],
-    )?;
-    Ok(())
 }
 
 /// Delete the `code_vec` / `code_fts` / `code_symbols` rows for files no

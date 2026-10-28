@@ -133,12 +133,17 @@ pub fn symbol_count_excluding(conn: &Connection, repo: &str, paths: &[&str]) -> 
     Ok(usize::try_from(total.saturating_sub(inside)).unwrap_or(0))
 }
 
+/// The `schema_meta` key holding `repo`'s cursor.
+fn cursor_key(repo: &str) -> String {
+    format!("{CURSOR_KEY_PREFIX}{repo}")
+}
+
 /// The recorded cursor for `repo`, `None` when it was never pushed. A
 /// value that no longer parses is treated as never pushed rather than
 /// failing the push it gates — and logged, since the next push overwrites
 /// it and an operator would otherwise never learn it was corrupt.
 pub fn cursor(conn: &Connection, repo: &str) -> Result<Option<CodeSyncCursor>> {
-    let Some(raw) = schema_meta::get(conn, &format!("{CURSOR_KEY_PREFIX}{repo}"))? else {
+    let Some(raw) = schema_meta::get(conn, &cursor_key(repo))? else {
         return Ok(None);
     };
     match serde_json::from_str(&raw) {
@@ -153,7 +158,7 @@ pub fn cursor(conn: &Connection, repo: &str) -> Result<Option<CodeSyncCursor>> {
 /// Record what was just pushed for `repo`.
 pub fn set_cursor(conn: &Connection, repo: &str, cursor: &CodeSyncCursor) -> Result<()> {
     let json = serde_json::to_string(cursor)?;
-    schema_meta::upsert(conn, &format!("{CURSOR_KEY_PREFIX}{repo}"), &json)
+    schema_meta::upsert(conn, &cursor_key(repo), &json)
 }
 
 /// Remove every code-push cursor after repository policy or checkout

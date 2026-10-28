@@ -14,7 +14,7 @@ use super::{
     schema_code::{RepoMarker, repo_marker as c},
 };
 use rusqlite::{Connection, params};
-use toolu_orm::core::query_column::{ColumnRef, CommonOps};
+use toolu_orm::core::query_column::{Column, ColumnRef, CommonOps};
 
 use crate::prelude::*;
 
@@ -48,6 +48,23 @@ fn column_for_repo<T: rusqlite::types::FromSql>(
     )
 }
 
+/// Write one declared marker column of `repo`'s row; the count is `0` when
+/// the label has no marker row.
+fn update_for_repo<T: 'static>(
+    conn: &Connection,
+    column: &Column<T>,
+    value: i64,
+    repo: &str,
+) -> Result<usize> {
+    orm::execute(
+        conn,
+        RepoMarker::update()
+            .set(column, value)
+            .filter(c::repo.eq(repo))
+            .to_sql(),
+    )
+}
+
 /// The `repo_marker` row for `repo`, or `None` when there is no marker row
 /// (never indexed).
 pub(crate) fn read_for_lazy_reindex(
@@ -70,10 +87,29 @@ pub(crate) fn read_for_lazy_reindex(
     )
 }
 
-/// The stored `last_mined_commit` cursor for `repo`, or `None` when the repo
-/// has never been mined, or its marker row's cursor column is `NULL`.
-pub(crate) fn last_mined_commit(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    Ok(column_for_repo::<Option<String>>(conn, &c::last_mined_commit, repo)?.flatten())
+/// Generates the nullable-text column getters: each is one
+/// [`column_for_repo`] read with a `NULL` column flattened into `None`, so a
+/// missing marker row and an unset column answer the same.
+macro_rules! text_column_getters {
+    ($($(#[$doc:meta])* $vis:vis fn $name:ident => $column:ident;)+) => {$(
+        $(#[$doc])*
+        $vis fn $name(conn: &Connection, repo: &str) -> Result<Option<String>> {
+            Ok(column_for_repo::<Option<String>>(conn, &c::$column, repo)?.flatten())
+        }
+    )+};
+}
+
+text_column_getters! {
+    /// The stored `last_mined_commit` cursor for `repo`, or `None` when the repo
+    /// has never been mined, or its marker row's cursor column is `NULL`.
+    pub(crate) fn last_mined_commit => last_mined_commit;
+    /// The stored `last_head` for `repo`, or `None` when the repo has never
+    /// been indexed (or the column is `NULL`) — the head a code push reports
+    /// and a code manifest answers.
+    pub(crate) fn last_head => last_head;
+    /// `repo_marker.root_path` for `repo`, or `None` when there is no marker
+    /// row (or its root is `NULL`) — behind `domains::code::repo_admin`'s connect/patch.
+    pub(crate) fn root_path => root_path;
 }
 
 /// Advance `repo_marker.last_mined_commit` to `cursor`, creating the marker
@@ -86,13 +122,6 @@ pub(crate) fn advance_mined_cursor(conn: &Connection, repo: &str, cursor: &str) 
         params![repo, cursor],
     )?;
     Ok(())
-}
-
-/// The stored `last_head` for `repo`, or `None` when the repo has never
-/// been indexed (or the column is `NULL`) — the head a code push reports
-/// and a code manifest answers.
-pub(crate) fn last_head(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    Ok(column_for_repo::<Option<String>>(conn, &c::last_head, repo)?.flatten())
 }
 
 /// Whether `repo`'s `repo_marker.archived` flag is set. `None` when the
@@ -115,12 +144,6 @@ pub(crate) fn all_repos(conn: &Connection) -> Result<Vec<String>> {
     )
 }
 
-/// `repo_marker.root_path` for `repo`, or `None` when there is no marker
-/// row (or its root is `NULL`) — behind `domains::code::repo_admin`'s connect/patch.
-pub(crate) fn root_path(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    Ok(column_for_repo::<Option<String>>(conn, &c::root_path, repo)?.flatten())
-}
-
 /// Whether a `repo_marker` row exists for `repo` — behind
 /// `domains::code::repo_admin`'s "unknown repo" `404` gate.
 pub(crate) fn exists(conn: &Connection, repo: &str) -> Result<bool> {
@@ -136,13 +159,7 @@ pub(crate) fn exists(conn: &Connection, repo: &str) -> Result<bool> {
 /// Set `repo_marker.archived` for `repo`; the returned row count is `0`
 /// when the label is unknown — `crate::domains::code::repo_admin::archive`'s `404` gate.
 pub(crate) fn set_archived(conn: &Connection, repo: &str, archived: bool) -> Result<usize> {
-    orm::execute(
-        conn,
-        RepoMarker::update()
-            .set(&c::archived, i64::from(archived))
-            .filter(c::repo.eq(repo))
-            .to_sql(),
-    )
+    update_for_repo(conn, &c::archived, i64::from(archived), repo)
 }
 
 #[cfg(test)]

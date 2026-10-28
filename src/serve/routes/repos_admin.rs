@@ -25,10 +25,12 @@ use serde::Deserialize;
 
 use crate::domains::code::index_code::IndexMode;
 use crate::domains::code::repo_admin::{
-    ArchiveRequest, ConnectRequest, ConnectResponse, PatchRequest,
+    self, ArchiveRequest, ArchiveResponse, ConnectRequest, ConnectResponse, DisconnectResponse,
+    PatchRequest, PatchResponse,
 };
 use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx};
 use crate::serve::routes::{RouteEntry, guard_mutating, index_runs, require_confirm, respond};
 use crate::store::Connection;
 use crate::utilities::activity::Origin;
@@ -143,57 +145,68 @@ fn start_initial_index(
     Ok(resp)
 }
 
-/// `PATCH /api/v1/repos/{name}` — move a repo's root
-/// (`crate::domains::code::repo_admin::patch`). Every other field is `501 unsupported`.
-async fn patch_repo(
-    State(state): State<AppState>,
-    UrlPath(name): UrlPath<String>,
-    Json(req): Json<PatchRequest>,
-) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating(PATCH, &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
+/// Generate a `{name}`-addressed repo write: the handler takes the state, the
+/// URL `name`, and one extra extractor of type `$input`, then runs `$core`
+/// under [`mutate_blocking`] (read-only and write-permit gates first).
+///
+/// Three hand-written handlers differ in nothing but that extractor and their
+/// core, which is what `scripts/dup-check.sh` counts as near-duplicates (same
+/// trade as `learning_job_route!` in `routes::learning`).
+macro_rules! repo_write {
+    (
+        $(#[$doc:meta])*
+        $handler:ident, $command:expr, $input:ty, $core:path
+    ) => {
+        $(#[$doc])*
+        async fn $handler(
+            State(state): State<AppState>,
+            UrlPath(name): UrlPath<String>,
+            input: $input,
+        ) -> Response {
+            mutate_blocking(state, $command, move |state| $core(state, &name, input)).await
+        }
     };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
+}
+
+repo_write!(
+    /// `PATCH /api/v1/repos/{name}` — move a repo's root
+    /// (`crate::domains::code::repo_admin::patch`). Every other field is `501 unsupported`.
+    patch_repo,
+    PATCH,
+    Json<PatchRequest>,
+    patch_core
+);
+
+/// Contain the new `root`, if any, then apply the patch.
+fn patch_core(
+    state: &AppState,
+    name: &str,
+    Json(req): Json<PatchRequest>,
+) -> Result<PatchResponse> {
+    with_ctx(state, None, |ctx| {
         let root = req
             .root
             .as_deref()
-            .map(|root| contain(&state, &conn, root))
+            .map(|root| contain(state, ctx.conn()?, root))
             .transpose()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::code::repo_admin::patch(&mut ctx, &name, PatchRequest { root, ..req })
+        repo_admin::patch(ctx, name, PatchRequest { root, ..req })
     })
-    .await;
-    respond(PATCH, result, started)
 }
 
-/// `POST /api/v1/repos/{name}/archive` — flip `repo_marker.archived`
-/// (`crate::domains::code::repo_admin::archive`). The body is optional: an empty one
-/// archives ([`ArchiveRequest::default`]).
-async fn archive_repo(
-    State(state): State<AppState>,
-    UrlPath(name): UrlPath<String>,
-    body: Bytes,
-) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating(ARCHIVE, &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let req = archive_body(&body)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::code::repo_admin::archive(&mut ctx, &name, req)
-    })
-    .await;
-    respond(ARCHIVE, result, started)
+repo_write!(
+    /// `POST /api/v1/repos/{name}/archive` — flip `repo_marker.archived`
+    /// (`crate::domains::code::repo_admin::archive`). The body is optional: an empty one
+    /// archives ([`ArchiveRequest::default`]).
+    archive_repo,
+    ARCHIVE,
+    Bytes,
+    archive_core
+);
+
+/// Parse the optional body, then flip the archive flag.
+fn archive_core(state: &AppState, name: &str, body: Bytes) -> Result<ArchiveResponse> {
+    let req = archive_body(&body)?;
+    with_ctx(state, None, |ctx| repo_admin::archive(ctx, name, req))
 }
 
 /// Parse the optional archive body. Read as raw [`Bytes`] rather than
@@ -214,29 +227,24 @@ struct ConfirmQuery {
     confirm: bool,
 }
 
-/// `DELETE /api/v1/repos/{name}?confirm=true` — drop the repo's code index
-/// (`crate::domains::code::repo_admin::disconnect`), keeping its memories. Confirm-gated,
-/// with [`guard_mutating`] first (AC-19).
-async fn disconnect_repo(
-    State(state): State<AppState>,
-    UrlPath(name): UrlPath<String>,
+repo_write!(
+    /// `DELETE /api/v1/repos/{name}?confirm=true` — drop the repo's code index
+    /// (`crate::domains::code::repo_admin::disconnect`), keeping its memories. Confirm-gated,
+    /// with [`guard_mutating`] first (AC-19).
+    disconnect_repo,
+    DISCONNECT,
+    Query<ConfirmQuery>,
+    disconnect_core
+);
+
+/// Require `?confirm=true`, then drop the repo's code index.
+fn disconnect_core(
+    state: &AppState,
+    name: &str,
     Query(query): Query<ConfirmQuery>,
-) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating(DISCONNECT, &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        require_confirm(query.confirm)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::code::repo_admin::disconnect(&mut ctx, &name)
-    })
-    .await;
-    respond(DISCONNECT, result, started)
+) -> Result<DisconnectResponse> {
+    require_confirm(query.confirm)?;
+    with_ctx(state, None, |ctx| repo_admin::disconnect(ctx, name))
 }
 
 /// Canonicalize `root` inside an allowed root, as the `String`

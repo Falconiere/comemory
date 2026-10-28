@@ -178,3 +178,59 @@ fn both_identity_reads_carry_the_rows_blob_oid_as_the_code_version() {
         "the version is the resolved row's own, not the chunk's"
     );
 }
+
+/// Read one `code_feedback` counter row back as `(used, irrelevant, last_used)`.
+fn counter_row(conn: &rusqlite::Connection, symbol: &str) -> (i64, i64, Option<String>) {
+    conn.query_row(
+        "SELECT used_count, irrelevant_count, last_used FROM code_feedback \
+          WHERE repo = 'demo' AND path = 'a.rs' AND symbol = ?1",
+        [symbol],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .expect("counter row")
+}
+
+#[test]
+fn upserts_keep_the_latest_last_used_and_dismissals_never_touch_it() {
+    use comemory::store::code_feedback::{SymbolIdentity, upsert_irrelevant, upsert_used};
+    let (db, _tmp) = open_db();
+    let conn = db.conn();
+    let sym = |name: &str| SymbolIdentity {
+        repo: "demo".to_string(),
+        path: "a.rs".to_string(),
+        symbol: name.to_string(),
+        version: None,
+    };
+
+    // Dismissed first: the row exists with no last_used, and a later use
+    // stamps it.
+    let alpha = sym("alpha");
+    upsert_irrelevant(conn, &alpha).expect("dismiss");
+    assert_eq!(counter_row(conn, "alpha"), (0, 1, None));
+    upsert_used(conn, &alpha, "2026-06-10T00:00:00Z").expect("use");
+    assert_eq!(
+        counter_row(conn, "alpha"),
+        (1, 1, Some("2026-06-10T00:00:00Z".to_string()))
+    );
+
+    // A dismissal after a use leaves the stamp alone; an out-of-order older use
+    // bumps the count but cannot move the stamp backwards.
+    upsert_irrelevant(conn, &alpha).expect("dismiss again");
+    upsert_used(conn, &alpha, "2026-06-01T00:00:00Z").expect("older use");
+    assert_eq!(
+        counter_row(conn, "alpha"),
+        (2, 2, Some("2026-06-10T00:00:00Z".to_string()))
+    );
+    upsert_used(conn, &alpha, "2026-06-20T00:00:00Z").expect("newer use");
+    assert_eq!(
+        counter_row(conn, "alpha"),
+        (3, 2, Some("2026-06-20T00:00:00Z".to_string()))
+    );
+
+    // A fresh symbol used first inserts used_count = 1 and the stamp.
+    upsert_used(conn, &sym("beta"), "2026-06-05T00:00:00Z").expect("first use");
+    assert_eq!(
+        counter_row(conn, "beta"),
+        (1, 0, Some("2026-06-05T00:00:00Z".to_string()))
+    );
+}

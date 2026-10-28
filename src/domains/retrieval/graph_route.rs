@@ -100,7 +100,7 @@ pub fn expand_memory_seeds(
     // Seed ids are internal 8-hex content hashes from the provisional
     // ranking, not caller-supplied text.
     let seeds = serde_json::to_string(seed_ids)?;
-    let window = filters.window();
+    let window = filters.scope.window();
     let rels = rel_list();
     let rows = edges_retrieval::expand_memory_seeds(
         conn,

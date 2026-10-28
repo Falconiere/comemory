@@ -38,10 +38,7 @@ pub fn spawn_job<F>(
 where
     F: FnOnce() -> Result<Value> + Send + 'static,
 {
-    let accepted = registry.insert(command)?;
-    let id = accepted.id.clone();
-    spawn_registered(registry, write_permit, accepted, mutating, body);
-    Ok(id)
+    spawn_job_for(registry, write_permit, command, None, mutating, |_| body())
 }
 
 /// Like [`spawn_job`], but for a caller whose closure needs the job id
@@ -49,7 +46,10 @@ where
 /// [`RegistryProgressSink`] so `crate::domains::code::index_code::run_with_progress` can
 /// report progress into the very job it is running as. Otherwise
 /// identical: the job is registered [`JobStatus::Queued`] first, then
-/// `body` (handed its own id) runs exactly as [`spawn_job`]'s would.
+/// `body` (handed its own id) runs exactly as [`spawn_job`]'s would —
+/// including the FIFO wait on the write permit for a `mutating` job, as
+/// opposed to the fail-fast `routes::guard_mutating` `try_acquire` a
+/// synchronous request uses.
 pub fn spawn_job_with_id<F>(
     registry: &Arc<Registry>,
     write_permit: Arc<Semaphore>,

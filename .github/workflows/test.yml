@@ -150,6 +150,39 @@ jobs:
           fi
           echo "installing similarity-rs $matches (pinned by scripts/dup-check.sh)"
           cargo install similarity-rs --version "$matches" --locked
+      - name: Install jscpd
+        # Token-clone detector (complements similarity-rs). Absent from
+        # taiki-e/install-action's TOOLS.md — pin derived from scripts/jscpd-check.sh.
+        run: |
+          set -euo pipefail
+          matches="$(sed -n 's/^JSCPD_VERSION="\([^"]*\)"$/\1/p' scripts/jscpd-check.sh)"
+          count="$(printf '%s' "$matches" | grep -c . || true)"
+          if [ "$count" != "1" ]; then
+            echo "::error::expected exactly one JSCPD_VERSION assignment in scripts/jscpd-check.sh, found $count"
+            exit 1
+          fi
+          if ! [[ "$matches" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::JSCPD_VERSION is not a pinned semver version: '$matches'"
+            exit 1
+          fi
+          echo "installing jscpd $matches (pinned by scripts/jscpd-check.sh)"
+          cargo install jscpd --version "$matches" --locked
+      - name: Install cargo-dupes
+        # AST exact/near-dup detector. Pin derived from scripts/cargo-dupes-check.sh.
+        run: |
+          set -euo pipefail
+          matches="$(sed -n 's/^CARGO_DUPES_VERSION="\([^"]*\)"$/\1/p' scripts/cargo-dupes-check.sh)"
+          count="$(printf '%s' "$matches" | grep -c . || true)"
+          if [ "$count" != "1" ]; then
+            echo "::error::expected exactly one CARGO_DUPES_VERSION assignment in scripts/cargo-dupes-check.sh, found $count"
+            exit 1
+          fi
+          if ! [[ "$matches" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::CARGO_DUPES_VERSION is not a pinned semver version: '$matches'"
+            exit 1
+          fi
+          echo "installing cargo-dupes $matches (pinned by scripts/cargo-dupes-check.sh)"
+          cargo install cargo-dupes --version "$matches" --locked
       - name: Run check-all gate
         run: bash scripts/check-all.sh
       - name: Run duplication gate
@@ -159,6 +192,14 @@ jobs:
         # scripts/dup-check.sh for the full rationale. The same applies to the
         # two gates below, which is why all three sit here together.
         run: bash scripts/dup-check.sh
+      - name: Run jscpd gate
+        # Token-block clones over src/ + scripts/ with a 5% duplicated-lines
+        # ceiling plus a one-sided clone-count ratchet. See scripts/jscpd-check.sh.
+        run: bash scripts/jscpd-check.sh
+      - name: Run cargo-dupes gate
+        # AST exact/near groups over src/ with a 5% near-lines ceiling plus
+        # one-sided group-count ratchets. See scripts/cargo-dupes-check.sh.
+        run: bash scripts/cargo-dupes-check.sh
       - name: Run deny gate
         # Licence + advisory policy over the whole crate graph. Until #205 this
         # ran in no workflow at all, so cargo-deny's findings — the ones that

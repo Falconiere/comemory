@@ -25,9 +25,9 @@ use axum::{Json, Router};
 use crate::domains::sync::memory_store;
 use crate::serve::AppState;
 use crate::serve::jobs;
-use crate::serve::routes::{RouteEntry, accepted, guard_job, guard_mutating, respond};
+use crate::serve::routes::mutate_response::{mutate_blocking, with_lazy_ctx};
+use crate::serve::routes::{RouteEntry, accepted, guard_job, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -73,30 +73,37 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/memory-stores/{id}/sync", post(sync))
 }
 
-/// `GET /api/v1/memory-stores` — the one store, as a one-element array so a
-/// console can render a list without special-casing the count.
-async fn list(State(state): State<AppState>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        memory_store::list(&mut ctx)
-    })
-    .await;
-    respond("memory-stores", result, started)
+/// Generate a memory-store read: the handler takes the state plus the
+/// extractors in `$params`, runs `$body` over a lazy `Ctx` ([`with_lazy_ctx`]) on the blocking
+/// pool, and envelopes the result under `memory-stores`.
+///
+/// The two reads differ in nothing but their extractors and that body, which
+/// is what `scripts/dup-check.sh` counts as near-duplicates (same trade as
+/// `learning_job_route!` in `routes::learning`).
+macro_rules! store_read {
+    (
+        $(#[$doc:meta])*
+        $handler:ident, ($($params:tt)*), |$ctx:ident| $body:expr
+    ) => {
+        $(#[$doc])*
+        async fn $handler(State(state): State<AppState>, $($params)*) -> Response {
+            let started = Instant::now();
+            let result = run_blocking(move || with_lazy_ctx(&state, |$ctx| $body)).await;
+            respond("memory-stores", result, started)
+        }
+    };
 }
 
-/// `GET /api/v1/memory-stores/{id}` — that same store by id; anything other
-/// than `default` is `404 not_found`.
-async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        memory_store::get(&mut ctx, &id)
-    })
-    .await;
-    respond("memory-stores", result, started)
+store_read! {
+    /// `GET /api/v1/memory-stores` — the one store, as a one-element array so a
+    /// console can render a list without special-casing the count.
+    list, (), |ctx| memory_store::list(ctx)
+}
+
+store_read! {
+    /// `GET /api/v1/memory-stores/{id}` — that same store by id; anything other
+    /// than `default` is `404 not_found`.
+    get_one, (Path(id): Path<String>), |ctx| memory_store::get(ctx, &id)
 }
 
 /// `PATCH /api/v1/memory-stores/{id}` — rewrite the supplied `[git]` keys in
@@ -116,25 +123,12 @@ async fn patch(
     Path(id): Path<String>,
     Json(req): Json<memory_store::PatchRequest>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("memory-stores.patch", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        {
-            let cfg = state.cfg();
-            let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            memory_store::patch(&mut ctx, &id, &req)?;
-        }
+    mutate_blocking(state, "memory-stores.patch", move |state| {
+        with_lazy_ctx(state, |ctx| memory_store::patch(ctx, &id, &req))?;
         state.reload_cfg(state.paths())?;
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        memory_store::get(&mut ctx, &id)
+        with_lazy_ctx(state, |ctx| memory_store::get(ctx, &id))
     })
-    .await;
-    respond("memory-stores.patch", result, started)
+    .await
 }
 
 /// `POST /api/v1/memory-stores` — always `501 unsupported` (spec Non-Goal 3),
@@ -145,17 +139,10 @@ async fn create(
     State(state): State<AppState>,
     Json(req): Json<memory_store::CreateRequest>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("memory-stores.create", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "memory-stores.create", move |_| {
         memory_store::create(req)
     })
-    .await;
-    respond("memory-stores.create", result, started)
+    .await
 }
 
 /// `POST /api/v1/memory-stores/{id}/sync` — start the `store-sync` job
@@ -184,12 +171,12 @@ async fn sync(
         "store-sync",
         true,
         move |job_id| {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let done = memory_store::sync(&mut ctx, &id, &req, |line| {
-                if let Err(e) = registry.push_log(&job_id, line.to_string()) {
-                    tracing::debug!(job_id = %job_id, error = %e, "store-sync log line dropped");
-                }
+            let done = with_lazy_ctx(&job_state, |ctx| {
+                memory_store::sync(ctx, &id, &req, |line| {
+                    if let Err(e) = registry.push_log(&job_id, line.to_string()) {
+                        tracing::debug!(job_id = %job_id, error = %e, "store-sync log line dropped");
+                    }
+                })
             })?;
             Ok(serde_json::to_value(done)?)
         },

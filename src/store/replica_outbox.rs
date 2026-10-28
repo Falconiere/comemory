@@ -180,27 +180,35 @@ fn decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<PendingOperation> {
     })
 }
 
-/// Whether this machine still owes an upload for one entity.
-///
-/// The import path asks before overwriting local state: a memory edited here
-/// and not yet pushed must not be silently replaced by a peer's older view of
-/// it, because the payload the outbox holds is the only record of that edit.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn has_pending_for(conn: &Connection, entity_kind: &str, entity_key: &str) -> Result<bool> {
-    count_for(conn, entity_kind, entity_key, Some("pending"))
+/// Generate the two entity-presence probes over [`count_for`], one per state
+/// restriction; a table of `name => state` rows keeps the two same-shape
+/// wrappers from pairing in `scripts/dup-check.sh`.
+macro_rules! presence_probes {
+    ($($(#[$meta:meta])* $name:ident => $state:expr;)+) => {
+        $(
+            $(#[$meta])*
+            ///
+            /// # Errors
+            /// Propagates SQLite failures.
+            pub fn $name(conn: &Connection, entity_kind: &str, entity_key: &str) -> Result<bool> {
+                count_for(conn, entity_kind, entity_key, $state)
+            }
+        )+
+    };
 }
 
-/// Whether the outbox holds any row for this entity, in any state — unlike
-/// [`has_pending_for`], which only counts `pending`. Adoption uses this: an
-/// entity with a `rejected` or already-`accepted` row still has one, and
-/// must not be adopted a second time under a different operation id.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn has_any_for(conn: &Connection, entity_kind: &str, entity_key: &str) -> Result<bool> {
-    count_for(conn, entity_kind, entity_key, None)
+presence_probes! {
+    /// Whether this machine still owes an upload for one entity.
+    ///
+    /// The import path asks before overwriting local state: a memory edited here
+    /// and not yet pushed must not be silently replaced by a peer's older view of
+    /// it, because the payload the outbox holds is the only record of that edit.
+    has_pending_for => Some("pending");
+    /// Whether the outbox holds any row for this entity, in any state — unlike
+    /// [`has_pending_for`], which only counts `pending`. Adoption uses this: an
+    /// entity with a `rejected` or already-`accepted` row still has one, and
+    /// must not be adopted a second time under a different operation id.
+    has_any_for => None;
 }
 
 /// Rows for one entity, optionally narrowed to `state`, as `> 0`.

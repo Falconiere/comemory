@@ -16,9 +16,8 @@ use axum::{Json, Router};
 
 use crate::domains::retrieval;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond};
-use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_lazy_ctx};
+use crate::serve::routes::{RouteEntry, respond};
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -58,23 +57,12 @@ async fn update(
     State(state): State<AppState>,
     Json(req): Json<retrieval::config_retrieval::UpdateRequest>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("config.retrieval.update", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        {
-            let cfg = state.cfg();
-            let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            retrieval::config_retrieval::update(&mut ctx, req)?;
-        }
+    mutate_blocking(state, "config.retrieval.update", move |state| {
+        with_lazy_ctx(state, |ctx| retrieval::config_retrieval::update(ctx, req))?;
         state.reload_cfg(state.paths())?;
         Ok(retrieval::config_retrieval::get(&state.cfg()))
     })
-    .await;
-    respond("config.retrieval.update", result, started)
+    .await
 }
 
 #[cfg(test)]

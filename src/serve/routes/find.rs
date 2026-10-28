@@ -11,13 +11,14 @@
 use std::time::Instant;
 
 use axum::Router;
-use axum::extract::{Json, Query, State};
+use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::get;
 
 use crate::domains::retrieval;
 use crate::serve::AppState;
+use crate::serve::query_or_json::QueryOrJson;
 use crate::serve::routes::{RouteEntry, respond, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::activity::Origin;
@@ -44,28 +45,18 @@ pub fn table_entries() -> &'static [RouteEntry] {
 
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
-    Router::new().route("/api/v1/find", get(find_get).post(find_post))
+    Router::new().route("/api/v1/find", get(find).post(find))
 }
 
-/// `GET /api/v1/find` — query-string form, no vector. An `X-Comemory-Repo`
-/// header is the default `repo` filter when the query omits one.
-async fn find_get(
+/// `GET|POST /api/v1/find`. `GET` carries the request in the query string and
+/// has no vector; `POST` carries it as a JSON body and is vector-capable. An
+/// `X-Comemory-Repo` header is the default `repo` filter when the request
+/// omits one.
+async fn find(
     State(state): State<AppState>,
     headers: HeaderMap,
     scope: RepoScope,
-    Query(mut req): Query<retrieval::find::Request>,
-) -> Response {
-    req.repo = scope.resolve(req.repo);
-    let origin = state.http_origin(&headers);
-    execute(state, req, origin).await
-}
-
-/// `POST /api/v1/find` — body form, vector-capable.
-async fn find_post(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    headers: HeaderMap,
-    Json(mut req): Json<retrieval::find::Request>,
+    QueryOrJson(mut req): QueryOrJson<retrieval::find::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let origin = state.http_origin(&headers);

@@ -16,7 +16,8 @@ use axum::response::Response;
 use axum::routing::{get, post};
 
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond};
+use crate::serve::routes::mutate_response::mutate_response;
+use crate::serve::routes::{RouteEntry, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -70,21 +71,11 @@ async fn restore(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let started = Instant::now();
     let origin = state.http_origin(&headers);
-    let permit = match guard_mutating("trash.restore", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
-        crate::domains::memories::restore::run(&mut ctx, &id)
+    mutate_response(state, "trash.restore", Some(origin), move |ctx| {
+        crate::domains::memories::restore::run(ctx, &id)
     })
-    .await;
-    respond("trash.restore", result, started)
+    .await
 }
 
 #[cfg(test)]

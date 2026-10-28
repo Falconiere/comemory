@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use axum::extract::{DefaultBodyLimit, Query, State};
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::{get, post};
@@ -21,6 +21,8 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
+use crate::serve::query_or_json::QueryOrJson;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, index_runs, respond, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::activity::Origin;
@@ -72,10 +74,7 @@ pub fn table_entries() -> &'static [RouteEntry] {
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
-        .route(
-            "/api/v1/code/search",
-            get(code_search_get).post(code_search_post),
-        )
+        .route("/api/v1/code/search", get(code_search).post(code_search))
         .route("/api/v1/code/ast", post(code_ast))
         .route("/api/v1/code/index", post(code_index))
         .route(
@@ -84,31 +83,22 @@ pub fn router(_state: AppState) -> Router<AppState> {
         )
 }
 
-/// Both forms fold an `X-Comemory-Repo` header into `req.repo` when the
-/// query/body omits one ([`RepoScope`]).
-async fn code_search_get(
+/// `GET|POST /api/v1/code/search`. `GET` reads the request from the query
+/// string (no vector); `POST` reads it from a JSON body and is
+/// vector-capable. Both forms fold an `X-Comemory-Repo` header into
+/// `req.repo` when the request omits one ([`RepoScope`]).
+async fn code_search(
     State(state): State<AppState>,
     scope: RepoScope,
     headers: HeaderMap,
-    Query(mut req): Query<retrieval::search_code::Request>,
+    QueryOrJson(mut req): QueryOrJson<retrieval::search_code::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let origin = state.http_origin(&headers);
     handle(state, req, origin).await
 }
 
-async fn code_search_post(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    headers: HeaderMap,
-    Json(mut req): Json<retrieval::search_code::Request>,
-) -> Response {
-    req.repo = scope.resolve(req.repo);
-    let origin = state.http_origin(&headers);
-    handle(state, req, origin).await
-}
-
-/// Shared spawn-blocking + envelope wiring for the two handlers above.
+/// Spawn-blocking + envelope wiring for [`code_search`].
 async fn handle(state: AppState, req: retrieval::search_code::Request, origin: Origin) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || run(state, req, origin)).await;
@@ -141,9 +131,9 @@ async fn code_ast(
         drop(conn);
         let canonical = path_containment::contain_abs(&roots, Path::new(&req.file))?;
         req.file = canonical.to_string_lossy().into_owned();
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::pattern_search::run(&mut ctx, req)
+        with_lazy_ctx(&state, |ctx| {
+            crate::domains::code::pattern_search::run(ctx, req)
+        })
     })
     .await;
     respond("code.ast", result, started)
@@ -209,9 +199,9 @@ async fn code_ingest(State(state): State<AppState>, body: String) -> Response {
         "ingest-code",
         true,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = crate::domains::code::ingest_code::run(&mut ctx, &body)?;
+            let resp = with_lazy_ctx(&job_state, |ctx| {
+                crate::domains::code::ingest_code::run(ctx, &body)
+            })?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

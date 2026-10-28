@@ -44,7 +44,7 @@ bash scripts/dev-install.sh     # source install: cargo install --path . + sync 
 comemory setup                  # detect + apply this machine's/repo's onboarding
 just check                      # umbrella gate (alias of scripts/check-all.sh)
 just test                       # cargo nextest run --all-features
-just qa                         # check-all + cargo-deny + dup-check + machete + install.sh libc gate (docker)
+just qa                         # check-all + cargo-deny + dup-check + jscpd + cargo-dupes + machete + install.sh libc gate (docker)
 just e2e                        # real-binary end-to-end harness
 bash scripts/deploy.sh [--tag vX.Y.Z] [--dry-run]  # local stable release while Actions are off (docs/release.md §3b)
 bash scripts/deploy.sh --resume vX.Y.Z             # finish a pushed release after deploy.sh exited 2; never rebuilds
@@ -64,7 +64,19 @@ comemory follows toolu-conventions Rust stack
 Deviations are enumerated under "Deviations from toolu-conventions" — nowhere else.
 
 1. **No duplication / redundancy.** Shared logic is extracted into helper.
-   Enforced by `scripts/dup-check.sh` (excludes test trees) and review.
+   Enforced by `scripts/dup-check.sh` (excludes test trees) and review: a
+   one-sided count ratchet against `dup-baseline.txt`, plus a hard
+   **unledgered** residual budget of **5% of the 285-pair anchor (ceiling
+   14)**. Earned residuals live in `dup-ledger.txt`
+   (`path|fnA|fnB|category|evidence`): the evidence must state a concrete
+   reason (`scripts/lib/dup_ledger_lint.py` rejects a restated pair name),
+   and the ledger is capped at **40% of the anchor (114 rows)** so it can
+   only shrink. Same-name pairs cannot be ledgered and must be burned —
+   except category `trait-impl` (methods of one trait implemented by several
+   types). Over-ceiling unledgered or ledgered fails even when within the
+   ratchet file. Hiding twins in a zero-argument `macro_rules!` wrapper is
+   banned (`no-zero-arg-macro-wrapper`): it moves the bodies out of every
+   scanner's view without extracting anything.
 2. **No barrels — no `mod.rs`.** A module that grows into a folder keeps its
    file beside it (`src/store.rs` declares `mod migrate;`,
    `src/store/migrate.rs` holds it). A file whose only
@@ -212,12 +224,12 @@ ceiling; nothing else declares a competing number. One rule, one enforcer:
 | Typos | `typos.toml`, `scripts/typos-check.sh` |
 | `docs/cli-reference.md` / `docs/guides/http-api.md` drift | `scripts/cli-docs-check.sh`, `scripts/http-docs-check.sh` |
 | Shipped migration SQL immutable | `scripts/migration-check.sh` |
-| Duplication ratchet | `scripts/dup-check.sh` vs `dup-baseline.txt` (pinned `similarity-rs`) |
+| Duplication ratchet | `scripts/dup-check.sh` vs `dup-baseline.txt` (pinned `similarity-rs`); `scripts/jscpd-check.sh` (5% lines + clone count); `scripts/cargo-dupes-check.sh` (5% near-lines + group counts) |
 | rusqlite confined to `src/store/` | `scripts/store-chokepoint-check.sh`, `store-leak-baseline.txt` |
 
-`just qa` adds the three
-tool-pinned gates (`deny-check`, `dup-check`, `machete-check` — version
-mismatch hard-fails everywhere, missing tool warns locally but fails in CI)
+`just qa` adds the tool-pinned gates (`deny-check`, `dup-check`,
+`jscpd-check`, `cargo-dupes-check`, `machete-check` — version mismatch
+hard-fails everywhere, missing tool warns locally but fails in CI)
 plus the `install.sh` libc gate on real distro images. Task is not "done"
 until `scripts/check-all.sh` exits 0.
 
@@ -299,8 +311,8 @@ D3/D4/D5 policy lines — keep them verbatim.
   indexes its contents, while a single-file module is listed in its parent folder
   README and documented by its module doc. Configured list, not prose count,
   is source of truth.
-- **D6 — two project-local ast-grep rules** (`no-unsafe-without-safety.yml`,
-  `no-allow-attribute.yml`) are additions to
+- **D6 — three project-local ast-grep rules** (`no-unsafe-without-safety.yml`,
+  `no-allow-attribute.yml`, `no-zero-arg-macro-wrapper.yml`) are additions to
   `scripts/guardrails/patterns/rust/`; no kit file is modified, so kit
   re-copy merges rather than clobbers.
 - **D7 — eight `clippy::pedantic` lints start at `allow` with counted
@@ -315,7 +327,7 @@ D3/D4/D5 policy lines — keep them verbatim.
   copy. Its `#![allow(dead_code)]` is the one sanctioned exception.
 - **D10 — `extern crate self as comemory;`** in `src/lib.rs` keeps colocated
   test imports identical to the crate-root suite's.
-- **D11 — 192 of 692 test files remain crate-root integration tests** (kit's
+- **D11 — 192 of 699 test files remain crate-root integration tests** (kit's
   "one file per public surface" category): pinned by the
   `CARGO_BIN_EXE_comemory` constraint — see "Testing".
 - **D12 — RESOLVED.** Dispatcher retired; `.claude/settings.json` matches kit.

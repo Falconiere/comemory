@@ -58,8 +58,40 @@
 # machete-check) in the justfile's `qa` recipe, and runs authoritatively in CI,
 # where the pinned version is guaranteed.
 set -euo pipefail
+# Byte-order collation for every comparison below. `[[ a < b ]]` and `sort`
+# follow the locale while the live keys are sorted by python's code-point
+# `sorted()`; under en_US.UTF-8 they disagree on `_` vs letters and on case, so
+# a ledger row could be canonicalized one way and its live key the other and
+# `comm` would report a live pair as stale — on a dev Mac but not in CI.
+export LC_ALL=C
 
 SIMILARITY_RS_VERSION="0.5.0"
+
+# Residual-duplication budget: at most 5% of the anchored original baseline
+# (285 pairs when the burn campaign started). The tool emits a pair COUNT
+# only, so the percentage is computed against that fixed anchor — never
+# against a live function total (rejected as vacuous) and never against
+# the moving ratchet file. 5% of 285 is 14.
+#
+# The ceiling applies to UNLEDGERED pairs. `dup-ledger.txt` holds earned
+# residuals (framework-forced / twin-table / documented lifecycle) as
+# `path|fnA|fnB|category|evidence` rows with sorted fn names and no line
+# numbers. Same-name pairs cannot be ledgered (identity would be ambiguous).
+# Stale ledger rows fail; the raw total still ratchets against
+# dup-baseline.txt. See docs/dup-debt.md.
+DUP_BUDGET_ANCHOR=285
+DUP_BUDGET_PCT_MAX=5
+DUP_BUDGET_CEILING=$((DUP_BUDGET_ANCHOR * DUP_BUDGET_PCT_MAX / 100))
+# The ledger itself is capped, against the same anchor. Without this the
+# unledgered budget above is vacuous — any new twin could be ledgered instead of
+# fixed and the unledgered count would still read 0. The cap starts at the
+# measured size of the ledger (114 earned rows = 40% of 285) and, like
+# dup-baseline.txt, may only be LOWERED as pairs are burned; raising it is a
+# visible edit to this line, not a drift. Every row also has to carry a reason
+# (scripts/lib/dup_ledger_lint.py).
+DUP_LEDGER_PCT_MAX=40
+DUP_LEDGER_CEILING=$((DUP_BUDGET_ANCHOR * DUP_LEDGER_PCT_MAX / 100))
+LEDGER_FILE_NAME="dup-ledger.txt"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
@@ -67,6 +99,19 @@ source "$HERE/lib/common.sh"
 cd "$PROJECT_ROOT"
 
 STEP="dup-check"
+
+require_cmd python3 "brew install python3 | apt-get install python3"
+
+# Ledger evidence is checked before the tool lookup: it needs no similarity-rs,
+# so a contributor without the pinned build still cannot land a reason-less row.
+if [[ -f "$PROJECT_ROOT/$LEDGER_FILE_NAME" ]] \
+  && ! python3 -I "$HERE/lib/dup_ledger_lint.py" "$PROJECT_ROOT/$LEDGER_FILE_NAME"; then
+  log_err "$STEP" \
+    "$LEDGER_FILE_NAME rows above carry no reason — a ledgered pair must say why a helper would be worse"
+  exit 1
+fi
+python3 -I "$HERE/lib/test_dup_ledger_lint.py"
+
 INSTALL_HINT="cargo install similarity-rs --version $SIMILARITY_RS_VERSION --locked"
 
 if ! command -v similarity-rs >/dev/null 2>&1; then
@@ -189,6 +234,92 @@ if ! [[ "$current_count" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+LEDGER_FILE="$PROJECT_ROOT/$LEDGER_FILE_NAME"
+# Parse live pairs to path|fnA|fnB (fn names sorted). Same-name pairs keep both
+# equal names; they may not appear in the ledger (ambiguous identity).
+live_keys_file="$(mktemp -t comemory-dup-live.XXXXXX)"
+trap 'rm -f "$scan_log" "$live_keys_file"' EXIT
+# LC_ALL=C on both key lists: python's sorted() and locale `sort` disagree
+# under en_US.UTF-8, so `comm` falsely reports stale ledger rows on macOS.
+printf '%s\n' "$scan_output" | python3 -c '
+import re, sys
+pat = re.compile(
+    r"^\s*(\S+):\d+-\d+ (?:function|method) (\S+) <-> \S+:\d+-\d+ (?:function|method) (\S+)"
+)
+for line in sys.stdin:
+    m = pat.match(line)
+    if not m:
+        continue
+    a, b = sorted([m[2], m[3]])
+    print(f"{m[1]}|{a}|{b}")
+' | LC_ALL=C sort > "$live_keys_file"
+
+ledger_keys_file="$(mktemp -t comemory-dup-led.XXXXXX)"
+trap 'rm -f "$scan_log" "$live_keys_file" "$ledger_keys_file"' EXIT
+: > "$ledger_keys_file"
+if [[ -f "$LEDGER_FILE" ]]; then
+  # Skip blanks and # comments. Columns: path|fnA|fnB|category|evidence.
+  while IFS='|' read -r path fn_a fn_b _category _evidence; do
+    [[ -z "${path:-}" || "$path" == \#* ]] && continue
+    if [[ -z "${fn_a:-}" || -z "${fn_b:-}" || -z "${_category:-}" ]]; then
+      log_err "$STEP" "malformed $LEDGER_FILE_NAME row (need path|fnA|fnB|category|evidence)"
+      trap - EXIT
+      exit 1
+    fi
+    # Same-name pairs are ambiguous by identity, so they are burned — except
+    # the methods of ONE trait implemented by several types, which share a name
+    # by construction and cannot be renamed apart. Those take category
+    # `trait-impl`; the row is matched one-to-one with a live pair (no `sort -u`
+    # below), so a second same-name pair in the file is still unledgered.
+    if [[ "$fn_a" == "$fn_b" && "$_category" != "trait-impl" ]]; then
+      log_err "$STEP" \
+        "ledger forbids same-name pairs ($path|$fn_a|$fn_b) unless category is trait-impl — identity is ambiguous; burn them instead"
+      trap - EXIT
+      exit 1
+    fi
+    # Canonicalize fn order so a swapped ledger row still matches.
+    if [[ "$fn_a" < "$fn_b" || "$fn_a" == "$fn_b" ]]; then
+      printf '%s|%s|%s\n' "$path" "$fn_a" "$fn_b"
+    else
+      printf '%s|%s|%s\n' "$path" "$fn_b" "$fn_a"
+    fi
+  done < "$LEDGER_FILE" | LC_ALL=C sort > "$ledger_keys_file"
+fi
+
+stale_count="$(LC_ALL=C comm -23 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
+if (( stale_count > 0 )); then
+  log_err "$STEP" \
+    "$stale_count stale $LEDGER_FILE_NAME row(s) not in the live scan; see $scan_log"
+  trap - EXIT
+  exit 1
+fi
+
+ledgered_count="$(LC_ALL=C comm -12 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
+unledgered_count=$((current_count - ledgered_count))
+if (( unledgered_count < 0 )); then
+  log_err "$STEP" "internal: unledgered count went negative"
+  trap - EXIT
+  exit 1
+fi
+
+budget_pct=$((unledgered_count * 100 / DUP_BUDGET_ANCHOR))
+log_info "$STEP" \
+  "unledgered $unledgered_count/$DUP_BUDGET_CEILING (${budget_pct}% of anchor $DUP_BUDGET_ANCHOR) + ledgered $ledgered_count/$DUP_LEDGER_CEILING (total $current_count)"
+
+if (( ledgered_count > DUP_LEDGER_CEILING )); then
+  log_err "$STEP" \
+    "ledgered pair count $ledgered_count exceeds the ledger ceiling $DUP_LEDGER_CEILING — burn a pair instead of ledgering a new one"
+  trap - EXIT
+  exit 1
+fi
+
+if (( unledgered_count > DUP_BUDGET_CEILING )); then
+  log_err "$STEP" \
+    "unledgered near-duplicate count $unledgered_count exceeds the ${DUP_BUDGET_PCT_MAX}% budget ceiling $DUP_BUDGET_CEILING; see $scan_log"
+  trap - EXIT
+  exit 1
+fi
+
 if (( current_count > baseline_count )); then
   log_err "$STEP" \
     "near-duplicate count $current_count exceeds baseline $baseline_count (docs/dup-debt.md); see $scan_log"
@@ -199,4 +330,5 @@ if (( current_count < baseline_count )); then
   log_info "$STEP" \
     "near-duplicate count $current_count is below baseline $baseline_count — lower $BASELINE_FILE to lock in the improvement"
 fi
-log_ok "$STEP" "near-duplicate count $current_count within baseline $baseline_count (similarity-rs $SIMILARITY_RS_VERSION)"
+log_ok "$STEP" \
+  "near-duplicate count $current_count within baseline $baseline_count; unledgered $unledgered_count within ceiling $DUP_BUDGET_CEILING (similarity-rs $SIMILARITY_RS_VERSION)"

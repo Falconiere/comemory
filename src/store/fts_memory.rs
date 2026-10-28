@@ -26,97 +26,70 @@ pub struct MemoryFtsHit {
     pub score: f32,
 }
 
-/// Run a BM25 search over `memory_fts`, skipping soft-deleted memories.
-///
-/// The query is rewritten via [`build_match_query`] (quoted terms, last
-/// term prefix-matched) and ranked with a weighted BM25 whose
-/// `(body, tags)` weights come from `weights`
-/// (`cfg.retrieval.bm25_weights`). Optional `repo` / `kind` filters ride
-/// the same JOIN that gates on `deleted_at`, so the lexical and vector
-/// branches share one scope on a filtered hybrid query (`kind` is the
-/// lowercase string stored in `memories.kind`, e.g. `decision`), as does
-/// the `window` created-date bound. FTS5 MATCH parse errors are downgraded
-/// to an empty result so a typo cannot abort the wider pipeline.
-pub fn search_memory(
-    conn: &Connection,
-    query: &str,
-    k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
-    window: CreatedWindow<'_>,
-    weights: (f32, f32),
-) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(
-        conn,
-        &build_match_query(query),
-        k,
-        repo,
-        kind,
-        window,
-        weights,
-    )
+/// The four ladder tiers share one signature and one MATCH executor; only
+/// the MATCH-expression builder varies. A table keeps them from pairing
+/// while each name still encodes its tier.
+macro_rules! memory_search_tiers {
+    ($(
+        $(#[$meta:meta])*
+        $name:ident => $build:expr
+    ),+ $(,)?) => {
+        $(
+            $(#[$meta])*
+            pub fn $name(
+                conn: &Connection,
+                query: &str,
+                k: usize,
+                repo: Option<&str>,
+                kind: Option<&str>,
+                window: CreatedWindow<'_>,
+                weights: (f32, f32),
+            ) -> Result<Vec<MemoryFtsHit>> {
+                let match_expr = ($build)(conn, query)?;
+                run_memory_match(conn, &match_expr, k, repo, kind, window, weights)
+            }
+        )+
+    };
 }
 
-/// Relaxed variant of [`search_memory`]: OR-joins the sanitized terms via
-/// [`build_or_query`] so a memory matching any single term still surfaces.
-/// Used by the router as a fallback tier when the strict query is empty.
-pub fn search_memory_relaxed(
-    conn: &Connection,
-    query: &str,
-    k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
-    window: CreatedWindow<'_>,
-    weights: (f32, f32),
-) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_or_query(query), k, repo, kind, window, weights)
-}
-
-/// Subtoken variant of [`search_memory`]: OR-joins the identifier
-/// sub-tokens of every sanitized term via [`build_subtoken_or_query`] so a
-/// memory whose prose mentions the *parts* of an identifier (`dim
-/// mismatch` for `VecDimMismatch`) still surfaces. Used by the router as
-/// the final fallback tier when both the strict AND and the word-level OR
-/// tiers are empty. A query with no splittable term builds an empty MATCH
-/// expression and returns an empty result.
-pub fn search_memory_subtokens(
-    conn: &Connection,
-    query: &str,
-    k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
-    window: CreatedWindow<'_>,
-    weights: (f32, f32),
-) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(
-        conn,
-        &build_subtoken_or_query(query),
-        k,
-        repo,
-        kind,
-        window,
-        weights,
-    )
-}
-
-/// Tier-4 search: learned-expansion OR query via
-/// [`build_expanded_or_query`], so a memory containing only a mined
-/// expansion of a query term still surfaces. An empty expression (no
-/// applicable expansion) returns empty without touching FTS.
-pub fn search_memory_expanded(
-    conn: &Connection,
-    query: &str,
-    k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
-    window: CreatedWindow<'_>,
-    weights: (f32, f32),
-) -> Result<Vec<MemoryFtsHit>> {
-    let expr = build_expanded_or_query(conn, query)?;
-    if expr.is_empty() {
-        return Ok(Vec::new());
-    }
-    run_memory_match(conn, &expr, k, repo, kind, window, weights)
+memory_search_tiers! {
+    /// Run a BM25 search over `memory_fts`, skipping soft-deleted memories.
+    ///
+    /// The query is rewritten via [`build_match_query`] (quoted terms, last
+    /// term prefix-matched) and ranked with a weighted BM25 whose
+    /// `(body, tags)` weights come from `weights`
+    /// (`cfg.retrieval.bm25_weights`). Optional `repo` / `kind` filters ride
+    /// the same JOIN that gates on `deleted_at`, so the lexical and vector
+    /// branches share one scope on a filtered hybrid query (`kind` is the
+    /// lowercase string stored in `memories.kind`, e.g. `decision`), as does
+    /// the `window` created-date bound. FTS5 MATCH parse errors are downgraded
+    /// to an empty result so a typo cannot abort the wider pipeline.
+    search_memory => |_conn: &Connection, q: &str| -> Result<String> {
+        Ok(build_match_query(q))
+    },
+    /// Relaxed variant of [`search_memory`]: OR-joins the sanitized terms via
+    /// [`build_or_query`] so a memory matching any single term still surfaces.
+    /// Used by the router as a fallback tier when the strict query is empty.
+    search_memory_relaxed => |_conn: &Connection, q: &str| -> Result<String> {
+        Ok(build_or_query(q))
+    },
+    /// Subtoken variant of [`search_memory`]: OR-joins the identifier
+    /// sub-tokens of every sanitized term via [`build_subtoken_or_query`] so a
+    /// memory whose prose mentions the *parts* of an identifier (`dim
+    /// mismatch` for `VecDimMismatch`) still surfaces. Used by the router as
+    /// the final fallback tier when both the strict AND and the word-level OR
+    /// tiers are empty. A query with no splittable term builds an empty MATCH
+    /// expression and returns an empty result.
+    search_memory_subtokens => |_conn: &Connection, q: &str| -> Result<String> {
+        Ok(build_subtoken_or_query(q))
+    },
+    /// Tier-4 search: learned-expansion OR query via
+    /// [`build_expanded_or_query`], so a memory containing only a mined
+    /// expansion of a query term still surfaces. An empty expression (no
+    /// applicable expansion) returns empty without a useful MATCH.
+    search_memory_expanded => |conn: &Connection, q: &str| -> Result<String> {
+        build_expanded_or_query(conn, q)
+    },
 }
 
 /// Execute a prebuilt MATCH expression against `memory_fts`. Shared by

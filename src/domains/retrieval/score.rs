@@ -146,8 +146,8 @@ pub fn days_since(rfc3339: &str, now: OffsetDateTime) -> f64 {
 /// `-bm25` values anywhere from `1e-6` to `10+`. Min-max is
 /// affine-invariant, so normalization is insensitive to the absolute
 /// score scale. Degenerate pools — empty, all-equal, or containing
-/// non-finite values — normalize to all `1.0` so downstream ordering
-/// falls back to the respective tie-breaks.
+/// non-finite values — normalize to all `1.0` (see [`normalize_pool`]) so
+/// downstream ordering falls back to the respective tie-breaks.
 ///
 /// NOT used by the rerank stage: min-max zeroes the pool minimum
 /// (making it immune to priors) and stretches near-tie gaps to the full
@@ -155,14 +155,7 @@ pub fn days_since(rfc3339: &str, now: OffsetDateTime) -> f64 {
 /// uses [`max_normalize`] instead.
 pub fn min_max_normalize(scores: &[f64]) -> Vec<f64> {
     let min = scores.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let range = max - min;
-    // f64::min/max ignore NaN, so non-finiteness is checked per element,
-    // not on the fold results.
-    if !range.is_finite() || range <= 0.0 || scores.iter().any(|s| !s.is_finite()) {
-        return vec![1.0; scores.len()];
-    }
-    scores.iter().map(|s| (s - min) / range).collect()
+    normalize_pool(scores, min)
 }
 
 /// Normalize a relevance pool by its maximum, preserving within-pool
@@ -173,19 +166,37 @@ pub fn min_max_normalize(scores: &[f64]) -> Vec<f64> {
 /// [`min_max_normalize`] instead because its relevance term must share
 /// the diversity term's [0, 1] range.
 ///
+/// This is [`normalize_pool`] with the floor pinned at zero instead of at
+/// the pool minimum, so nothing is stretched or zeroed.
+///
 /// Real candidate scores are positive (lexical `-bm25` with FTS5's
 /// bm25 <= 0, RRF sums, threshold-filtered cosine similarity), so the
 /// degenerate arms are defense-in-depth: a pool containing a non-finite
-/// score, or whose max is zero or negative, normalizes to all 1.0
-/// (`f64::max` ignores NaN, so non-finiteness is checked per element,
-/// not on the fold result), and a stray negative score inside a
-/// positive pool clamps to 0.0 (noise stays noise).
+/// score, or whose max is zero or negative, normalizes to all 1.0, and a
+/// stray negative score inside a positive pool clamps to 0.0 (noise stays
+/// noise).
 pub fn max_normalize(scores: &[f64]) -> Vec<f64> {
+    normalize_pool(scores, 0.0)
+}
+
+/// Rescale `scores` so `floor` maps to 0.0 and the pool maximum to 1.0,
+/// clamped into `[0, 1]` — the one definition behind both normalizers, which
+/// differ only in where the floor sits (the observed minimum vs zero).
+///
+/// A pool with no usable range above `floor` — empty, entirely at or below
+/// it, or containing any non-finite score — maps to all `1.0`. `f64::min` and
+/// `f64::max` ignore NaN, so non-finiteness is checked per element here, not
+/// on the callers' or this function's folds.
+fn normalize_pool(scores: &[f64], floor: f64) -> Vec<f64> {
     let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    if !max.is_finite() || max <= 0.0 || scores.iter().any(|s| !s.is_finite()) {
+    let range = max - floor;
+    if !range.is_finite() || range <= 0.0 || scores.iter().any(|s| !s.is_finite()) {
         return vec![1.0; scores.len()];
     }
-    scores.iter().map(|s| (s / max).clamp(0.0, 1.0)).collect()
+    scores
+        .iter()
+        .map(|s| ((s - floor) / range).clamp(0.0, 1.0))
+        .collect()
 }
 
 /// Clamp a raw prior multiplier into the configured `(lo, hi)` bounds;

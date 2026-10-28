@@ -11,8 +11,8 @@
 use super::file::Config;
 use super::sync::parse_duration;
 use super::validate_knobs::{
-    check_bm25_weights, check_decay, check_document_leg_weight, check_graph_hops, check_grid,
-    check_max_file_bytes, check_rrf_k, check_unit_interval,
+    check_bm25_weights, check_decay, check_document_leg_weight, check_finite, check_graph_hops,
+    check_grid, check_max_file_bytes, check_rrf_k, check_unit_interval,
 };
 use crate::prelude::*;
 
@@ -168,11 +168,12 @@ impl Config {
     /// Prune scoring floors and the learning-telemetry retention window.
     fn check_prune_knobs(&self) -> Result<()> {
         let a = self.prune.min_activation;
-        if !a.is_finite() {
-            return Err(Error::Config(format!(
-                "invalid prune.min_activation={a} (env COMEMORY_PRUNE_MIN_ACTIVATION): must be a finite number"
-            )));
-        }
+        check_knob(
+            "prune.min_activation",
+            "COMEMORY_PRUNE_MIN_ACTIVATION",
+            a,
+            check_finite(a),
+        )?;
         let f = self.prune.min_feedback;
         check_knob(
             "prune.min_feedback",

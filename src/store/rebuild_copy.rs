@@ -69,27 +69,39 @@ pub(crate) fn copy_table(
     Ok(())
 }
 
-/// True when `name` exists as a table (regular or virtual) on the attached
-/// `old` database. Lets every copy pass skip tables that predate v0.2.
-pub(crate) fn old_table_exists(conn: &Connection, name: &str) -> Result<bool> {
-    let n: i64 = conn.query_row(
-        "SELECT count(*) FROM old.sqlite_master WHERE type = 'table' AND name = ?1",
-        rusqlite::params![name],
-        |r| r.get(0),
-    )?;
-    Ok(n > 0)
+/// Schema probes against the attached `old` database. A table keeps the
+/// table/column twins from pairing while each SQL stays literal.
+macro_rules! old_exists {
+    ($(
+        $(#[$meta:meta])*
+        pub(crate) fn $name:ident($($arg:ident: &str),+ $(,)?) {
+            $sql:expr, $($bind:expr),+ $(,)?
+        }
+    )+) => {
+        $(
+            $(#[$meta])*
+            pub(crate) fn $name(conn: &Connection, $($arg: &str),+) -> Result<bool> {
+                let n: i64 = conn.query_row($sql, rusqlite::params![$($bind),+], |r| r.get(0))?;
+                Ok(n > 0)
+            }
+        )+
+    };
 }
 
-/// True when `column` exists on `table` in the attached `old` database.
-/// Lets a copy pass adapt its SELECT list to the attached DB's schema
-/// version instead of assuming the current one.
-pub(crate) fn old_column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
-    let n: i64 = conn.query_row(
+old_exists! {
+    /// True when `name` exists as a table (regular or virtual) on the attached
+    /// `old` database. Lets every copy pass skip tables that predate v0.2.
+    pub(crate) fn old_table_exists(name: &str) {
+        "SELECT count(*) FROM old.sqlite_master WHERE type = 'table' AND name = ?1",
+        name,
+    }
+    /// True when `column` exists on `table` in the attached `old` database.
+    /// Lets a copy pass adapt its SELECT list to the attached DB's schema
+    /// version instead of assuming the current one.
+    pub(crate) fn old_column_exists(table: &str, column: &str) {
         "SELECT count(*) FROM pragma_table_info(?1, 'old') WHERE name = ?2",
-        rusqlite::params![table, column],
-        |r| r.get(0),
-    )?;
-    Ok(n > 0)
+        table, column,
+    }
 }
 
 #[cfg(test)]

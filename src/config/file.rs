@@ -20,6 +20,27 @@ pub use super::learning::TuneConfig;
 /// Re-export: historical `config::file::RetrievalConfig` import path.
 pub use super::retrieval::RetrievalConfig;
 
+/// One `apply` overlay per section: every listed field of the partial that is
+/// `Some` replaces the same-named field on the section; absent fields leave it
+/// untouched. The field list is the only thing that varies between sections.
+macro_rules! overlay_impl {
+    (
+        $(#[$meta:meta])*
+        $config:ident <- $partial:ident { $($field:ident),+ $(,)? }
+    ) => {
+        impl $config {
+            $(#[$meta])*
+            fn apply(&mut self, p: $partial) {
+                $(
+                    if let Some(v) = p.$field {
+                        self.$field = v;
+                    }
+                )+
+            }
+        }
+    };
+}
+
 /// Partial config overlay loaded from a `config.toml` file.
 ///
 /// Every field is `Option<_>` so a sparse file that only sets a handful of
@@ -164,22 +185,14 @@ pub struct IndexingConfig {
     pub max_file_bytes: u64,
 }
 
-impl IndexingConfig {
+overlay_impl! {
     /// Overlay the file's `[indexing]` keys; absent keys leave `self`
     /// untouched.
-    fn apply(&mut self, p: PartialIndexingConfig) {
-        if let Some(v) = p.auto_reindex {
-            self.auto_reindex = v;
-        }
-        if let Some(v) = p.auto_reindex_threshold_ms {
-            self.auto_reindex_threshold_ms = v;
-        }
-        if let Some(v) = p.incremental_batch_size {
-            self.incremental_batch_size = v;
-        }
-        if let Some(v) = p.max_file_bytes {
-            self.max_file_bytes = v;
-        }
+    IndexingConfig <- PartialIndexingConfig {
+        auto_reindex,
+        auto_reindex_threshold_ms,
+        incremental_batch_size,
+        max_file_bytes,
     }
 }
 
@@ -217,21 +230,13 @@ pub struct RankConfig {
     pub near_dup_hamming: u32,
 }
 
-impl RankConfig {
+overlay_impl! {
     /// Overlay the file's `[rank]` keys; absent keys leave `self` untouched.
-    fn apply(&mut self, p: PartialRankConfig) {
-        if let Some(v) = p.decay {
-            self.decay = v;
-        }
-        if let Some(v) = p.prior_clamp {
-            self.prior_clamp = v;
-        }
-        if let Some(v) = p.mmr_lambda {
-            self.mmr_lambda = v;
-        }
-        if let Some(v) = p.near_dup_hamming {
-            self.near_dup_hamming = v;
-        }
+    RankConfig <- PartialRankConfig {
+        decay,
+        prior_clamp,
+        mmr_lambda,
+        near_dup_hamming,
     }
 }
 
@@ -268,27 +273,15 @@ pub struct PruneConfig {
     pub superseded_grace_days: u32,
 }
 
-impl PruneConfig {
+overlay_impl! {
     /// Overlay the file's `[prune]` keys; absent keys leave `self` untouched.
-    fn apply(&mut self, p: PartialPruneConfig) {
-        if let Some(v) = p.trash_retention_days {
-            self.trash_retention_days = v;
-        }
-        if let Some(v) = p.low_value_default_below_quality {
-            self.low_value_default_below_quality = v;
-        }
-        if let Some(v) = p.min_activation {
-            self.min_activation = v;
-        }
-        if let Some(v) = p.min_feedback {
-            self.min_feedback = v;
-        }
-        if let Some(v) = p.learning_retention_days {
-            self.learning_retention_days = v;
-        }
-        if let Some(v) = p.superseded_grace_days {
-            self.superseded_grace_days = v;
-        }
+    PruneConfig <- PartialPruneConfig {
+        trash_retention_days,
+        low_value_default_below_quality,
+        min_activation,
+        min_feedback,
+        learning_retention_days,
+        superseded_grace_days,
     }
 }
 

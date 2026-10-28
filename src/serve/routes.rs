@@ -23,6 +23,7 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::JobId;
+use crate::serve::routes::mutate_response::with_ctx;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -48,6 +49,9 @@ pub mod maint;
 pub mod memories;
 /// `GET /completions`, `GET /commands`.
 pub mod meta;
+/// The shared tail of every mutating handler: gates, write permit, blocking
+/// run, envelope.
+pub mod mutate_response;
 /// `GET /repos`.
 pub mod repos;
 /// `GET /sources`.
@@ -231,13 +235,7 @@ where
     T: Serialize + Send + 'static,
 {
     let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        query(&mut ctx)
-    })
-    .await;
+    let result = run_blocking(move || with_ctx(&state, None, query)).await;
     respond(command, result, started)
 }
 
@@ -270,14 +268,13 @@ pub fn require_confirm(confirmed: bool) -> Result<()> {
 ///
 /// Every mutating route calls this first, so both gates live in one place
 /// (Binding Rule 1) rather than each handler re-deriving the read-only/busy
-/// envelope on its own.
+/// envelope on its own. The read-only half is [`guard_job`]'s check, shared
+/// rather than repeated; this guard only adds the permit.
 pub(crate) fn guard_mutating(
     command: &str,
     state: &AppState,
 ) -> std::result::Result<OwnedSemaphorePermit, Box<Response>> {
-    if state.read_only() {
-        return Err(Box::new(Envelope::read_only(command)));
-    }
+    guard_job(command, state)?;
     Arc::clone(state.write_permit())
         .try_acquire_owned()
         .map_err(|_| Box::new(Envelope::busy(command)))
@@ -288,6 +285,9 @@ pub(crate) fn guard_mutating(
 /// A job-creating `POST` always answers `202` immediately regardless of
 /// permit contention; contention only delays when the job itself starts
 /// (`serve::jobs::spawn_job` awaits the permit FIFO once running).
+///
+/// This is also the read-only gate [`guard_mutating`] runs before taking the
+/// permit, so the `405 read_only` envelope has exactly one home.
 pub(crate) fn guard_job(command: &str, state: &AppState) -> std::result::Result<(), Box<Response>> {
     if state.read_only() {
         return Err(Box::new(Envelope::read_only(command)));
@@ -304,6 +304,23 @@ pub(crate) fn track_for(state: &AppState) -> Result<bool> {
     Ok(!state.read_only() && crate::config::env::access_tracking_enabled()?)
 }
 
+/// Envelope a route result: `on_ok` builds the success response from the
+/// payload, [`Envelope::err`] (status/code derived from the crate `Error`)
+/// covers every failure. `started` feeds `meta.elapsed_ms`. Shared by
+/// [`respond`] and [`accepted`], which differ only in the success envelope.
+fn envelope_result<T>(
+    command: &str,
+    result: Result<T>,
+    started: Instant,
+    on_ok: impl FnOnce(&str, T, u64) -> Response,
+) -> Response {
+    let elapsed = elapsed_ms(started);
+    match result {
+        Ok(data) => on_ok(command, data, elapsed),
+        Err(e) => Envelope::err(command, &e, elapsed),
+    }
+}
+
 /// Envelope a blocking route's result: [`Envelope::ok`] on success,
 /// [`Envelope::err`] (status/code derived from the crate `Error`)
 /// otherwise. `started` feeds `meta.elapsed_ms`.
@@ -312,20 +329,16 @@ pub(crate) fn respond<T: Serialize>(
     result: Result<T>,
     started: Instant,
 ) -> Response {
-    match result {
-        Ok(data) => Envelope::ok(command, data, elapsed_ms(started)),
-        Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
-    }
+    envelope_result(command, result, started, Envelope::ok)
 }
 
 /// Envelope a job-creating route's result: [`Envelope::accepted`] (`202`)
 /// on success, [`Envelope::err`] otherwise — the shape every job-creating
 /// `POST` handler (`serve::jobs::spawn_job`'s `Result<JobId>`) reduces to.
 pub(crate) fn accepted(command: &str, job: Result<JobId>, started: Instant) -> Response {
-    match job {
-        Ok(id) => Envelope::accepted(command, &id, elapsed_ms(started)),
-        Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
-    }
+    envelope_result(command, job, started, |command, id, elapsed| {
+        Envelope::accepted(command, &id, elapsed)
+    })
 }
 
 /// Milliseconds elapsed since `started`, saturating rather than

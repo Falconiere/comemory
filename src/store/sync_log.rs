@@ -13,6 +13,36 @@ use super::{
 use crate::prelude::*;
 use toolu_orm::core::query_column::{CommonOps, NumericOps};
 
+/// Generate `as_str` / `parse` for a closed enum stored as one SQL literal.
+///
+/// `SyncOp` and `SyncOrigin` need the same pair; one table per enum keeps a
+/// variant and its literal on one line and the two hand-written matches from
+/// counting as near-duplicates in `scripts/dup-check.sh`. `$field` names the
+/// column in the unknown-literal error.
+macro_rules! wire_literals {
+    ($ty:ident, $field:literal { $($variant:ident => $text:literal),+ $(,)? }) => {
+        impl $ty {
+            /// Wire / SQL literal.
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $text),+
+                }
+            }
+
+            /// Parse a stored literal.
+            pub fn parse(raw: &str) -> Result<Self> {
+                match raw {
+                    $($text => Ok(Self::$variant),)+
+                    other => Err(Error::Other(format!(
+                        concat!("unknown sync_log ", $field, ": {}"),
+                        other
+                    ))),
+                }
+            }
+        }
+    };
+}
+
 /// One sync-log operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,24 +55,11 @@ pub enum SyncOp {
     Restore,
 }
 
-impl SyncOp {
-    /// Wire / SQL literal.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Upsert => "upsert",
-            Self::Tombstone => "tombstone",
-            Self::Restore => "restore",
-        }
-    }
-
-    /// Parse a stored literal.
-    pub fn parse(raw: &str) -> Result<Self> {
-        match raw {
-            "upsert" => Ok(Self::Upsert),
-            "tombstone" => Ok(Self::Tombstone),
-            "restore" => Ok(Self::Restore),
-            other => Err(Error::Other(format!("unknown sync_log op: {other}"))),
-        }
+wire_literals! {
+    SyncOp, "op" {
+        Upsert => "upsert",
+        Tombstone => "tombstone",
+        Restore => "restore",
     }
 }
 
@@ -56,22 +73,10 @@ pub enum SyncOrigin {
     Sync,
 }
 
-impl SyncOrigin {
-    /// Wire / SQL literal.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Local => "local",
-            Self::Sync => "sync",
-        }
-    }
-
-    /// Parse a stored literal.
-    pub fn parse(raw: &str) -> Result<Self> {
-        match raw {
-            "local" => Ok(Self::Local),
-            "sync" => Ok(Self::Sync),
-            other => Err(Error::Other(format!("unknown sync_log origin: {other}"))),
-        }
+wire_literals! {
+    SyncOrigin, "origin" {
+        Local => "local",
+        Sync => "sync",
     }
 }
 
@@ -142,17 +147,28 @@ pub fn pending_local(conn: &Connection, since: i64) -> Result<i64> {
     )
 }
 
-/// Entries with `seq > since`, ordered ascending, capped at `limit`.
-///
-/// Ignores `origin` — pullers need every entry above the cursor, including
-/// console deletes recorded as `local` on the server.
-pub fn entries_since(conn: &Connection, since: i64, limit: usize) -> Result<Vec<SyncLogRow>> {
-    read_entries(conn, since, limit, false)
+/// Generate the two public feed readers over [`read_entries`], one per
+/// outbox restriction. A table of `name => local_only` rows keeps the two
+/// same-shape wrappers from pairing in `scripts/dup-check.sh`.
+macro_rules! feed_readers {
+    ($($(#[$meta:meta])* $name:ident => $local_only:literal;)+) => {
+        $(
+            $(#[$meta])*
+            pub fn $name(conn: &Connection, since: i64, limit: usize) -> Result<Vec<SyncLogRow>> {
+                read_entries(conn, since, limit, $local_only)
+            }
+        )+
+    };
 }
 
-/// Local-origin entries with `seq > since` (the push outbox), ascending.
-pub fn local_entries_since(conn: &Connection, since: i64, limit: usize) -> Result<Vec<SyncLogRow>> {
-    read_entries(conn, since, limit, true)
+feed_readers! {
+    /// Entries with `seq > since`, ordered ascending, capped at `limit`.
+    ///
+    /// Ignores `origin` — pullers need every entry above the cursor, including
+    /// console deletes recorded as `local` on the server.
+    entries_since => false;
+    /// Local-origin entries with `seq > since` (the push outbox), ascending.
+    local_entries_since => true;
 }
 
 /// Read and decode one ordered feed page, optionally restricted to the outbox.

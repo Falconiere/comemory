@@ -53,19 +53,29 @@ pub(super) fn check(name: &str, status: &str, detail: impl Into<String>) -> Chec
     }
 }
 
-/// Build a passing [`Check`].
-pub(crate) fn ok(name: &str, detail: impl Into<String>) -> Check {
-    check(name, "ok", detail)
+/// Status constructors over [`check`]. A table keeps the three one-line
+/// wrappers from pairing while each name still stamps its own status string.
+macro_rules! check_ctors {
+    ($(
+        $(#[$meta:meta])*
+        $vis:vis fn $name:ident => $status:literal
+    ),+ $(,)?) => {
+        $(
+            $(#[$meta])*
+            $vis fn $name(name: &str, detail: impl Into<String>) -> Check {
+                check(name, $status, detail)
+            }
+        )+
+    };
 }
 
-/// Build an advisory, non-fatal [`Check`].
-pub(super) fn warn(name: &str, detail: impl Into<String>) -> Check {
-    check(name, "warn", detail)
-}
-
-/// Build a failing [`Check`].
-pub(super) fn fail(name: &str, detail: impl Into<String>) -> Check {
-    check(name, "fail", detail)
+check_ctors! {
+    /// Build a passing [`Check`].
+    pub(crate) fn ok => "ok",
+    /// Build an advisory, non-fatal [`Check`].
+    pub(super) fn warn => "warn",
+    /// Build a failing [`Check`].
+    pub(super) fn fail => "fail",
 }
 
 /// Every scalar the check pipeline derives, alongside the ordered [`Check`]

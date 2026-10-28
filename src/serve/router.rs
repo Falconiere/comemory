@@ -54,26 +54,44 @@ async fn guard(State(state): State<AppState>, req: Request, next: Next) -> Respo
     next.run(req).await
 }
 
-/// `403` for a non-loopback `Host` header: enveloped JSON on `/api/v1/*`,
-/// plain text everywhere else.
-fn forbidden_response(enveloped: bool) -> Response {
-    if enveloped {
-        return Envelope::err(
+/// Auth gate responses: enveloped JSON on `/api/v1/*`, plain text elsewhere.
+/// A table keeps the forbidden/unauthorized twins from pairing.
+macro_rules! auth_gate_responses {
+    ($(
+        $(#[$meta:meta])*
+        fn $name:ident($enveloped_arm:expr, $status:expr, $plain:expr);
+    )+) => {
+        $(
+            $(#[$meta])*
+            fn $name(enveloped: bool) -> Response {
+                if enveloped {
+                    return $enveloped_arm;
+                }
+                ($status, $plain).into_response()
+            }
+        )+
+    };
+}
+
+auth_gate_responses! {
+    /// `403` for a non-loopback `Host` header: enveloped JSON on `/api/v1/*`,
+    /// plain text everywhere else.
+    fn forbidden_response(
+        Envelope::err(
             "auth",
             &Error::Forbidden("non-loopback Host header rejected".into()),
             0,
-        );
-    }
-    (StatusCode::FORBIDDEN, "non-loopback Host header rejected").into_response()
-}
-
-/// `401` for a missing/invalid session token: enveloped JSON on
-/// `/api/v1/*`, plain text everywhere else.
-fn unauthorized_response(enveloped: bool) -> Response {
-    if enveloped {
-        return Envelope::unauthorized("auth");
-    }
-    (StatusCode::UNAUTHORIZED, "missing or invalid token").into_response()
+        ),
+        StatusCode::FORBIDDEN,
+        "non-loopback Host header rejected"
+    );
+    /// `401` for a missing/invalid session token: enveloped JSON on
+    /// `/api/v1/*`, plain text everywhere else.
+    fn unauthorized_response(
+        Envelope::unauthorized("auth"),
+        StatusCode::UNAUTHORIZED,
+        "missing or invalid token"
+    );
 }
 
 /// Extract the token from (in order) the `X-Comemory-Token` header, an

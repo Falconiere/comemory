@@ -66,17 +66,6 @@ pub fn record(
     Ok(())
 }
 
-/// Every column [`decode`] reads, in order.
-const COLUMNS: &[&dyn toolu_orm::core::query_column::ColumnRef] = &[
-    &col::from_sequence,
-    &col::to_sequence,
-    &col::reason,
-    &col::entity_kind,
-    &col::entity_key,
-    &col::repository,
-    &col::policy_revision,
-];
-
 /// Every hold `key` has under `epoch`, lowest position first.
 ///
 /// # Errors
@@ -94,6 +83,17 @@ pub fn list(conn: &Connection, key: &ExchangeKey, epoch: &str) -> Result<Vec<Pul
         decode,
     )
 }
+
+/// Every column [`decode`] reads, in order.
+const COLUMNS: &[&dyn toolu_orm::core::query_column::ColumnRef] = &[
+    &col::from_sequence,
+    &col::to_sequence,
+    &col::reason,
+    &col::entity_kind,
+    &col::entity_key,
+    &col::repository,
+    &col::policy_revision,
+];
 
 /// One hold, in [`list`]'s column order.
 fn decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<PullHold> {

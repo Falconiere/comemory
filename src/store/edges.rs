@@ -5,7 +5,8 @@ use super::{
     schema_graph::{Edges, edges as c},
 };
 use rusqlite::{Connection, params};
-use toolu_orm::core::query_column::CommonOps;
+use toolu_orm::core::query_column::{ColumnRef, CommonOps};
+use toolu_orm::query::select::SelectBuilder;
 
 use crate::prelude::*;
 use crate::store::MemoryLinks;
@@ -131,44 +132,35 @@ pub fn insert(conn: &Connection, e: EdgeKey<'_>) -> Result<()> {
     insert_at(conn, e, None)
 }
 
-/// Insert (or no-op if already present) one edge, stamped with the given
-/// `created_at` string when `Some`, or the current UTC time when `None`.
-///
-/// The explicit-timestamp form exists for `store::memory_row`, which wipes
-/// and re-emits a memory's outgoing edges on every re-save: relation edges
-/// (`supersedes` / …) must keep their original `created_at` across the
-/// wipe, because `maintenance::retention::low_value::superseded_rule`
-/// compares the target's
-/// `last_accessed` against the edge timestamp — a refreshed stamp would
-/// re-arm the rule on every re-save of the superseder.
-pub fn insert_at(conn: &Connection, e: EdgeKey<'_>, created_at: Option<&str>) -> Result<()> {
-    conn.execute(
+orm::sql_writes! {
+    /// Insert (or no-op if already present) one edge, stamped with the given
+    /// `created_at` string when `Some`, or the current UTC time when `None`.
+    ///
+    /// The explicit-timestamp form exists for `store::memory_row`, which wipes
+    /// and re-emits a memory's outgoing edges on every re-save: relation edges
+    /// (`supersedes` / …) must keep their original `created_at` across the
+    /// wipe, because `maintenance::retention::low_value::superseded_rule`
+    /// compares the target's
+    /// `last_accessed` against the edge timestamp — a refreshed stamp would
+    /// re-arm the rule on every re-save of the superseder.
+    pub insert_at(e: EdgeKey<'_>, created_at: Option<&str>) =
         "INSERT OR IGNORE INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
          VALUES(?1,?2,?3,?4,?5, COALESCE(?6, strftime('%Y-%m-%dT%H:%M:%fZ','now')))",
-        params![
-            e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, created_at
-        ],
-    )?;
-    Ok(())
-}
-
-/// Insert one weighted edge, ADDING `weight` to the stored weight when the
-/// edge already exists (`ON CONFLICT ... weight = weight + excluded.weight`).
-///
-/// This is the accumulating writer for `co_changed` edges: each mining run
-/// walks only commits newer than the `repo_marker.last_mined_commit` cursor,
-/// so the per-run pair counts are deltas to add, not totals to overwrite.
-/// State-like relations (e.g. `imports`) should keep using [`insert`], whose
-/// `INSERT OR IGNORE` leaves the existing row untouched.
-pub fn insert_weighted(conn: &Connection, e: EdgeKey<'_>, weight: i64) -> Result<()> {
-    conn.execute(
+        [e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, created_at];
+    /// Insert one weighted edge, ADDING `weight` to the stored weight when the
+    /// edge already exists (`ON CONFLICT ... weight = weight + excluded.weight`).
+    ///
+    /// This is the accumulating writer for `co_changed` edges: each mining run
+    /// walks only commits newer than the `repo_marker.last_mined_commit` cursor,
+    /// so the per-run pair counts are deltas to add, not totals to overwrite.
+    /// State-like relations (e.g. `imports`) should keep using [`insert`], whose
+    /// `INSERT OR IGNORE` leaves the existing row untouched.
+    pub insert_weighted(e: EdgeKey<'_>, weight: i64) =
         "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at) \
          VALUES(?1,?2,?3,?4,?5,?6, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
          ON CONFLICT(src_kind,src_id,dst_kind,dst_id,rel) \
          DO UPDATE SET weight = weight + excluded.weight",
-        params![e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, weight],
-    )?;
-    Ok(())
+        [e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, weight];
 }
 
 /// Current accumulated weight of the edge addressed by `e`, or `0` when the
@@ -202,24 +194,6 @@ pub fn count_by_rel(conn: &Connection, rel: &str) -> Result<u64> {
     Ok(u64::try_from(n).unwrap_or(0))
 }
 
-/// Outgoing neighbors of `(src_kind, src_id)` following `rel`.
-pub fn outgoing(
-    conn: &Connection,
-    src_kind: &str,
-    src_id: &str,
-    rel: &str,
-) -> Result<Vec<(String, String)>> {
-    orm::query_all(
-        conn,
-        Edges::select()
-            .columns_typed(&[&c::dst_kind, &c::dst_id])
-            .filter(source_node(src_kind, src_id))
-            .filter(c::rel.eq(rel))
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-}
-
 /// Transitive `supersedes` chain starting at `start` memory id,
 /// depth-bounded by `max_depth`.
 ///
@@ -249,27 +223,23 @@ pub fn supersedes_chain(conn: &Connection, start: &str, max_depth: u32) -> Resul
     Ok(rows)
 }
 
-/// Delete every edge originating at `(kind, id)` (source side only). Used
-/// by the re-insert cleanup in `store::memory_row`: a re-save or rebuild of
-/// a memory must refresh the edges it *emits* without destroying incoming
-/// edges such as another memory's `supersedes` pointing at it — rebuild
-/// replays memories newest-first, so the superseder's edge is already in
-/// place when the superseded memory is inserted.
-pub fn delete_outgoing(conn: &Connection, kind: &str, id: &str) -> Result<()> {
-    orm::execute(conn, Edges::delete().filter(source_node(kind, id)).to_sql())?;
-    Ok(())
-}
-
-/// Delete every edge touching `(kind, id)`, either side. Used by
-/// soft-delete.
-pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        Edges::delete()
-            .filter(source_node(kind, id).or(c::dst_kind.eq(kind).and(c::dst_id.eq(id))))
-            .to_sql(),
-    )?;
-    Ok(())
+orm::writes! {
+    /// Delete every edge originating at `(kind, id)` (source side only). Used
+    /// by the re-insert cleanup in `store::memory_row`: a re-save or rebuild of
+    /// a memory must refresh the edges it *emits* without destroying incoming
+    /// edges such as another memory's `supersedes` pointing at it — rebuild
+    /// replays memories newest-first, so the superseder's edge is already in
+    /// place when the superseded memory is inserted.
+    pub delete_outgoing(kind: &str, id: &str) = Edges::delete().filter(source_node(kind, id));
+    /// Delete every edge touching `(kind, id)`, either side. Used by
+    /// soft-delete.
+    pub delete_touching(kind: &str, id: &str) = Edges::delete()
+        .filter(source_node(kind, id).or(c::dst_kind.eq(kind).and(c::dst_id.eq(id))));
+    /// Delete every outgoing `imports` edge from `src_id`, leaving any other
+    /// relation sourced at the same node untouched — unlike [`delete_outgoing`],
+    /// which deletes every outgoing edge regardless of `rel`.
+    pub(crate) delete_imports_from(src_id: &str) =
+        Edges::delete().filter(source_node("file", src_id).and(c::rel.eq("imports")));
 }
 
 /// One raw `(src_id, dst_id, rel, weight)` row from the code-graph edge set.
@@ -329,29 +299,20 @@ pub(crate) fn delete_co_changed_for_repo(conn: &Connection, prefix: &str) -> Res
     Ok(())
 }
 
-/// Delete every outgoing `imports` edge from `src_id`, leaving any other
-/// relation sourced at the same node untouched — unlike [`delete_outgoing`],
-/// which deletes every outgoing edge regardless of `rel`.
-pub(crate) fn delete_imports_from(conn: &Connection, src_id: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        Edges::delete()
-            .filter(source_node("file", src_id))
-            .filter(c::rel.eq("imports"))
-            .to_sql(),
-    )?;
-    Ok(())
-}
-
-/// Direct memory→memory relation edges (`supersedes`/`conflicts_with`/
-/// `derived_from`/`relates_to`), read in the direction they are stored (src
-/// = the newer/building memory). See
-/// [`crate::domains::graph::memory_rank::derive_memory_graph`].
-pub(crate) fn memory_direct_relation_edges(
-    conn: &Connection,
-) -> Result<Vec<(String, String, f64)>> {
-    orm::query_all(
-        conn,
+orm::reads! {
+    /// Outgoing neighbors of `(src_kind, src_id)` following `rel`.
+    pub outgoing(src_kind: &str, src_id: &str, rel: &str) -> Vec<(String, String)> = query_all(
+        Edges::select()
+            .columns_typed(&[&c::dst_kind, &c::dst_id])
+            .filter(source_node(src_kind, src_id))
+            .filter(c::rel.eq(rel)).to_sql(),
+        read_pair
+    );
+    /// Direct memory→memory relation edges (`supersedes`/`conflicts_with`/
+    /// `derived_from`/`relates_to`), read in the direction they are stored (src
+    /// = the newer/building memory). See
+    /// [`crate::domains::graph::memory_rank::derive_memory_graph`].
+    pub(crate) memory_direct_relation_edges() -> Vec<(String, String, f64)> = query_all(
         Edges::select()
             .columns_typed(&[&c::src_id, &c::dst_id, &c::weight])
             .filter(c::src_kind.eq("memory"))
@@ -364,74 +325,45 @@ pub(crate) fn memory_direct_relation_edges(
             ]))
             .order_by(c::rel.asc())
             .order_by(c::src_id.asc())
-            .order_by(c::dst_id.asc())
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )
+            .order_by(c::dst_id.asc()).to_sql(),
+        read_weighted_pair
+    );
+    /// Every memory id whose `rel` edge points at `dst_id`
+    /// (`src_kind='memory'`, `dst_kind='file'`) — resolves a document's identity
+    /// against pre-existing memory mentions. See
+    /// [`crate::domains::graph::doc_link::derive_after_document`].
+    pub(crate) memory_ids_referencing_file(rel: &str, dst_id: &str) -> Vec<String> = query_all(
+        file_edges(&[&c::src_id], rel)
+            .filter(c::src_kind.eq("memory"))
+            .filter(c::dst_id.eq(dst_id)).to_sql(),
+        |r| r.get(0)
+    );
+    /// Reverse batch lookup: every `(src_id, dst_id)` edge with the given `rel`
+    /// and `dst_kind='file'`, `dst_id` one of `dst_ids` — the per-chunk query
+    /// behind [`crate::domains::graph::coactivate::referencing_memories`].
+    pub(crate) src_ids_for_dst_ids(rel: &str, dst_ids: &[&str]) -> Vec<(String, String)> =
+        query_all(
+            file_edges(&[&c::src_id, &c::dst_id], rel)
+                .filter(c::dst_id.in_list(&text_values(dst_ids)))
+                .order_by(c::dst_id.asc())
+                .order_by(c::src_id.asc()).to_sql(),
+            read_pair
+        );
 }
 
 /// Co-citation edges: one row per unordered memory pair referencing the
 /// same target through the same rel, weighted by the number of shared
 /// targets. See [`crate::domains::graph::memory_rank::derive_memory_graph`].
 pub(crate) fn memory_co_citation_edges(conn: &Connection) -> Result<Vec<(String, String, f64)>> {
-    let mut stmt = conn.prepare(
-        "SELECT a.src_id, b.src_id, CAST(COUNT(*) AS REAL) AS w \
+    let sql = "SELECT a.src_id, b.src_id, CAST(COUNT(*) AS REAL) AS w \
            FROM edges a \
            JOIN edges b ON a.rel = b.rel AND a.dst_kind = b.dst_kind \
                        AND a.dst_id = b.dst_id AND a.src_id < b.src_id \
           WHERE a.src_kind = 'memory' AND b.src_kind = 'memory' \
             AND a.rel IN ('references_file','references_symbol','co_activated') \
           GROUP BY a.src_id, b.src_id \
-          ORDER BY a.src_id, b.src_id",
-    )?;
-    Ok(stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?)
-}
-
-/// Every memory id whose `rel` edge points at `dst_id`
-/// (`src_kind='memory'`, `dst_kind='file'`) — resolves a document's identity
-/// against pre-existing memory mentions. See
-/// [`crate::domains::graph::doc_link::derive_after_document`].
-pub(crate) fn memory_ids_referencing_file(
-    conn: &Connection,
-    rel: &str,
-    dst_id: &str,
-) -> Result<Vec<String>> {
-    orm::query_all(
-        conn,
-        Edges::select()
-            .columns_typed(&[&c::src_id])
-            .filter(c::rel.eq(rel))
-            .filter(c::src_kind.eq("memory"))
-            .filter(c::dst_kind.eq("file"))
-            .filter(c::dst_id.eq(dst_id))
-            .to_sql(),
-        |r| r.get(0),
-    )
-}
-
-/// Reverse batch lookup: every `(src_id, dst_id)` edge with the given `rel`
-/// and `dst_kind='file'`, `dst_id` one of `dst_ids` — the per-chunk query
-/// behind [`crate::domains::graph::coactivate::referencing_memories`].
-pub(crate) fn src_ids_for_dst_ids(
-    conn: &Connection,
-    rel: &str,
-    dst_ids: &[&str],
-) -> Result<Vec<(String, String)>> {
-    let ids = dst_ids.iter().copied().map(Into::into).collect::<Vec<_>>();
-    orm::query_all(
-        conn,
-        Edges::select()
-            .columns_typed(&[&c::src_id, &c::dst_id])
-            .filter(c::rel.eq(rel))
-            .filter(c::dst_kind.eq("file"))
-            .filter(c::dst_id.in_list(&ids))
-            .order_by(c::dst_id.asc())
-            .order_by(c::src_id.asc())
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
+          ORDER BY a.src_id, b.src_id";
+    orm::query_all(conn, (sql.into(), Vec::new()), read_weighted_pair)
 }
 
 /// Raw `(repo, path, rel, weight)` neighbors from the file-graph CTE.
@@ -442,6 +374,40 @@ pub(crate) fn file_neighbor_rows(
     min_weight: i64,
 ) -> Result<Vec<(String, String, String, i64)>> {
     super::edges_neighbors::file_neighbor_rows(conn, seeds_json, min_weight)
+}
+
+/// Bind each text id as a query value.
+fn text_values(ids: &[&str]) -> Vec<toolu_orm::core::value::Value> {
+    ids.iter().copied().map(Into::into).collect()
+}
+
+/// A `SELECT` of `columns` over the edges of relation `rel` that point at a
+/// file node, ready for the caller to narrow further.
+fn file_edges(columns: &[&dyn ColumnRef], rel: &str) -> SelectBuilder {
+    Edges::select()
+        .columns_typed(columns)
+        .filter(c::rel.eq(rel))
+        .filter(c::dst_kind.eq("file"))
+}
+
+/// Emit one positional tuple decoder per `fn -> (types)` row, reading the
+/// result columns by index in order.
+macro_rules! tuple_readers {
+    ($($(#[$doc:meta])* $name:ident -> ($($idx:literal: $ty:ty),+);)+) => {
+        $(
+            $(#[$doc])*
+            fn $name(r: &rusqlite::Row<'_>) -> rusqlite::Result<($($ty),+)> {
+                Ok(($(r.get($idx)?),+))
+            }
+        )+
+    };
+}
+
+tuple_readers! {
+    /// Decode one `(a, b)` text pair in column order.
+    read_pair -> (0: String, 1: String);
+    /// Decode one `(a, b, weight)` row in column order.
+    read_weighted_pair -> (0: String, 1: String, 2: f64);
 }
 
 /// Match one source node by both its kind and identifier.

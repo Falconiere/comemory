@@ -27,7 +27,8 @@ use crate::domains::learning;
 use crate::serve::AppState;
 use crate::serve::routes::learning::{contain_golden, eval};
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{RouteEntry, guard_mutating, query_response, require_confirm, respond};
+use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_ctx};
+use crate::serve::routes::{RouteEntry, query_response, require_confirm, respond};
 use crate::serve::scope::RepoScope;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
@@ -116,10 +117,29 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/learning/recall-status", get(recall_status))
 }
 
-/// `GET /api/v1/learning/summary` — feedback counters, the newest run, the
-/// mined-expansion count, and the best recall gain on record.
-async fn summary(State(state): State<AppState>) -> Response {
-    query_response(state, "learning.summary", learning::console::summary).await
+/// Generate a console read: the handler takes the state plus the extractors
+/// in `$params` and envelopes `$body` (run on the shared connection as `$ctx`)
+/// under `$command`.
+///
+/// Four hand-written handlers differ in nothing but their extractors and that
+/// body, which is what `scripts/dup-check.sh` counts as near-duplicates (same
+/// trade as `learning_job_route!` in `routes::learning`).
+macro_rules! console_read {
+    (
+        $(#[$doc:meta])*
+        $handler:ident, $command:literal, ($($params:tt)*), |$ctx:ident| $body:expr
+    ) => {
+        $(#[$doc])*
+        async fn $handler(State(state): State<AppState>, $($params)*) -> Response {
+            query_response(state, $command, move |$ctx| $body).await
+        }
+    };
+}
+
+console_read! {
+    /// `GET /api/v1/learning/summary` — feedback counters, the newest run, the
+    /// mined-expansion count, and the best recall gain on record.
+    summary, "learning.summary", (), |ctx| learning::console::summary(ctx)
 }
 
 /// `?limit=` on `GET /learning/evals`, defaulted to the same value
@@ -130,13 +150,11 @@ struct EvalsQuery {
     limit: u32,
 }
 
-/// `GET /api/v1/learning/evals` — the run history with the console's
-/// derived `delta` / `is_baseline` / `is_best` per row.
-async fn evals(State(state): State<AppState>, Query(q): Query<EvalsQuery>) -> Response {
-    query_response(state, "learning.evals", move |ctx| {
-        learning::console::evals(ctx, q.limit)
-    })
-    .await
+console_read! {
+    /// `GET /api/v1/learning/evals` — the run history with the console's
+    /// derived `delta` / `is_baseline` / `is_best` per row.
+    evals, "learning.evals", (Query(q): Query<EvalsQuery>),
+    |ctx| learning::console::evals(ctx, q.limit)
 }
 
 /// `?golden=` on `GET /learning/golden-set` — an optional YAML file merged
@@ -163,15 +181,10 @@ async fn golden_set(State(state): State<AppState>, Query(q): Query<GoldenQuery>)
     respond("learning.golden-set", result, started)
 }
 
-/// `GET /api/v1/learning/proposals` — the unapplied, undiscarded
-/// `tune`/`bandit` runs whose knobs still differ from the live config.
-async fn proposals(State(state): State<AppState>) -> Response {
-    query_response(
-        state,
-        "learning.proposals",
-        learning::learning_proposals::list,
-    )
-    .await
+console_read! {
+    /// `GET /api/v1/learning/proposals` — the unapplied, undiscarded
+    /// `tune`/`bandit` runs whose knobs still differ from the live config.
+    proposals, "learning.proposals", (), |ctx| learning::learning_proposals::list(ctx)
 }
 
 /// The body of a confirm-gated route with no request fields of its own:
@@ -192,26 +205,16 @@ async fn proposal_apply(
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("learning.proposals.apply", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
+    mutate_blocking(state, "learning.proposals.apply", move |state| {
         let (ConfirmOnly {}, confirmed) = split_confirm::<ConfirmOnly>(body)?;
         require_confirm(confirmed)?;
-        let applied = {
-            let cfg = state.cfg();
-            let mut conn = state.conn()?;
-            let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-            learning::learning_proposals::apply(&mut ctx, &id)?
-        };
+        let applied = with_ctx(state, None, |ctx| {
+            learning::learning_proposals::apply(ctx, &id)
+        })?;
         state.reload_cfg(state.paths())?;
         Ok(applied)
     })
-    .await;
-    respond("learning.proposals.apply", result, started)
+    .await
 }
 
 /// `POST /api/v1/learning/proposals/{id}/discard` — stop offering a
@@ -219,20 +222,10 @@ async fn proposal_apply(
 /// confirm-gated: nothing outside the console's own list changes, and the
 /// run row itself is untouched otherwise.
 async fn proposal_discard(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("learning.proposals.discard", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        learning::learning_proposals::discard(&mut ctx, &id)
+    mutate_response(state, "learning.proposals.discard", None, move |ctx| {
+        learning::learning_proposals::discard(ctx, &id)
     })
-    .await;
-    respond("learning.proposals.discard", result, started)
+    .await
 }
 
 /// `?limit=&offset=` on `GET /learning/expansions`.
@@ -244,13 +237,11 @@ struct ExpansionsQuery {
     offset: usize,
 }
 
-/// `GET /api/v1/learning/expansions` — one page of mined `query_expansions`
-/// rows, strongest support first.
-async fn expansions(State(state): State<AppState>, Query(q): Query<ExpansionsQuery>) -> Response {
-    query_response(state, "learning.expansions", move |ctx| {
-        learning::console::expansions(ctx, q.limit, q.offset)
-    })
-    .await
+console_read! {
+    /// `GET /api/v1/learning/expansions` — one page of mined `query_expansions`
+    /// rows, strongest support first.
+    expansions, "learning.expansions", (Query(q): Query<ExpansionsQuery>),
+    |ctx| learning::console::expansions(ctx, q.limit, q.offset)
 }
 
 /// `GET /api/v1/learning/recall-status` — tracked queries, verdicts, saves,

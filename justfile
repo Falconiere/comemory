@@ -14,6 +14,8 @@ qa:
     bash scripts/check-all.sh
     bash scripts/deny-check.sh
     bash scripts/dup-check.sh
+    bash scripts/jscpd-check.sh
+    bash scripts/cargo-dupes-check.sh
     bash scripts/machete-check.sh
     bash scripts/test-install-libc.sh
 

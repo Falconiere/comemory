@@ -8,8 +8,6 @@
 //! version anchors forward — every one of them is reversible, unlike the
 //! `DELETE` and `rebuild` surfaces the confirm gate exists for.
 
-use std::time::Instant;
-
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
@@ -17,9 +15,8 @@ use axum::routing::{patch, post};
 use axum::{Json, Router};
 
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond};
-use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
+use crate::serve::routes::RouteEntry;
+use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_ctx};
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -65,21 +62,11 @@ async fn update(
     headers: HeaderMap,
     Json(req): Json<crate::domains::memories::update::Request>,
 ) -> Response {
-    let started = Instant::now();
     let origin = state.http_origin(&headers);
-    let permit = match guard_mutating("memories.update", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
-        crate::domains::memories::update::run(&mut ctx, &id, req)
+    mutate_response(state, "memories.update", Some(origin), move |ctx| {
+        crate::domains::memories::update::run(ctx, &id, req)
     })
-    .await;
-    respond("memories.update", result, started)
+    .await
 }
 
 /// `POST /api/v1/memories/{id}/restore` — bring a soft-deleted memory back
@@ -90,21 +77,11 @@ async fn restore(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let started = Instant::now();
     let origin = state.http_origin(&headers);
-    let permit = match guard_mutating("memories.restore", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
-        crate::domains::memories::restore::run(&mut ctx, &id)
+    mutate_response(state, "memories.restore", Some(origin), move |ctx| {
+        crate::domains::memories::restore::run(ctx, &id)
     })
-    .await;
-    respond("memories.restore", result, started)
+    .await
 }
 
 /// `POST /api/v1/memories/{id}/references/refresh` — re-pin the memory's
@@ -112,20 +89,12 @@ async fn restore(
 /// the re-classified `code_refs`. Repo roots resolve through this server's
 /// `--root <repo>=<path>` overrides first, then `repo_marker.root_path`.
 async fn refresh_refs(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let permit = match guard_mutating("memories.refresh-refs", &state) {
-        Ok(permit) => permit,
-        Err(resp) => return *resp,
-    };
-    let result = run_blocking(move || {
-        let _permit = permit;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::memories::refresh_refs::run(&mut ctx, &id, state.roots())
+    mutate_blocking(state, "memories.refresh-refs", move |state| {
+        with_ctx(state, None, |ctx| {
+            crate::domains::memories::refresh_refs::run(ctx, &id, state.roots())
+        })
     })
-    .await;
-    respond("memories.refresh-refs", result, started)
+    .await
 }
 
 #[cfg(test)]

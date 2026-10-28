@@ -58,78 +58,140 @@ pub struct SourceRootRow {
     pub updated_at: String,
 }
 
-/// Insert a fresh `source_roots` row (`status = 'active'`), or refresh an
-/// existing row's mutable fields, leaving its `status` and `created_at`
-/// untouched.
-pub fn upsert(conn: &Connection, row: SourceRootUpsert<'_>) -> Result<()> {
-    conn.execute(
-        UPSERT_SQL,
-        params![
-            row.id,
-            row.canonical_path,
-            row.kind,
-            row.repo,
-            row.created_at,
-            row.updated_at
-        ],
-    )?;
-    Ok(())
+/// Emit one `select` builder and one positional row decoder from a single
+/// `index => field` table, so the projection and the decoder cannot drift on
+/// column order. Each field shares its column's name.
+macro_rules! row_mapping {
+    (
+        $select:ident, $decode:ident, $table:ident, $cols:ident, $row:ident,
+        $($idx:literal => $field:ident),+ $(,)?
+    ) => {
+        fn $select() -> toolu_orm::query::select::SelectBuilder {
+            $table::select().columns_typed(&[$(&$cols::$field),+])
+        }
+
+        fn $decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<$row> {
+            Ok($row { $($field: r.get($idx)?),+ })
+        }
+    };
 }
 
-/// Delete a `source_roots` row by id. Cascades to `source_files` /
-/// `documents` / `document_chunks` via `ON DELETE CASCADE`.
-pub fn delete(conn: &Connection, id: &str) -> Result<()> {
-    orm::execute(conn, SourceRoots::delete().filter(col::id.eq(id)).to_sql())?;
-    Ok(())
+orm::sql_writes! {
+    /// Insert a fresh `source_roots` row (`status = 'active'`), or refresh an
+    /// existing row's mutable fields, leaving its `status` and `created_at`
+    /// untouched.
+    pub upsert(row: SourceRootUpsert<'_>) = UPSERT_SQL, [
+        row.id,
+        row.canonical_path,
+        row.kind,
+        row.repo,
+        row.created_at,
+        row.updated_at,
+    ];
+    /// Insert a fresh `source_files` row, or overwrite an existing one's
+    /// mutable fields (everything but `id`/`source_id`/`relative_path`/
+    /// `created_at`, which stay fixed once a row exists).
+    pub upsert_file(row: SourceFileUpsert<'_>) = FILE_UPSERT_SQL, [
+        row.id,
+        row.source_id,
+        row.relative_path,
+        row.classification,
+        row.size,
+        row.mtime,
+        row.sha256,
+        row.status,
+        row.error,
+        row.created_at,
+        row.updated_at,
+    ];
 }
 
-/// List every `source_roots` row, ordered by `canonical_path` for a
-/// deterministic listing.
-pub fn list(conn: &Connection) -> Result<Vec<SourceRootRow>> {
-    orm::query_all(
-        conn,
+row_mapping!(
+    select_roots,
+    row_from_sql,
+    SourceRoots,
+    col,
+    SourceRootRow,
+    0 => id,
+    1 => canonical_path,
+    2 => kind,
+    3 => repo,
+    4 => status,
+    5 => created_at,
+    6 => updated_at,
+);
+
+row_mapping!(
+    select_files,
+    file_row_from_sql,
+    SourceFiles,
+    file,
+    SourceFileRow,
+    0 => id,
+    1 => source_id,
+    2 => relative_path,
+    3 => classification,
+    4 => size,
+    5 => mtime,
+    6 => sha256,
+    7 => status,
+    8 => error,
+    9 => created_at,
+    10 => updated_at,
+);
+
+orm::writes! {
+    /// Delete a `source_roots` row by id. Cascades to `source_files` /
+    /// `documents` / `document_chunks` via `ON DELETE CASCADE`.
+    pub delete(id: &str) = SourceRoots::delete().filter(col::id.eq(id));
+    /// Narrow "fingerprint touch": update only `size`/`mtime`/`updated_at`
+    /// on an existing row, leaving `status`/`sha256`/`error` untouched. Used
+    /// when a SHA-256 confirm finds unchanged content behind a changed
+    /// mtime — the writer's "touch fingerprint, skip" path.
+    pub touch_file(id: &str, size: i64, mtime: i64, updated_at: &str) = SourceFiles::update()
+        .set(&file::size, size)
+        .set(&file::mtime, mtime)
+        .set(&file::updated_at, updated_at)
+        .filter(file::id.eq(id));
+    /// Flip a row to the `deleted` tombstone status, leaving its last-known
+    /// `size`/`mtime`/`sha256` in place for diagnostics (spec: "a `deleted`
+    /// tombstone for diagnostics").
+    pub mark_deleted(id: &str, updated_at: &str) = SourceFiles::update()
+        .set(&file::status, "deleted")
+        .set(&file::updated_at, updated_at)
+        .filter(file::id.eq(id));
+}
+
+orm::reads! {
+    /// List every `source_roots` row, ordered by `canonical_path` for a
+    /// deterministic listing.
+    pub list() -> Vec<SourceRootRow> = query_all(
         select_roots().order_by(col::canonical_path.asc()).to_sql(),
-        row_from_sql,
-    )
-}
-
-/// Fetch one `source_roots` row by id, or `None` if it does not exist.
-pub fn get(conn: &Connection, id: &str) -> Result<Option<SourceRootRow>> {
-    orm::query_optional(
-        conn,
-        select_roots().filter(col::id.eq(id)).to_sql(),
-        row_from_sql,
-    )
+        row_from_sql
+    );
+    /// Fetch one `source_roots` row by id, or `None` if it does not exist.
+    pub get(id: &str) -> Option<SourceRootRow> =
+        query_optional(select_roots().filter(col::id.eq(id)).to_sql(), row_from_sql);
+    /// Fetch one `source_files` row by id, or `None` if it does not exist.
+    pub get_file(id: &str) -> Option<SourceFileRow> =
+        query_optional(select_files().filter(file::id.eq(id)).to_sql(), file_row_from_sql);
+    /// List every `source_files` row for one source, ordered by
+    /// `relative_path` for a deterministic scan — the authoritative-scan
+    /// reconciliation in
+    /// [`crate::domains::documents::document::writer::reconcile_deletions`]
+    /// diffs this against a fresh discovery walk.
+    pub list_files_by_source(source_id: &str) -> Vec<SourceFileRow> = query_all(
+        select_files()
+            .filter(file::source_id.eq(source_id))
+            .order_by(file::relative_path.asc()).to_sql(),
+        file_row_from_sql
+    );
 }
 
 /// Total `source_roots` row count.
 pub fn count(conn: &Connection) -> Result<usize> {
     let n: i64 = orm::query_one(conn, SourceRoots::select().to_count_sql(), |r| r.get(0))?;
     Ok(n as usize)
-}
-
-fn select_roots() -> toolu_orm::query::select::SelectBuilder {
-    SourceRoots::select().columns_typed(&[
-        &col::id,
-        &col::canonical_path,
-        &col::kind,
-        &col::repo,
-        &col::status,
-        &col::created_at,
-        &col::updated_at,
-    ])
-}
-
-fn row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRootRow> {
-    Ok(SourceRootRow {
-        id: r.get(0)?,
-        canonical_path: r.get(1)?,
-        kind: r.get(2)?,
-        repo: r.get(3)?,
-        status: r.get(4)?,
-        created_at: r.get(5)?,
-        updated_at: r.get(6)?,
-    })
 }
 
 /// Caller-supplied fields for [`upsert_file`]. `id` is caller-computed —
@@ -200,92 +262,6 @@ const FILE_UPSERT_SQL: &str = "INSERT INTO source_files(\
      status = excluded.status, error = excluded.error, \
      updated_at = excluded.updated_at";
 
-/// Insert a fresh `source_files` row, or overwrite an existing one's
-/// mutable fields (everything but `id`/`source_id`/`relative_path`/
-/// `created_at`, which stay fixed once a row exists).
-pub fn upsert_file(conn: &Connection, row: SourceFileUpsert<'_>) -> Result<()> {
-    conn.execute(
-        FILE_UPSERT_SQL,
-        params![
-            row.id,
-            row.source_id,
-            row.relative_path,
-            row.classification,
-            row.size,
-            row.mtime,
-            row.sha256,
-            row.status,
-            row.error,
-            row.created_at,
-            row.updated_at,
-        ],
-    )?;
-    Ok(())
-}
-
-/// Narrow "fingerprint touch": update only `size`/`mtime`/`updated_at`
-/// on an existing row, leaving `status`/`sha256`/`error` untouched. Used
-/// when a SHA-256 confirm finds unchanged content behind a changed
-/// mtime — the writer's "touch fingerprint, skip" path.
-pub fn touch_file(
-    conn: &Connection,
-    id: &str,
-    size: i64,
-    mtime: i64,
-    updated_at: &str,
-) -> Result<()> {
-    orm::execute(
-        conn,
-        SourceFiles::update()
-            .set(&file::size, size)
-            .set(&file::mtime, mtime)
-            .set(&file::updated_at, updated_at)
-            .filter(file::id.eq(id))
-            .to_sql(),
-    )?;
-    Ok(())
-}
-
-/// Flip a row to the `deleted` tombstone status, leaving its last-known
-/// `size`/`mtime`/`sha256` in place for diagnostics (spec: "a `deleted`
-/// tombstone for diagnostics").
-pub fn mark_deleted(conn: &Connection, id: &str, updated_at: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        SourceFiles::update()
-            .set(&file::status, "deleted")
-            .set(&file::updated_at, updated_at)
-            .filter(file::id.eq(id))
-            .to_sql(),
-    )?;
-    Ok(())
-}
-
-/// Fetch one `source_files` row by id, or `None` if it does not exist.
-pub fn get_file(conn: &Connection, id: &str) -> Result<Option<SourceFileRow>> {
-    orm::query_optional(
-        conn,
-        select_files().filter(file::id.eq(id)).to_sql(),
-        file_row_from_sql,
-    )
-}
-
-/// List every `source_files` row for one source, ordered by
-/// `relative_path` for a deterministic scan — the authoritative-scan
-/// reconciliation in
-/// [`crate::domains::documents::document::writer::reconcile_deletions`]
-/// diffs this against a fresh discovery walk.
-pub fn list_files_by_source(conn: &Connection, source_id: &str) -> Result<Vec<SourceFileRow>> {
-    orm::query_all(
-        conn,
-        select_files()
-            .filter(file::source_id.eq(source_id))
-            .order_by(file::relative_path.asc())
-            .to_sql(),
-        file_row_from_sql,
-    )
-}
-
 /// Per-status `source_files` counts for one source, surfaced by
 /// `comemory sources` (the report's `indexed`/`error`/`stale` columns).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -322,38 +298,6 @@ pub fn file_status_counts(conn: &Connection, source_id: &str) -> Result<SourceFi
         }
     }
     Ok(counts)
-}
-
-fn select_files() -> toolu_orm::query::select::SelectBuilder {
-    SourceFiles::select().columns_typed(&[
-        &file::id,
-        &file::source_id,
-        &file::relative_path,
-        &file::classification,
-        &file::size,
-        &file::mtime,
-        &file::sha256,
-        &file::status,
-        &file::error,
-        &file::created_at,
-        &file::updated_at,
-    ])
-}
-
-fn file_row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<SourceFileRow> {
-    Ok(SourceFileRow {
-        id: r.get(0)?,
-        source_id: r.get(1)?,
-        relative_path: r.get(2)?,
-        classification: r.get(3)?,
-        size: r.get(4)?,
-        mtime: r.get(5)?,
-        sha256: r.get(6)?,
-        status: r.get(7)?,
-        error: r.get(8)?,
-        created_at: r.get(9)?,
-        updated_at: r.get(10)?,
-    })
 }
 
 #[cfg(test)]

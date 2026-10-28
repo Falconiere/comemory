@@ -82,10 +82,15 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     }
 }
 
-async fn run_sources(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+/// Load the saved login both network-bound subcommands need, or tell the user to log in.
+fn load_auth(data_dir: Option<PathBuf>) -> Result<AuthFile> {
     let paths = Paths::new(resolve_data_dir(data_dir));
-    let auth = AuthFile::load(&paths)?
-        .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
+    AuthFile::load(&paths)?
+        .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))
+}
+
+async fn run_sources(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let auth = load_auth(data_dir)?;
     let rows = off_runtime(move || capture::run_sources(&auth))?;
     if json_flag {
         json::write(&serde_json::json!({ "sources": rows }))?;
@@ -133,9 +138,7 @@ fn run_install_hook(h: InstallHookArgs, json_flag: bool) -> Result<()> {
 }
 
 async fn run_session(a: SessionArgs, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    let auth = AuthFile::load(&paths)?
-        .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
+    let auth = load_auth(data_dir)?;
     let (path, session_id) = resolve_target(&a)?;
     let req = capture::CaptureRequest {
         source: a.source,

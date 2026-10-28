@@ -72,6 +72,40 @@ pub struct Registry {
     next_seq: AtomicU64,
 }
 
+/// Generate the `subscribe*` methods: each hands out a fresh receiver on one
+/// of a job's channels, or `None` for an unknown id.
+///
+/// They differ in nothing but the channel field and its receiver type, which
+/// is what `scripts/dup-check.sh` counts as near-duplicates (same trade as
+/// `learning_job_route!` in `routes::learning`).
+macro_rules! subscribe_methods {
+    ($($(#[$doc:meta])* $method:ident => $field:ident: $receiver:ty;)+) => {
+        $(
+            $(#[$doc])*
+            pub fn $method(&self, id: &str) -> Result<Option<$receiver>> {
+                Ok(self.lock()?.get(id).map(|job| job.$field.subscribe()))
+            }
+        )+
+    };
+}
+
+impl Registry {
+    subscribe_methods! {
+        /// A fresh receiver on a job's status channel. Because the sender is
+        /// retained, `borrow_and_update` on the returned receiver immediately
+        /// yields the current status — including a terminal one for a job that
+        /// finished before the subscriber attached (AC-8).
+        subscribe => tx: watch::Receiver<JobStatus>;
+        /// A fresh receiver on job `id`'s progress channel — the SSE
+        /// `progress` event's source, mirroring [`Registry::subscribe`].
+        subscribe_progress => progress_tx: watch::Receiver<Option<Progress>>;
+        /// A fresh receiver on job `id`'s log-line channel — the SSE `log`
+        /// event's source. Lines pushed before subscribing are not replayed
+        /// (`JobView.log_tail` carries those).
+        subscribe_log => log_tx: broadcast::Receiver<String>;
+    }
+}
+
 impl Registry {
     /// An empty registry.
     pub fn new() -> Self {
@@ -204,13 +238,6 @@ impl Registry {
             .unwrap_or(false)
     }
 
-    /// A fresh receiver on job `id`'s log-line channel — the SSE `log`
-    /// event's source. Lines pushed before subscribing are not replayed
-    /// (`JobView.log_tail` carries those).
-    pub fn subscribe_log(&self, id: &str) -> Result<Option<broadcast::Receiver<String>>> {
-        Ok(self.lock()?.get(id).map(|job| job.log_tx.subscribe()))
-    }
-
     /// Record a progress report for job `id`: update the stored snapshot
     /// (`JobView::progress`) and publish it on the job's progress `watch`
     /// channel (the SSE `progress` event). `NotFound` when the id is
@@ -278,23 +305,6 @@ impl Registry {
     /// registered, or evicted).
     pub fn get(&self, id: &str) -> Result<Option<JobView>> {
         Ok(self.lock()?.get(id).map(Job::view))
-    }
-
-    /// A fresh receiver on a job's status channel. Because the sender is
-    /// retained, `borrow_and_update` on the returned receiver immediately
-    /// yields the current status — including a terminal one for a job that
-    /// finished before the subscriber attached (AC-8).
-    pub fn subscribe(&self, id: &str) -> Result<Option<watch::Receiver<JobStatus>>> {
-        Ok(self.lock()?.get(id).map(|job| job.tx.subscribe()))
-    }
-
-    /// A fresh receiver on job `id`'s progress channel — the SSE
-    /// `progress` event's source, mirroring [`Registry::subscribe`].
-    pub fn subscribe_progress(
-        &self,
-        id: &str,
-    ) -> Result<Option<watch::Receiver<Option<Progress>>>> {
-        Ok(self.lock()?.get(id).map(|job| job.progress_tx.subscribe()))
     }
 
     /// Every retained job, newest first.

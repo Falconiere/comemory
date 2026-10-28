@@ -14,9 +14,9 @@ use axum::routing::get;
 
 use crate::domains::maintenance;
 use crate::serve::AppState;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -45,11 +45,7 @@ async fn stats(
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        maintenance::stats::run(&mut ctx, req)
-    })
-    .await;
+    let result =
+        run_blocking(move || with_lazy_ctx(&state, |ctx| maintenance::stats::run(ctx, req))).await;
     respond("stats", result, started)
 }

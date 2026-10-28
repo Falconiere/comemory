@@ -909,6 +909,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/jobs/events.rs | comemory::serve::jobs::events; preserve | none | none | delivery::serve | src/serve/jobs/events.rs | retain |
 | src/serve/jobs/registry.rs | comemory::serve::jobs::registry; preserve | src/serve/jobs/tests/registry.rs | none | delivery::serve | src/serve/jobs/registry.rs | retain |
 | src/serve/jobs/worker.rs | comemory::serve::jobs::worker; preserve | src/serve/jobs/tests/worker.rs | none | delivery::serve | src/serve/jobs/worker.rs | retain |
+| src/serve/query_or_json.rs | comemory::serve::query_or_json; preserve | src/serve/tests/query_or_json.rs; src/serve/tests/query_or_json_routes.rs | none | delivery::serve | src/serve/query_or_json.rs | retain |
 | src/serve/router.rs | comemory::serve::router; preserve | src/serve/tests/router.rs | none | delivery::serve | src/serve/router.rs | retain |
 | src/serve/routes.rs | comemory::serve::routes; preserve | none | none | delivery::serve | src/serve/routes.rs | retain |
 | src/serve/routes/activity.rs | comemory::serve::routes::activity; preserve | none | none | delivery::serve | src/serve/routes/activity.rs | retain |
@@ -935,6 +936,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/routes/memories/write.rs | comemory::serve::routes::memories::write; preserve | none | none | delivery::serve | src/serve/routes/memories/write.rs | retain |
 | src/serve/routes/memory_stores.rs | comemory::serve::routes::memory_stores; preserve | src/serve/routes/tests/memory_stores.rs | none | delivery::serve | src/serve/routes/memory_stores.rs | retain |
 | src/serve/routes/meta.rs | comemory::serve::routes::meta; preserve | none | none | delivery::serve | src/serve/routes/meta.rs | retain |
+| src/serve/routes/mutate_response.rs | comemory::serve::routes::mutate_response; preserve | src/serve/routes/tests/mutate_response.rs; src/serve/routes/tests/mutate_origin.rs | none | delivery::serve | src/serve/routes/mutate_response.rs | retain |
 | src/serve/routes/overview.rs | comemory::serve::routes::overview; preserve | src/serve/routes/tests/overview.rs | none | delivery::serve | src/serve/routes/overview.rs | retain |
 | src/serve/routes/project_activity.rs | comemory::serve::routes::project_activity; preserve | src/serve/routes/tests/project_activity.rs | none | delivery::serve | src/serve/routes/project_activity.rs | retain |
 | src/serve/routes/project_evidence.rs | comemory::serve::routes::project_evidence; preserve | src/serve/routes/tests/project_evidence.rs | none | delivery::serve | src/serve/routes/project_evidence.rs | retain |

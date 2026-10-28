@@ -118,6 +118,30 @@ impl AuthFile {
     /// `comemory auth login` as the fix. Any other malformed file surfaces the
     /// underlying `serde_json` error.
     pub fn load(paths: &Paths) -> Result<Option<Self>> {
+        Self::load_with(paths, false)
+    }
+
+    /// Like [`Self::load`], but a credential this build cannot use reads as
+    /// absent instead of raising.
+    ///
+    /// Best-effort callers (`save`, `context`) use this: they already do
+    /// nothing when `auth.json` is missing, and turning every local save into
+    /// a warning about a stale credential would be noise. The commands the
+    /// user ran on purpose — `sync`, `auth status` — still report it.
+    ///
+    /// It tolerates exactly the schema mismatch `schema_mismatch` derives,
+    /// rather than catching [`Error::Usage`] from [`Self::load`]: matching on
+    /// the error variant would silently swallow any *future* usage error
+    /// `load` grows, turning a real misconfiguration into a silent no-sync.
+    pub fn load_usable(paths: &Paths) -> Result<Option<Self>> {
+        Self::load_with(paths, true)
+    }
+
+    /// The one load path behind [`Self::load`] and [`Self::load_usable`]: the
+    /// logout barrier, the read, the schema check, then the strict parse. The
+    /// two differ only in what a schema mismatch means — `stale_is_absent`
+    /// turns it into `Ok(None)` instead of the error `schema_mismatch` built.
+    fn load_with(paths: &Paths, stale_is_absent: bool) -> Result<Option<Self>> {
         if auth_barrier::active(paths) {
             return Ok(None);
         }
@@ -126,7 +150,11 @@ impl AuthFile {
             return Ok(None);
         };
         if let Some(mismatch) = schema_mismatch(&raw, &path)? {
-            return Err(mismatch);
+            return if stale_is_absent {
+                Ok(None)
+            } else {
+                Err(mismatch)
+            };
         }
         let file: Self = serde_json::from_str(&raw)?;
         // A field the platform left blank is as unusable as one it omitted,
@@ -139,32 +167,6 @@ impl AuthFile {
             )));
         }
         Ok(Some(file))
-    }
-
-    /// Like [`Self::load`], but a credential this build cannot use reads as
-    /// absent instead of raising.
-    ///
-    /// Best-effort callers (`save`, `context`) use this: they already do
-    /// nothing when `auth.json` is missing, and turning every local save into
-    /// a warning about a stale credential would be noise. The commands the
-    /// user ran on purpose — `sync`, `auth status` — still report it.
-    ///
-    /// It re-derives the schema mismatch rather than catching [`Error::Usage`] from
-    /// [`Self::load`]: matching on the error variant would silently swallow
-    /// any *future* usage error `load` grows, turning a real misconfiguration
-    /// into a silent no-sync.
-    pub fn load_usable(paths: &Paths) -> Result<Option<Self>> {
-        if auth_barrier::active(paths) {
-            return Ok(None);
-        }
-        let path = paths.auth_file();
-        let Some(raw) = read_if_present(&path)? else {
-            return Ok(None);
-        };
-        if schema_mismatch(&raw, &path)?.is_some() {
-            return Ok(None);
-        }
-        Self::load(paths)
     }
 
     /// Persist this bundle atomically with mode `0600` on unix, then clear

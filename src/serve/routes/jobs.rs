@@ -85,23 +85,6 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/jobs/{id}/cancel", post(cancel))
 }
 
-/// `POST /api/v1/jobs/{id}/cancel` — cooperative cancel. `data` reports
-/// what happened: `{job_id, outcome: "cancelled"}` for a queued job (now
-/// terminal), `{job_id, outcome: "requested"}` for a running one (stops at
-/// its next boundary). `404 not_found` for an unknown id, `400 bad_request`
-/// for a job that already finished.
-async fn cancel(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let result = state.jobs().cancel(&id).map(|outcome| {
-        let slug = match outcome {
-            CancelOutcome::Cancelled => "cancelled",
-            CancelOutcome::Requested => "requested",
-        };
-        json!({ "job_id": id, "outcome": slug })
-    });
-    respond("jobs.cancel", result, started)
-}
-
 /// `?limit=&offset=` on `GET /jobs` — transport-level windowing over the
 /// in-memory registry; there is no CLI counterpart to mirror.
 #[derive(Deserialize)]
@@ -119,27 +102,56 @@ fn default_limit() -> usize {
     50
 }
 
-/// `GET /api/v1/jobs` — every retained job, newest first, paged. Served
-/// straight off the registry (a short mutex hold, no DB and no `.await`),
-/// so it does not go through `run_blocking`.
-async fn list(State(state): State<AppState>, Query(query): Query<ListQuery>) -> Response {
-    let started = Instant::now();
-    let result = state
-        .jobs()
-        .list()
-        .map(|jobs| Page::from_slice(jobs, query.limit, query.offset));
-    respond("jobs.list", result, started)
+/// Generate a synchronous registry route: the handler takes the state plus
+/// the one extractor listed, runs `$body` over the job registry, and envelopes
+/// its result under `$command`. They are short mutex holds — no DB, no
+/// `.await`, so no `run_blocking` — and exist as one macro because three
+/// hand-written handlers differ in nothing but their body, which is what
+/// `scripts/dup-check.sh` counts as near-duplicates (same trade as
+/// `learning_job_route!` in `routes::learning`).
+macro_rules! registry_route {
+    (
+        $(#[$doc:meta])*
+        $handler:ident, $command:literal, $extract:ident($arg:ident): $ty:ty => |$jobs:ident| $body:expr
+    ) => {
+        $(#[$doc])*
+        async fn $handler(State(state): State<AppState>, $extract($arg): $ty) -> Response {
+            let started = Instant::now();
+            let $jobs = state.jobs();
+            respond($command, $body, started)
+        }
+    };
 }
 
-/// `GET /api/v1/jobs/{id}` — one job's record, `404 not_found` when the id
-/// is unknown or has aged out of the retention window.
-async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let result = state
-        .jobs()
+registry_route! {
+    /// `POST /api/v1/jobs/{id}/cancel` — cooperative cancel. `data` reports
+    /// what happened: `{job_id, outcome: "cancelled"}` for a queued job (now
+    /// terminal), `{job_id, outcome: "requested"}` for a running one (stops at
+    /// its next boundary). `404 not_found` for an unknown id, `400 bad_request`
+    /// for a job that already finished.
+    cancel, "jobs.cancel", Path(id): Path<String> => |jobs| jobs.cancel(&id).map(|outcome| {
+        let slug = match outcome {
+            CancelOutcome::Cancelled => "cancelled",
+            CancelOutcome::Requested => "requested",
+        };
+        json!({ "job_id": id, "outcome": slug })
+    })
+}
+
+registry_route! {
+    /// `GET /api/v1/jobs` — every retained job, newest first, paged. Served
+    /// straight off the registry, so it does not go through `run_blocking`.
+    list, "jobs.list", Query(query): Query<ListQuery> => |jobs| jobs
+        .list()
+        .map(|all| Page::from_slice(all, query.limit, query.offset))
+}
+
+registry_route! {
+    /// `GET /api/v1/jobs/{id}` — one job's record, `404 not_found` when the id
+    /// is unknown or has aged out of the retention window.
+    get_one, "jobs.get", Path(id): Path<String> => |jobs| jobs
         .get(&id)
-        .and_then(|found| found.ok_or_else(|| Error::NotFound(format!("job not found: {id}"))));
-    respond("jobs.get", result, started)
+        .and_then(|found| found.ok_or_else(|| Error::NotFound(format!("job not found: {id}"))))
 }
 
 /// `GET /api/v1/jobs/{id}/events` — the job's lifecycle as `text/event-stream`.

@@ -97,11 +97,34 @@ pub fn classify(e: &Error) -> (&'static str, Class) {
     }
 }
 
-/// The `(code, class)` pair for a project refusal: the platform's code word
-/// and the class of the HTTP status it answers there. Exhaustive like
-/// [`classify`], so a new [`ProjectError`] variant is a compile error here.
-pub fn classify_project(e: &ProjectError) -> (&'static str, Class) {
-    match e {
+/// Generate a `(code, class)` classifier from a table of `pattern => row` arms.
+///
+/// [`classify_project`] is a flat table of rows beside [`classify`]'s mixed
+/// arms (delegating helpers, shared buckets); written as two bare `match`
+/// functions the pair is one near-duplicate in `scripts/dup-check.sh`. The
+/// generated `match` is still exhaustive, so a new variant stays a compile
+/// error.
+macro_rules! code_table {
+    (
+        $(#[$meta:meta])*
+        $vis:vis fn $name:ident($arg:ident: &$ty:ty) {
+            $($pat:pat => $row:expr),+ $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        $vis fn $name($arg: &$ty) -> (&'static str, Class) {
+            match $arg {
+                $($pat => $row),+
+            }
+        }
+    };
+}
+
+code_table! {
+    /// The `(code, class)` pair for a project refusal: the platform's code word
+    /// and the class of the HTTP status it answers there. Exhaustive like
+    /// [`classify`], so a new [`ProjectError`] variant is a compile error here.
+    pub fn classify_project(e: &ProjectError) {
         ProjectError::ProjectNotFound { .. } => ("project_not_found", Class::NotFound),
         ProjectError::WorkItemNotFound { .. } => ("work_item_not_found", Class::NotFound),
         ProjectError::ProposalNotFound { .. } => ("proposal_not_found", Class::NotFound),
@@ -119,7 +142,7 @@ pub fn classify_project(e: &ProjectError) -> (&'static str, Class) {
         ProjectError::RepoNotAllowed { .. } => ("repo_not_allowed", Class::Forbidden),
         ProjectError::ExecutionActorForbidden | ProjectError::TierForbidden { .. } => {
             ("forbidden", Class::Forbidden)
-        }
+        },
         ProjectError::ProposalStale { .. } => ("proposal_stale", Class::Conflict),
         ProjectError::ProposalAlreadyReviewed => ("proposal_already_reviewed", Class::Conflict),
         ProjectError::VersionConflict { .. } => ("version_conflict", Class::Conflict),
@@ -128,7 +151,7 @@ pub fn classify_project(e: &ProjectError) -> (&'static str, Class) {
         ProjectError::DependencyBlocked { .. } => ("dependency_blocked", Class::Conflict),
         ProjectError::CompletionRequirementsUnmet { .. } => {
             ("completion_requirements_unmet", Class::Conflict)
-        }
+        },
         ProjectError::EvidenceUnverified { .. } => ("evidence_unverified", Class::Conflict),
         ProjectError::ExecutionActive => ("execution_active", Class::Conflict),
         ProjectError::Unauthorized { .. } => ("unauthorized", Class::Unauthorized),

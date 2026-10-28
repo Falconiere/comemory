@@ -2,9 +2,10 @@
 //!
 //! The near-dup surfaces all need the same thing: every live memory's stored
 //! fingerprint, optionally narrowed to one repo, optionally minus one row.
-//! `save` wants it to find the single closest neighbor of the body being
-//! written; `consolidate` wants it to cluster the whole corpus. One query
-//! serves both (Binding Rule 1) instead of each growing its own copy.
+//! `save` and the sync importer want the single closest neighbor of the body
+//! being written ([`nearest_live`]); `consolidate` wants to cluster the whole
+//! corpus. One query serves all three (Binding Rule 1) instead of each
+//! growing its own copy.
 
 use rusqlite::Connection;
 
@@ -56,6 +57,31 @@ pub fn live_simhashes(
             simhash: r.get(1)?,
         })
     })
+}
+
+/// The id of the live memory whose stored fingerprint is closest to `hash`
+/// and within `radius` Hamming bits, or `None` when nothing is that close.
+/// `self_id` (the body's own content-derived id) is excluded first, so an
+/// identical re-save surfaces the second-closest live near-dup instead of
+/// matching itself. The one scan-and-pick behind `save`'s duplicate warning and
+/// the importer's; each caller decides what a failed scan means.
+pub fn nearest_live(
+    conn: &Connection,
+    hash: u64,
+    self_id: &str,
+    radius: u32,
+) -> Result<Option<String>> {
+    Ok(live_simhashes(conn, None, Some(self_id))?
+        .into_iter()
+        .map(|row| {
+            (
+                row.id,
+                crate::utilities::simhash::hamming64(hash, row.simhash as u64),
+            )
+        })
+        .filter(|(_, d)| *d <= radius)
+        .min_by_key(|(_, d)| *d)
+        .map(|(id, _)| id))
 }
 
 #[cfg(test)]
