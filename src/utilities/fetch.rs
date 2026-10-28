@@ -102,12 +102,18 @@ fn exchange_via_body_file(
 ) -> Result<Response> {
     validate_headers(req.headers)?;
     let tmp = tempfile_path()?;
-    let status = run(&tmp);
-    let body = take_body_file(&tmp, req.url);
-    Ok(Response {
-        status: status?,
-        body: body?,
-    })
+    match run(&tmp) {
+        Ok(status) => Ok(Response {
+            status,
+            body: take_body_file(&tmp, req.url)?,
+        }),
+        // The tool failed (or was never run): the status error is the one
+        // worth reporting, and whatever body it left behind is just cleanup.
+        Err(e) => {
+            remove_body_file(&tmp);
+            Err(e)
+        }
+    }
 }
 
 fn exchange_curl(req: &Request<'_>) -> Result<Response> {
@@ -286,10 +292,20 @@ fn take_body_file(path: &Path, url: &str) -> Result<String> {
             path.display()
         ))
     });
-    if let Err(e) = std::fs::remove_file(path) {
-        tracing::debug!(error = %e, path = %path.display(), "fetch temp body cleanup failed");
-    }
+    remove_body_file(path);
     body
+}
+
+/// Delete a response temp file. A file the tool never created (the request
+/// was refused before it ran) is not worth a log line; anything else is.
+fn remove_body_file(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            tracing::debug!(error = %e, path = %path.display(), "fetch temp body cleanup failed");
+        }
+    }
 }
 
 /// Unpredictable path under the process temp dir for curl/wget `-o` bodies

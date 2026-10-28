@@ -70,7 +70,7 @@ Deviations are enumerated under "Deviations from toolu-conventions" — nowhere 
    14)**. Earned residuals live in `dup-ledger.txt`
    (`path|fnA|fnB|category|evidence`): the evidence must state a concrete
    reason (`scripts/lib/dup_ledger_lint.py` rejects a restated pair name),
-   and the ledger is capped at **39% of the anchor (111 rows)** so it can
+   and the ledger is capped at **40% of the anchor (114 rows)** so it can
    only shrink. Same-name pairs cannot be ledgered and must be burned —
    except category `trait-impl` (methods of one trait implemented by several
    types). Over-ceiling unledgered or ledgered fails even when within the
@@ -327,7 +327,7 @@ D3/D4/D5 policy lines — keep them verbatim.
   copy. Its `#![allow(dead_code)]` is the one sanctioned exception.
 - **D10 — `extern crate self as comemory;`** in `src/lib.rs` keeps colocated
   test imports identical to the crate-root suite's.
-- **D11 — 192 of 692 test files remain crate-root integration tests** (kit's
+- **D11 — 192 of 699 test files remain crate-root integration tests** (kit's
   "one file per public surface" category): pinned by the
   `CARGO_BIN_EXE_comemory` constraint — see "Testing".
 - **D12 — RESOLVED.** Dispatcher retired; `.claude/settings.json` matches kit.

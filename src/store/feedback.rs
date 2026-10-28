@@ -19,6 +19,10 @@ use crate::prelude::*;
 /// Upsert the `used` side of the per-memory counter row: insert with
 /// `used_count = 1` or bump the existing count, refreshing `last_used` to
 /// `now` either way. Mirrors [`crate::store::code_feedback::upsert_used`].
+///
+/// `last_used` only ever moves forward: an imported verdict (#254) carries its
+/// original, possibly older, time, and must not make a memory look staler
+/// than a local verdict already proved it was.
 pub(crate) fn upsert_used(conn: &Connection, id: &str, now: &str) -> Result<()> {
     upsert_counts(conn, id, (1, 0), Some(now))
 }

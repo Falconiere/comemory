@@ -147,7 +147,13 @@ pub(crate) fn all_repos(conn: &Connection) -> Result<Vec<String>> {
 /// Whether a `repo_marker` row exists for `repo` — behind
 /// `domains::code::repo_admin`'s "unknown repo" `404` gate.
 pub(crate) fn exists(conn: &Connection, repo: &str) -> Result<bool> {
-    Ok(read_for_lazy_reindex(conn, repo)?.is_some())
+    orm::query_one(
+        conn,
+        RepoMarker::select()
+            .filter(c::repo.eq(repo))
+            .to_exists_sql(),
+        |r| r.get(0),
+    )
 }
 
 /// Set `repo_marker.archived` for `repo`; the returned row count is `0`

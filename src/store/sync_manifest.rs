@@ -20,11 +20,17 @@ use toolu_orm::core::query_column::CommonOps;
 /// Soft-deleted rows are excluded: a tombstone has no content to digest, and
 /// including one would make two peers that agree on the live corpus report
 /// different bucket digests. The order is fixed in SQL so the caller's digest
-/// is reproducible without sorting the whole set first. Projected from
-/// [`live_repository_hashes`] so the two reads share one query.
+/// is reproducible without sorting the whole set first.
 pub fn live_content_hashes(conn: &Connection) -> Result<Vec<String>> {
-    let rows = live_repository_hashes(conn)?;
-    Ok(rows.into_iter().map(|(hash, _)| hash).collect())
+    orm::query_all(
+        conn,
+        Memories::select()
+            .columns_typed(&[&col::content_hash])
+            .filter(col::deleted_at.is_null())
+            .order_by(col::content_hash.asc())
+            .to_sql(),
+        |r| r.get(0),
+    )
 }
 
 /// Every live memory's `(content_hash, repository label)` for policy-scoped

@@ -8,7 +8,7 @@
 //! Mirror for `comemory::store::simhash_scan` — the bulk `(id, simhash)`
 //! scan shared by the save near-dup check and `comemory consolidate`.
 
-use comemory::store::simhash_scan::live_simhashes;
+use comemory::store::simhash_scan::{live_simhashes, nearest_live};
 
 /// Insert one memory row with an explicit repo, simhash and delete state.
 fn insert(
@@ -109,5 +109,37 @@ fn an_empty_corpus_scans_to_nothing() {
     assert!(
         live_simhashes(&conn, None, None).expect("scan").is_empty(),
         "no live rows means no scan rows, not an error"
+    );
+}
+
+#[test]
+fn nearest_live_picks_the_closest_live_row_within_the_radius() {
+    let (_d, conn) = seeded();
+    // 42 sits 1 bit from 43 and 2 bits from 44; the soft-deleted 45 (3 bits)
+    // is never a candidate.
+    assert_eq!(
+        nearest_live(&conn, 42, "nobody", 8).expect("scan"),
+        Some("aaaa0001".to_string()),
+        "an identical live fingerprint is distance 0"
+    );
+    assert_eq!(
+        nearest_live(&conn, 42, "aaaa0001", 8).expect("scan"),
+        Some("aaaa0002".to_string()),
+        "the body's own id is excluded, so the second-closest wins"
+    );
+    assert_eq!(
+        nearest_live(&conn, 42, "aaaa0001", 0).expect("scan"),
+        None,
+        "radius 0 admits only an identical fingerprint"
+    );
+    assert_eq!(
+        nearest_live(&conn, 45, "nobody", 0).expect("scan"),
+        None,
+        "a soft-deleted row is invisible even at distance 0"
+    );
+    assert_eq!(
+        nearest_live(&conn, u64::MAX, "nobody", 8).expect("scan"),
+        None,
+        "nothing live is within 8 bits of an all-ones fingerprint"
     );
 }

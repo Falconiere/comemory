@@ -359,32 +359,16 @@ fn resolve_repo_root() -> Option<PathBuf> {
 /// content-derived id) is excluded first so an identical re-save still
 /// surfaces the second-closest live near-dup instead of matching itself.
 /// Best-effort: any DB error is logged and treated as "no duplicate" so the
-/// check can never block a save. Shared with `sync::exchange::import_write`,
-/// which runs the same advisory scan for an imported record.
-pub(crate) fn near_duplicate(
-    conn: &Connection,
-    body: &str,
-    self_id: &str,
-    radius: u32,
-) -> Option<String> {
+/// check can never block a save.
+fn near_duplicate(conn: &Connection, body: &str, self_id: &str, radius: u32) -> Option<String> {
     let hash = crate::utilities::simhash::of_body(body);
-    let rows = match crate::store::simhash_scan::live_simhashes(conn, None, Some(self_id)) {
-        Ok(rows) => rows,
+    match crate::store::simhash_scan::nearest_live(conn, hash, self_id, radius) {
+        Ok(found) => found,
         Err(e) => {
             tracing::warn!(error = %e, "duplicate check skipped");
-            return None; // dup check is best-effort: never blocks a save
+            None // dup check is best-effort: never blocks a save
         }
-    };
-    rows.into_iter()
-        .map(|row| {
-            (
-                row.id,
-                crate::utilities::simhash::hamming64(hash, row.simhash as u64),
-            )
-        })
-        .filter(|(_, d)| *d <= radius)
-        .min_by_key(|(_, d)| *d)
-        .map(|(id, _)| id)
+    }
 }
 
 /// Validate `raw` (the `supersedes` field) via the shared [`parse_id_csv`] —

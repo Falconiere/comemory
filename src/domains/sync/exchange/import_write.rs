@@ -20,12 +20,14 @@ pub(crate) fn write_new_memory(
 ) -> Result<()> {
     let paths = ctx.paths.clone();
     let conn = ctx.conn()?;
-    let duplicate_of = crate::domains::memories::save::near_duplicate(
+    let duplicate_of = crate::store::simhash_scan::nearest_live(
         conn,
-        &record.body,
+        crate::utilities::simhash::of_body(&record.body),
         &entry.id,
         cfg.rank.near_dup_hamming,
-    );
+    )
+    .ok()
+    .flatten();
     // The same rule the replica wire applies: an unusable vector never
     // refuses the memory, it lands in the needs-embedding backlog instead.
     let verdict = vector_rule::decide(conn, record.vector.as_ref())?;

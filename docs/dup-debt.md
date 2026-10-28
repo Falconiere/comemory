@@ -3,14 +3,14 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**111 near-duplicate function/method pairs at threshold 0.85**, measured with
+**114 near-duplicate function/method pairs at threshold 0.85**, measured with
 **`similarity-rs 0.5.0`** over the 726 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
-`dup-baseline.txt`, because either one alone is meaningless. All **111 are
+`dup-baseline.txt`, because either one alone is meaningless. All **114 are
 earned in `dup-ledger.txt`** (framework-forced / twin-table /
 documented-lifecycle / trait-impl) and **0 remain unledgered** — the hard
 residual budget (5% of the 285-pair anchor). The ledger itself is capped too:
-**39% of the anchor (111 rows)**, lowered as pairs are burned and never
+**40% of the anchor (114 rows)**, lowered as pairs are burned and never
 raised without a visible edit to `scripts/dup-check.sh`, and every row must
 state a reason (`scripts/lib/dup_ledger_lint.py`): a row that only restates the
 two function names and a category is rejected.
@@ -23,12 +23,13 @@ similarity-rs cannot parse, which removed the pairs from the count and nothing
 from the code. The steps recorded here as 101 → 90, 107 → 101, 115 → 107 and
 the tail of 123 → 115 were that trick, not burns. Unwrapping them put the real
 total at **116** (90 ledgered + 26 unledgered). Then each pair was judged on
-its merits, and the net is **116 → 111**:
+its merits, and the net is **116 → 114**:
 
 - **Seven burned for real**, by extracting what the twins shared:
   `respond`/`accepted` (one `envelope_result`), `own_identity`/`parent_identity`
   (one projection), `near_duplicate`/`near_duplicate_inner` (merged; the
-  importer's own copy in `sync::exchange::import_write` now calls it),
+  importer's own copy in `sync::exchange::import_write` now shares
+  `store::simhash_scan::nearest_live`; each caller keeps its own error policy),
   `symlink_dir` (one function, cfg inside), `live_memory_count`/
   `live_memory_hashes` (the count reuses `scoped_count`), `live_bodies`/
   `live_ids` (one `live_by_id` selector) and `copy_code_virtual_tables`/
@@ -37,9 +38,17 @@ its merits, and the net is **116 → 111**:
   upserts in `store::feedback` and `store::code_feedback` — were unwrapped and
   burned in the same change (one `upsert_counts` statement each, with a test
   pinning the `last_used` rules).
-- **Two came back** when over-fitted rewrites were restored to their readable
-  form (`refuse_active` as a `match`, the `next_log`/`try_next_log` loops):
-  `active_in`/`refuse_active` and `next_log`/`try_next_log`.
+- **Five came back** when four over-fitted rewrites were restored to their
+  readable form: `refuse_active` as a `match` and the `next_log`/`try_next_log`
+  loops (`active_in`/`refuse_active`, `next_log`/`try_next_log`);
+  `repo_marker::exists` as a `SELECT EXISTS` probe instead of decoding three
+  columns through `read_for_lazy_reindex` (`archived`/`exists`,
+  `exists`/`set_archived`); and `sync_manifest::live_content_hashes` as its
+  own single-column query instead of projecting `live_repository_hashes`,
+  which read and allocated an extra column per memory on every manifest
+  request (`live_content_hashes`/`live_repository_hashes`). The pairs are
+  false positives — a probe, a read and an UPDATE are different operations —
+  so they are ledgered, not hidden.
 - **The rest stay, with a real reason each.** Where a helper was extracted
   but thin wrappers still score above 0.85 (`load`/`load_usable` over
   `load_with`, `parse_id_csv`/`parse_symbol_id_csv` over `parse_entries`,
