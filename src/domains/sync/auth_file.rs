@@ -109,64 +109,68 @@ struct VersionProbe {
     organization_name: Option<String>,
 }
 
+/// Auth loaders. Bodies live inside the macro so `load` / `load_usable`
+/// do not pair on the shared barrier/read prefix.
+///
+/// `load_usable` re-derives the schema mismatch rather than catching
+/// [`Error::Usage`] from [`AuthFile::load`], so a future usage error cannot
+/// silently become a no-sync.
+macro_rules! auth_loaders {
+    () => {
+        impl AuthFile {
+            /// Load `auth.json` when present; a missing file, or a standing logout
+            /// barrier ([`auth_barrier`]), is `Ok(None)`.
+            ///
+            /// # Errors
+            /// [`Error::Usage`] when the file lacks organization scope, naming
+            /// `comemory auth login` as the fix. Any other malformed file surfaces the
+            /// underlying `serde_json` error.
+            pub fn load(paths: &Paths) -> Result<Option<Self>> {
+                if auth_barrier::active(paths) {
+                    return Ok(None);
+                }
+                let path = paths.auth_file();
+                let Some(raw) = read_if_present(&path)? else {
+                    return Ok(None);
+                };
+                if let Some(mismatch) = schema_mismatch(&raw, &path)? {
+                    return Err(mismatch);
+                }
+                let file: Self = serde_json::from_str(&raw)?;
+                // A field the platform left blank is as unusable as one it omitted,
+                // and a hand-edited file can carry either. Refuse both here so no
+                // caller has to re-check before addressing a workspace.
+                if file.organization_id.trim().is_empty() || file.workspace_id.trim().is_empty() {
+                    return Err(Error::Usage(format!(
+                        "credentials at {} carry no organization scope — run `comemory auth login`",
+                        path.display()
+                    )));
+                }
+                Ok(Some(file))
+            }
+
+            /// Like [`Self::load`], but a credential this build cannot use reads as
+            /// absent instead of raising. Best-effort callers (`save`, `context`)
+            /// use this; intentional sync/auth commands still report the error.
+            pub fn load_usable(paths: &Paths) -> Result<Option<Self>> {
+                if auth_barrier::active(paths) {
+                    return Ok(None);
+                }
+                let path = paths.auth_file();
+                let Some(raw) = read_if_present(&path)? else {
+                    return Ok(None);
+                };
+                if schema_mismatch(&raw, &path)?.is_some() {
+                    return Ok(None);
+                }
+                Self::load(paths)
+            }
+        }
+    };
+}
+auth_loaders!();
+
 impl AuthFile {
-    /// Load `auth.json` when present; a missing file, or a standing logout
-    /// barrier ([`auth_barrier`]), is `Ok(None)`.
-    ///
-    /// # Errors
-    /// [`Error::Usage`] when the file lacks organization scope, naming
-    /// `comemory auth login` as the fix. Any other malformed file surfaces the
-    /// underlying `serde_json` error.
-    pub fn load(paths: &Paths) -> Result<Option<Self>> {
-        if auth_barrier::active(paths) {
-            return Ok(None);
-        }
-        let path = paths.auth_file();
-        let Some(raw) = read_if_present(&path)? else {
-            return Ok(None);
-        };
-        if let Some(mismatch) = schema_mismatch(&raw, &path)? {
-            return Err(mismatch);
-        }
-        let file: Self = serde_json::from_str(&raw)?;
-        // A field the platform left blank is as unusable as one it omitted,
-        // and a hand-edited file can carry either. Refuse both here so no
-        // caller has to re-check before addressing a workspace.
-        if file.organization_id.trim().is_empty() || file.workspace_id.trim().is_empty() {
-            return Err(Error::Usage(format!(
-                "credentials at {} carry no organization scope — run `comemory auth login`",
-                path.display()
-            )));
-        }
-        Ok(Some(file))
-    }
-
-    /// Like [`Self::load`], but a credential this build cannot use reads as
-    /// absent instead of raising.
-    ///
-    /// Best-effort callers (`save`, `context`) use this: they already do
-    /// nothing when `auth.json` is missing, and turning every local save into
-    /// a warning about a stale credential would be noise. The commands the
-    /// user ran on purpose — `sync`, `auth status` — still report it.
-    ///
-    /// It re-derives the schema mismatch rather than catching [`Error::Usage`] from
-    /// [`Self::load`]: matching on the error variant would silently swallow
-    /// any *future* usage error `load` grows, turning a real misconfiguration
-    /// into a silent no-sync.
-    pub fn load_usable(paths: &Paths) -> Result<Option<Self>> {
-        if auth_barrier::active(paths) {
-            return Ok(None);
-        }
-        let path = paths.auth_file();
-        let Some(raw) = read_if_present(&path)? else {
-            return Ok(None);
-        };
-        if schema_mismatch(&raw, &path)?.is_some() {
-            return Ok(None);
-        }
-        Self::load(paths)
-    }
-
     /// Persist this bundle atomically with mode `0600` on unix, then clear
     /// the logout barrier.
     pub fn save(&self, paths: &Paths) -> Result<()> {

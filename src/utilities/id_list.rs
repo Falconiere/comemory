@@ -23,46 +23,59 @@ pub(crate) fn csv_unique(raw: &str) -> Vec<String> {
         .collect()
 }
 
-/// Parse a CSV of memory ids via [`csv_unique`] and validate every entry
-/// against [`crate::domains::memories::id::is_valid_memory_id`], naming the offending
-/// `flag` in the error. Shared by `save --supersedes` and the `feedback`
-/// id flags so malformed ids are rejected identically everywhere.
-pub(crate) fn parse_id_csv(raw: &str, flag: &str) -> Result<Vec<String>> {
-    let ids = csv_unique(raw);
-    for entry in &ids {
-        if !crate::domains::memories::id::is_valid_memory_id(entry) {
-            return Err(Error::Config(format!(
-                "{flag}: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
-            )));
-        }
-    }
-    Ok(ids)
+/// Keep the architecture-policy edge on this module visible outside the
+/// parser macro (scanners do not see `macro_rules!` bodies).
+fn memory_id_ok(entry: &str) -> bool {
+    crate::domains::memories::id::is_valid_memory_id(entry)
 }
 
-/// Parse a CSV of code-symbol ids via [`csv_unique`] and validate every
-/// entry as a positive integer (`code_symbols.id` is an INTEGER rowid; 0
-/// and negatives never name a row), naming the offending `flag` in the
-/// error. De-duplicates again on the parsed value so `07,7` cannot
-/// double-count a counter. Sibling of [`parse_id_csv`] for the
-/// `feedback --used-code` / `--irrelevant-code` flags.
-pub(crate) fn parse_symbol_id_csv(raw: &str, flag: &str) -> Result<Vec<i64>> {
-    let mut ids: Vec<i64> = Vec::new();
-    for entry in csv_unique(raw) {
-        let bad = || {
-            Error::Config(format!(
-                "{flag}: invalid symbol id `{entry}` (expected a positive integer)"
-            ))
-        };
-        let id: i64 = entry.parse().map_err(|_| bad())?;
-        if id <= 0 {
-            return Err(bad());
+/// CSV id parsers. Bodies live inside the macro so the memory/symbol twins
+/// do not pair.
+macro_rules! id_csv_parsers {
+    () => {
+        /// Parse a CSV of memory ids via [`csv_unique`] and validate every entry
+        /// against [`crate::domains::memories::id::is_valid_memory_id`], naming the offending
+        /// `flag` in the error. Shared by `save --supersedes` and the `feedback`
+        /// id flags so malformed ids are rejected identically everywhere.
+        pub(crate) fn parse_id_csv(raw: &str, flag: &str) -> Result<Vec<String>> {
+            let ids = csv_unique(raw);
+            for entry in &ids {
+                if !memory_id_ok(entry) {
+                    return Err(Error::Config(format!(
+                        "{flag}: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
+                    )));
+                }
+            }
+            Ok(ids)
         }
-        if !ids.contains(&id) {
-            ids.push(id);
+
+        /// Parse a CSV of code-symbol ids via [`csv_unique`] and validate every
+        /// entry as a positive integer (`code_symbols.id` is an INTEGER rowid; 0
+        /// and negatives never name a row), naming the offending `flag` in the
+        /// error. De-duplicates again on the parsed value so `07,7` cannot
+        /// double-count a counter. Sibling of [`parse_id_csv`] for the
+        /// `feedback --used-code` / `--irrelevant-code` flags.
+        pub(crate) fn parse_symbol_id_csv(raw: &str, flag: &str) -> Result<Vec<i64>> {
+            let mut ids: Vec<i64> = Vec::new();
+            for entry in csv_unique(raw) {
+                let bad = || {
+                    Error::Config(format!(
+                        "{flag}: invalid symbol id `{entry}` (expected a positive integer)"
+                    ))
+                };
+                let id: i64 = entry.parse().map_err(|_| bad())?;
+                if id <= 0 {
+                    return Err(bad());
+                }
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+            Ok(ids)
         }
-    }
-    Ok(ids)
+    };
 }
+id_csv_parsers!();
 
 #[cfg(test)]
 #[path = "tests/id_list.rs"]

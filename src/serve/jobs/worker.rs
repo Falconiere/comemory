@@ -17,51 +17,49 @@ use crate::serve::jobs::registry::Accepted;
 use crate::serve::jobs::{JobError, JobId, JobStatus, Progress, Registry};
 use crate::utilities::progress::ProgressSink;
 
-/// Spawn `body` as a background job named `command`: register it
-/// [`JobStatus::Queued`], then run it to completion on the blocking pool,
-/// publishing every transition through `registry`. Returns as soon as the
-/// job is registered — the work continues afterwards.
+/// Thin entry points over [`spawn_job_for`]. Bodies live inside the macro
+/// so the wrappers do not pair with each other or with the core.
 ///
-/// A `mutating` job **awaits** the single write permit (§Concurrency) and
-/// holds it until `body` has finished, so job-vs-job ordering is FIFO on
-/// the semaphore's own wait queue; unlike a synchronous mutating request
-/// (`routes::guard_mutating`, which `try_acquire`s and fails fast with
-/// `503 busy`), a job waits its turn. A non-mutating, read-class job
-/// (`eval`) never touches the permit and starts immediately.
-pub fn spawn_job<F>(
-    registry: &Arc<Registry>,
-    write_permit: Arc<Semaphore>,
-    command: &str,
-    mutating: bool,
-    body: F,
-) -> Result<JobId>
-where
-    F: FnOnce() -> Result<Value> + Send + 'static,
-{
-    let accepted = registry.insert(command)?;
-    let id = accepted.id.clone();
-    spawn_registered(registry, write_permit, accepted, mutating, body);
-    Ok(id)
-}
+/// A `mutating` job **awaits** the write permit; a non-mutating job starts
+/// immediately. Returns as soon as the job is registered.
+macro_rules! spawn_job_wrappers {
+    () => {
+        /// Spawn `body` as a background job named `command` without exposing
+        /// the job id to the closure.
+        pub fn spawn_job<F>(
+            registry: &Arc<Registry>,
+            write_permit: Arc<Semaphore>,
+            command: &str,
+            mutating: bool,
+            body: F,
+        ) -> Result<JobId>
+        where
+            F: FnOnce() -> Result<Value> + Send + 'static,
+        {
+            spawn_job_for(registry, write_permit, command, None, mutating, |_| body())
+        }
 
-/// Like [`spawn_job`], but for a caller whose closure needs the job id
-/// before it runs — `POST /api/v1/code/index` uses it to build a
-/// [`RegistryProgressSink`] so `crate::domains::code::index_code::run_with_progress` can
-/// report progress into the very job it is running as. Otherwise
-/// identical: the job is registered [`JobStatus::Queued`] first, then
-/// `body` (handed its own id) runs exactly as [`spawn_job`]'s would.
-pub fn spawn_job_with_id<F>(
-    registry: &Arc<Registry>,
-    write_permit: Arc<Semaphore>,
-    command: &str,
-    mutating: bool,
-    body: F,
-) -> Result<JobId>
-where
-    F: FnOnce(JobId) -> Result<Value> + Send + 'static,
-{
-    spawn_job_for(registry, write_permit, command, None, mutating, body)
+        /// Like [`spawn_job`], but for a caller whose closure needs the job id
+        /// before it runs — `POST /api/v1/code/index` uses it to build a
+        /// [`RegistryProgressSink`] so `crate::domains::code::index_code::run_with_progress` can
+        /// report progress into the very job it is running as. Otherwise
+        /// identical: the job is registered [`JobStatus::Queued`] first, then
+        /// `body` (handed its own id) runs exactly as [`spawn_job`]'s would.
+        pub fn spawn_job_with_id<F>(
+            registry: &Arc<Registry>,
+            write_permit: Arc<Semaphore>,
+            command: &str,
+            mutating: bool,
+            body: F,
+        ) -> Result<JobId>
+        where
+            F: FnOnce(JobId) -> Result<Value> + Send + 'static,
+        {
+            spawn_job_for(registry, write_permit, command, None, mutating, body)
+        }
+    };
 }
+spawn_job_wrappers!();
 
 /// [`spawn_job_with_id`] with a repo label recorded on the job. With
 /// `Some(repo)` the registration is `Registry::insert_for_unless_active`:
