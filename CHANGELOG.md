@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-10-28
+
+### Changed
+
+- name the seconds-per-day divisor shared by day-age math
+
 ## [0.58.0] - 2026-10-27
 
 ### Added
