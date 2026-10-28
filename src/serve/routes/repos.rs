@@ -16,9 +16,9 @@ use axum::routing::get;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::index_runs::INDEX_JOB_COMMAND;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -61,11 +61,7 @@ async fn repos(
 ) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut response = {
-            let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            crate::domains::code::repos::run(&mut ctx, req)?
-        };
+        let mut response = with_lazy_ctx(&state, |ctx| crate::domains::code::repos::run(ctx, req))?;
         // Best-effort: the inventory is the answer, the overlay is a
         // decoration on it. A poisoned registry lock must not turn a
         // successful read of every repo into a 500.

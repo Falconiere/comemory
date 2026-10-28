@@ -28,6 +28,7 @@ use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::maint::prune::split_confirm;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, require_confirm, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
@@ -124,9 +125,7 @@ pub(crate) async fn eval(
         "eval",
         false,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = learning::eval::run(&mut ctx, req)?;
+            let resp = with_lazy_ctx(&job_state, |ctx| learning::eval::run(ctx, req))?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );
@@ -268,9 +267,7 @@ where
         command,
         true,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = run(&mut ctx, req)?;
+            let resp = with_lazy_ctx(&job_state, |ctx| run(ctx, req))?;
             if resp.applied() {
                 job_state.reload_cfg(job_state.paths())?;
             }

@@ -33,10 +33,9 @@ use serde::Deserialize;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::maint::admin::contain_repo;
-use crate::serve::routes::mutate_response::mutate_blocking;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_lazy_ctx};
 use crate::serve::routes::{RouteEntry, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -84,16 +83,16 @@ struct ListQuery {
 async fn list_hooks(State(state): State<AppState>, Query(q): Query<ListQuery>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::hooks::run(
-            &mut ctx,
-            crate::domains::code::hooks::Request {
-                repo: q.repo,
-                enable: None,
-                disable: None,
-            },
-        )
+        with_lazy_ctx(&state, |ctx| {
+            crate::domains::code::hooks::run(
+                ctx,
+                crate::domains::code::hooks::Request {
+                    repo: q.repo,
+                    enable: None,
+                    disable: None,
+                },
+            )
+        })
     })
     .await;
     respond("hooks", result, started)
@@ -130,26 +129,22 @@ fn apply_and_report(
     let repo = req.repo.clone();
     let wrote_config = [req.enable.as_deref(), req.disable.as_deref()]
         .contains(&Some(crate::domains::code::hooks::REINFORCE_HOOK));
-    {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::hooks::run(&mut ctx, req)?;
-    }
+    with_lazy_ctx(state, |ctx| crate::domains::code::hooks::run(ctx, req))?;
     if wrote_config {
         // Only after the file is written: a failed write must not swap in
         // a config the file does not back (the `config.rs` `PUT` ordering).
         state.reload_cfg(state.paths())?;
     }
-    let cfg = state.cfg();
-    let mut ctx = Ctx::lazy(state.paths(), &cfg);
-    crate::domains::code::hooks::run(
-        &mut ctx,
-        crate::domains::code::hooks::Request {
-            repo,
-            enable: None,
-            disable: None,
-        },
-    )
+    with_lazy_ctx(state, |ctx| {
+        crate::domains::code::hooks::run(
+            ctx,
+            crate::domains::code::hooks::Request {
+                repo,
+                enable: None,
+                disable: None,
+            },
+        )
+    })
 }
 
 /// `PUT /api/v1/hooks/{name}` body: the desired state of that one hook.

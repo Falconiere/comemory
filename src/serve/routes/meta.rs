@@ -17,9 +17,9 @@ use serde_json::json;
 use crate::cli::Cli;
 use crate::cli::completion_script;
 use crate::serve::AppState;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{self, RouteEntry, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// Real subcommands with no HTTP mapping: `serve` IS the server (spec
 /// Non-Goal 3), `install` configures an agent host, `setup` enables one on
@@ -85,12 +85,8 @@ async fn completions(
     Query(req): Query<completion_script::Request>,
 ) -> Response {
     let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        completion_script::run(&mut ctx, req)
-    })
-    .await;
+    let result =
+        run_blocking(move || with_lazy_ctx(&state, |ctx| completion_script::run(ctx, req))).await;
     respond("completions", result, started)
 }
 

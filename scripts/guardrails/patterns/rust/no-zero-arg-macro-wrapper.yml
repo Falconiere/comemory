@@ -1,0 +1,19 @@
+# PROJECT-LOCAL RULE (not part of the toolu kit).
+#
+# comemory Binding Rule 1 (no duplication): shared logic is extracted into a
+# helper. A zero-argument `macro_rules! name { () => { ...fns... } } name!();`
+# extracts nothing — it pastes the same function bodies into a token tree that
+# similarity-rs, the architecture scanner and the size checks cannot parse, so
+# the duplication is only hidden. A macro that takes arguments and generates
+# many items from ONE template is real deduplication and is not matched.
+id: no-zero-arg-macro-wrapper
+language: rust
+severity: error
+message: "zero-argument `macro_rules!` wrapper hides code from the gates — extract a real helper (a parameterised template macro is fine)"
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+rule:
+  all:
+    - kind: macro_definition
+    - regex: '^macro_rules!\s+\w+\s*\{\s*(?://[^\n]*\s*)*\(\s*\)\s*=>'

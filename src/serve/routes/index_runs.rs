@@ -27,6 +27,7 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::{self, JobId};
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, respond};
 use crate::serve::scope::RepoScope;
 use crate::utilities::activity::Origin;
@@ -79,9 +80,9 @@ async fn list_runs(
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::index_runs::run(&mut ctx, req)
+        with_lazy_ctx(&state, |ctx| {
+            crate::domains::code::index_runs::run(ctx, req)
+        })
     })
     .await;
     respond(RUNS_COMMAND, result, started)

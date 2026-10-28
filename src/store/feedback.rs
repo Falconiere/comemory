@@ -16,50 +16,45 @@ use super::{
 };
 use crate::prelude::*;
 
-/// Per-memory counter upserts. A table keeps the used/irrelevant twins
-/// from pairing while each SQL stays literal.
-macro_rules! feedback_upserts {
-    ($(
-        $(#[$meta:meta])*
-        pub(crate) fn $name:ident($($arg:ident: &$aty:ty),* $(,)?) {
-            $sql:expr, $($bind:expr),+ $(,)?
-        }
-    )+) => {
-        $(
-            $(#[$meta])*
-            pub(crate) fn $name(conn: &Connection, $($arg: &$aty),*) -> Result<()> {
-                conn.execute($sql, params![$($bind),+])?;
-                Ok(())
-            }
-        )+
-    };
+/// Upsert the `used` side of the per-memory counter row: insert with
+/// `used_count = 1` or bump the existing count, refreshing `last_used` to
+/// `now` either way. Mirrors [`crate::store::code_feedback::upsert_used`].
+pub(crate) fn upsert_used(conn: &Connection, id: &str, now: &str) -> Result<()> {
+    upsert_counts(conn, id, (1, 0), Some(now))
 }
 
-feedback_upserts! {
-    /// Upsert the `used` side of the per-memory counter row: insert with
-    /// `used_count = 1` or bump the existing count, refreshing `last_used` to
-    /// `now` either way. Accepts any [`Connection`] (a `rusqlite::Transaction`
-    /// derefs to one).
-    ///
-    /// `last_used` only ever moves forward: an imported verdict (#254) carries its
-    /// original, possibly older, time, and must not make a memory look staler
-    /// than a local verdict already proved it was.
-    pub(crate) fn upsert_used(id: &str, now: &str) {
+/// Upsert the `irrelevant` side of the per-memory counter row: insert with
+/// `irrelevant_count = 1` or bump the existing count. `last_used` is left
+/// untouched — a dismissal is not a use. Mirrors
+/// [`crate::store::code_feedback::upsert_irrelevant`].
+pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
+    upsert_counts(conn, id, (0, 1), None)
+}
+
+/// The one `feedback` upsert behind [`upsert_used`] and [`upsert_irrelevant`]:
+/// insert the row with `(used, irrelevant)` as its counts, or add them to the
+/// existing row's. `last_used` is the later of the stored and the offered
+/// stamp, ignoring a missing one on either side — `None` leaves a stored stamp
+/// untouched (SQLite's scalar `MAX` is NULL if any argument is, hence the
+/// `COALESCE` fallbacks). The same statement shape as
+/// `code_feedback::upsert_counts`, so the two counter tables cannot drift.
+fn upsert_counts(
+    conn: &Connection,
+    id: &str,
+    (used, irrelevant): (i64, i64),
+    last_used: Option<&str>,
+) -> Result<()> {
+    conn.execute(
         "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used)
-             VALUES (?1, 1, 0, ?2)
-             ON CONFLICT(memory_id) DO UPDATE SET used_count = used_count + 1,
-                 last_used = MAX(COALESCE(last_used, ?2), ?2)",
-        id, now,
-    }
-    /// Upsert the `irrelevant` side of the per-memory counter row: insert with
-    /// `irrelevant_count = 1` or bump the existing count. `last_used` is left
-    /// untouched — a dismissal is not a use.
-    pub(crate) fn upsert_irrelevant(id: &str) {
-        "INSERT INTO feedback(memory_id, used_count, irrelevant_count)
-             VALUES (?1, 0, 1)
-             ON CONFLICT(memory_id) DO UPDATE SET irrelevant_count = irrelevant_count + 1",
-        id,
-    }
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(memory_id) DO UPDATE SET
+                 used_count = used_count + excluded.used_count,
+                 irrelevant_count = irrelevant_count + excluded.irrelevant_count,
+                 last_used = COALESCE(MAX(last_used, excluded.last_used),
+                                      last_used, excluded.last_used)",
+        params![id, used, irrelevant, last_used],
+    )?;
+    Ok(())
 }
 
 /// One `feedback_events` row to insert. `target_kind` and `provenance` are the
@@ -115,22 +110,28 @@ pub(crate) fn insert_event(conn: &Connection, row: &NewFeedbackEvent<'_>) -> Res
     Ok(conn.last_insert_rowid())
 }
 
-/// Distinct `query_id`s carrying at least one `used` verdict of `target_kind`
-/// and `provenance` — the "this query succeeded" set behind `eval::mine`'s
-/// reformulation scan, which passes `utilities::telemetry::PROV_MANUAL` so an
-/// HTTP-implicit `used` on a real query id never marks a rewording
-/// successful. Imported verdicts (`device` set, #254) are excluded: they
-/// cite another machine's query.
+/// The `feedback_events e` rows that count as ground truth for the eval
+/// harvests: a `used` verdict of target kind `?1` and provenance `?2`,
+/// recorded on THIS machine. Callers pass `utilities::telemetry::PROV_MANUAL`
+/// so an HTTP-implicit `used` on a real query id never counts, and an
+/// imported verdict (`device` set, #254) never does either, whatever its
+/// provenance: its query was asked on another machine. One predicate so the
+/// reformulation scan and the golden harvest cannot disagree on it.
+const LOCAL_USED_VERDICT: &str =
+    "e.verdict = 'used' AND e.target_kind = ?1 AND e.provenance = ?2 AND e.device IS NULL";
+
+/// Distinct `query_id`s carrying at least one [`LOCAL_USED_VERDICT`] row of
+/// `target_kind` and `provenance` — the "this query succeeded" set behind
+/// `eval::mine`'s reformulation scan, which passes
+/// `utilities::telemetry::PROV_MANUAL`.
 pub(crate) fn used_query_ids(
     conn: &Connection,
     target_kind: &str,
     provenance: &str,
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT query_id FROM feedback_events
-          WHERE verdict = 'used' AND target_kind = ?1 AND provenance = ?2
-            AND device IS NULL",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT DISTINCT e.query_id FROM feedback_events e WHERE {LOCAL_USED_VERDICT}"
+    ))?;
     let ids = stmt
         .query_map([target_kind, provenance], |r| r.get(0))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -152,35 +153,32 @@ pub struct GoldenFeedbackRow {
     pub memory_id: String,
 }
 
-/// Every `(query, repo, kind, memory_id)` row for a `used` verdict of
+/// Every `(query, repo, kind, memory_id)` row for a [`LOCAL_USED_VERDICT`] of
 /// `target_kind` and `provenance`, excluding `retrieval_log` rows whose
 /// `source` is `exclude_source`, restricted to still-live memories. Ordered
 /// `(query, repo, kind, memory_id)`, `DISTINCT` (a query/memory pair can
 /// carry more than one verdict row across retries). `eval::golden::harvest`
 /// passes `utilities::telemetry::PROV_MANUAL`: only a human-stated verdict is
 /// ground truth, so an HTTP-implicit `used` with a real query id — which
-/// the JOIN would otherwise admit — never mints a golden pair. A verdict
-/// imported from another machine (`device` set, #254) never does either,
-/// whatever its provenance: its query was asked somewhere else.
+/// the JOIN would otherwise admit — never mints a golden pair, and neither
+/// does a verdict imported from another machine.
 pub fn used_events_for_golden(
     conn: &Connection,
     target_kind: &str,
     exclude_source: &str,
     provenance: &str,
 ) -> Result<Vec<GoldenFeedbackRow>> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT DISTINCT r.query, r.repo, r.kind, e.memory_id
            FROM feedback_events e
            JOIN retrieval_log r ON r.query_id = e.query_id
            JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
-          WHERE e.verdict = 'used' AND e.target_kind = ?1
-            AND r.source != ?2
-            AND e.provenance = ?3
-            AND e.device IS NULL
-          ORDER BY r.query, r.repo, r.kind, e.memory_id",
-    )?;
+          WHERE {LOCAL_USED_VERDICT}
+            AND r.source != ?3
+          ORDER BY r.query, r.repo, r.kind, e.memory_id"
+    ))?;
     let rows = stmt
-        .query_map([target_kind, exclude_source, provenance], |r| {
+        .query_map([target_kind, provenance, exclude_source], |r| {
             Ok(GoldenFeedbackRow {
                 query: r.get(0)?,
                 repo: r.get(1)?,

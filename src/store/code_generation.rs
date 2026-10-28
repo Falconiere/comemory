@@ -191,54 +191,44 @@ fn extends(parent_id: Option<&str>, generation_id: &str, current_id: Option<&str
     parent_id == current_id || current_id == Some(generation_id)
 }
 
-macro_rules! generation_lookups {
-    () => {
-        /// The repo's active generation, if it has one.
-        ///
-        /// # Errors
-        /// Propagates SQLite failures and an unrecognized stored `state`/`origin`.
-        pub fn active(conn: &Connection, repo: &str) -> Result<Option<Generation>> {
-            one(conn, |select| {
-                select
-                    .filter(col::repo.eq(repo))
-                    .filter(col::state.eq(State::Active.as_str()))
-            })
-        }
-
-        /// One generation by id, whatever its state.
-        ///
-        /// # Errors
-        /// Propagates SQLite failures and an unrecognized stored value.
-        pub fn by_id(
-            conn: &Connection,
-            repo: &str,
-            generation_id: &str,
-        ) -> Result<Option<Generation>> {
-            one(conn, |select| {
-                select
-                    .filter(col::repo.eq(repo))
-                    .filter(col::generation_id.eq(generation_id))
-            })
-        }
-
-        /// Every generation this machine holds for `repo`, newest first.
-        ///
-        /// # Errors
-        /// Propagates SQLite failures and an unrecognized stored value.
-        pub fn all(conn: &Connection, repo: &str) -> Result<Vec<Generation>> {
-            rows(
-                conn,
-                CodeGeneration::select()
-                    .columns_typed(&COLUMNS)
-                    .filter(col::repo.eq(repo))
-                    .order_by(col::created_at.desc())
-                    .to_sql(),
-            )
-        }
-    };
+/// The repo's active generation, if it has one.
+///
+/// # Errors
+/// Propagates SQLite failures and an unrecognized stored `state`/`origin`.
+pub fn active(conn: &Connection, repo: &str) -> Result<Option<Generation>> {
+    one(conn, |select| {
+        select
+            .filter(col::repo.eq(repo))
+            .filter(col::state.eq(State::Active.as_str()))
+    })
 }
 
-generation_lookups!();
+/// One generation by id, whatever its state.
+///
+/// # Errors
+/// Propagates SQLite failures and an unrecognized stored value.
+pub fn by_id(conn: &Connection, repo: &str, generation_id: &str) -> Result<Option<Generation>> {
+    one(conn, |select| {
+        select
+            .filter(col::repo.eq(repo))
+            .filter(col::generation_id.eq(generation_id))
+    })
+}
+
+/// Every generation this machine holds for `repo`, newest first.
+///
+/// # Errors
+/// Propagates SQLite failures and an unrecognized stored value.
+pub fn all(conn: &Connection, repo: &str) -> Result<Vec<Generation>> {
+    rows(
+        conn,
+        CodeGeneration::select()
+            .columns_typed(&COLUMNS)
+            .filter(col::repo.eq(repo))
+            .order_by(col::created_at.desc())
+            .to_sql(),
+    )
+}
 
 /// Stamp one row's state, and its activation time when it is becoming active.
 fn set_state(

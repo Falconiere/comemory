@@ -192,6 +192,20 @@ impl Provisional {
             leg_scores,
         }
     }
+
+    /// An arm that only the lexical leg answered: that leg is both the base
+    /// list and the sole leg, labelled [`Source::Lexical`] at `tier`. Shared
+    /// by the pure-lexical arm and the hybrid arm's empty-ANN fallback.
+    fn lexical_only(lex_ranked: Vec<RankedHit>, tier: u8) -> Self {
+        let scores = collect_leg_scores(None, Some(&lex_ranked));
+        Self::new(
+            &lex_ranked,
+            vec![lex_ranked.clone()],
+            Source::Lexical,
+            tier,
+            scores,
+        )
+    }
 }
 
 /// Hybrid path: run ANN + FTS5 independently and fuse via RRF.
@@ -222,14 +236,7 @@ fn route_hybrid(
     let (lex, lex_tier) = strict_then_ladder(conn, query, k, filters, weights)?;
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
     if ann.is_empty() {
-        let scores = collect_leg_scores(None, Some(&lex_ranked));
-        return Ok(Provisional::new(
-            &lex_ranked,
-            vec![lex_ranked.clone()],
-            Source::Lexical,
-            lex_tier,
-            scores,
-        ));
+        return Ok(Provisional::lexical_only(lex_ranked, lex_tier));
     }
     let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
     let fused = fuse::rrf_k(&ann_ranked, &lex_ranked, k, cfg.retrieval.rrf_k);
@@ -346,14 +353,9 @@ fn route_lexical(
 ) -> Result<Provisional> {
     let weights = cfg.retrieval.bm25_weights;
     let (lex, tier) = strict_then_ladder(conn, query, k, filters, weights)?;
-    let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
-    let scores = collect_leg_scores(None, Some(&lex_ranked));
-    Ok(Provisional::new(
-        &lex_ranked,
-        vec![lex_ranked.clone()],
-        Source::Lexical,
+    Ok(Provisional::lexical_only(
+        lex.into_iter().map(lex_to_ranked).collect(),
         tier,
-        scores,
     ))
 }
 

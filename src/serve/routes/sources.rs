@@ -30,7 +30,7 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
-use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx};
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx, with_lazy_ctx};
 use crate::serve::routes::{RouteEntry, accepted, guard_job, require_confirm, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
@@ -132,9 +132,7 @@ async fn index_sources(
         "index",
         true,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = documents::index::run(&mut ctx, req)?;
+            let resp = with_lazy_ctx(&job_state, |ctx| documents::index::run(ctx, req))?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

@@ -26,6 +26,7 @@ use crate::store::MemoryLinks;
 use crate::store::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::store::fts;
 use toolu_orm::core::query_column::CommonOps;
+use toolu_orm::query::select::SelectBuilder;
 
 /// Upsert SQL for the `memories` row. `ON CONFLICT(id)` preserves `created_at`
 /// and bumps `updated_at`, so a re-save (same id, possibly changed body)
@@ -360,24 +361,26 @@ pub fn iso_format(t: OffsetDateTime) -> Result<String> {
         .map_err(|e| Error::Other(format!("iso8601 format: {e}")))
 }
 
+/// Start a read over live (`deleted_at IS NULL`) memories in ascending id
+/// order — the deterministic order both full-corpus scans below rely on.
+fn live_by_id() -> SelectBuilder {
+    Memories::select()
+        .filter(memories::deleted_at.is_null())
+        .order_by(memories::id.asc())
+}
+
 /// Every live (`deleted_at IS NULL`) memory id, sorted ascending — the
 /// deterministic dense-index mapping `graph::pagerank` needs. See
 /// [`crate::domains::graph::memory_rank::derive_memory_graph`].
 pub(crate) fn live_ids(conn: &Connection) -> Result<Vec<String>> {
-    let query = Memories::select()
-        .columns_typed(&[&memories::id])
-        .filter(memories::deleted_at.is_null())
-        .order_by(memories::id.asc());
+    let query = live_by_id().columns_typed(&[&memories::id]);
     orm::query_all(conn, query.to_sql(), |r| r.get(0))
 }
 
 /// Every live memory's `(id, body)`, ordered by id so a re-embed run is
 /// reproducible. Behind `maintenance::reembed`'s memory leg.
 pub fn live_bodies(conn: &Connection) -> Result<Vec<(String, String)>> {
-    let query = Memories::select()
-        .columns_typed(&[&memories::id, &memories::body])
-        .filter(memories::deleted_at.is_null())
-        .order_by(memories::id.asc());
+    let query = live_by_id().columns_typed(&[&memories::id, &memories::body]);
     orm::query_all(conn, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 

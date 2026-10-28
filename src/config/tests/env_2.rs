@@ -299,3 +299,41 @@ fn skip_migration_backup_treats_unrecognized_values_as_false() {
     // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
     unsafe { std::env::remove_var("COMEMORY_SKIP_MIGRATION_BACKUP") };
 }
+
+/// Every override reader treats a value that is not valid Unicode as unset:
+/// the free-form sync strings, a numeric, a boolean and the enum reader all
+/// load the default config without error and leave the default in place.
+#[cfg(unix)]
+#[test]
+fn env_non_unicode_override_is_ignored_not_an_error() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt as _;
+
+    // 0xFF and 0xFE never occur in UTF-8, so `std::env::var` reports NotUnicode.
+    let not_unicode = OsStr::from_bytes(b"1\xFF\xFEs");
+    let vars = [
+        "COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT",
+        "COMEMORY_SYNC_PAUSE_WAIT",
+        "COMEMORY_SYNC_PUSH_ON_SAVE",
+        "COMEMORY_RETRIEVAL_TOP_K",
+        "COMEMORY_INDEXING_AUTO_REINDEX",
+    ];
+    for var in vars {
+        // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+        unsafe { std::env::set_var(var, not_unicode) };
+    }
+    let result = Config::defaults().with_env();
+    for var in vars {
+        // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+        unsafe { std::env::remove_var(var) };
+    }
+    let cfg = result.expect("a non-Unicode override must be ignored, not refused");
+    let defaults = Config::defaults();
+    assert_eq!(
+        cfg.sync.push_on_save_timeout,
+        defaults.sync.push_on_save_timeout
+    );
+    assert_eq!(cfg.sync.pause_wait, defaults.sync.pause_wait);
+    assert_eq!(cfg.sync.push_on_save, defaults.sync.push_on_save);
+    assert_eq!(cfg.retrieval.top_k, defaults.retrieval.top_k);
+}

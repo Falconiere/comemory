@@ -19,10 +19,10 @@ use serde::Deserialize;
 
 use crate::domains::maintenance;
 use crate::serve::AppState;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, respond};
 use crate::serve::scope::RepoScope;
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -59,12 +59,9 @@ async fn overview(
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        maintenance::overview::run(&mut ctx, req)
-    })
-    .await;
+    let result =
+        run_blocking(move || with_lazy_ctx(&state, |ctx| maintenance::overview::run(ctx, req)))
+            .await;
     respond("overview", result, started)
 }
 
@@ -90,9 +87,7 @@ async fn eval_series(
         .limit
         .unwrap_or(maintenance::overview::EVAL_SERIES_LIMIT);
     let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        maintenance::overview::eval_series(&mut ctx, limit)
+        with_lazy_ctx(&state, |ctx| maintenance::overview::eval_series(ctx, limit))
     })
     .await;
     respond("overview.eval-series", result, started)

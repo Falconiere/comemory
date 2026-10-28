@@ -9,16 +9,26 @@
 use super::file::{AutoReindexMode, Config};
 use crate::prelude::*;
 
-/// Read an env var and parse it as `T`; `Ok(None)` when unset, `Err`
-/// naming the variable on parse failure. Only the parse happens here —
-/// range invariants live in `Config::validate` so the file overlay
-/// enforces them identically. Also reused by `eval::tune` for its
-/// `COMEMORY_TUNE_MIN_GOLDEN` test hook.
+/// Read an env var as text: `None` when unset or when the value is not valid
+/// Unicode. A non-Unicode value is ignored exactly like an unset one — never an
+/// error — so every `COMEMORY_*` reader below agrees on what an unreadable
+/// value means, and the free-form sync overrides keep the behavior they had
+/// before they moved onto the shared override table.
+fn env_text(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// Read an env var and parse it as `T`; `Ok(None)` when unset or not valid
+/// Unicode (see [`env_text`]), `Err` naming the variable on parse failure. A
+/// `String` target takes the value verbatim, which is how the free-form sync
+/// timeouts are read. Only the parse happens here — range invariants live in
+/// `Config::validate` so the file overlay enforces them identically. Also
+/// reused by `eval::tune` for its `COMEMORY_TUNE_MIN_GOLDEN` test hook.
 pub(crate) fn env_parse<T: std::str::FromStr>(name: &str) -> Result<Option<T>>
 where
     T::Err: std::fmt::Display,
 {
-    let Ok(v) = std::env::var(name) else {
+    let Some(v) = env_text(name) else {
         return Ok(None);
     };
     let parsed = v
@@ -37,7 +47,7 @@ fn env_numbers<T: std::str::FromStr>(name: &str, n: usize) -> Result<Option<Vec<
 where
     T::Err: std::fmt::Display,
 {
-    let Ok(v) = std::env::var(name) else {
+    let Some(v) = env_text(name) else {
         return Ok(None);
     };
     let parts: Vec<&str> = v.split(',').collect();
@@ -100,26 +110,16 @@ env_tuples! {
 /// Read a boolean env var (`true|1|yes|on` / `false|0|no|off`); `Ok(None)`
 /// when unset.
 fn env_bool(name: &str) -> Result<Option<bool>> {
-    let Ok(raw) = std::env::var(name) else {
+    let Some(raw) = env_text(name) else {
         return Ok(None);
     };
     Ok(Some(parse_bool_env(name, &raw)?))
 }
 
-/// Read a free-form string env var verbatim; `Ok(None)` when unset.
-/// Non-unicode values refuse rather than silently dropping the override.
-fn env_string(name: &str) -> Result<Option<String>> {
-    match std::env::var(name) {
-        Ok(v) => Ok(Some(v)),
-        Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(e) => Err(Error::Other(format!("invalid env var {name}: {e}"))),
-    }
-}
-
 /// Read `COMEMORY_INDEXING_AUTO_REINDEX` (`lazy|hook|off`); `Ok(None)` when
 /// unset, `Err` naming the variable on any other value.
 fn env_auto_reindex(name: &str) -> Result<Option<AutoReindexMode>> {
-    let Ok(v) = std::env::var(name) else {
+    let Some(v) = env_text(name) else {
         return Ok(None);
     };
     match v.as_str() {
@@ -209,7 +209,7 @@ impl Config {
         // / `code_vec` vec0 DDL (`migrations/0002_v2_tables.sql`) and is
         // baked in at migration time; an env override would silently disagree
         // with the vtab and surface as `VecDimMismatch` at first insert.
-        if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {
+        if let Some(v) = env_text("COMEMORY_EMBED_HINT") {
             self.embed_hint = Some(v);
         }
     }
@@ -243,8 +243,8 @@ env_override_fns! {
         sync {
             push_on_save => "COMEMORY_SYNC_PUSH_ON_SAVE" via env_bool,
             code_index => "COMEMORY_SYNC_CODE_INDEX" via env_bool,
-            push_on_save_timeout => "COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT" via env_string,
-            pause_wait => "COMEMORY_SYNC_PAUSE_WAIT" via env_string,
+            push_on_save_timeout => "COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT",
+            pause_wait => "COMEMORY_SYNC_PAUSE_WAIT",
         }
         git { auto_sync => "COMEMORY_GIT_AUTO_SYNC" via env_bool }
     ),

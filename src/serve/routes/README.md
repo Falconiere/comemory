@@ -15,8 +15,8 @@ context on that blocking thread — the connection mutex never crosses an `.awai
 enveloping the query result), `respond`/`accepted`, `guard_mutating`,
 `guard_job`, `require_confirm`, and `track_for`. The mutating-handler tail and
 the connection-and-context setup they share live in `mutate_response.rs`
-(`mutate_blocking`, `with_ctx`, `mutate_response`); `query_response` uses the
-same `with_ctx`. `run_blocking` itself lives in `crate::utilities::blocking`,
+(`mutate_blocking`, `with_ctx`, `with_lazy_ctx`, `mutate_response`); `query_response`
+uses the same `with_ctx`. `run_blocking` itself lives in `crate::utilities::blocking`,
 shared with the `mcp` adapter.
 
 **What does NOT belong here:** command logic, which belongs to the capability
@@ -41,7 +41,7 @@ One line per file, named after its primary item:
 | `maint.rs` | `table_entries` | `GET /doctor` and `GET /consolidate`; the rest of the maintenance surface (prune/gc/admin, doctor system+reembed, gc policy, erase) lives in `maint/` |
 | `memories.rs` | `table_entries` | `GET /memories` and `GET /memories/{id}`; search, write, and edit live in `memories/` |
 | `meta.rs` | `table_entries` | `GET /completions` and `GET /commands` — the clap-introspected route/command inventory |
-| `mutate_response.rs` | `mutate_response` | The shared tail of every mutating handler: `mutate_blocking` (read-only `405` / busy `503` gate, write permit held across the blocking run, envelope), `with_ctx` (shared connection + `Ctx`, optional HTTP origin) and `mutate_response` (the two composed for handlers that go straight to their core) |
+| `mutate_response.rs` | `mutate_response` | The shared tail of every mutating handler: `mutate_blocking` (read-only `405` / busy `503` gate, write permit held across the blocking run, envelope), `with_ctx` (shared connection + `Ctx`, optional HTTP origin), `with_lazy_ctx` (the same `Ctx` over a lazily opened connection, for handlers that may never touch the database) and `mutate_response` (the two composed for handlers that go straight to their core) |
 | `repos.rs` | `table_entries` | `GET /repos` — the indexed code-repository inventory, with the registry's `indexing` overlay and the `archived` status; the mutating repo routes live in `repos_admin.rs` |
 | `sources.rs` | `table_entries` | `GET /sources`, job-backed `POST /sources`, and `DELETE /sources?target=&confirm=` / `DELETE /sources/{target}?confirm=` |
 | `activity.rs` | `table_entries` | `GET /activity` — the recorded-command feed: a filtered page, its rollups, and the cursor its SSE twin streams from |

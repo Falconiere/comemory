@@ -3,12 +3,14 @@
 //! blocking pool with the permit held, and envelope the outcome.
 //!
 //! [`mutate_blocking`] owns that tail for any handler. [`with_ctx`] owns the
-//! other repeated block, the shared connection and its [`Ctx`]. They stay
-//! separate because some handlers validate (confirm gate, body parse, path
-//! containment) *before* touching the connection, and that order decides
-//! which error a caller sees; [`mutate_response`] is the two composed, for the
-//! common handler that goes straight from the request to its core.
-//! [`super::query_response`] is the read-side twin and uses [`with_ctx`] too.
+//! other repeated block, the shared connection and its [`Ctx`];
+//! [`with_lazy_ctx`] is its connectionless sibling for cores that must not
+//! open the database eagerly. They stay separate because some handlers
+//! validate (confirm gate, body parse, path containment) *before* touching the
+//! connection, and that order decides which error a caller sees;
+//! [`mutate_response`] is the two composed, for the common handler that goes
+//! straight from the request to its core. [`super::query_response`] is the
+//! read-side twin and uses [`with_ctx`] too.
 
 use std::time::Instant;
 
@@ -64,6 +66,21 @@ pub(crate) fn with_ctx<T>(
         None => ctx,
     };
     run(&mut ctx)
+}
+
+/// Run `run` in a [`Ctx::lazy`] over the server's paths and a config snapshot,
+/// without taking the shared connection: the core opens the database itself
+/// only if it needs it, or never — the memory-store core reads `config.toml`
+/// and git, and the `doctor` probe must not create a database on a fresh data
+/// dir. The connectionless sibling of [`with_ctx`].
+///
+/// Must be called on a blocking-pool thread.
+pub(crate) fn with_lazy_ctx<T>(
+    state: &AppState,
+    run: impl FnOnce(&mut Ctx<'_>) -> Result<T>,
+) -> Result<T> {
+    let cfg = state.cfg();
+    run(&mut Ctx::lazy(state.paths(), &cfg))
 }
 
 /// [`mutate_blocking`] over [`with_ctx`]: the closure sees only the context,

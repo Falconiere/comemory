@@ -24,9 +24,9 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::{self, worker::RegistryProgressSink};
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// What `POST /doctor/reembed` answers with when the server was started
 /// without an embed command — the one thing this route cannot do without.
@@ -74,9 +74,9 @@ pub fn router(_state: AppState) -> Router<AppState> {
 async fn system(State(state): State<AppState>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        maintenance::doctor::system::run(&mut ctx, state.embed_cmd())
+        with_lazy_ctx(&state, |ctx| {
+            maintenance::doctor::system::run(ctx, state.embed_cmd())
+        })
     })
     .await;
     respond("doctor.system", result, started)
@@ -168,9 +168,9 @@ async fn reembed(
         true,
         move |job_id| {
             let sink = RegistryProgressSink::new(registry, job_id);
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = maintenance::reembed::run(&mut ctx, req, &cmd, Some(&sink))?;
+            let resp = with_lazy_ctx(&job_state, |ctx| {
+                maintenance::reembed::run(ctx, req, &cmd, Some(&sink))
+            })?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

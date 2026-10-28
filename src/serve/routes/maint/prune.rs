@@ -16,7 +16,7 @@ use serde_json::Value;
 use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx};
+use crate::serve::routes::mutate_response::{mutate_blocking, with_ctx, with_lazy_ctx};
 use crate::serve::routes::{RouteEntry, require_confirm, respond};
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
@@ -143,9 +143,9 @@ struct ConfirmBody {
 async fn gc(State(state): State<AppState>, Json(body): Json<ConfirmBody>) -> Response {
     mutate_blocking(state, "gc", move |state| {
         require_confirm(body.confirm)?;
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        maintenance::gc::run(&mut ctx, maintenance::gc::Request {})
+        with_lazy_ctx(state, |ctx| {
+            maintenance::gc::run(ctx, maintenance::gc::Request {})
+        })
     })
     .await
 }

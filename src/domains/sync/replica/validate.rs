@@ -162,55 +162,47 @@ pub(super) trait Identity: serde::de::DeserializeOwned {
     fn holds_for(&self, entity_key: &str) -> bool;
 }
 
-/// Emit each kind's [`Identity::holds_for`]. Bodies live inside the macro
-/// so `self` resolves; a single expansion keeps the three same-named
-/// trait methods from pairing.
-macro_rules! identity_holds {
-    () => {
-        impl Identity for MemoryPayloadV1 {
-            /// The content-derived identity rules a memory keeps on every surface.
-            fn holds_for(&self, entity_key: &str) -> bool {
-                entity_key == self.id
-                    && is_valid_memory_id(&self.id)
-                    && self.id == memory_id(&self.body)
-                    && self.content_hash == sha256_hex(self.body.trim_end().as_bytes())
-                    && (1..=5).contains(&self.quality)
-                    && self.created_at().is_ok()
-            }
-        }
-
-        impl Identity for CodeGenerationV1 {
-            /// A code generation's identity is its manifest: the id must be the one its
-            /// contents earn, exactly as a memory's id must hash its body.
-            ///
-            /// The repo is NOT checked against the payload, because the payload has no
-            /// repo in it — the entity IS the repo, so `entity_key` names it and is the
-            /// only place it appears. Folding a repo into the payload would fold it
-            /// into the digest and therefore into the generation id, which would make
-            /// the same tree indexed under two labels two different generations. So the
-            /// only thing to require of the key is that there IS one.
-            fn holds_for(&self, entity_key: &str) -> bool {
-                self.owns_its_id().unwrap_or(false) && !entity_key.is_empty()
-            }
-        }
-
-        impl Identity for DocumentRevisionV1 {
-            /// A document revision's identity is its NAME: the id must be the one its
-            /// repo and path earn and the key must equal it, so text filed under
-            /// another document's name is refused before a reader can be shown it. The
-            /// passages must also run contiguously from zero and every link must name a
-            /// passage the revision has — a revision assembled from parts that did not
-            /// all arrive fails both.
-            fn holds_for(&self, entity_key: &str) -> bool {
-                entity_key == self.shared_id
-                    && self.owns_its_id()
-                    && self.chunks_are_contiguous()
-                    && self.links_resolve()
-            }
-        }
-    };
+impl Identity for MemoryPayloadV1 {
+    /// The content-derived identity rules a memory keeps on every surface.
+    fn holds_for(&self, entity_key: &str) -> bool {
+        entity_key == self.id
+            && is_valid_memory_id(&self.id)
+            && self.id == memory_id(&self.body)
+            && self.content_hash == sha256_hex(self.body.trim_end().as_bytes())
+            && (1..=5).contains(&self.quality)
+            && self.created_at().is_ok()
+    }
 }
-identity_holds!();
+
+impl Identity for CodeGenerationV1 {
+    /// A code generation's identity is its manifest: the id must be the one its
+    /// contents earn, exactly as a memory's id must hash its body.
+    ///
+    /// The repo is NOT checked against the payload, because the payload has no
+    /// repo in it — the entity IS the repo, so `entity_key` names it and is the
+    /// only place it appears. Folding a repo into the payload would fold it
+    /// into the digest and therefore into the generation id, which would make
+    /// the same tree indexed under two labels two different generations. So the
+    /// only thing to require of the key is that there IS one.
+    fn holds_for(&self, entity_key: &str) -> bool {
+        self.owns_its_id().unwrap_or(false) && !entity_key.is_empty()
+    }
+}
+
+impl Identity for DocumentRevisionV1 {
+    /// A document revision's identity is its NAME: the id must be the one its
+    /// repo and path earn and the key must equal it, so text filed under
+    /// another document's name is refused before a reader can be shown it. The
+    /// passages must also run contiguously from zero and every link must name a
+    /// passage the revision has — a revision assembled from parts that did not
+    /// all arrive fails both.
+    fn holds_for(&self, entity_key: &str) -> bool {
+        entity_key == self.shared_id
+            && self.owns_its_id()
+            && self.chunks_are_contiguous()
+            && self.links_resolve()
+    }
+}
 
 /// Decode and judge one kind's payload.
 ///

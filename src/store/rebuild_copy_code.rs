@@ -100,8 +100,8 @@ const PROJECTION: &[(&str, &str)] = &[
 /// Copy the `code_symbols` rows and the `indexed_files` cursors.
 ///
 /// `old_column_exists` returns `false`, not an error, for a table `old`
-/// lacks, so the two probes below need no `old_table_exists` guard of their
-/// own — [`copy_if_present`] already carries one.
+/// lacks, so the probes in this file and the ones below need no
+/// `old_table_exists` guard of their own — [`copy_if_present`] carries it.
 fn copy_code_index_tables(conn: &Connection) -> Result<()> {
     let (count_expr, last_expr) = if old_column_exists(conn, "code_symbols", "access_count")? {
         ("access_count", "COALESCE(last_accessed, indexed_at)")
@@ -143,20 +143,21 @@ fn copy_code_index_tables(conn: &Connection) -> Result<()> {
 /// is bound rather than inlined so the filter cannot drift from the
 /// writer's literal.
 fn copy_mined_edges(conn: &Connection) -> Result<()> {
-    if old_table_exists(conn, "edges")? {
-        let weight_expr = if old_column_exists(conn, "edges", "weight")? {
-            "weight"
-        } else {
-            "1"
-        };
-        conn.execute_batch(&format!(
+    let weight_expr = if old_column_exists(conn, "edges", "weight")? {
+        "weight"
+    } else {
+        "1"
+    };
+    copy_if_present(
+        conn,
+        "edges",
+        &format!(
             "INSERT OR IGNORE INTO main.edges(\
                  src_kind, src_id, dst_kind, dst_id, rel, weight, created_at) \
              SELECT src_kind, src_id, dst_kind, dst_id, rel, {weight_expr}, created_at \
              FROM old.edges WHERE rel IN ('co_changed', 'imports', '{CO_ACTIVATED}');"
-        ))?;
-    }
-    Ok(())
+        ),
+    )
 }
 
 /// Copy the per-repo cursors an `index-code` pass reads before deciding what
@@ -168,42 +169,45 @@ fn copy_mined_edges(conn: &Connection) -> Result<()> {
 /// just-copied `co_changed` weights, double-counting every pair). Both
 /// prefixes are crate-internal consts with no SQL metacharacters.
 fn copy_code_markers(conn: &Connection) -> Result<()> {
-    if old_table_exists(conn, "schema_meta")? {
-        let prefix = code_row::CODE_FORMAT_KEY_PREFIX;
-        conn.execute_batch(&format!(
+    let prefix = code_row::CODE_FORMAT_KEY_PREFIX;
+    copy_if_present(
+        conn,
+        "schema_meta",
+        &format!(
             "INSERT OR IGNORE INTO main.schema_meta(key, value) \
              SELECT key, value FROM old.schema_meta \
               WHERE substr(key, 1, {len}) = '{prefix}';",
             len = prefix.len(),
-        ))?;
-    }
-    if old_table_exists(conn, "repo_marker")? {
-        let mined_expr = if old_column_exists(conn, "repo_marker", "last_mined_commit")? {
-            "last_mined_commit"
-        } else {
-            "NULL"
-        };
-        // `root_path` (v7) and `archived` (v15) are probed the same way:
-        // dropping either would make a rebuilt store forget where a repo
-        // lives (containment, freshness) or that it was archived.
-        let root_expr = if old_column_exists(conn, "repo_marker", "root_path")? {
-            "root_path"
-        } else {
-            "NULL"
-        };
-        let archived_expr = if old_column_exists(conn, "repo_marker", "archived")? {
-            "archived"
-        } else {
-            "0"
-        };
-        conn.execute_batch(&format!(
+        ),
+    )?;
+    let mined_expr = if old_column_exists(conn, "repo_marker", "last_mined_commit")? {
+        "last_mined_commit"
+    } else {
+        "NULL"
+    };
+    // `root_path` (v7) and `archived` (v15) are probed the same way:
+    // dropping either would make a rebuilt store forget where a repo
+    // lives (containment, freshness) or that it was archived.
+    let root_expr = if old_column_exists(conn, "repo_marker", "root_path")? {
+        "root_path"
+    } else {
+        "NULL"
+    };
+    let archived_expr = if old_column_exists(conn, "repo_marker", "archived")? {
+        "archived"
+    } else {
+        "0"
+    };
+    copy_if_present(
+        conn,
+        "repo_marker",
+        &format!(
             "INSERT OR IGNORE INTO main.repo_marker(\
                  repo, last_head, last_indexed_at, last_mined_commit, root_path, archived) \
              SELECT repo, last_head, last_indexed_at, {mined_expr}, {root_expr}, {archived_expr} \
              FROM old.repo_marker;"
-        ))?;
-    }
-    Ok(())
+        ),
+    )
 }
 
 /// Copy the FTS5 + vec0 virtual tables. These may not support

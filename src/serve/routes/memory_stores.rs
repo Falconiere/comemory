@@ -23,13 +23,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 
 use crate::domains::sync::memory_store;
-use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::jobs;
-use crate::serve::routes::mutate_response::mutate_blocking;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_lazy_ctx};
 use crate::serve::routes::{RouteEntry, accepted, guard_job, respond};
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -75,16 +73,8 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/memory-stores/{id}/sync", post(sync))
 }
 
-/// Run `run` in a [`Ctx`] over the server's paths and a config snapshot,
-/// without opening the database: the memory-store core reads `config.toml`
-/// and git, never the SQLite file. Must be called on a blocking-pool thread.
-fn with_lazy_ctx<T>(state: &AppState, run: impl FnOnce(&mut Ctx<'_>) -> Result<T>) -> Result<T> {
-    let cfg = state.cfg();
-    run(&mut Ctx::lazy(state.paths(), &cfg))
-}
-
 /// Generate a memory-store read: the handler takes the state plus the
-/// extractors in `$params`, runs `$body` over a lazy [`Ctx`] on the blocking
+/// extractors in `$params`, runs `$body` over a lazy `Ctx` ([`with_lazy_ctx`]) on the blocking
 /// pool, and envelopes the result under `memory-stores`.
 ///
 /// The two reads differ in nothing but their extractors and that body, which
@@ -181,12 +171,12 @@ async fn sync(
         "store-sync",
         true,
         move |job_id| {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let done = memory_store::sync(&mut ctx, &id, &req, |line| {
-                if let Err(e) = registry.push_log(&job_id, line.to_string()) {
-                    tracing::debug!(job_id = %job_id, error = %e, "store-sync log line dropped");
-                }
+            let done = with_lazy_ctx(&job_state, |ctx| {
+                memory_store::sync(ctx, &id, &req, |line| {
+                    if let Err(e) = registry.push_log(&job_id, line.to_string()) {
+                        tracing::debug!(job_id = %job_id, error = %e, "store-sync log line dropped");
+                    }
+                })
             })?;
             Ok(serde_json::to_value(done)?)
         },

@@ -262,8 +262,10 @@ orm::reads! {
             ))
         }
     );
-    /// The core `memories` columns for `ids`, soft-deleted rows excluded, as
-    /// `(id, seed metadata)` pairs for [`fetch_rows`].
+    /// The core `memories` columns for `ids` as `(id, seed metadata)` pairs
+    /// that [`fetch_meta`] collects into its map. Soft-deleted rows are
+    /// excluded so a hit that raced a delete falls back to the caller's
+    /// defaults rather than surfacing a tombstoned path.
     meta_rows(ids: &[Value]) -> Vec<(String, MemoryMeta)> = query_all(
         live_memories()
             .columns_typed(&[

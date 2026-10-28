@@ -340,11 +340,13 @@ fn active_in(jobs: &HashMap<JobId, Job>, command: &str, repo: &str) -> Option<Jo
 /// error is built, so the route pre-check and the atomic insert gate
 /// report the identical `{repo, job_id}`.
 fn refuse_active(jobs: &HashMap<JobId, Job>, command: &str, repo: &str) -> Result<()> {
-    let refusal = active_in(jobs, command, repo).map(|job_id| Error::IndexRunning {
-        repo: repo.to_string(),
-        job_id,
-    });
-    refusal.map_or(Ok(()), Err)
+    match active_in(jobs, command, repo) {
+        Some(job_id) => Err(Error::IndexRunning {
+            repo: repo.to_string(),
+            job_id,
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Drop the oldest finished jobs (by insertion order) until at most

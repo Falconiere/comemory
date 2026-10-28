@@ -21,9 +21,8 @@ use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response};
+use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_lazy_ctx};
 use crate::serve::routes::{RouteEntry, accepted, guard_job, require_confirm};
-use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
 
 /// This resource's route-table entries, appended onto [`super::table_entries`].
@@ -80,9 +79,9 @@ async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -
         let canonical = contain_repo(state, &req.repo)?;
         req.repo = canonical.to_string_lossy().into_owned();
         require_confirm(confirmed)?;
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::install_hooks::run(&mut ctx, req)
+        with_lazy_ctx(state, |ctx| {
+            crate::domains::code::install_hooks::run(ctx, req)
+        })
     })
     .await
 }

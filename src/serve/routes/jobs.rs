@@ -29,7 +29,7 @@ use axum::routing::{get, post};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast, watch};
 
 use crate::prelude::*;
@@ -299,26 +299,27 @@ async fn next_log(rx: &mut Option<broadcast::Receiver<String>>) -> Option<String
     let Some(rx) = rx.as_mut() else {
         return std::future::pending().await;
     };
-    recv_skipping_lag(rx).await
-}
-
-/// [`broadcast::Receiver::recv`], retrying past `Lagged` gaps; `None` once
-/// the channel is closed.
-async fn recv_skipping_lag(rx: &mut broadcast::Receiver<String>) -> Option<String> {
-    let mut next = rx.recv().await;
-    while let Err(RecvError::Lagged(_)) = next {
-        next = rx.recv().await;
+    loop {
+        match rx.recv().await {
+            Ok(line) => return Some(line),
+            Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Closed) => return None,
+        }
     }
-    next.ok()
 }
 
 /// One log line already sitting in `rx`, without waiting — the drain's
-/// counterpart of [`next_log`]. `None` when the channel is empty or closed;
-/// a `Lagged` gap is skipped the same way.
-fn try_next_line(rx: &mut broadcast::Receiver<String>) -> Option<String> {
-    std::iter::repeat_with(|| rx.try_recv())
-        .find(|polled| !matches!(polled, Err(TryRecvError::Lagged(_))))
-        .and_then(std::result::Result::ok)
+/// counterpart of [`next_log`]. `None` when the channel is empty, closed,
+/// or the arm is retired; a `Lagged` gap is skipped the same way.
+fn try_next_log(rx: &mut Option<broadcast::Receiver<String>>) -> Option<String> {
+    let rx = rx.as_mut()?;
+    loop {
+        match rx.try_recv() {
+            Ok(line) => return Some(line),
+            Err(TryRecvError::Lagged(_)) => {}
+            Err(TryRecvError::Empty | TryRecvError::Closed) => return None,
+        }
+    }
 }
 
 /// Route a freshly read status: a terminal one drains the other two
@@ -337,7 +338,7 @@ fn on_status(cursor: Cursor, status: JobStatus) -> Step {
 /// only once both channels are empty does the terminal event itself go
 /// out, ending the stream.
 fn drain_then_finish(mut cursor: Cursor, status: JobStatus) -> Step {
-    if let Some(line) = cursor.log_rx.as_mut().and_then(try_next_line) {
+    if let Some(line) = try_next_log(&mut cursor.log_rx) {
         cursor.terminal = Some(status);
         return emit_log(cursor, &line);
     }

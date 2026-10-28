@@ -59,19 +59,33 @@ fn step(id: &'static str, title: &str, detail: String, state: StepState) -> Step
     }
 }
 
+/// A step with only two outcomes, both decided by one flag: `Satisfied`
+/// (carrying `satisfied_detail`) when `satisfied`, else `Pending` (carrying
+/// `pending_detail`). The shape of every probe that has nothing to be
+/// unavailable about — the data directory and search-edit reinforcement.
+fn toggle(
+    id: &'static str,
+    title: &str,
+    satisfied: bool,
+    satisfied_detail: String,
+    pending_detail: &str,
+) -> Step {
+    if satisfied {
+        step(id, title, satisfied_detail, StepState::Satisfied)
+    } else {
+        step(id, title, pending_detail.to_string(), StepState::Pending)
+    }
+}
+
 /// The data directory and its SQLite mirror.
 fn data_dir(detected: &Detected) -> Step {
-    let state = if detected.db_writable {
-        StepState::Satisfied
-    } else {
-        StepState::Pending
-    };
-    let detail = if detected.db_writable {
-        format!("schema {}", detected.schema_version)
-    } else {
-        "not initialized yet".to_string()
-    };
-    step(DATA_DIR, "Data directory", detail, state)
+    toggle(
+        DATA_DIR,
+        "Data directory",
+        detected.db_writable,
+        format!("schema {}", detected.schema_version),
+        "not initialized yet",
+    )
 }
 
 /// Bundled skills and hooks inside an agent host.
@@ -207,17 +221,13 @@ fn index_docs(detected: &Detected) -> Step {
 
 /// Search-edit auto-reinforcement.
 fn reinforce(detected: &Detected) -> Step {
-    let state = if detected.reinforce_enabled {
-        StepState::Satisfied
-    } else {
-        StepState::Pending
-    };
-    let detail = if detected.reinforce_enabled {
-        "enabled".to_string()
-    } else {
-        "learns which memories helped from what you edit after a search".to_string()
-    };
-    step(REINFORCE, "Search-edit reinforcement", detail, state)
+    toggle(
+        REINFORCE,
+        "Search-edit reinforcement",
+        detected.reinforce_enabled,
+        "enabled".to_string(),
+        "learns which memories helped from what you edit after a search",
+    )
 }
 
 /// Cloud sign-in — a report, never an action.

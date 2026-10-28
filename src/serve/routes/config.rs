@@ -16,9 +16,8 @@ use axum::{Json, Router};
 
 use crate::domains::retrieval;
 use crate::serve::AppState;
-use crate::serve::routes::mutate_response::mutate_blocking;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_lazy_ctx};
 use crate::serve::routes::{RouteEntry, respond};
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -59,11 +58,7 @@ async fn update(
     Json(req): Json<retrieval::config_retrieval::UpdateRequest>,
 ) -> Response {
     mutate_blocking(state, "config.retrieval.update", move |state| {
-        {
-            let cfg = state.cfg();
-            let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            retrieval::config_retrieval::update(&mut ctx, req)?;
-        }
+        with_lazy_ctx(state, |ctx| retrieval::config_retrieval::update(ctx, req))?;
         state.reload_cfg(state.paths())?;
         Ok(retrieval::config_retrieval::get(&state.cfg()))
     })

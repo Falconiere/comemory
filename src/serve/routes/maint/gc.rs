@@ -25,11 +25,11 @@ use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::maint::prune::split_confirm;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{
     RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond,
 };
 use crate::utilities::blocking::run_blocking;
-use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -67,12 +67,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// DB only when it already exists, so this never creates one.
 async fn policy(State(state): State<AppState>) -> Response {
     let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        maintenance::gc_policy::get(&mut ctx)
-    })
-    .await;
+    let result = run_blocking(move || with_lazy_ctx(&state, maintenance::gc_policy::get)).await;
     respond("gc.policy", result, started)
 }
 
@@ -100,17 +95,11 @@ async fn update_policy(
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        {
-            let cfg = state.cfg();
-            let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            maintenance::gc_policy::update(&mut ctx, req)?;
-        }
+        with_lazy_ctx(&state, |ctx| maintenance::gc_policy::update(ctx, req))?;
         // Only after the file is written: a failed write must not swap in a
         // config the file does not back.
         state.reload_cfg(state.paths())?;
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        maintenance::gc_policy::get(&mut ctx)
+        with_lazy_ctx(&state, maintenance::gc_policy::get)
     })
     .await;
     respond("gc.policy.update", result, started)
@@ -141,9 +130,7 @@ async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Response
         "gc",
         true,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = maintenance::gc::run(&mut ctx, req)?;
+            let resp = with_lazy_ctx(&job_state, |ctx| maintenance::gc::run(ctx, req))?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

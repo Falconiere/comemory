@@ -12,6 +12,7 @@ use super::{
     orm,
     schema_code::{RepoMarker, repo_marker},
     schema_memory::{Memories, memories},
+    stats_counts::{Corpus, scoped_count},
 };
 use crate::prelude::*;
 use toolu_orm::core::query_column::CommonOps;
@@ -42,12 +43,12 @@ pub fn repo_roots(conn: &Connection) -> Result<Vec<(String, String)>> {
 
 /// Live (non-soft-deleted) `memories` row count, behind
 /// `checks::markdown_db_counts`'s comparison against the on-disk markdown
-/// file count. `COUNT(*)` is always an `i64` to the driver; the caller's
-/// `u64::try_from(..).unwrap_or(0)` fallback is unreachable since this is
-/// never negative.
+/// file count. Delegates to [`scoped_count`] so the visibility policy stays
+/// in one place; the count is never negative, so the widening back to `i64`
+/// cannot saturate.
 pub fn live_memory_count(conn: &Connection) -> Result<i64> {
-    let query = Memories::select().filter(memories::deleted_at.is_null());
-    orm::query_one(conn, query.to_count_sql(), |r| r.get(0))
+    let live = scoped_count(conn, Corpus::LiveMemories, None)?;
+    Ok(i64::try_from(live).unwrap_or(i64::MAX))
 }
 
 #[cfg(test)]

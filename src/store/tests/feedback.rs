@@ -429,3 +429,51 @@ fn an_imported_verdict_never_feeds_the_harvest_mining_or_recall_counts() {
         0
     );
 }
+
+/// Read one `feedback` counter row back as `(used, irrelevant, last_used)`.
+fn counter_row(conn: &rusqlite::Connection, memory_id: &str) -> (i64, i64, Option<String>) {
+    conn.query_row(
+        "SELECT used_count, irrelevant_count, last_used FROM feedback WHERE memory_id = ?1",
+        [memory_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .expect("counter row")
+}
+
+#[test]
+fn upserts_keep_the_latest_last_used_and_dismissals_never_touch_it() {
+    use comemory::store::feedback::{upsert_irrelevant, upsert_used};
+    let (db, _tmp) = open_db();
+    let conn = db.conn();
+
+    // Dismissed first: the row exists with no last_used, and a later use
+    // stamps it.
+    upsert_irrelevant(conn, "aaaaaaa1").expect("dismiss");
+    assert_eq!(counter_row(conn, "aaaaaaa1"), (0, 1, None));
+    upsert_used(conn, "aaaaaaa1", "2026-06-10T00:00:00Z").expect("use");
+    assert_eq!(
+        counter_row(conn, "aaaaaaa1"),
+        (1, 1, Some("2026-06-10T00:00:00Z".to_string()))
+    );
+
+    // A dismissal after a use leaves the stamp alone; an out-of-order older use
+    // bumps the count but cannot move the stamp backwards.
+    upsert_irrelevant(conn, "aaaaaaa1").expect("dismiss again");
+    upsert_used(conn, "aaaaaaa1", "2026-06-01T00:00:00Z").expect("older use");
+    assert_eq!(
+        counter_row(conn, "aaaaaaa1"),
+        (2, 2, Some("2026-06-10T00:00:00Z".to_string()))
+    );
+    upsert_used(conn, "aaaaaaa1", "2026-06-20T00:00:00Z").expect("newer use");
+    assert_eq!(
+        counter_row(conn, "aaaaaaa1"),
+        (3, 2, Some("2026-06-20T00:00:00Z".to_string()))
+    );
+
+    // A fresh memory used first inserts used_count = 1 and the stamp.
+    upsert_used(conn, "bbbbbbb2", "2026-06-05T00:00:00Z").expect("first use");
+    assert_eq!(
+        counter_row(conn, "bbbbbbb2"),
+        (1, 0, Some("2026-06-05T00:00:00Z".to_string()))
+    );
+}

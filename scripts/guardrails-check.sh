@@ -3,8 +3,8 @@
 #
 # scripts/guardrails/ is copied VERBATIM from the kit and must never be
 # hand-edited — change guardrails.config.json instead. The only local additions
-# are the two project-local rules in patterns/rust/ (no-unsafe-without-safety,
-# no-allow-attribute); see AGENTS.md deviations D1/D6.
+# are the three project-local rules in patterns/rust/ (no-unsafe-without-safety,
+# no-allow-attribute, no-zero-arg-macro-wrapper); see AGENTS.md deviations D1/D6.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/common.sh

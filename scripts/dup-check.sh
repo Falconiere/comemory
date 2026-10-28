@@ -58,6 +58,12 @@
 # machete-check) in the justfile's `qa` recipe, and runs authoritatively in CI,
 # where the pinned version is guaranteed.
 set -euo pipefail
+# Byte-order collation for every comparison below. `[[ a < b ]]` and `sort`
+# follow the locale while the live keys are sorted by python's code-point
+# `sorted()`; under en_US.UTF-8 they disagree on `_` vs letters and on case, so
+# a ledger row could be canonicalized one way and its live key the other and
+# `comm` would report a live pair as stale — on a dev Mac but not in CI.
+export LC_ALL=C
 
 SIMILARITY_RS_VERSION="0.5.0"
 
@@ -76,6 +82,15 @@ SIMILARITY_RS_VERSION="0.5.0"
 DUP_BUDGET_ANCHOR=285
 DUP_BUDGET_PCT_MAX=5
 DUP_BUDGET_CEILING=$((DUP_BUDGET_ANCHOR * DUP_BUDGET_PCT_MAX / 100))
+# The ledger itself is capped, against the same anchor. Without this the
+# unledgered budget above is vacuous — any new twin could be ledgered instead of
+# fixed and the unledgered count would still read 0. The cap starts at the
+# measured size of the ledger (111 earned rows = 39% of 285) and, like
+# dup-baseline.txt, may only be LOWERED as pairs are burned; raising it is a
+# visible edit to this line, not a drift. Every row also has to carry a reason
+# (scripts/lib/dup_ledger_lint.py).
+DUP_LEDGER_PCT_MAX=39
+DUP_LEDGER_CEILING=$((DUP_BUDGET_ANCHOR * DUP_LEDGER_PCT_MAX / 100))
 LEDGER_FILE_NAME="dup-ledger.txt"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -84,6 +99,17 @@ source "$HERE/lib/common.sh"
 cd "$PROJECT_ROOT"
 
 STEP="dup-check"
+
+# Ledger evidence is checked before the tool lookup: it needs no similarity-rs,
+# so a contributor without the pinned build still cannot land a reason-less row.
+if [[ -f "$PROJECT_ROOT/$LEDGER_FILE_NAME" ]] \
+  && ! python3 -I "$HERE/lib/dup_ledger_lint.py" "$PROJECT_ROOT/$LEDGER_FILE_NAME"; then
+  log_err "$STEP" \
+    "$LEDGER_FILE_NAME rows above carry no reason — a ledgered pair must say why a helper would be worse"
+  exit 1
+fi
+python3 -I "$HERE/lib/test_dup_ledger_lint.py"
+
 INSTALL_HINT="cargo install similarity-rs --version $SIMILARITY_RS_VERSION --locked"
 
 if ! command -v similarity-rs >/dev/null 2>&1; then
@@ -238,9 +264,14 @@ if [[ -f "$LEDGER_FILE" ]]; then
       trap - EXIT
       exit 1
     fi
-    if [[ "$fn_a" == "$fn_b" ]]; then
+    # Same-name pairs are ambiguous by identity, so they are burned — except
+    # the methods of ONE trait implemented by several types, which share a name
+    # by construction and cannot be renamed apart. Those take category
+    # `trait-impl`; the row is matched one-to-one with a live pair (no `sort -u`
+    # below), so a second same-name pair in the file is still unledgered.
+    if [[ "$fn_a" == "$fn_b" && "$_category" != "trait-impl" ]]; then
       log_err "$STEP" \
-        "ledger forbids same-name pairs ($path|$fn_a|$fn_b) — identity is ambiguous; burn them instead"
+        "ledger forbids same-name pairs ($path|$fn_a|$fn_b) unless category is trait-impl — identity is ambiguous; burn them instead"
       trap - EXIT
       exit 1
     fi
@@ -250,7 +281,7 @@ if [[ -f "$LEDGER_FILE" ]]; then
     else
       printf '%s|%s|%s\n' "$path" "$fn_b" "$fn_a"
     fi
-  done < "$LEDGER_FILE" | LC_ALL=C sort -u > "$ledger_keys_file"
+  done < "$LEDGER_FILE" | LC_ALL=C sort > "$ledger_keys_file"
 fi
 
 stale_count="$(LC_ALL=C comm -23 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
@@ -271,7 +302,14 @@ fi
 
 budget_pct=$((unledgered_count * 100 / DUP_BUDGET_ANCHOR))
 log_info "$STEP" \
-  "unledgered $unledgered_count/$DUP_BUDGET_CEILING (${budget_pct}% of anchor $DUP_BUDGET_ANCHOR) + ledgered $ledgered_count (total $current_count)"
+  "unledgered $unledgered_count/$DUP_BUDGET_CEILING (${budget_pct}% of anchor $DUP_BUDGET_ANCHOR) + ledgered $ledgered_count/$DUP_LEDGER_CEILING (total $current_count)"
+
+if (( ledgered_count > DUP_LEDGER_CEILING )); then
+  log_err "$STEP" \
+    "ledgered pair count $ledgered_count exceeds the ledger ceiling $DUP_LEDGER_CEILING — burn a pair instead of ledgering a new one"
+  trap - EXIT
+  exit 1
+fi
 
 if (( unledgered_count > DUP_BUDGET_CEILING )); then
   log_err "$STEP" \

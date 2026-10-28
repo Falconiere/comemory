@@ -2,7 +2,9 @@
 //! The builders own SQL generation; this bridge retains native SQLite errors,
 //! cached statements, row decoders and caller-owned transaction boundaries.
 
-use rusqlite::{Connection, OptionalExtension, Row, params_from_iter};
+use rusqlite::{
+    CachedStatement, Connection, OptionalExtension, ParamsFromIter, Row, params_from_iter,
+};
 use toolu_orm::core::value::Value;
 
 use crate::prelude::*;
@@ -37,59 +39,64 @@ pub(super) fn execute_many<P: rusqlite::Params>(
     Ok(written)
 }
 
-/// The four query shapes over one prepare/bind path. A table keeps them from
-/// pairing as near-duplicates while each name still encodes its collect
-/// contract (`Vec`, required row, optional row, raw `rusqlite::Result`).
-macro_rules! orm_queries {
-    () => {
-        /// Decode all rows from a generated query into owned values.
-        pub(super) fn query_all<T>(
-            conn: &Connection,
-            query: (String, Vec<Value>),
-            decode: impl FnMut(&Row<'_>) -> rusqlite::Result<T>,
-        ) -> Result<Vec<T>> {
-            let (sql, values) = query;
-            Ok(conn
-                .prepare_cached(&sql)?
-                .query_map(params_from_iter(values), decode)?
-                .collect::<rusqlite::Result<Vec<_>>>()?)
-        }
+/// A prepared cached statement with its generated values already bound, so
+/// every reader below shares one prepare/bind step and differs only in how it
+/// collects rows.
+type Bound<'conn> = (CachedStatement<'conn>, ParamsFromIter<Vec<Value>>);
 
-        /// Decode one required row, retaining SQLite's missing-row error.
-        pub(super) fn query_one<T>(
-            conn: &Connection,
-            query: (String, Vec<Value>),
-            decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
-        ) -> Result<T> {
-            Ok(query_row(conn, query, decode)?)
-        }
-
-        /// Decode an optional row without exposing driver control flow to callers.
-        pub(super) fn query_optional<T>(
-            conn: &Connection,
-            query: (String, Vec<Value>),
-            decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
-        ) -> Result<Option<T>> {
-            Ok(query_row(conn, query, decode).optional()?)
-        }
-
-        fn query_row<T>(
-            conn: &Connection,
-            query: (String, Vec<Value>),
-            decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
-        ) -> rusqlite::Result<T> {
-            let (sql, values) = query;
-            conn.prepare_cached(&sql)?
-                .query_row(params_from_iter(values), decode)
-        }
-    };
+/// Prepare `query`'s SQL through the connection's statement cache and bind its
+/// generated values.
+fn prepare_bound(conn: &Connection, query: (String, Vec<Value>)) -> rusqlite::Result<Bound<'_>> {
+    let (sql, values) = query;
+    Ok((conn.prepare_cached(&sql)?, params_from_iter(values)))
 }
-orm_queries!();
+
+/// Decode all rows from a generated query into owned values.
+pub(super) fn query_all<T>(
+    conn: &Connection,
+    query: (String, Vec<Value>),
+    decode: impl FnMut(&Row<'_>) -> rusqlite::Result<T>,
+) -> Result<Vec<T>> {
+    let (mut statement, params) = prepare_bound(conn, query)?;
+    Ok(statement
+        .query_map(params, decode)?
+        .collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Decode one required row, retaining SQLite's missing-row error.
+pub(super) fn query_one<T>(
+    conn: &Connection,
+    query: (String, Vec<Value>),
+    decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
+) -> Result<T> {
+    Ok(query_row(conn, query, decode)?)
+}
+
+/// Decode an optional row without exposing driver control flow to callers.
+pub(super) fn query_optional<T>(
+    conn: &Connection,
+    query: (String, Vec<Value>),
+    decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
+) -> Result<Option<T>> {
+    Ok(query_row(conn, query, decode).optional()?)
+}
+
+/// Decode the first row, leaving SQLite's missing-row error to the caller:
+/// [`query_one`] surfaces it, [`query_optional`] turns it into `None`.
+fn query_row<T>(
+    conn: &Connection,
+    query: (String, Vec<Value>),
+    decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    let (mut statement, params) = prepare_bound(conn, query)?;
+    statement.query_row(params, decode)
+}
 
 /// Emit read-only store functions from a table of rows. Each row is
 /// `name(arg: Ty, ..) -> Ret = runner(query, decode)`: it runs one generated
-/// statement (`builder.to_sql()` / `.to_count_sql()` / `.to_exists_sql()`) through the named runner (`query_all` / `query_optional` /
-/// `query_one`) with a row decoder, so readers that differ only in
+/// statement (`builder.to_sql()` / `.to_count_sql()` / `.to_exists_sql()`)
+/// through the named runner (`query_all` / `query_optional` / `query_one`)
+/// with a row decoder, so readers that differ only in
 /// arguments, filters and result shape stay one declaration each. A row may
 /// add `, empty_on slice_arg` before `=`: an empty slice then short-circuits
 /// to `Ret::default()` instead of building an empty `IN ()`.

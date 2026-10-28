@@ -7,7 +7,6 @@ use crate::domains::sync::exchange::{ImportEntry, ImportItemResult, ImportStatus
 use crate::domains::sync::vector_rule;
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
-use crate::store::{Connection, simhash_scan};
 use crate::utilities::context::Ctx;
 
 /// Rule 10 — write a new memory from the wire record.
@@ -21,7 +20,12 @@ pub(crate) fn write_new_memory(
 ) -> Result<()> {
     let paths = ctx.paths.clone();
     let conn = ctx.conn()?;
-    let duplicate_of = near_duplicate(conn, &record.body, &entry.id, cfg.rank.near_dup_hamming);
+    let duplicate_of = crate::domains::memories::save::near_duplicate(
+        conn,
+        &record.body,
+        &entry.id,
+        cfg.rank.near_dup_hamming,
+    );
     // The same rule the replica wire applies: an unusable vector never
     // refuses the memory, it lands in the needs-embedding backlog instead.
     let verdict = vector_rule::decide(conn, record.vector.as_ref())?;
@@ -118,20 +122,4 @@ fn frontmatter_from_wire(record: &SyncRecord, author_override: Option<&str>) -> 
         references: wire.references.clone(),
         relations: wire.relations.clone(),
     }
-}
-
-fn near_duplicate(conn: &Connection, body: &str, self_id: &str, radius: u32) -> Option<String> {
-    let hash = crate::utilities::simhash::of_body(body);
-    simhash_scan::live_simhashes(conn, None, Some(self_id))
-        .ok()?
-        .into_iter()
-        .map(|row| {
-            (
-                row.id,
-                crate::utilities::simhash::hamming64(hash, row.simhash as u64),
-            )
-        })
-        .filter(|(_, d)| *d <= radius)
-        .min_by_key(|(_, d)| *d)
-        .map(|(id, _)| id)
 }

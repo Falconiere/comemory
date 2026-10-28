@@ -68,9 +68,15 @@ Deviations are enumerated under "Deviations from toolu-conventions" — nowhere 
    one-sided count ratchet against `dup-baseline.txt`, plus a hard
    **unledgered** residual budget of **5% of the 285-pair anchor (ceiling
    14)**. Earned residuals live in `dup-ledger.txt`
-   (`path|fnA|fnB|category|evidence`); same-name pairs cannot be ledgered
-   and must be burned. Over-ceiling unledgered fails even when within the
-   ratchet file.
+   (`path|fnA|fnB|category|evidence`): the evidence must state a concrete
+   reason (`scripts/lib/dup_ledger_lint.py` rejects a restated pair name),
+   and the ledger is capped at **39% of the anchor (111 rows)** so it can
+   only shrink. Same-name pairs cannot be ledgered and must be burned —
+   except category `trait-impl` (methods of one trait implemented by several
+   types). Over-ceiling unledgered or ledgered fails even when within the
+   ratchet file. Hiding twins in a zero-argument `macro_rules!` wrapper is
+   banned (`no-zero-arg-macro-wrapper`): it moves the bodies out of every
+   scanner's view without extracting anything.
 2. **No barrels — no `mod.rs`.** A module that grows into a folder keeps its
    file beside it (`src/store.rs` declares `mod migrate;`,
    `src/store/migrate.rs` holds it). A file whose only
@@ -305,8 +311,8 @@ D3/D4/D5 policy lines — keep them verbatim.
   indexes its contents, while a single-file module is listed in its parent folder
   README and documented by its module doc. Configured list, not prose count,
   is source of truth.
-- **D6 — two project-local ast-grep rules** (`no-unsafe-without-safety.yml`,
-  `no-allow-attribute.yml`) are additions to
+- **D6 — three project-local ast-grep rules** (`no-unsafe-without-safety.yml`,
+  `no-allow-attribute.yml`, `no-zero-arg-macro-wrapper.yml`) are additions to
   `scripts/guardrails/patterns/rust/`; no kit file is modified, so kit
   re-copy merges rather than clobbers.
 - **D7 — eight `clippy::pedantic` lints start at `allow` with counted

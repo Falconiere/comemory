@@ -26,6 +26,7 @@ use crate::domains::graph::graph_nodes;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::jobs;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, query_response};
 use crate::serve::scope::RepoScope;
 use crate::store::{code_graph_nodes, repo_marker_roots};
@@ -237,12 +238,12 @@ async fn recompute(State(state): State<AppState>) -> Response {
         "graph-recompute",
         true,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = crate::domains::graph::graph_recompute::run(
-                &mut ctx,
-                crate::domains::graph::graph_recompute::Request {},
-            )?;
+            let resp = with_lazy_ctx(&job_state, |ctx| {
+                crate::domains::graph::graph_recompute::run(
+                    ctx,
+                    crate::domains::graph::graph_recompute::Request {},
+                )
+            })?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

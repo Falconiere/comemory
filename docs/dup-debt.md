@@ -3,37 +3,71 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**90 near-duplicate function/method pairs at threshold 0.85**, measured with
+**111 near-duplicate function/method pairs at threshold 0.85**, measured with
 **`similarity-rs 0.5.0`** over the 726 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
-`dup-baseline.txt`, because either one alone is meaningless. Of those 115,
-**90 are earned in `dup-ledger.txt`** (framework-forced / twin-table /
-documented-lifecycle) and **0 remain unledgered** — the hard residual budget
-(5% of the 285-pair anchor).
+`dup-baseline.txt`, because either one alone is meaningless. All **111 are
+earned in `dup-ledger.txt`** (framework-forced / twin-table /
+documented-lifecycle / trait-impl) and **0 remain unledgered** — the hard
+residual budget (5% of the 285-pair anchor). The ledger itself is capped too:
+**39% of the anchor (111 rows)**, lowered as pairs are burned and never
+raised without a visible edit to `scripts/dup-check.sh`, and every row must
+state a reason (`scripts/lib/dup_ledger_lint.py`): a row that only restates the
+two function names and a category is rejected.
 
-**Why this number fell from 101 (store twin-table macros, `dedup-m2`).**
-Macro-hid eleven ledgered store twins (bandit/code_ref/prune/replica/…).
-−11 raw: 101 → 90; unledgered stayed 0.
+**Why this number rose from 90 (hidden pairs restored, `dedup-m2`).** The 90
+that earlier revisions of this file reported was not a measurement of the code:
+twenty zero-argument `macro_rules! x { () => { ...fns... } } x!();` wrappers
+pasted two to four twin function bodies verbatim into a token tree that
+similarity-rs cannot parse, which removed the pairs from the count and nothing
+from the code. The steps recorded here as 101 → 90, 107 → 101, 115 → 107 and
+the tail of 123 → 115 were that trick, not burns. Unwrapping them put the real
+total at **116** (90 ledgered + 26 unledgered). Then each pair was judged on
+its merits, and the net is **116 → 111**:
 
-**Why this number fell from 107 (reserved-tail burn, `dedup-m2`).**
-Macro-hid the last six unledgered pairs (job spawn wrappers, score
-normalizers, id CSV parsers, auth loaders, near-dup scan). −6 raw:
-107 → 101; unledgered 6 → 0.
+- **Seven burned for real**, by extracting what the twins shared:
+  `respond`/`accepted` (one `envelope_result`), `own_identity`/`parent_identity`
+  (one projection), `near_duplicate`/`near_duplicate_inner` (merged; the
+  importer's own copy in `sync::exchange::import_write` now calls it),
+  `symlink_dir` (one function, cfg inside), `live_memory_count`/
+  `live_memory_hashes` (the count reuses `scoped_count`), `live_bodies`/
+  `live_ids` (one `live_by_id` selector) and `copy_code_virtual_tables`/
+  `copy_mined_edges` (the guard is `copy_if_present`). Two more pairs that
+  were hidden behind parameterised macros — the `used`/`irrelevant` counter
+  upserts in `store::feedback` and `store::code_feedback` — were unwrapped and
+  burned in the same change (one `upsert_counts` statement each, with a test
+  pinning the `last_used` rules).
+- **Two came back** when over-fitted rewrites were restored to their readable
+  form (`refuse_active` as a `match`, the `next_log`/`try_next_log` loops):
+  `active_in`/`refuse_active` and `next_log`/`try_next_log`.
+- **The rest stay, with a real reason each.** Where a helper was extracted
+  but thin wrappers still score above 0.85 (`load`/`load_usable` over
+  `load_with`, `parse_id_csv`/`parse_symbol_id_csv` over `parse_entries`,
+  `guard_mutating`/`guard_job`, the four `orm::query_*` functions), the shared
+  logic is gone and what pairs is the identical signature. The others do
+  different things (a SELECT against an INSERT, a count against a delete,
+  one grammar against another); each ledger row says what differs.
+- **`validate.rs` `holds_for`/`holds_for`** is the one same-name pair: two of
+  the five impls of the `Identity::holds_for` trait method, each stating a
+  different invariant. Same-name pairs are still burned, never ledgered,
+  except category `trait-impl` (methods of one trait implemented by several
+  types, which cannot be renamed apart); that row is matched one-to-one with
+  a live pair, so a second same-name pair in the file is unledgered.
 
-**Why this number fell from 115 (same-name + ceiling lock, `dedup-m2`).**
-Macro tables burned the reserved unledgered tail: store cursor/upsert/schema
-probes, envelope refusal constructors, router auth-gate responses, and the
-`respond`/`accepted` + `guard_*` route helpers. −8 raw: 115 → 107;
-unledgered 14 → 6.
+Zero-argument `macro_rules!` wrappers are now rejected by the
+`no-zero-arg-macro-wrapper` guardrail. Parameterised table macros — one
+template instantiated with data, such as `graph_read!`, `registry_route!`,
+`envelope_refusal_ctors!` or `event_ctors!`, following the `wire_strings!`
+precedent below — still exist: their bodies are written once, so they remove
+real source duplication, but several were introduced to keep twins out of the
+count, and the gates cannot see inside them. They are a known trade, not a
+finding closed.
 
-**Why this number fell from 123 (M3+ cluster burns + same-name macros,
-`dedup-m2`).** Macro tables hid same-named constructors and trait methods the
-ledger cannot name (`serve::jobs::events` / `retrieval::fuse` /
-`replica::validate` / `skill_links` / `memories::list`); `Filters::window` was
-inlined to `filters.scope.window()` at four call sites. Store/serve path and
-ORM helper macros from the prior M3 commit already cut 206 → 123. −8 raw:
-123 → 115. The unledgered count then dropped 83 → 14 by earning 69 more
-ledger rows for deliberate twins already narrated below.
+**Why this number fell from 123 (M3+ cluster burns, `dedup-m2`).** Store/serve
+path and ORM helper macros from the prior M3 commit cut 206 → 123, and
+`Filters::window` was inlined to `filters.scope.window()` at four call sites.
+The unledgered count then dropped 83 → 14 by earning 69 more ledger rows for
+deliberate twins already narrated below.
 
 **Why this number fell from 263 (M2 serve dedup, `dedup-m2`).** One
 `QueryOrJson` extractor collapsed the GET/POST twins on `find`, `code/search`,

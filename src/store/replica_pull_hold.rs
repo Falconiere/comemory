@@ -35,60 +35,54 @@ pub struct PullHold {
     pub policy_revision: Option<i64>,
 }
 
-macro_rules! hold_record_list {
-    () => {
-        /// Record `hold` for `key` under `epoch`, replacing one at the same position.
-        ///
-        /// # Errors
-        /// Propagates SQLite failures, including a reason the schema refuses.
-        pub fn record(
-            conn: &Connection,
-            key: &ExchangeKey,
-            epoch: &str,
-            hold: &PullHold,
-            at: &str,
-        ) -> Result<()> {
-            orm::execute(
-                conn,
-                ReplicaPullHold::insert()
-                    .or_replace()
-                    .set(&col::api_url, key.api_url.as_str())
-                    .set(&col::workspace_id, key.workspace_id.as_str())
-                    .set(&col::stream_epoch, epoch)
-                    .set(&col::from_sequence, hold.from_sequence)
-                    .set(&col::to_sequence, hold.to_sequence)
-                    .set(&col::reason, hold.reason.as_str())
-                    .set(&col::entity_kind, hold.entity_kind.as_deref())
-                    .set(&col::entity_key, hold.entity_key.as_deref())
-                    .set(&col::repository, hold.repository.as_deref())
-                    .set(&col::policy_revision, hold.policy_revision)
-                    .set(&col::recorded_at, at)
-                    .to_sql(),
-            )?;
-            Ok(())
-        }
-
-        /// Every hold `key` has under `epoch`, lowest position first.
-        ///
-        /// # Errors
-        /// Propagates SQLite failures.
-        pub fn list(conn: &Connection, key: &ExchangeKey, epoch: &str) -> Result<Vec<PullHold>> {
-            orm::query_all(
-                conn,
-                ReplicaPullHold::select()
-                    .columns_typed(COLUMNS)
-                    .filter(col::api_url.eq(key.api_url.as_str()))
-                    .filter(col::workspace_id.eq(key.workspace_id.as_str()))
-                    .filter(col::stream_epoch.eq(epoch))
-                    .order_by(col::from_sequence.asc())
-                    .to_sql(),
-                decode,
-            )
-        }
-    };
+/// Record `hold` for `key` under `epoch`, replacing one at the same position.
+///
+/// # Errors
+/// Propagates SQLite failures, including a reason the schema refuses.
+pub fn record(
+    conn: &Connection,
+    key: &ExchangeKey,
+    epoch: &str,
+    hold: &PullHold,
+    at: &str,
+) -> Result<()> {
+    orm::execute(
+        conn,
+        ReplicaPullHold::insert()
+            .or_replace()
+            .set(&col::api_url, key.api_url.as_str())
+            .set(&col::workspace_id, key.workspace_id.as_str())
+            .set(&col::stream_epoch, epoch)
+            .set(&col::from_sequence, hold.from_sequence)
+            .set(&col::to_sequence, hold.to_sequence)
+            .set(&col::reason, hold.reason.as_str())
+            .set(&col::entity_kind, hold.entity_kind.as_deref())
+            .set(&col::entity_key, hold.entity_key.as_deref())
+            .set(&col::repository, hold.repository.as_deref())
+            .set(&col::policy_revision, hold.policy_revision)
+            .set(&col::recorded_at, at)
+            .to_sql(),
+    )?;
+    Ok(())
 }
 
-hold_record_list!();
+/// Every hold `key` has under `epoch`, lowest position first.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn list(conn: &Connection, key: &ExchangeKey, epoch: &str) -> Result<Vec<PullHold>> {
+    orm::query_all(
+        conn,
+        ReplicaPullHold::select()
+            .columns_typed(COLUMNS)
+            .filter(col::api_url.eq(key.api_url.as_str()))
+            .filter(col::workspace_id.eq(key.workspace_id.as_str()))
+            .filter(col::stream_epoch.eq(epoch))
+            .order_by(col::from_sequence.asc())
+            .to_sql(),
+        decode,
+    )
+}
 
 /// Every column [`decode`] reads, in order.
 const COLUMNS: &[&dyn toolu_orm::core::query_column::ColumnRef] = &[

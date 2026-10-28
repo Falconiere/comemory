@@ -22,6 +22,7 @@ use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::query_or_json::QueryOrJson;
+use crate::serve::routes::mutate_response::with_lazy_ctx;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, index_runs, respond, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::activity::Origin;
@@ -130,9 +131,9 @@ async fn code_ast(
         drop(conn);
         let canonical = path_containment::contain_abs(&roots, Path::new(&req.file))?;
         req.file = canonical.to_string_lossy().into_owned();
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        crate::domains::code::pattern_search::run(&mut ctx, req)
+        with_lazy_ctx(&state, |ctx| {
+            crate::domains::code::pattern_search::run(ctx, req)
+        })
     })
     .await;
     respond("code.ast", result, started)
@@ -198,9 +199,9 @@ async fn code_ingest(State(state): State<AppState>, body: String) -> Response {
         "ingest-code",
         true,
         move || {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = crate::domains::code::ingest_code::run(&mut ctx, &body)?;
+            let resp = with_lazy_ctx(&job_state, |ctx| {
+                crate::domains::code::ingest_code::run(ctx, &body)
+            })?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );
