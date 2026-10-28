@@ -66,24 +66,65 @@ pub(super) fn parse_bool_env(name: &str, raw: &str) -> Result<bool> {
     }
 }
 
-/// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
-/// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
-/// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
-fn env_pair<T: std::str::FromStr + Copy>(name: &str) -> Result<Option<(T, T)>>
-where
-    T::Err: std::fmt::Display,
-{
-    Ok(env_numbers::<T>(name, 2)?.map(|v| (v[0], v[1])))
+/// One `fn name<T>(name) -> Result<Option<tuple>>` per row, each a fixed-width
+/// view over [`env_numbers`]; only the width and the tuple built from the
+/// parsed values vary.
+macro_rules! env_tuples {
+    ($(
+        $(#[$meta:meta])*
+        $fn_name:ident => $n:literal, $tuple:ty, |$v:ident| $build:expr
+    ),+ $(,)?) => {
+        $(
+            $(#[$meta])*
+            fn $fn_name<T: std::str::FromStr + Copy>(name: &str) -> Result<Option<$tuple>>
+            where
+                T::Err: std::fmt::Display,
+            {
+                Ok(env_numbers::<T>(name, $n)?.map(|$v| $build))
+            }
+        )+
+    };
 }
 
-/// Read an env var as an `"a,b,c"` triple of numbers; `Ok(None)` when unset.
-/// Used by `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` (`f32`, column order
-/// symbol,snippet,path_tokens).
-fn env_triple<T: std::str::FromStr + Copy>(name: &str) -> Result<Option<(T, T, T)>>
-where
-    T::Err: std::fmt::Display,
-{
-    Ok(env_numbers::<T>(name, 3)?.map(|v| (v[0], v[1], v[2])))
+env_tuples! {
+    /// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
+    /// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
+    /// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
+    env_pair => 2, (T, T), |v| (v[0], v[1]),
+    /// Read an env var as an `"a,b,c"` triple of numbers; `Ok(None)` when
+    /// unset. Used by `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` (`f32`, column
+    /// order symbol,snippet,path_tokens).
+    env_triple => 3, (T, T, T), |v| (v[0], v[1], v[2]),
+}
+
+/// Read a boolean env var (`true|1|yes|on` / `false|0|no|off`); `Ok(None)`
+/// when unset.
+fn env_bool(name: &str) -> Result<Option<bool>> {
+    let Ok(raw) = std::env::var(name) else {
+        return Ok(None);
+    };
+    Ok(Some(parse_bool_env(name, &raw)?))
+}
+
+/// Read a free-form string env var verbatim; `Ok(None)` when unset.
+fn env_string(name: &str) -> Result<Option<String>> {
+    Ok(std::env::var(name).ok())
+}
+
+/// Read `COMEMORY_INDEXING_AUTO_REINDEX` (`lazy|hook|off`); `Ok(None)` when
+/// unset, `Err` naming the variable on any other value.
+fn env_auto_reindex(name: &str) -> Result<Option<AutoReindexMode>> {
+    let Ok(v) = std::env::var(name) else {
+        return Ok(None);
+    };
+    match v.as_str() {
+        "lazy" => Ok(Some(AutoReindexMode::Lazy)),
+        "hook" => Ok(Some(AutoReindexMode::Hook)),
+        "off" => Ok(Some(AutoReindexMode::Off)),
+        other => Err(Error::Other(format!(
+            "invalid env var {name}: '{other}' (expected lazy|hook|off)"
+        ))),
+    }
 }
 
 /// Apply a parsed override when present; an absent variable preserves the current layer.
@@ -96,6 +137,36 @@ fn apply_override<T>(
         *target = value;
     }
     Ok(())
+}
+
+/// One `fn name(&mut self) -> Result<()>` per row, applying a table of
+/// `COMEMORY_*` numeric overrides to the fields of one or more `Config`
+/// sections, in order. Each entry names the field, its variable, and
+/// optionally the reader (`env_parse` unless `via` says otherwise). Only the
+/// table varies, so it replaces near-identical method bodies.
+macro_rules! env_override_fns {
+    (@one $target:expr, $var:literal) => {
+        apply_override(&mut $target, $var, env_parse)?
+    };
+    (@one $target:expr, $var:literal, $read:path) => {
+        apply_override(&mut $target, $var, $read)?
+    };
+    ($(
+        $(#[$meta:meta])*
+        $fn_name:ident($($section:ident { $($field:ident => $var:literal $(via $read:path)?),+ $(,)? })+)
+    ),+ $(,)?) => {
+        impl Config {
+            $(
+                $(#[$meta])*
+                fn $fn_name(&mut self) -> Result<()> {
+                    $($(
+                        env_override_fns!(@one self.$section.$field, $var $(, $read)?);
+                    )+)+
+                    Ok(())
+                }
+            )+
+        }
+    };
 }
 
 impl Config {
@@ -111,13 +182,10 @@ impl Config {
         self.apply_indexing_env()?;
         self.apply_retrieval_env()?;
         self.apply_sync_env()?;
-        self.apply_git_env()?;
         self.apply_embed_hint_env();
-        self.apply_rank_env()?;
-        self.apply_prune_env()?;
-        self.apply_reinforce_env()?;
+        self.apply_tuning_env()?;
         // The `[observations]` reads live beside their own section, in
-        // `config::observations`, rather than as a seventh near-identical
+        // `config::observations`, rather than as another near-identical
         // `apply_*_env` method here.
         self.observations.apply_env()?;
         self.activity.apply_env()?;
@@ -126,108 +194,6 @@ impl Config {
         // semicolons) is unreadable and easy to misquote. Set them in
         // config.toml's `[tune]` section instead; validation still runs.
         self.validate()
-    }
-
-    /// `COMEMORY_INDEXING_*` → [`Config::indexing`].
-    fn apply_indexing_env(&mut self) -> Result<()> {
-        if let Ok(v) = std::env::var("COMEMORY_INDEXING_AUTO_REINDEX") {
-            self.indexing.auto_reindex = match v.as_str() {
-                "lazy" => AutoReindexMode::Lazy,
-                "hook" => AutoReindexMode::Hook,
-                "off" => AutoReindexMode::Off,
-                other => {
-                    return Err(Error::Other(format!(
-                        "invalid env var COMEMORY_INDEXING_AUTO_REINDEX: '{other}' (expected lazy|hook|off)"
-                    )));
-                }
-            };
-        }
-        apply_override(
-            &mut self.indexing.max_file_bytes,
-            "COMEMORY_INDEXING_MAX_FILE_BYTES",
-            env_parse,
-        )?;
-        Ok(())
-    }
-
-    /// `COMEMORY_RETRIEVAL_*` → [`Config::retrieval`].
-    fn apply_retrieval_env(&mut self) -> Result<()> {
-        apply_override(
-            &mut self.retrieval.top_k,
-            "COMEMORY_RETRIEVAL_TOP_K",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.retrieval.max_page_window,
-            "COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.retrieval.memory_threshold,
-            "COMEMORY_RETRIEVAL_MEMORY_THRESHOLD",
-            env_parse,
-        )?;
-        // Only the parse happens here; the finite/positive invariant lives
-        // in `Config::validate` so the file overlay is checked identically.
-        apply_override(
-            &mut self.retrieval.rrf_k,
-            "COMEMORY_RETRIEVAL_RRF_K",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.retrieval.graph_hops,
-            "COMEMORY_RETRIEVAL_GRAPH_HOPS",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.retrieval.graph_seeds,
-            "COMEMORY_RETRIEVAL_GRAPH_SEEDS",
-            env_parse,
-        )?;
-        if let Some(v) = env_pair::<f32>("COMEMORY_RETRIEVAL_BM25_WEIGHTS")? {
-            self.retrieval.bm25_weights = v;
-        }
-        apply_override(
-            &mut self.retrieval.code_threshold,
-            "COMEMORY_RETRIEVAL_CODE_THRESHOLD",
-            env_parse,
-        )?;
-        if let Some(v) = env_triple::<f32>("COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS")? {
-            self.retrieval.code_bm25_weights = v;
-        }
-        apply_override(
-            &mut self.retrieval.document_leg_weight,
-            "COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT",
-            env_parse,
-        )?;
-        Ok(())
-    }
-
-    /// `COMEMORY_SYNC_PUSH_ON_SAVE` / `COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT` /
-    /// `COMEMORY_SYNC_CODE_INDEX` / `COMEMORY_SYNC_PAUSE_WAIT` →
-    /// [`Config::sync`].
-    fn apply_sync_env(&mut self) -> Result<()> {
-        if let Ok(v) = std::env::var("COMEMORY_SYNC_PUSH_ON_SAVE") {
-            self.sync.push_on_save = parse_bool_env("COMEMORY_SYNC_PUSH_ON_SAVE", &v)?;
-        }
-        if let Ok(v) = std::env::var("COMEMORY_SYNC_CODE_INDEX") {
-            self.sync.code_index = parse_bool_env("COMEMORY_SYNC_CODE_INDEX", &v)?;
-        }
-        if let Ok(v) = std::env::var("COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT") {
-            self.sync.push_on_save_timeout = v;
-        }
-        if let Ok(v) = std::env::var("COMEMORY_SYNC_PAUSE_WAIT") {
-            self.sync.pause_wait = v;
-        }
-        Ok(())
-    }
-
-    /// `COMEMORY_GIT_AUTO_SYNC` → [`Config::git`].
-    fn apply_git_env(&mut self) -> Result<()> {
-        if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
-            self.git.auto_sync = parse_bool_env("COMEMORY_GIT_AUTO_SYNC", &v)?;
-        }
-        Ok(())
     }
 
     /// `COMEMORY_EMBED_HINT` → [`Config::embed_hint`]. Infallible: the hint
@@ -242,71 +208,63 @@ impl Config {
             self.embed_hint = Some(v);
         }
     }
+}
 
-    /// `COMEMORY_RANK_*` → [`Config::rank`].
+env_override_fns! {
+    /// `COMEMORY_INDEXING_*` → [`Config::indexing`].
+    apply_indexing_env(indexing {
+        auto_reindex => "COMEMORY_INDEXING_AUTO_REINDEX" via env_auto_reindex,
+        max_file_bytes => "COMEMORY_INDEXING_MAX_FILE_BYTES",
+    }),
+    /// `COMEMORY_RETRIEVAL_*` → [`Config::retrieval`]. Only the parse happens
+    /// here; the finite/positive invariants live in `Config::validate` so the
+    /// file overlay is checked identically.
+    apply_retrieval_env(retrieval {
+        top_k => "COMEMORY_RETRIEVAL_TOP_K",
+        max_page_window => "COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW",
+        memory_threshold => "COMEMORY_RETRIEVAL_MEMORY_THRESHOLD",
+        rrf_k => "COMEMORY_RETRIEVAL_RRF_K",
+        graph_hops => "COMEMORY_RETRIEVAL_GRAPH_HOPS",
+        graph_seeds => "COMEMORY_RETRIEVAL_GRAPH_SEEDS",
+        bm25_weights => "COMEMORY_RETRIEVAL_BM25_WEIGHTS" via env_pair::<f32>,
+        code_threshold => "COMEMORY_RETRIEVAL_CODE_THRESHOLD",
+        code_bm25_weights => "COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS" via env_triple::<f32>,
+        document_leg_weight => "COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT",
+    }),
+    /// `COMEMORY_SYNC_PUSH_ON_SAVE` / `COMEMORY_SYNC_CODE_INDEX` /
+    /// `COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT` / `COMEMORY_SYNC_PAUSE_WAIT` →
+    /// [`Config::sync`], then `COMEMORY_GIT_AUTO_SYNC` → [`Config::git`].
+    apply_sync_env(
+        sync {
+            push_on_save => "COMEMORY_SYNC_PUSH_ON_SAVE" via env_bool,
+            code_index => "COMEMORY_SYNC_CODE_INDEX" via env_bool,
+            push_on_save_timeout => "COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT" via env_string,
+            pause_wait => "COMEMORY_SYNC_PAUSE_WAIT" via env_string,
+        }
+        git { auto_sync => "COMEMORY_GIT_AUTO_SYNC" via env_bool }
+    ),
+    /// `COMEMORY_RANK_*` → [`Config::rank`], `COMEMORY_PRUNE_*` and
+    /// `COMEMORY_LEARNING_RETENTION_DAYS` → [`Config::prune`], and
+    /// `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` → [`Config::reinforce`].
     ///
     /// Parsing happens here; range invariants are enforced once for both
     /// env and file overlays by `Config::validate`.
-    fn apply_rank_env(&mut self) -> Result<()> {
-        apply_override(&mut self.rank.decay, "COMEMORY_RANK_DECAY", env_parse)?;
-        apply_override(
-            &mut self.rank.prior_clamp,
-            "COMEMORY_RANK_PRIOR_CLAMP",
-            env_pair,
-        )?;
-        apply_override(
-            &mut self.rank.mmr_lambda,
-            "COMEMORY_RANK_MMR_LAMBDA",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.rank.near_dup_hamming,
-            "COMEMORY_RANK_NEAR_DUP_HAMMING",
-            env_parse,
-        )?;
-        Ok(())
-    }
-
-    /// `COMEMORY_PRUNE_*` and `COMEMORY_LEARNING_RETENTION_DAYS` →
-    /// [`Config::prune`]. Range invariants live in `Config::validate`.
-    fn apply_prune_env(&mut self) -> Result<()> {
-        apply_override(
-            &mut self.prune.min_activation,
-            "COMEMORY_PRUNE_MIN_ACTIVATION",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.prune.min_feedback,
-            "COMEMORY_PRUNE_MIN_FEEDBACK",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.prune.low_value_default_below_quality,
-            "COMEMORY_PRUNE_BELOW_QUALITY",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.prune.learning_retention_days,
-            "COMEMORY_LEARNING_RETENTION_DAYS",
-            env_parse,
-        )?;
-        apply_override(
-            &mut self.prune.superseded_grace_days,
-            "COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS",
-            env_parse,
-        )?;
-        Ok(())
-    }
-
-    /// `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` → [`Config::reinforce`].
-    fn apply_reinforce_env(&mut self) -> Result<()> {
-        apply_override(
-            &mut self.reinforce.search_edit_days,
-            "COMEMORY_REINFORCE_SEARCH_EDIT_DAYS",
-            env_parse,
-        )?;
-        Ok(())
-    }
+    apply_tuning_env(
+        rank {
+            decay => "COMEMORY_RANK_DECAY",
+            prior_clamp => "COMEMORY_RANK_PRIOR_CLAMP" via env_pair,
+            mmr_lambda => "COMEMORY_RANK_MMR_LAMBDA",
+            near_dup_hamming => "COMEMORY_RANK_NEAR_DUP_HAMMING",
+        }
+        prune {
+            min_activation => "COMEMORY_PRUNE_MIN_ACTIVATION",
+            min_feedback => "COMEMORY_PRUNE_MIN_FEEDBACK",
+            low_value_default_below_quality => "COMEMORY_PRUNE_BELOW_QUALITY",
+            learning_retention_days => "COMEMORY_LEARNING_RETENTION_DAYS",
+            superseded_grace_days => "COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS",
+        }
+        reinforce { search_edit_days => "COMEMORY_REINFORCE_SEARCH_EDIT_DAYS" }
+    ),
 }
 
 /// `COMEMORY_API_KEY` override for the device secret stored in `auth.json`.

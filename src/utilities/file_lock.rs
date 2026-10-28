@@ -75,17 +75,27 @@ impl FileLock {
         label: &'static str,
         timeout: Duration,
     ) -> Result<Option<Self>> {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if let Some(lock) = Self::try_acquire(path, label)? {
-                return Ok(Some(lock));
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Ok(None);
-            }
-            std::thread::sleep(POLL_INTERVAL.min(remaining));
+        poll_until(timeout, || Self::try_acquire(path, label))
+    }
+}
+
+/// Run `attempt` until it yields `Some` or `timeout` elapses (`Ok(None)`),
+/// sleeping [`POLL_INTERVAL`] between tries. One attempt always runs, so a
+/// zero timeout still gets a single non-blocking try.
+fn poll_until<T>(
+    timeout: Duration,
+    mut attempt: impl FnMut() -> Result<Option<T>>,
+) -> Result<Option<T>> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(found) = attempt()? {
+            return Ok(Some(found));
         }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(None);
+        }
+        std::thread::sleep(POLL_INTERVAL.min(remaining));
     }
 }
 

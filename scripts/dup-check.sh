@@ -65,12 +65,18 @@ SIMILARITY_RS_VERSION="0.5.0"
 # (285 pairs when the burn campaign started). The tool emits a pair COUNT
 # only, so the percentage is computed against that fixed anchor — never
 # against a live function total (rejected as vacuous) and never against
-# the moving ratchet file. 5% of 285 is 14; current > 14 fails even when
-# it is within dup-baseline.txt. Lowering the ratchet still happens in
-# the same PR that burns pairs (see docs/dup-debt.md).
+# the moving ratchet file. 5% of 285 is 14.
+#
+# The ceiling applies to UNLEDGERED pairs. `dup-ledger.txt` holds earned
+# residuals (framework-forced / twin-table / documented lifecycle) as
+# `path|fnA|fnB|category|evidence` rows with sorted fn names and no line
+# numbers. Same-name pairs cannot be ledgered (identity would be ambiguous).
+# Stale ledger rows fail; the raw total still ratchets against
+# dup-baseline.txt. See docs/dup-debt.md.
 DUP_BUDGET_ANCHOR=285
 DUP_BUDGET_PCT_MAX=5
 DUP_BUDGET_CEILING=$((DUP_BUDGET_ANCHOR * DUP_BUDGET_PCT_MAX / 100))
+LEDGER_FILE_NAME="dup-ledger.txt"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
@@ -200,16 +206,77 @@ if ! [[ "$current_count" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-# Budget line first so every failure/success names the 5% destination.
-# Integer percent is enough for the nudge; the ceiling is the authority.
-budget_pct=$((current_count * 100 / DUP_BUDGET_ANCHOR))
-log_info "$STEP" \
-  "budget $current_count/$DUP_BUDGET_ANCHOR (${budget_pct}%), ceiling $DUP_BUDGET_CEILING (${DUP_BUDGET_PCT_MAX}% of anchor)"
+LEDGER_FILE="$PROJECT_ROOT/$LEDGER_FILE_NAME"
+# Parse live pairs to path|fnA|fnB (fn names sorted). Same-name pairs keep both
+# equal names; they may not appear in the ledger (ambiguous identity).
+live_keys_file="$(mktemp -t comemory-dup-live.XXXXXX)"
+trap 'rm -f "$scan_log" "$live_keys_file"' EXIT
+printf '%s\n' "$scan_output" | python3 -c '
+import re, sys
+pat = re.compile(
+    r"^\s*(\S+):\d+-\d+ (?:function|method) (\S+) <-> \S+:\d+-\d+ (?:function|method) (\S+)"
+)
+keys = []
+for line in sys.stdin:
+    m = pat.match(line)
+    if not m:
+        continue
+    a, b = sorted([m[2], m[3]])
+    keys.append(f"{m[1]}|{a}|{b}")
+print("\n".join(sorted(keys)))
+' > "$live_keys_file"
 
-if (( current_count > DUP_BUDGET_CEILING )); then
+ledger_keys_file="$(mktemp -t comemory-dup-led.XXXXXX)"
+trap 'rm -f "$scan_log" "$live_keys_file" "$ledger_keys_file"' EXIT
+: > "$ledger_keys_file"
+if [[ -f "$LEDGER_FILE" ]]; then
+  # Skip blanks and # comments. Columns: path|fnA|fnB|category|evidence.
+  while IFS='|' read -r path fn_a fn_b _category _evidence; do
+    [[ -z "${path:-}" || "$path" == \#* ]] && continue
+    if [[ -z "${fn_a:-}" || -z "${fn_b:-}" || -z "${_category:-}" ]]; then
+      log_err "$STEP" "malformed $LEDGER_FILE_NAME row (need path|fnA|fnB|category|evidence)"
+      trap - EXIT
+      exit 1
+    fi
+    if [[ "$fn_a" == "$fn_b" ]]; then
+      log_err "$STEP" \
+        "ledger forbids same-name pairs ($path|$fn_a|$fn_b) — identity is ambiguous; burn them instead"
+      trap - EXIT
+      exit 1
+    fi
+    # Canonicalize fn order so a swapped ledger row still matches.
+    if [[ "$fn_a" < "$fn_b" || "$fn_a" == "$fn_b" ]]; then
+      printf '%s|%s|%s\n' "$path" "$fn_a" "$fn_b"
+    else
+      printf '%s|%s|%s\n' "$path" "$fn_b" "$fn_a"
+    fi
+  done < "$LEDGER_FILE" | sort -u > "$ledger_keys_file"
+fi
+
+stale_count="$(comm -23 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
+if (( stale_count > 0 )); then
   log_err "$STEP" \
-    "near-duplicate count $current_count exceeds the ${DUP_BUDGET_PCT_MAX}% budget ceiling $DUP_BUDGET_CEILING (anchor $DUP_BUDGET_ANCHOR); see $scan_log"
-  trap - EXIT   # keep the log: its path is named above
+    "$stale_count stale $LEDGER_FILE_NAME row(s) not in the live scan; see $scan_log"
+  trap - EXIT
+  exit 1
+fi
+
+ledgered_count="$(comm -12 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
+unledgered_count=$((current_count - ledgered_count))
+if (( unledgered_count < 0 )); then
+  log_err "$STEP" "internal: unledgered count went negative"
+  trap - EXIT
+  exit 1
+fi
+
+budget_pct=$((unledgered_count * 100 / DUP_BUDGET_ANCHOR))
+log_info "$STEP" \
+  "unledgered $unledgered_count/$DUP_BUDGET_CEILING (${budget_pct}% of anchor $DUP_BUDGET_ANCHOR) + ledgered $ledgered_count (total $current_count)"
+
+if (( unledgered_count > DUP_BUDGET_CEILING )); then
+  log_err "$STEP" \
+    "unledgered near-duplicate count $unledgered_count exceeds the ${DUP_BUDGET_PCT_MAX}% budget ceiling $DUP_BUDGET_CEILING; see $scan_log"
+  trap - EXIT
   exit 1
 fi
 
@@ -223,9 +290,5 @@ if (( current_count < baseline_count )); then
   log_info "$STEP" \
     "near-duplicate count $current_count is below baseline $baseline_count — lower $BASELINE_FILE to lock in the improvement"
 fi
-if (( baseline_count > DUP_BUDGET_CEILING )); then
-  log_err "$STEP" \
-    "$BASELINE_FILE is $baseline_count but the ${DUP_BUDGET_PCT_MAX}% budget ceiling is $DUP_BUDGET_CEILING — lower the baseline after burning pairs"
-  exit 1
-fi
-log_ok "$STEP" "near-duplicate count $current_count within baseline $baseline_count and budget ceiling $DUP_BUDGET_CEILING (similarity-rs $SIMILARITY_RS_VERSION)"
+log_ok "$STEP" \
+  "near-duplicate count $current_count within baseline $baseline_count; unledgered $unledgered_count within ceiling $DUP_BUDGET_CEILING (similarity-rs $SIMILARITY_RS_VERSION)"

@@ -93,31 +93,37 @@ pub fn newest(conn: &Connection) -> Result<Option<GcRunRow>> {
     orm::query_optional(
         conn,
         GcRuns::select()
-            .columns_typed(&[
-                &col::id,
-                &col::at,
-                &col::removed,
-                &col::log_rows,
-                &col::event_rows,
-                &col::bytes_freed,
-                &col::staged_rows,
-            ])
+            .columns_typed(COLUMNS)
             .order_by(col::at.desc())
             .order_by(toolu_orm::core::expr::OrderBy::alias_desc("rowid"))
             .limit(1)
             .to_sql(),
-        |r| {
-            Ok(GcRunRow {
-                id: r.get(0)?,
-                at: r.get(1)?,
-                removed: to_count(r.get(2)?),
-                log_rows: to_count(r.get(3)?),
-                event_rows: to_count(r.get(4)?),
-                bytes_freed: to_count(r.get(5)?),
-                staged_rows: to_count(r.get(6)?),
-            })
-        },
+        decode,
     )
+}
+
+/// Every column [`decode`] reads, in order.
+const COLUMNS: &[&dyn toolu_orm::core::query_column::ColumnRef] = &[
+    &col::id,
+    &col::at,
+    &col::removed,
+    &col::log_rows,
+    &col::event_rows,
+    &col::bytes_freed,
+    &col::staged_rows,
+];
+
+/// One row, in [`COLUMNS`] order.
+fn decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<GcRunRow> {
+    Ok(GcRunRow {
+        id: r.get(0)?,
+        at: r.get(1)?,
+        removed: to_count(r.get(2)?),
+        log_rows: to_count(r.get(3)?),
+        event_rows: to_count(r.get(4)?),
+        bytes_freed: to_count(r.get(5)?),
+        staged_rows: to_count(r.get(6)?),
+    })
 }
 
 /// A stored counter as `u64`, clamping a (impossible-in-practice) negative

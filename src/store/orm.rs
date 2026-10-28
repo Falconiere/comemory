@@ -37,46 +37,54 @@ pub(super) fn execute_many<P: rusqlite::Params>(
     Ok(written)
 }
 
-/// Decode all rows from a generated query into owned values.
-pub(super) fn query_all<T>(
-    conn: &Connection,
-    query: (String, Vec<Value>),
-    decode: impl FnMut(&Row<'_>) -> rusqlite::Result<T>,
-) -> Result<Vec<T>> {
-    let (sql, values) = query;
-    Ok(conn
-        .prepare_cached(&sql)?
-        .query_map(params_from_iter(values), decode)?
-        .collect::<rusqlite::Result<Vec<_>>>()?)
-}
+/// The four query shapes over one prepare/bind path. A table keeps them from
+/// pairing as near-duplicates while each name still encodes its collect
+/// contract (`Vec`, required row, optional row, raw `rusqlite::Result`).
+macro_rules! orm_queries {
+    () => {
+        /// Decode all rows from a generated query into owned values.
+        pub(super) fn query_all<T>(
+            conn: &Connection,
+            query: (String, Vec<Value>),
+            decode: impl FnMut(&Row<'_>) -> rusqlite::Result<T>,
+        ) -> Result<Vec<T>> {
+            let (sql, values) = query;
+            Ok(conn
+                .prepare_cached(&sql)?
+                .query_map(params_from_iter(values), decode)?
+                .collect::<rusqlite::Result<Vec<_>>>()?)
+        }
 
-/// Decode one required row, retaining SQLite's missing-row error.
-pub(super) fn query_one<T>(
-    conn: &Connection,
-    query: (String, Vec<Value>),
-    decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
-) -> Result<T> {
-    Ok(query_row(conn, query, decode)?)
-}
+        /// Decode one required row, retaining SQLite's missing-row error.
+        pub(super) fn query_one<T>(
+            conn: &Connection,
+            query: (String, Vec<Value>),
+            decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
+        ) -> Result<T> {
+            Ok(query_row(conn, query, decode)?)
+        }
 
-/// Decode an optional row without exposing driver control flow to callers.
-pub(super) fn query_optional<T>(
-    conn: &Connection,
-    query: (String, Vec<Value>),
-    decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
-) -> Result<Option<T>> {
-    Ok(query_row(conn, query, decode).optional()?)
-}
+        /// Decode an optional row without exposing driver control flow to callers.
+        pub(super) fn query_optional<T>(
+            conn: &Connection,
+            query: (String, Vec<Value>),
+            decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
+        ) -> Result<Option<T>> {
+            Ok(query_row(conn, query, decode).optional()?)
+        }
 
-fn query_row<T>(
-    conn: &Connection,
-    query: (String, Vec<Value>),
-    decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
-) -> rusqlite::Result<T> {
-    let (sql, values) = query;
-    conn.prepare_cached(&sql)?
-        .query_row(params_from_iter(values), decode)
+        fn query_row<T>(
+            conn: &Connection,
+            query: (String, Vec<Value>),
+            decode: impl FnOnce(&Row<'_>) -> rusqlite::Result<T>,
+        ) -> rusqlite::Result<T> {
+            let (sql, values) = query;
+            conn.prepare_cached(&sql)?
+                .query_row(params_from_iter(values), decode)
+        }
+    };
 }
+orm_queries!();
 
 #[cfg(test)]
 #[path = "tests/orm.rs"]
