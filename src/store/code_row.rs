@@ -140,58 +140,6 @@ pub fn purge_file_symbols(conn: &Connection, repo: &str, path: &str) -> Result<(
     Ok(())
 }
 
-/// Upsert the `indexed_files` cursor row so the next `index-code` run knows
-/// this blob has already been processed for `(repo, path)`. Used by both
-/// `cli::index_code` (after walking a file) and `cli::ingest_code` (after the
-/// final symbol row for `(repo, path)` lands).
-pub fn upsert_indexed_file(conn: &Connection, repo: &str, path: &str, oid: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO indexed_files(repo, path, blob_oid, indexed_at) \
-         VALUES(?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
-         ON CONFLICT(repo, path) DO UPDATE \
-           SET blob_oid = excluded.blob_oid, \
-               indexed_at = excluded.indexed_at",
-        rusqlite::params![repo, path, oid],
-    )?;
-    Ok(())
-}
-
-/// Upsert the absolute working-tree `root` for `repo` into
-/// `repo_marker.root_path`, creating the marker row if `index-code` is the
-/// first writer to touch this repo. `root` is the canonicalized `--path`
-/// argument (the exact base `code_symbols.path` values are relative to), so
-/// `comemory serve` can rejoin `root + path` to resolve a `file:<repo>:<path>`
-/// graph node id to a real file on disk. Stored as an absolute path string;
-/// `comemory serve` re-canonicalizes it before any containment check.
-pub fn upsert_repo_root(conn: &Connection, repo: &str, root: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO repo_marker(repo, root_path) VALUES(?1, ?2) \
-         ON CONFLICT(repo) DO UPDATE SET root_path = excluded.root_path",
-        rusqlite::params![repo, root],
-    )?;
-    Ok(())
-}
-
-/// Upsert `repo_marker.last_head`/`last_indexed_at` for `repo` after a
-/// successful `index-code` walk, creating the marker row if `index-code` is
-/// the first writer to touch this repo (mirrors [`upsert_repo_root`]'s
-/// creates-the-row contract). `head` is the working tree's current git HEAD
-/// oid at the moment the walk completed; `domains::code::repos`'s freshness
-/// comparison (`repo_marker.last_head` vs. a fresh
-/// `git_utils::current_head` read) has nothing to compare against until
-/// this is stamped.
-pub fn upsert_last_indexed(conn: &Connection, repo: &str, head: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO repo_marker(repo, last_head, last_indexed_at) \
-         VALUES(?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
-         ON CONFLICT(repo) DO UPDATE \
-           SET last_head = excluded.last_head, \
-               last_indexed_at = excluded.last_indexed_at",
-        rusqlite::params![repo, head],
-    )?;
-    Ok(())
-}
-
 /// Insert one `code_symbols` row and return its newly-assigned primary key.
 /// The `indexed_at` column is stamped server-side via `strftime` so callers
 /// don't need to format the timestamp themselves.
@@ -254,22 +202,6 @@ pub fn record_access(conn: &Connection, ids: &[i64]) {
     }
 }
 
-/// Every PARENT `code_symbols` row's `(id, snippet)`, ordered by id so a
-/// re-embed run is reproducible. Child chunk rows (`parent_id IS NOT
-/// NULL`) carry no `code_vec` row of their own — the parent's vector
-/// represents the symbol. Behind `maintenance::reembed`'s code leg.
-pub fn parent_snippets(conn: &Connection) -> Result<Vec<(i64, String)>> {
-    orm::query_all(
-        conn,
-        CodeSymbols::select()
-            .columns_typed(&[&c::id, &c::snippet])
-            .filter(c::parent_id.is_null())
-            .order_by(c::id.asc())
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-}
-
 /// Every distinct `code_symbols.path` for `repo`, sorted ascending — the
 /// deterministic dense-index mapping `graph::pagerank` needs. See
 /// [`crate::domains::graph::materialize::known_paths`].
@@ -318,86 +250,111 @@ pub(crate) struct SymbolLocation {
     pub line_start: i64,
 }
 
-/// Resolve a `(repo, path, symbol)` address to its `code_symbols` row.
-/// `Ok(None)` when no matching row exists yet (a memory may cite a symbol
-/// before `comemory index-code` has indexed it). `prepare_cached`: this
-/// lookup runs once per walked reference edge in a context-bundle loop.
-pub(crate) fn find_by_address(
-    conn: &Connection,
-    repo: &str,
-    path: &str,
-    symbol: &str,
-) -> Result<Option<SymbolLocation>> {
-    orm::query_optional(
-        conn,
-        CodeSymbols::select()
-            .columns_typed(&[&c::id, &c::snippet, &c::line_start])
-            .filter(c::repo.eq(repo))
-            .filter(c::path.eq(path))
-            .filter(c::symbol.eq(symbol))
-            .limit(1)
-            .to_sql(),
-        |r| {
-            Ok(SymbolLocation {
-                id: r.get(0)?,
-                snippet: r.get(1)?,
-                line_start: r.get(2)?,
-            })
-        },
-    )
+orm::sql_writes! {
+    /// Upsert the `indexed_files` cursor row so the next `index-code` run knows
+    /// this blob has already been processed for `(repo, path)`. Used by both
+    /// `cli::index_code` (after walking a file) and `cli::ingest_code` (after the
+    /// final symbol row for `(repo, path)` lands).
+    pub upsert_indexed_file(repo: &str, path: &str, oid: &str) =
+        "INSERT INTO indexed_files(repo, path, blob_oid, indexed_at) \
+         VALUES(?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+         ON CONFLICT(repo, path) DO UPDATE \
+           SET blob_oid = excluded.blob_oid, \
+               indexed_at = excluded.indexed_at",
+        [repo, path, oid];
+    /// Upsert the absolute working-tree `root` for `repo` into
+    /// `repo_marker.root_path`, creating the marker row if `index-code` is the
+    /// first writer to touch this repo. `root` is the canonicalized `--path`
+    /// argument (the exact base `code_symbols.path` values are relative to), so
+    /// `comemory serve` can rejoin `root + path` to resolve a `file:<repo>:<path>`
+    /// graph node id to a real file on disk. Stored as an absolute path string;
+    /// `comemory serve` re-canonicalizes it before any containment check.
+    pub upsert_repo_root(repo: &str, root: &str) =
+        "INSERT INTO repo_marker(repo, root_path) VALUES(?1, ?2) \
+         ON CONFLICT(repo) DO UPDATE SET root_path = excluded.root_path",
+        [repo, root];
+    /// Upsert `repo_marker.last_head`/`last_indexed_at` for `repo` after a
+    /// successful `index-code` walk, creating the marker row if `index-code` is
+    /// the first writer to touch this repo (mirrors [`upsert_repo_root`]'s
+    /// creates-the-row contract). `head` is the working tree's current git HEAD
+    /// oid at the moment the walk completed; `domains::code::repos`'s freshness
+    /// comparison (`repo_marker.last_head` vs. a fresh
+    /// `git_utils::current_head` read) has nothing to compare against until
+    /// this is stamped.
+    pub upsert_last_indexed(repo: &str, head: &str) =
+        "INSERT INTO repo_marker(repo, last_head, last_indexed_at) \
+         VALUES(?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+         ON CONFLICT(repo) DO UPDATE \
+           SET last_head = excluded.last_head, \
+               last_indexed_at = excluded.last_indexed_at",
+        [repo, head];
 }
 
-/// Whether a live `code_symbols` row exists for `(repo, path, symbol)` — the
-/// ghost-reference resolve check behind
-/// `domains::maintenance::retention::stale_code::detect`.
-pub(crate) fn symbol_row_exists(
-    conn: &Connection,
-    repo: &str,
-    path: &str,
-    symbol: &str,
-) -> Result<bool> {
-    orm::query_one(
-        conn,
+orm::reads! {
+    /// Every PARENT `code_symbols` row's `(id, snippet)`, ordered by id so a
+    /// re-embed run is reproducible. Child chunk rows (`parent_id IS NOT
+    /// NULL`) carry no `code_vec` row of their own — the parent's vector
+    /// represents the symbol. Behind `maintenance::reembed`'s code leg.
+    pub parent_snippets() -> Vec<(i64, String)> = query_all(
+        CodeSymbols::select()
+            .columns_typed(&[&c::id, &c::snippet])
+            .filter(c::parent_id.is_null())
+            .order_by(c::id.asc())
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?))
+    );
+    /// Resolve a `(repo, path, symbol)` address to its `code_symbols` row.
+    /// `Ok(None)` when no matching row exists yet (a memory may cite a symbol
+    /// before `comemory index-code` has indexed it). `prepare_cached`: this
+    /// lookup runs once per walked reference edge in a context-bundle loop.
+    pub(crate) find_by_address(repo: &str, path: &str, symbol: &str) -> Option<SymbolLocation> =
+        query_optional(
+            CodeSymbols::select()
+                .columns_typed(&[&c::id, &c::snippet, &c::line_start])
+                .filter(c::repo.eq(repo))
+                .filter(c::path.eq(path))
+                .filter(c::symbol.eq(symbol))
+                .limit(1)
+                .to_sql(),
+            |r| {
+                Ok(SymbolLocation {
+                    id: r.get(0)?,
+                    snippet: r.get(1)?,
+                    line_start: r.get(2)?,
+                })
+            }
+        );
+    /// Whether a live `code_symbols` row exists for `(repo, path, symbol)` — the
+    /// ghost-reference resolve check behind
+    /// `domains::maintenance::retention::stale_code::detect`.
+    pub(crate) symbol_row_exists(repo: &str, path: &str, symbol: &str) -> bool = query_one(
         CodeSymbols::select()
             .filter(c::repo.eq(repo))
             .filter(c::path.eq(path))
             .filter(c::symbol.eq(symbol))
             .to_exists_sql(),
-        |r| r.get(0),
-    )
-}
-
-/// Identity columns (`symbol`, `kind`) of one `code_symbols` row by id.
-/// `Ok(None)` when the row vanished (raced re-index delete). `prepare_cached`
-/// for a per-group chunk-coalescing loop.
-pub(crate) fn parent_identity(conn: &Connection, id: i64) -> Result<Option<(String, String)>> {
-    orm::query_optional(
-        conn,
+        |r| r.get(0)
+    );
+    /// Identity columns (`symbol`, `kind`) of one `code_symbols` row by id.
+    /// `Ok(None)` when the row vanished (raced re-index delete). `prepare_cached`
+    /// for a per-group chunk-coalescing loop.
+    pub(crate) parent_identity(id: i64) -> Option<(String, String)> = query_optional(
         CodeSymbols::select()
             .columns_typed(&[&c::symbol, &c::kind])
             .filter(c::id.eq(id))
             .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-}
-
-/// Number of `code_symbols` rows for `repo` — the `index_runs.symbols`
-/// count behind `crate::domains::code::index_code::record_run`.
-pub fn count_for_repo(conn: &Connection, repo: &str) -> Result<i64> {
-    orm::query_one(
-        conn,
-        CodeSymbols::select()
-            .filter(c::repo.eq(repo))
-            .to_count_sql(),
-        |r| r.get(0),
-    )
-}
-
-/// Whether at least one `code_symbols` row exists anywhere — distinguishes
-/// "query missed" from "nothing was ever indexed" for `search-code`'s
-/// zero-hit TTY hint.
-pub fn any_indexed(conn: &Connection) -> Result<bool> {
-    orm::query_one(conn, CodeSymbols::select().to_exists_sql(), |r| r.get(0))
+        |r| Ok((r.get(0)?, r.get(1)?))
+    );
+    /// Number of `code_symbols` rows for `repo` — the `index_runs.symbols`
+    /// count behind `crate::domains::code::index_code::record_run`.
+    pub count_for_repo(repo: &str) -> i64 = query_one(
+        CodeSymbols::select().filter(c::repo.eq(repo)).to_count_sql(),
+        |r| r.get(0)
+    );
+    /// Whether at least one `code_symbols` row exists anywhere — distinguishes
+    /// "query missed" from "nothing was ever indexed" for `search-code`'s
+    /// zero-hit TTY hint.
+    pub any_indexed() -> bool = query_one(CodeSymbols::select().to_exists_sql(), |r| r.get(0));
 }
 
 #[cfg(test)]

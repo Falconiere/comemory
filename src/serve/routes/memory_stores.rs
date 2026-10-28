@@ -23,6 +23,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 
 use crate::domains::sync::memory_store;
+use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::jobs;
 use crate::serve::routes::mutate_response::mutate_blocking;
@@ -74,30 +75,45 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/memory-stores/{id}/sync", post(sync))
 }
 
-/// `GET /api/v1/memory-stores` — the one store, as a one-element array so a
-/// console can render a list without special-casing the count.
-async fn list(State(state): State<AppState>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        memory_store::list(&mut ctx)
-    })
-    .await;
-    respond("memory-stores", result, started)
+/// Run `run` in a [`Ctx`] over the server's paths and a config snapshot,
+/// without opening the database: the memory-store core reads `config.toml`
+/// and git, never the SQLite file. Must be called on a blocking-pool thread.
+fn with_lazy_ctx<T>(state: &AppState, run: impl FnOnce(&mut Ctx<'_>) -> Result<T>) -> Result<T> {
+    let cfg = state.cfg();
+    run(&mut Ctx::lazy(state.paths(), &cfg))
 }
 
-/// `GET /api/v1/memory-stores/{id}` — that same store by id; anything other
-/// than `default` is `404 not_found`.
-async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        memory_store::get(&mut ctx, &id)
-    })
-    .await;
-    respond("memory-stores", result, started)
+/// Generate a memory-store read: the handler takes the state plus the
+/// extractors in `$params`, runs `$body` over a lazy [`Ctx`] on the blocking
+/// pool, and envelopes the result under `memory-stores`.
+///
+/// The two reads differ in nothing but their extractors and that body, which
+/// is what `scripts/dup-check.sh` counts as near-duplicates (same trade as
+/// `learning_job_route!` in `routes::learning`).
+macro_rules! store_read {
+    (
+        $(#[$doc:meta])*
+        $handler:ident, ($($params:tt)*), |$ctx:ident| $body:expr
+    ) => {
+        $(#[$doc])*
+        async fn $handler(State(state): State<AppState>, $($params)*) -> Response {
+            let started = Instant::now();
+            let result = run_blocking(move || with_lazy_ctx(&state, |$ctx| $body)).await;
+            respond("memory-stores", result, started)
+        }
+    };
+}
+
+store_read! {
+    /// `GET /api/v1/memory-stores` — the one store, as a one-element array so a
+    /// console can render a list without special-casing the count.
+    list, (), |ctx| memory_store::list(ctx)
+}
+
+store_read! {
+    /// `GET /api/v1/memory-stores/{id}` — that same store by id; anything other
+    /// than `default` is `404 not_found`.
+    get_one, (Path(id): Path<String>), |ctx| memory_store::get(ctx, &id)
 }
 
 /// `PATCH /api/v1/memory-stores/{id}` — rewrite the supplied `[git]` keys in
@@ -118,15 +134,9 @@ async fn patch(
     Json(req): Json<memory_store::PatchRequest>,
 ) -> Response {
     mutate_blocking(state, "memory-stores.patch", move |state| {
-        {
-            let cfg = state.cfg();
-            let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            memory_store::patch(&mut ctx, &id, &req)?;
-        }
+        with_lazy_ctx(state, |ctx| memory_store::patch(ctx, &id, &req))?;
         state.reload_cfg(state.paths())?;
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        memory_store::get(&mut ctx, &id)
+        with_lazy_ctx(state, |ctx| memory_store::get(ctx, &id))
     })
     .await
 }

@@ -29,7 +29,7 @@ use axum::routing::{get, post};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 use tokio::sync::{broadcast, watch};
 
 use crate::prelude::*;
@@ -85,23 +85,6 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/jobs/{id}/cancel", post(cancel))
 }
 
-/// `POST /api/v1/jobs/{id}/cancel` — cooperative cancel. `data` reports
-/// what happened: `{job_id, outcome: "cancelled"}` for a queued job (now
-/// terminal), `{job_id, outcome: "requested"}` for a running one (stops at
-/// its next boundary). `404 not_found` for an unknown id, `400 bad_request`
-/// for a job that already finished.
-async fn cancel(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let result = state.jobs().cancel(&id).map(|outcome| {
-        let slug = match outcome {
-            CancelOutcome::Cancelled => "cancelled",
-            CancelOutcome::Requested => "requested",
-        };
-        json!({ "job_id": id, "outcome": slug })
-    });
-    respond("jobs.cancel", result, started)
-}
-
 /// `?limit=&offset=` on `GET /jobs` — transport-level windowing over the
 /// in-memory registry; there is no CLI counterpart to mirror.
 #[derive(Deserialize)]
@@ -119,27 +102,56 @@ fn default_limit() -> usize {
     50
 }
 
-/// `GET /api/v1/jobs` — every retained job, newest first, paged. Served
-/// straight off the registry (a short mutex hold, no DB and no `.await`),
-/// so it does not go through `run_blocking`.
-async fn list(State(state): State<AppState>, Query(query): Query<ListQuery>) -> Response {
-    let started = Instant::now();
-    let result = state
-        .jobs()
-        .list()
-        .map(|jobs| Page::from_slice(jobs, query.limit, query.offset));
-    respond("jobs.list", result, started)
+/// Generate a synchronous registry route: the handler takes the state plus
+/// the one extractor listed, runs `$body` over the job registry, and envelopes
+/// its result under `$command`. They are short mutex holds — no DB, no
+/// `.await`, so no `run_blocking` — and exist as one macro because three
+/// hand-written handlers differ in nothing but their body, which is what
+/// `scripts/dup-check.sh` counts as near-duplicates (same trade as
+/// `learning_job_route!` in `routes::learning`).
+macro_rules! registry_route {
+    (
+        $(#[$doc:meta])*
+        $handler:ident, $command:literal, $extract:ident($arg:ident): $ty:ty => |$jobs:ident| $body:expr
+    ) => {
+        $(#[$doc])*
+        async fn $handler(State(state): State<AppState>, $extract($arg): $ty) -> Response {
+            let started = Instant::now();
+            let $jobs = state.jobs();
+            respond($command, $body, started)
+        }
+    };
 }
 
-/// `GET /api/v1/jobs/{id}` — one job's record, `404 not_found` when the id
-/// is unknown or has aged out of the retention window.
-async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let started = Instant::now();
-    let result = state
-        .jobs()
+registry_route! {
+    /// `POST /api/v1/jobs/{id}/cancel` — cooperative cancel. `data` reports
+    /// what happened: `{job_id, outcome: "cancelled"}` for a queued job (now
+    /// terminal), `{job_id, outcome: "requested"}` for a running one (stops at
+    /// its next boundary). `404 not_found` for an unknown id, `400 bad_request`
+    /// for a job that already finished.
+    cancel, "jobs.cancel", Path(id): Path<String> => |jobs| jobs.cancel(&id).map(|outcome| {
+        let slug = match outcome {
+            CancelOutcome::Cancelled => "cancelled",
+            CancelOutcome::Requested => "requested",
+        };
+        json!({ "job_id": id, "outcome": slug })
+    })
+}
+
+registry_route! {
+    /// `GET /api/v1/jobs` — every retained job, newest first, paged. Served
+    /// straight off the registry, so it does not go through `run_blocking`.
+    list, "jobs.list", Query(query): Query<ListQuery> => |jobs| jobs
+        .list()
+        .map(|all| Page::from_slice(all, query.limit, query.offset))
+}
+
+registry_route! {
+    /// `GET /api/v1/jobs/{id}` — one job's record, `404 not_found` when the id
+    /// is unknown or has aged out of the retention window.
+    get_one, "jobs.get", Path(id): Path<String> => |jobs| jobs
         .get(&id)
-        .and_then(|found| found.ok_or_else(|| Error::NotFound(format!("job not found: {id}"))));
-    respond("jobs.get", result, started)
+        .and_then(|found| found.ok_or_else(|| Error::NotFound(format!("job not found: {id}"))))
 }
 
 /// `GET /api/v1/jobs/{id}/events` — the job's lifecycle as `text/event-stream`.
@@ -287,27 +299,26 @@ async fn next_log(rx: &mut Option<broadcast::Receiver<String>>) -> Option<String
     let Some(rx) = rx.as_mut() else {
         return std::future::pending().await;
     };
-    loop {
-        match rx.recv().await {
-            Ok(line) => return Some(line),
-            Err(broadcast::error::RecvError::Lagged(_)) => {}
-            Err(broadcast::error::RecvError::Closed) => return None,
-        }
+    recv_skipping_lag(rx).await
+}
+
+/// [`broadcast::Receiver::recv`], retrying past `Lagged` gaps; `None` once
+/// the channel is closed.
+async fn recv_skipping_lag(rx: &mut broadcast::Receiver<String>) -> Option<String> {
+    let mut next = rx.recv().await;
+    while let Err(RecvError::Lagged(_)) = next {
+        next = rx.recv().await;
     }
+    next.ok()
 }
 
 /// One log line already sitting in `rx`, without waiting — the drain's
-/// counterpart of [`next_log`]. `None` when the channel is empty, closed,
-/// or the arm is retired; a `Lagged` gap is skipped the same way.
-fn try_next_log(rx: &mut Option<broadcast::Receiver<String>>) -> Option<String> {
-    let rx = rx.as_mut()?;
-    loop {
-        match rx.try_recv() {
-            Ok(line) => return Some(line),
-            Err(TryRecvError::Lagged(_)) => {}
-            Err(TryRecvError::Empty | TryRecvError::Closed) => return None,
-        }
-    }
+/// counterpart of [`next_log`]. `None` when the channel is empty or closed;
+/// a `Lagged` gap is skipped the same way.
+fn try_next_line(rx: &mut broadcast::Receiver<String>) -> Option<String> {
+    std::iter::repeat_with(|| rx.try_recv())
+        .find(|polled| !matches!(polled, Err(TryRecvError::Lagged(_))))
+        .and_then(std::result::Result::ok)
 }
 
 /// Route a freshly read status: a terminal one drains the other two
@@ -326,7 +337,7 @@ fn on_status(cursor: Cursor, status: JobStatus) -> Step {
 /// only once both channels are empty does the terminal event itself go
 /// out, ending the stream.
 fn drain_then_finish(mut cursor: Cursor, status: JobStatus) -> Step {
-    if let Some(line) = try_next_log(&mut cursor.log_rx) {
+    if let Some(line) = cursor.log_rx.as_mut().and_then(try_next_line) {
         cursor.terminal = Some(status);
         return emit_log(cursor, &line);
     }

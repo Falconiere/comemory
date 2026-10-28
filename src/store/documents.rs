@@ -82,35 +82,14 @@ pub fn upsert_document(conn: &Connection, row: DocumentUpsert<'_>) -> Result<()>
     Ok(())
 }
 
-/// Fetch one `documents` row by id, or `None` if it does not exist.
-pub fn get_document(conn: &Connection, id: &str) -> Result<Option<DocumentRow>> {
-    orm::query_optional(
-        conn,
-        Documents::select()
-            .columns_typed(&[
-                &col::id,
-                &col::source_file_id,
-                &col::title,
-                &col::repo,
-                &col::revision_hash,
-                &col::created_at,
-                &col::updated_at,
-            ])
-            .filter(col::id.eq(id))
-            .to_sql(),
-        document_row_from_sql,
-    )
-}
-
-/// Delete the `documents` row for `id`. Cascades to `document_chunks`
-/// via `ON DELETE CASCADE`; the caller is still responsible for the
-/// FK-less `document_fts` rows (see
-/// [`crate::store::document_fts::delete_document`]). A no-op (0 rows
-/// affected) when `id` has no row — safe to call for a `source_files`
-/// row that was never classified as a document.
-pub fn delete_document(conn: &Connection, id: &str) -> Result<()> {
-    orm::execute(conn, Documents::delete().filter(col::id.eq(id)).to_sql())?;
-    Ok(())
+orm::writes! {
+    /// Delete the `documents` row for `id`. Cascades to `document_chunks`
+    /// via `ON DELETE CASCADE`; the caller is still responsible for the
+    /// FK-less `document_fts` rows (see
+    /// [`crate::store::document_fts::delete_document`]). A no-op (0 rows
+    /// affected) when `id` has no row — safe to call for a `source_files`
+    /// row that was never classified as a document.
+    pub delete_document(id: &str) = Documents::delete().filter(col::id.eq(id));
 }
 
 /// One `document_chunks` row's fields, as replaced by [`replace_chunks`].
@@ -173,51 +152,6 @@ pub struct ChunkCitation {
     pub text: String,
 }
 
-/// Fetch one `document_chunks` row's citation fields by
-/// `(document_id, ordinal)`, or `None` if it no longer exists (e.g. the
-/// chunk was replaced by a re-index between the FTS match and this read).
-pub fn get_chunk(
-    conn: &Connection,
-    document_id: &str,
-    ordinal: i64,
-) -> Result<Option<ChunkCitation>> {
-    orm::query_optional(
-        conn,
-        DocumentChunks::select()
-            .columns_typed(&[
-                &chunk::heading_path,
-                &chunk::line_start,
-                &chunk::line_end,
-                &chunk::text,
-            ])
-            .filter(chunk::document_id.eq(document_id))
-            .filter(chunk::ordinal.eq(ordinal))
-            .to_sql(),
-        |r| {
-            Ok(ChunkCitation {
-                heading_path: r.get(0)?,
-                line_range: (r.get(1)?, r.get(2)?),
-                text: r.get(3)?,
-            })
-        },
-    )
-}
-
-/// Fetch the source-relative path of the document at `id` — the join
-/// target `search --path` glob filtering needs, since a `documents` row
-/// carries no path of its own (it lives on the owning `source_files`
-/// row). `None` when the document, or the `source_files` row it points
-/// at, no longer exists.
-pub fn get_document_path(conn: &Connection, id: &str) -> Result<Option<String>> {
-    orm::query_optional(
-        conn,
-        select_source_document_column(&file::relative_path)
-            .filter(col::id.eq(id))
-            .to_sql(),
-        |r| r.get(0),
-    )
-}
-
 /// Batched `revision_hash` read for `ids`, keyed by `documents.id`.
 ///
 /// Ids with no row are absent from the map: a document deleted between a
@@ -241,56 +175,82 @@ pub fn fetch_revisions(conn: &Connection, ids: &[&str]) -> Result<HashMap<String
     Ok(rows.into_iter().collect())
 }
 
-/// List every `documents.id` owned (via `source_files`) by `source_id` —
-/// used by `comemory unindex` to explicitly purge `document_fts` rows
-/// before deleting the owning `source_roots` row: the FK cascade removes
-/// `source_files`/`documents`/`document_chunks`, but `document_fts` is a
-/// virtual table with no FK, so its rows need this id list to clean up
-/// independently.
-pub fn document_ids_for_source(conn: &Connection, source_id: &str) -> Result<Vec<String>> {
-    orm::query_all(
-        conn,
-        select_source_document_column(&col::id)
-            .filter(file::source_id.eq(source_id))
-            .to_sql(),
-        |r| r.get(0),
-    )
-}
-
-/// Look up a document by relative path within one source — `source_files`
-/// carries `UNIQUE (source_id, relative_path)`, so this can never be
-/// ambiguous. See [`crate::domains::graph::doc_link::derive_after_document`].
-pub(crate) fn document_id_in_source(
-    conn: &Connection,
-    source_id: &str,
-    relative_path: &str,
-) -> Result<Option<String>> {
-    orm::query_optional(
-        conn,
-        select_source_document_column(&col::id)
-            .filter(file::source_id.eq(source_id))
-            .filter(file::relative_path.eq(relative_path))
-            .to_sql(),
-        |r| r.get(0),
-    )
-}
-
-/// Every live document id at `(repo, relative_path)` across every indexed
-/// source — 0, 1 (resolves), or 2+ (ambiguous, caller's concern). See
-/// [`crate::domains::graph::doc_link::derive_after_document`].
-pub(crate) fn document_ids_for_repo_path(
-    conn: &Connection,
-    repo: &str,
-    relative_path: &str,
-) -> Result<Vec<String>> {
-    orm::query_all(
-        conn,
-        select_source_document_column(&col::id)
-            .filter(col::repo.eq(repo))
-            .filter(file::relative_path.eq(relative_path))
-            .to_sql(),
-        |r| r.get(0),
-    )
+orm::reads! {
+    /// Fetch one `documents` row by id, or `None` if it does not exist.
+    pub get_document(id: &str) -> Option<DocumentRow> = query_optional(
+        Documents::select()
+            .columns_typed(&[
+                &col::id,
+                &col::source_file_id,
+                &col::title,
+                &col::repo,
+                &col::revision_hash,
+                &col::created_at,
+                &col::updated_at,
+            ])
+            .filter(col::id.eq(id)).to_sql(),
+        document_row_from_sql
+    );
+    /// Fetch one `document_chunks` row's citation fields by
+    /// `(document_id, ordinal)`, or `None` if it no longer exists (e.g. the
+    /// chunk was replaced by a re-index between the FTS match and this read).
+    pub get_chunk(document_id: &str, ordinal: i64) -> Option<ChunkCitation> = query_optional(
+        DocumentChunks::select()
+            .columns_typed(&[
+                &chunk::heading_path,
+                &chunk::line_start,
+                &chunk::line_end,
+                &chunk::text,
+            ])
+            .filter(chunk::document_id.eq(document_id))
+            .filter(chunk::ordinal.eq(ordinal)).to_sql(),
+        |r| {
+            Ok(ChunkCitation {
+                heading_path: r.get(0)?,
+                line_range: (r.get(1)?, r.get(2)?),
+                text: r.get(3)?,
+            })
+        }
+    );
+    /// Fetch the source-relative path of the document at `id` — the join
+    /// target `search --path` glob filtering needs, since a `documents` row
+    /// carries no path of its own (it lives on the owning `source_files`
+    /// row). `None` when the document, or the `source_files` row it points
+    /// at, no longer exists.
+    pub get_document_path(id: &str) -> Option<String> = query_optional(
+        select_source_document_column(&file::relative_path).filter(col::id.eq(id)).to_sql(),
+        |r| r.get(0)
+    );
+    /// List every `documents.id` owned (via `source_files`) by `source_id` —
+    /// used by `comemory unindex` to explicitly purge `document_fts` rows
+    /// before deleting the owning `source_roots` row: the FK cascade removes
+    /// `source_files`/`documents`/`document_chunks`, but `document_fts` is a
+    /// virtual table with no FK, so its rows need this id list to clean up
+    /// independently.
+    pub document_ids_for_source(source_id: &str) -> Vec<String> = query_all(
+        select_source_document_column(&col::id).filter(file::source_id.eq(source_id)).to_sql(),
+        |r| r.get(0)
+    );
+    /// Look up a document by relative path within one source — `source_files`
+    /// carries `UNIQUE (source_id, relative_path)`, so this can never be
+    /// ambiguous. See [`crate::domains::graph::doc_link::derive_after_document`].
+    pub(crate) document_id_in_source(source_id: &str, relative_path: &str) -> Option<String> =
+        query_optional(
+            select_source_document_column(&col::id)
+                .filter(file::source_id.eq(source_id))
+                .filter(file::relative_path.eq(relative_path)).to_sql(),
+            |r| r.get(0)
+        );
+    /// Every live document id at `(repo, relative_path)` across every indexed
+    /// source — 0, 1 (resolves), or 2+ (ambiguous, caller's concern). See
+    /// [`crate::domains::graph::doc_link::derive_after_document`].
+    pub(crate) document_ids_for_repo_path(repo: &str, relative_path: &str) -> Vec<String> =
+        query_all(
+            select_source_document_column(&col::id)
+                .filter(col::repo.eq(repo))
+                .filter(file::relative_path.eq(relative_path)).to_sql(),
+            |r| r.get(0)
+        );
 }
 
 fn select_source_document_column(column: &Column<Text>) -> toolu_orm::query::select::SelectBuilder {

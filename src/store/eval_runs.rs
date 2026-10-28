@@ -213,16 +213,27 @@ fn set_flag(conn: &Connection, id: &str, flag: &Flag) -> Result<()> {
     Ok(())
 }
 
-/// Stamp a run as applied (`applied = 1`) — the console's
-/// `POST /learning/proposals/{id}/apply` after it rewrites `config.toml`.
-pub fn set_applied(conn: &Connection, id: &str) -> Result<()> {
-    set_flag(conn, id, &Flag::Applied)
+/// Emit one public flag stamper per `fn => variant` row. The wrappers share a
+/// signature and differ only in the [`Flag`] they pass to [`set_flag`], so a
+/// table keeps them from reading as near-duplicate bodies.
+macro_rules! flag_setters {
+    ($($(#[$doc:meta])* $name:ident => $flag:ident;)+) => {
+        $(
+            $(#[$doc])*
+            pub fn $name(conn: &Connection, id: &str) -> Result<()> {
+                set_flag(conn, id, &Flag::$flag)
+            }
+        )+
+    };
 }
 
-/// Stamp a run as discarded (`discarded = 1`) — the console's
-/// `POST /learning/proposals/{id}/discard`, which touches no config file.
-pub fn set_discarded(conn: &Connection, id: &str) -> Result<()> {
-    set_flag(conn, id, &Flag::Discarded)
+flag_setters! {
+    /// Stamp a run as applied (`applied = 1`) — the console's
+    /// `POST /learning/proposals/{id}/apply` after it rewrites `config.toml`.
+    set_applied => Applied;
+    /// Stamp a run as discarded (`discarded = 1`) — the console's
+    /// `POST /learning/proposals/{id}/discard`, which touches no config file.
+    set_discarded => Discarded;
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use serde::Serialize;
 
+use crate::domains::graph::graph_nodes;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::jobs;
@@ -96,66 +97,82 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/graph/recompute", post(recompute))
 }
 
-/// `GET /api/v1/graph/nodes` — page the file nodes (`domains::graph::graph_nodes::list`).
-async fn list(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    Query(mut req): Query<crate::domains::graph::graph_nodes::ListRequest>,
-) -> Response {
-    req.repo = scope.resolve(req.repo);
-    query_response(state, "graph.nodes", move |ctx| {
-        crate::domains::graph::graph_nodes::list(ctx, req)
-    })
-    .await
+/// Generate a repo-scoped graph read: the handler takes the state, the
+/// [`RepoScope`] bound to `$scope`, and the extractors in `$params`, then
+/// envelopes `$body` (run on the shared connection as `$ctx`) under
+/// `$command`.
+///
+/// Five hand-written handlers differ in nothing but their extractors and that
+/// body, which is what `scripts/dup-check.sh` counts as near-duplicates (same
+/// trade as `learning_job_route!` in `routes::learning`).
+macro_rules! graph_read {
+    (
+        $(#[$doc:meta])*
+        $handler:ident, $command:literal, $scope:ident, ($($params:tt)*), |$ctx:ident| $body:expr
+    ) => {
+        $(#[$doc])*
+        async fn $handler(
+            State(state): State<AppState>,
+            $scope: RepoScope,
+            $($params)*
+        ) -> Response {
+            query_response(state, $command, move |$ctx| $body).await
+        }
+    };
 }
 
-/// `GET /api/v1/graph/snapshot` — the whole capped graph
-/// (`domains::graph::graph_nodes::snapshot`).
-async fn snapshot(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    Query(mut req): Query<crate::domains::graph::graph_nodes::SnapshotRequest>,
-) -> Response {
-    req.repo = scope.resolve(req.repo);
-    query_response(state, "graph.snapshot", move |ctx| {
-        crate::domains::graph::graph_nodes::snapshot(ctx, req)
-    })
-    .await
+graph_read! {
+    /// `GET /api/v1/graph/nodes` — page the file nodes
+    /// (`domains::graph::graph_nodes::list`).
+    list, "graph.nodes", scope,
+    (Query(mut req): Query<graph_nodes::ListRequest>),
+    |ctx| {
+        req.repo = scope.resolve(req.repo);
+        graph_nodes::list(ctx, req)
+    }
 }
 
-/// `GET /api/v1/graph/nodes/{id}` — one node with its top symbols and the
-/// memories citing it (`domains::graph::graph_nodes::detail`). `404 not_found` when the
-/// id names a file with no indexed symbols.
-async fn node_detail(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    Path(id): Path<String>,
-) -> Response {
-    query_response(state, "graph.node", move |ctx| {
-        crate::domains::graph::graph_nodes::detail(ctx, &id, scope.0.as_deref())
-    })
-    .await
+graph_read! {
+    /// `GET /api/v1/graph/snapshot` — the whole capped graph
+    /// (`domains::graph::graph_nodes::snapshot`).
+    snapshot, "graph.snapshot", scope,
+    (Query(mut req): Query<graph_nodes::SnapshotRequest>),
+    |ctx| {
+        req.repo = scope.resolve(req.repo);
+        graph_nodes::snapshot(ctx, req)
+    }
 }
 
-/// `GET /api/v1/graph/nodes/{id}/neighbors` — the one-hop file neighborhood
-/// (`domains::graph::graph_nodes::neighbors`), the same rows `comemory context` reports
-/// as a memory's `neighbors` (AC-9).
-async fn node_neighbors(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    Path(id): Path<String>,
-    Query(req): Query<crate::domains::graph::graph_nodes::NeighborsRequest>,
-) -> Response {
-    query_response(state, "graph.neighbors", move |ctx| {
-        crate::domains::graph::graph_nodes::neighbors(ctx, &id, scope.0.as_deref(), req)
-    })
-    .await
+graph_read! {
+    /// `GET /api/v1/graph/nodes/{id}` — one node with its top symbols and the
+    /// memories citing it (`domains::graph::graph_nodes::detail`). `404
+    /// not_found` when the id names a file with no indexed symbols.
+    node_detail, "graph.node", scope,
+    (Path(id): Path<String>),
+    |ctx| graph_nodes::detail(ctx, &id, scope.0.as_deref())
+}
+
+graph_read! {
+    /// `GET /api/v1/graph/nodes/{id}/neighbors` — the one-hop file neighborhood
+    /// (`domains::graph::graph_nodes::neighbors`), the same rows `comemory
+    /// context` reports as a memory's `neighbors` (AC-9).
+    node_neighbors, "graph.neighbors", scope,
+    (Path(id): Path<String>, Query(req): Query<graph_nodes::NeighborsRequest>),
+    |ctx| graph_nodes::neighbors(ctx, &id, scope.0.as_deref(), req)
+}
+
+graph_read! {
+    /// `GET /graph/nodes/{id}/source` — read one indexed file from its local
+    /// worktree. Cloud-only synced repos answer a clear unavailable state.
+    node_source, "graph.source", scope,
+    (Path(id): Path<String>),
+    |ctx| read_node_source(ctx, &id, scope.0.as_deref())
 }
 
 /// Resolve one indexed node against its local worktree, with containment and
 /// a response size limit. A synced cloud projection has no local root.
 fn read_node_source(ctx: &mut Ctx<'_>, id: &str, scope: Option<&str>) -> Result<NodeSource> {
-    let (repo, path) = crate::domains::graph::graph_nodes::resolve_node_id(id, scope)?;
+    let (repo, path) = graph_nodes::resolve_node_id(id, scope)?;
     let conn = ctx.conn()?;
     if code_graph_nodes::fetch_node(conn, &repo, &path)?.is_none() {
         return Err(Error::NotFound(format!("graph node {id}")));
@@ -201,19 +218,6 @@ fn read_node_source(ctx: &mut Ctx<'_>, id: &str, scope: Option<&str>) -> Result<
         content: Some(content),
         reason: None,
     })
-}
-
-/// `GET /graph/nodes/{id}/source` — read one indexed file from its local
-/// worktree. Cloud-only synced repos answer a clear unavailable state.
-async fn node_source(
-    State(state): State<AppState>,
-    scope: RepoScope,
-    Path(id): Path<String>,
-) -> Response {
-    query_response(state, "graph.source", move |ctx| {
-        read_node_source(ctx, &id, scope.0.as_deref())
-    })
-    .await
 }
 
 /// `POST /api/v1/graph/recompute` — start a `graph-recompute` job

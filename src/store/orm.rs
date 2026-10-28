@@ -86,6 +86,73 @@ macro_rules! orm_queries {
 }
 orm_queries!();
 
+/// Emit read-only store functions from a table of rows. Each row is
+/// `name(arg: Ty, ..) -> Ret = runner(query, decode)`: it runs one generated
+/// statement (`builder.to_sql()` / `.to_count_sql()` / `.to_exists_sql()`) through the named runner (`query_all` / `query_optional` /
+/// `query_one`) with a row decoder, so readers that differ only in
+/// arguments, filters and result shape stay one declaration each. A row may
+/// add `, empty_on slice_arg` before `=`: an empty slice then short-circuits
+/// to `Ret::default()` instead of building an empty `IN ()`.
+macro_rules! reads {
+    (
+        $($(#[$doc:meta])* $vis:vis $name:ident($($arg:ident: $aty:ty),*) -> $ret:ty
+            $(, empty_on $empty:ident)? = $runner:ident($query:expr, $decode:expr);)+
+    ) => {
+        $(
+            $(#[$doc])*
+            $vis fn $name(
+                conn: &rusqlite::Connection $(, $arg: $aty)*
+            ) -> $crate::prelude::Result<$ret> {
+                $(if $empty.is_empty() {
+                    return Ok(Default::default());
+                })?
+                $crate::store::orm::$runner(conn, $query, $decode)
+            }
+        )+
+    };
+}
+pub(super) use reads;
+
+/// Emit store functions that run one generated DML statement and discard the
+/// affected-row count. Each row is `name(arg: Ty, ..) = query;`, so deleters
+/// and flag updaters differ only in their arguments and statement.
+macro_rules! writes {
+    ($($(#[$doc:meta])* $vis:vis $name:ident($($arg:ident: $aty:ty),*) = $query:expr;)+) => {
+        $(
+            $(#[$doc])*
+            $vis fn $name(
+                conn: &rusqlite::Connection $(, $arg: $aty)*
+            ) -> $crate::prelude::Result<()> {
+                $crate::store::orm::execute(conn, $query.to_sql())?;
+                Ok(())
+            }
+        )+
+    };
+}
+pub(super) use writes;
+
+/// Emit store functions that run one hand-written parameterised SQL
+/// statement and discard the affected-row count. Each row is
+/// `name(arg: Ty, ..) = SQL, [param, ..];`, with the params bound to
+/// `?1..?N` in order, so raw upserts differ only in arguments, SQL and params.
+macro_rules! sql_writes {
+    (
+        $($(#[$doc:meta])* $vis:vis $name:ident($($arg:ident: $aty:ty),*) =
+            $sql:expr, [$($param:expr),+ $(,)?];)+
+    ) => {
+        $(
+            $(#[$doc])*
+            $vis fn $name(
+                conn: &rusqlite::Connection $(, $arg: $aty)*
+            ) -> $crate::prelude::Result<()> {
+                conn.execute($sql, rusqlite::params![$($param),+])?;
+                Ok(())
+            }
+        )+
+    };
+}
+pub(super) use sql_writes;
+
 #[cfg(test)]
 #[path = "tests/orm.rs"]
 mod tests;
