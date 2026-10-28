@@ -18,7 +18,8 @@ use crate::prelude::*;
 
 /// Upsert the `used` side of the per-memory counter row: insert with
 /// `used_count = 1` or bump the existing count, refreshing `last_used` to
-/// `now` either way. Mirrors [`crate::store::code_feedback::upsert_used`].
+/// `now` (unless a later stamp is already stored). Mirrors
+/// [`crate::store::code_feedback::upsert_used`].
 ///
 /// `last_used` only ever moves forward: an imported verdict (#254) carries its
 /// original, possibly older, time, and must not make a memory look staler

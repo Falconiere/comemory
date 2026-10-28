@@ -26,6 +26,9 @@ pub(crate) fn write_new_memory(
         &entry.id,
         cfg.rank.near_dup_hamming,
     )
+    // Advisory only: a failed scan never refuses the import, but it is logged
+    // the same way `save` logs it.
+    .inspect_err(|e| tracing::warn!(error = %e, "duplicate check skipped"))
     .ok()
     .flatten();
     // The same rule the replica wire applies: an unusable vector never

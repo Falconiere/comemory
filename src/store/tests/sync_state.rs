@@ -156,6 +156,34 @@ fn repository_labels_and_live_manifest_pairs_follow_real_memory_lifecycle() {
     );
 }
 
+#[test]
+fn live_content_hashes_list_the_same_live_set_in_the_same_order_as_the_pairs() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    let cfg = Config::defaults();
+    let mut conn = connection::open(paths.db_path()).expect("db");
+    let (_, first) = save_memory(&paths, &cfg, &mut conn, "alpha decision", "acme/a");
+    let (_, second) = save_memory(&paths, &cfg, &mut conn, "beta decision", "acme/b");
+    let (gone_id, _) = save_memory(&paths, &cfg, &mut conn, "gone decision", "acme/c");
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    delete::run(&mut ctx, &gone_id).expect("soft delete");
+
+    let mut expected = vec![first, second];
+    expected.sort();
+    let hashes = sync_manifest::live_content_hashes(&conn).expect("content hashes");
+    assert_eq!(
+        hashes, expected,
+        "tombstones are excluded and the order is content_hash ascending"
+    );
+    let pairs = sync_manifest::live_repository_hashes(&conn).expect("pairs");
+    assert_eq!(
+        pairs.into_iter().map(|(hash, _)| hash).collect::<Vec<_>>(),
+        hashes,
+        "both manifest reads agree on the live set and its order, or peers' digests would"
+    );
+}
+
 fn save_memory(
     paths: &Paths,
     cfg: &Config,

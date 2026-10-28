@@ -2,9 +2,10 @@
 //!
 //! The near-dup surfaces all need the same thing: every live memory's stored
 //! fingerprint, optionally narrowed to one repo, optionally minus one row.
-//! `save` wants it to find the single closest neighbor of the body being
-//! written; `consolidate` wants it to cluster the whole corpus. One query
-//! serves both (Binding Rule 1) instead of each growing its own copy.
+//! `save` and the sync importer want the single closest neighbor of the body
+//! being written ([`nearest_live`]); `consolidate` wants to cluster the whole
+//! corpus. One query serves all three (Binding Rule 1) instead of each
+//! growing its own copy.
 
 use rusqlite::Connection;
 

@@ -94,8 +94,8 @@ pub fn final_url(url: &str) -> Result<String> {
 
 /// Run one tool invocation that writes the response body to a private temp
 /// file and yields the HTTP status. Rejects injectable headers first, then
-/// reads the body back and deletes the file whether or not `run` succeeded,
-/// so neither backend repeats the temp-file lifecycle.
+/// deletes the file whether or not `run` succeeded (reading the body back only
+/// when it did), so neither backend repeats the temp-file lifecycle.
 fn exchange_via_body_file(
     req: &Request<'_>,
     run: impl FnOnce(&Path) -> Result<u16>,
@@ -296,8 +296,10 @@ fn take_body_file(path: &Path, url: &str) -> Result<String> {
     body
 }
 
-/// Delete a response temp file. A file the tool never created (the request
-/// was refused before it ran) is not worth a log line; anything else is.
+/// Delete a response temp file. [`tempfile_path`] pre-creates it, so it is
+/// there even when the request was refused before the tool ran; the tool may
+/// still have removed it itself, and an already-missing file is not worth a
+/// log line. Any other failure is.
 fn remove_body_file(path: &Path) {
     match std::fs::remove_file(path) {
         Ok(()) => {}
