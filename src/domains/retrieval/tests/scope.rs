@@ -102,7 +102,7 @@ fn filters_none_constrains_nothing_and_extends_by_field() {
         none.scope.is_unbounded(),
         "the default filter set carries the unbounded scope"
     );
-    assert_eq!(none.window().cutoff, None);
+    assert_eq!(none.scope.window().cutoff, None);
 
     let narrowed = Filters {
         repo: Some("qwick-backend"),
@@ -122,9 +122,9 @@ fn filters_none_constrains_nothing_and_extends_by_field() {
         ..Filters::none()
     };
     assert_eq!(
-        scoped.window().cutoff,
+        scoped.scope.window().cutoff,
         Some("2026-04-01T00:00:00Z"),
-        "Filters::window forwards the scope's bounds to the store layer"
+        "Filters borrows the scope's store-layer window at SQL call sites"
     );
 }
 

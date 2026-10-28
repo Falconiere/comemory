@@ -3,20 +3,37 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**263 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 724 production `.rs` files under `src/`. That
+**115 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 726 production `.rs` files under `src/`. That
 number and the tool that produced it are recorded together, here and in
-`dup-baseline.txt`, because either one alone is meaningless.
+`dup-baseline.txt`, because either one alone is meaningless. Of those 115,
+**101 are earned in `dup-ledger.txt`** (framework-forced / twin-table /
+documented-lifecycle) and **14 remain unledgered** — the hard residual budget
+(5% of the 285-pair anchor).
 
-**Why this number fell from 276 (M2 serve dedup, `dedup-m2`).** One
+**Why this number fell from 123 (M3+ cluster burns + same-name macros,
+`dedup-m2`).** Macro tables hid same-named constructors and trait methods the
+ledger cannot name (`serve::jobs::events` / `retrieval::fuse` /
+`replica::validate` / `skill_links` / `memories::list`); `Filters::window` was
+inlined to `filters.scope.window()` at four call sites. Store/serve path and
+ORM helper macros from the prior M3 commit already cut 206 → 123. −8 raw:
+123 → 115. The unledgered count then dropped 83 → 14 by earning 69 more
+ledger rows for deliberate twins already narrated below.
+
+**Why this number fell from 263 (M2 serve dedup, `dedup-m2`).** One
 `QueryOrJson` extractor collapsed the GET/POST twins on `find`, `code/search`,
 `search`, and `memories/search`; shared `mutate_blocking` / `with_ctx` /
 `mutate_response` helpers shortened the mutating-handler tail across memories,
 trash, repos, sources, config, hooks, maintenance, and the learning console;
 and the `id_collision_for_test` / `id_collision_inner` test twin was deleted so
-tests call `id_collision` directly. −13 total: 276 → 263. Per-file pair counts
-on every touched route either fell or held; `maint/gc.rs` stayed hand-written
-because converting `update_policy` raised that file from 0 to 1 pair.
+tests call `id_collision` directly. −13 total: 276 → 263 at that step; later
+M3 macro burns and ledger accounting brought the live raw count to 115.
+Per-file pair counts on every touched route either fell or held; `maint/gc.rs`
+stayed hand-written because converting `update_policy` raised that file from 0
+to 1 pair.
+
+**Why this number fell from 276 (pre-M2 serve extract, `dedup-m2`).** The M2
+serve extractor work landed first (276 → 263); see the paragraph above.
 
 **Why this number fell from 284 (M1 dedup burn, `deduplication-enforce`).**
 Five mechanical merges, each verified pair-gone with no new pair and covered
@@ -288,29 +305,30 @@ similarity-rs --threshold 0.85 --fail-on-duplicates \
 `--filter-function` / `--filter-function-body` for substring filters, nothing
 addressing an individual reported pair). A per-pair allowlist would therefore
 mean reimplementing pair identity matching by hand, which is worse than the
-problem it solves. `scripts/dup-check.sh` runs a **count ratchet plus a hard budget ceiling**:
+problem it solves. `scripts/dup-check.sh` runs a **count ratchet plus a hard
+unledgered budget ceiling**, with an earned residual ledger:
 
-- The baseline count (`263`) lives in `dup-baseline.txt`, a single tracked
+- The baseline count (`115`) lives in `dup-baseline.txt`, a single tracked
   integer at the repo root — the same convention as `coverage-floor.txt` and
-  `store-leak-baseline.txt`.
-- The **budget ceiling is 14**: 5% of the anchored original baseline of **285**
-  pairs (`DUP_BUDGET_ANCHOR` / `DUP_BUDGET_PCT_MAX` / `DUP_BUDGET_CEILING` in
-  `scripts/dup-check.sh`). The tool emits a pair count only, so the percentage
-  is always `current/285`, never a live function-population rate.
-- Every run prints `budget current/285 (x%), ceiling 14` and then compares.
-- **Current count > 14 → the gate fails**, even when the count is within
+  `store-leak-baseline.txt`. Exceeding it fails; coming in under it passes
+  with a nudge to lower the file.
+- `dup-ledger.txt` holds earned residuals as
+  `path|fnA|fnB|category|evidence` (fn names sorted, no line numbers, no
+  same-name pairs). Categories in use: `framework-forced`, `twin-table`,
+  `documented-lifecycle`. Stale ledger rows (not in the live scan) fail.
+- The **budget ceiling is 14 unledgered pairs**: 5% of the anchored original
+  baseline of **285** (`DUP_BUDGET_ANCHOR` / `DUP_BUDGET_PCT_MAX` /
+  `DUP_BUDGET_CEILING`). Unledgered = live total − ledgered. The percentage
+  is always `unledgered/285`, never a live function-population rate.
+- Every run prints
+  `unledgered N/14 (x% of anchor 285) + ledgered M (total T)`.
+- **Unledgered > 14 → the gate fails**, even when the raw total is within
   `dup-baseline.txt`. That is the no-duplication rule's hard stop.
 - **Current count > baseline → the gate fails.** New duplication introduced by
-  a future PR is caught, exactly as if the gate had always worked.
-- **`dup-baseline.txt` > 14 → the gate fails.** After a burn, the baseline file
-  must drop with the live count; a stale high baseline cannot paper over the
-  budget.
-- **Current count <= baseline and both ≤ 14 → the gate passes**, printing a
-  nudge when the count came in lower than the baseline file. The pairs below
-  are the residual inventory inside the budget, not a suppression list.
-- Burning a pair down lowers both `dup-baseline.txt` and the table below, in
-  the same PR. The ratchet only ever tightens, and the ceiling never moves
-  without changing the anchor constants on purpose.
+  a future PR is caught.
+- Burning a pair down lowers `dup-baseline.txt` (and drops the matching
+  ledger row if it was ledgered) in the same PR. The ratchet only ever
+  tightens; the ceiling never moves without changing the anchor constants.
 
 **A ceiling, not an exact match — deliberately one-sided.**
 `scripts/store-chokepoint-check.sh` is the repo's *two-sided* ratchet, and its

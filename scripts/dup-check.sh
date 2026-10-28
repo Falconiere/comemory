@@ -211,20 +211,20 @@ LEDGER_FILE="$PROJECT_ROOT/$LEDGER_FILE_NAME"
 # equal names; they may not appear in the ledger (ambiguous identity).
 live_keys_file="$(mktemp -t comemory-dup-live.XXXXXX)"
 trap 'rm -f "$scan_log" "$live_keys_file"' EXIT
+# LC_ALL=C on both key lists: python's sorted() and locale `sort` disagree
+# under en_US.UTF-8, so `comm` falsely reports stale ledger rows on macOS.
 printf '%s\n' "$scan_output" | python3 -c '
 import re, sys
 pat = re.compile(
     r"^\s*(\S+):\d+-\d+ (?:function|method) (\S+) <-> \S+:\d+-\d+ (?:function|method) (\S+)"
 )
-keys = []
 for line in sys.stdin:
     m = pat.match(line)
     if not m:
         continue
     a, b = sorted([m[2], m[3]])
-    keys.append(f"{m[1]}|{a}|{b}")
-print("\n".join(sorted(keys)))
-' > "$live_keys_file"
+    print(f"{m[1]}|{a}|{b}")
+' | LC_ALL=C sort > "$live_keys_file"
 
 ledger_keys_file="$(mktemp -t comemory-dup-led.XXXXXX)"
 trap 'rm -f "$scan_log" "$live_keys_file" "$ledger_keys_file"' EXIT
@@ -250,10 +250,10 @@ if [[ -f "$LEDGER_FILE" ]]; then
     else
       printf '%s|%s|%s\n' "$path" "$fn_b" "$fn_a"
     fi
-  done < "$LEDGER_FILE" | sort -u > "$ledger_keys_file"
+  done < "$LEDGER_FILE" | LC_ALL=C sort -u > "$ledger_keys_file"
 fi
 
-stale_count="$(comm -23 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
+stale_count="$(LC_ALL=C comm -23 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
 if (( stale_count > 0 )); then
   log_err "$STEP" \
     "$stale_count stale $LEDGER_FILE_NAME row(s) not in the live scan; see $scan_log"
@@ -261,7 +261,7 @@ if (( stale_count > 0 )); then
   exit 1
 fi
 
-ledgered_count="$(comm -12 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
+ledgered_count="$(LC_ALL=C comm -12 "$ledger_keys_file" "$live_keys_file" | wc -l | tr -d ' ')"
 unledgered_count=$((current_count - ledgered_count))
 if (( unledgered_count < 0 )); then
   log_err "$STEP" "internal: unledgered count went negative"

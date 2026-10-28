@@ -108,7 +108,7 @@ pub struct Filters<'a> {
     pub domains: Domains,
 }
 
-impl<'a> Filters<'a> {
+impl Filters<'_> {
     /// Filter nothing: no repo, no kind, unbounded scope, every domain.
     /// Callers that narrow only some dimensions build on it with struct
     /// update syntax (`Filters { repo, ..Filters::none() }`).
@@ -119,12 +119,6 @@ impl<'a> Filters<'a> {
             scope: &UNBOUNDED,
             domains: Domains::all(),
         }
-    }
-
-    /// The scope's store-layer window — shorthand for `self.scope.window()`
-    /// at the SQL call sites.
-    pub fn window(&self) -> CreatedWindow<'a> {
-        self.scope.window()
     }
 }
 

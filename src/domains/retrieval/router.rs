@@ -284,7 +284,7 @@ fn ann_leg(
     filter_kind(
         conn,
         above_similarity_threshold(
-            vector::knn_memory(conn, vec, k, filters.repo, filters.window())?,
+            vector::knn_memory(conn, vec, k, filters.repo, filters.scope.window())?,
             |h| h.distance,
             cfg.retrieval.memory_threshold,
         ),
@@ -369,7 +369,7 @@ fn strict_then_ladder(
     filters: Filters<'_>,
     weights: (f32, f32),
 ) -> Result<(Vec<fts::MemoryFtsHit>, u8)> {
-    let (repo, kind, win) = (filters.repo, filters.kind, filters.window());
+    let (repo, kind, win) = (filters.repo, filters.kind, filters.scope.window());
     let lex = fts::search_memory(conn, query, k, repo, kind, win, weights)?;
     if !lex.is_empty() {
         return Ok((lex, 1));
@@ -413,7 +413,7 @@ fn lexical_ladder(
     filters: Filters<'_>,
     weights: (f32, f32),
 ) -> Result<(Vec<fts::MemoryFtsHit>, u8)> {
-    let (repo, kind, win) = (filters.repo, filters.kind, filters.window());
+    let (repo, kind, win) = (filters.repo, filters.kind, filters.scope.window());
     if fts::term_count(query) >= 2 {
         let lex = fts::search_memory_relaxed(conn, query, k, repo, kind, win, weights)?;
         if !lex.is_empty() {

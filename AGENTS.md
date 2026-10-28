@@ -65,9 +65,12 @@ Deviations are enumerated under "Deviations from toolu-conventions" — nowhere 
 
 1. **No duplication / redundancy.** Shared logic is extracted into helper.
    Enforced by `scripts/dup-check.sh` (excludes test trees) and review: a
-   one-sided count ratchet against `dup-baseline.txt`, plus a hard residual
-   budget of **5% of the 285-pair anchor (ceiling 14)**. Over-ceiling fails
-   even when within the ratchet file.
+   one-sided count ratchet against `dup-baseline.txt`, plus a hard
+   **unledgered** residual budget of **5% of the 285-pair anchor (ceiling
+   14)**. Earned residuals live in `dup-ledger.txt`
+   (`path|fnA|fnB|category|evidence`); same-name pairs cannot be ledgered
+   and must be burned. Over-ceiling unledgered fails even when within the
+   ratchet file.
 2. **No barrels — no `mod.rs`.** A module that grows into a folder keeps its
    file beside it (`src/store.rs` declares `mod migrate;`,
    `src/store/migrate.rs` holds it). A file whose only

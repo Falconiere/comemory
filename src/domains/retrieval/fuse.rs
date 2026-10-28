@@ -26,44 +26,58 @@ pub struct RankedHit {
 /// larger values flatten the curve so deeper-rank hits matter more.
 const DEFAULT_RRF_K: f32 = 60.0;
 
-/// Fuse two ranked lists with Reciprocal Rank Fusion using the default
-/// constant (`60.0`) and return the top-`top_k` rows sorted by fused
-/// score descending.
-pub fn rrf(a: &[RankedHit], b: &[RankedHit], top_k: usize) -> Vec<RankedHit> {
-    rrf_k(a, b, top_k, DEFAULT_RRF_K)
+/// Thin RRF entry points over [`accumulate`]. A table keeps the four
+/// same-shape wrappers from pairing while each name still encodes its
+/// argument shape (two lists / multi / weighted).
+macro_rules! rrf_entrypoints {
+    ($(
+        $(#[$meta:meta])*
+        pub fn $name:ident($($arg:ident : $aty:ty),* $(,)?) $body:block
+    )+) => {
+        $(
+            $(#[$meta])*
+            pub fn $name($($arg: $aty),*) -> Vec<RankedHit> $body
+        )+
+    };
 }
 
-/// Fuse two ranked lists with Reciprocal Rank Fusion using a caller-supplied
-/// constant `k` and return the top-`top_k` rows sorted by fused score
-/// descending. Use this variant when the RRF constant comes from config
-/// (`cfg.retrieval.rrf_k`).
-pub fn rrf_k(a: &[RankedHit], b: &[RankedHit], top_k: usize, k: f32) -> Vec<RankedHit> {
-    rrf_multi(&[a, b], top_k, k)
-}
-
-/// Fuse any number of ranked lists with Reciprocal Rank Fusion using a
-/// caller-supplied constant `k`, returning the top-`top_k` rows sorted by
-/// fused score descending with ascending memory id as the tie-break.
-///
-/// `legs` are accumulated in the order given, each leg walked in rank order,
-/// so every id's contributions are summed in exactly the sequence a
-/// hand-written two-list fusion would use: `rrf_multi(&[a, b], top_k, k)` is
-/// [`rrf_k`]`(a, b, top_k, k)` — same order, same float bits. An empty `legs`
-/// slice, or legs that are all empty, yields an empty vector. Delegates to
-/// [`rrf_multi_weighted`] at weight `1.0` per leg.
-pub fn rrf_multi(legs: &[&[RankedHit]], top_k: usize, k: f32) -> Vec<RankedHit> {
-    accumulate(legs.iter().map(|leg| (*leg, 1.0)), top_k, k)
-}
-
-/// Fuse any number of *weighted* ranked lists, returning the top-`top_k`
-/// rows sorted by fused score descending with ascending memory id as the
-/// tie-break. Each leg's contribution is `weight / (k + rank + 1.0)`; a
-/// weight of `1.0` computes the exact same expression [`rrf_multi`] always
-/// used, so its delegation here is bit-identical, not just IEEE-754-equal.
-/// An empty `legs` slice, or legs that are all empty, yields an empty
-/// vector.
-pub fn rrf_multi_weighted(legs: &[(&[RankedHit], f32)], top_k: usize, k: f32) -> Vec<RankedHit> {
-    accumulate(legs.iter().copied(), top_k, k)
+rrf_entrypoints! {
+    /// Fuse two ranked lists with Reciprocal Rank Fusion using the default
+    /// constant (`60.0`) and return the top-`top_k` rows sorted by fused
+    /// score descending.
+    pub fn rrf(a: &[RankedHit], b: &[RankedHit], top_k: usize) {
+        rrf_k(a, b, top_k, DEFAULT_RRF_K)
+    }
+    /// Fuse two ranked lists with Reciprocal Rank Fusion using a caller-supplied
+    /// constant `k` and return the top-`top_k` rows sorted by fused score
+    /// descending. Use this variant when the RRF constant comes from config
+    /// (`cfg.retrieval.rrf_k`).
+    pub fn rrf_k(a: &[RankedHit], b: &[RankedHit], top_k: usize, k: f32) {
+        rrf_multi(&[a, b], top_k, k)
+    }
+    /// Fuse any number of ranked lists with Reciprocal Rank Fusion using a
+    /// caller-supplied constant `k`, returning the top-`top_k` rows sorted by
+    /// fused score descending with ascending memory id as the tie-break.
+    ///
+    /// `legs` are accumulated in the order given, each leg walked in rank order,
+    /// so every id's contributions are summed in exactly the sequence a
+    /// hand-written two-list fusion would use: `rrf_multi(&[a, b], top_k, k)` is
+    /// [`rrf_k`]`(a, b, top_k, k)` — same order, same float bits. An empty `legs`
+    /// slice, or legs that are all empty, yields an empty vector. Delegates to
+    /// [`rrf_multi_weighted`] at weight `1.0` per leg.
+    pub fn rrf_multi(legs: &[&[RankedHit]], top_k: usize, k: f32) {
+        accumulate(legs.iter().map(|leg| (*leg, 1.0)), top_k, k)
+    }
+    /// Fuse any number of *weighted* ranked lists, returning the top-`top_k`
+    /// rows sorted by fused score descending with ascending memory id as the
+    /// tie-break. Each leg's contribution is `weight / (k + rank + 1.0)`; a
+    /// weight of `1.0` computes the exact same expression [`rrf_multi`] always
+    /// used, so its delegation here is bit-identical, not just IEEE-754-equal.
+    /// An empty `legs` slice, or legs that are all empty, yields an empty
+    /// vector.
+    pub fn rrf_multi_weighted(legs: &[(&[RankedHit], f32)], top_k: usize, k: f32) {
+        accumulate(legs.iter().copied(), top_k, k)
+    }
 }
 
 /// Shared RRF accumulation core: sums `weight / (k + rank + 1.0)` per leg

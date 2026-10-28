@@ -1,3 +1,34 @@
+src/cli/capture.rs|run_session|run_sources|documented-lifecycle|cli deliberate twin run_session/run_sources; docs/dup-debt.md
+src/cli/output/graph.rs|write_dot|write_html|documented-lifecycle|cli deliberate twin write_dot/write_html; docs/dup-debt.md
+src/cli/sync_auto.rs|run|run_in_process|documented-lifecycle|cli deliberate twin run/run_in_process; docs/dup-debt.md
+src/cli/watch.rs|attach_once|follow_coordinator|documented-lifecycle|cli deliberate twin attach_once/follow_coordinator; docs/dup-debt.md
+src/domains/code/ast/extractor.rs|go_patterns|python_patterns|documented-lifecycle|per-language twin go_patterns/python_patterns; docs/dup-debt.md
+src/domains/code/ast/pattern_cache.rs|cached|compile_patterns|documented-lifecycle|per-language twin cached/compile_patterns; docs/dup-debt.md
+src/domains/code/git_utils.rs|hook_installed|hook_outdated|documented-lifecycle|deliberate residual hook_installed/hook_outdated in src/domains/code/git_utils.rs
+src/domains/documents/document/extract.rs|extract_markdown|extract_txt|documented-lifecycle|deliberate residual extract_markdown/extract_txt in src/domains/documents/document/extract.rs
+src/domains/graph/doc_link.rs|derive_after_document|resolve_markdown_links|documented-lifecycle|retrieval/graph twin derive_after_document/resolve_markdown_links
+src/domains/graph/doc_link.rs|resolve_document_id|resolve_markdown_links|documented-lifecycle|retrieval/graph twin resolve_document_id/resolve_markdown_links
+src/domains/graph/graph_nodes.rs|fetch_cited_by|fetch_top_symbols|documented-lifecycle|retrieval/graph twin fetch_cited_by/fetch_top_symbols
+src/domains/graph/imports.rs|go_imports|python_imports|documented-lifecycle|per-language twin go_imports/python_imports; docs/dup-debt.md
+src/domains/graph/query.rs|build_code_graph|build_graph_page|documented-lifecycle|retrieval/graph twin build_code_graph/build_graph_page
+src/domains/integrations/setup/plan.rs|data_dir|reinforce|documented-lifecycle|deliberate residual data_dir/reinforce in src/domains/integrations/setup/plan.rs
+src/domains/learning/learning_proposals.rs|parse_knobs|require_knobs|documented-lifecycle|deliberate residual parse_knobs/require_knobs in src/domains/learning/learning_proposals.rs
+src/domains/retrieval/doc_route.rs|local_hit|shared_hit|documented-lifecycle|retrieval/graph twin local_hit/shared_hit
+src/domains/retrieval/pipeline.rs|record_query|record_telemetry|documented-lifecycle|retrieval/graph twin record_query/record_telemetry
+src/domains/retrieval/router.rs|route_lexical|route_vector_only|documented-lifecycle|retrieval/graph twin route_lexical/route_vector_only
+src/domains/retrieval/suggest.rs|expansions|recent|documented-lifecycle|retrieval/graph twin expansions/recent
+src/domains/retrieval/unified/fuse_domains.rs|code_hit|doc_hit|documented-lifecycle|retrieval/graph twin code_hit/doc_hit
+src/domains/sync/auth_file.rs|clear|clear_stale_allowlist|documented-lifecycle|sync lifecycle twin clear/clear_stale_allowlist
+src/domains/sync/client.rs|device_code|poll_token|documented-lifecycle|sync lifecycle twin device_code/poll_token
+src/domains/sync/client.rs|fetch_manifest|pull_changes|documented-lifecycle|sync lifecycle twin fetch_manifest/pull_changes
+src/domains/sync/client_code.rs|fetch_code_manifest|push_code_import|documented-lifecycle|sync lifecycle twin fetch_code_manifest/push_code_import
+src/domains/sync/code.rs|run_code_push|run_code_push_if_moved|documented-lifecycle|sync lifecycle twin run_code_push/run_code_push_if_moved
+src/domains/sync/code_repo_push.rs|cursor_matches|record_cursor|documented-lifecycle|sync lifecycle twin cursor_matches/record_cursor
+src/domains/sync/daemon/supervisor.rs|remove|stop|documented-lifecycle|sync lifecycle twin remove/stop
+src/domains/sync/drain/adopt_seeds.rs|advance|page|documented-lifecycle|sync lifecycle twin advance/page
+src/domains/sync/memory_store/git.rs|head|push|documented-lifecycle|sync lifecycle twin head/push
+src/domains/sync/memory_store/git.rs|head|unmerged_paths|documented-lifecycle|sync lifecycle twin head/unmerged_paths
+src/domains/sync/watch.rs|channel_loop|follow|documented-lifecycle|sync lifecycle twin channel_loop/follow
 src/mcp/tools_project_writes.rs|project_evidence|project_propose|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|architecture_check|architecture_scaffold|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|architecture_check|architecture_show|framework-forced|rmcp-tool-router-pre-expansion
@@ -6,27 +37,65 @@ src/mcp/tools_read.rs|context|edges|framework-forced|rmcp-tool-router-pre-expans
 src/mcp/tools_read.rs|context|find|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|context|list|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|context|recall_status|framework-forced|rmcp-tool-router-pre-expansion
-src/mcp/tools_read.rs|context|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|context|search|framework-forced|rmcp-tool-router-pre-expansion
+src/mcp/tools_read.rs|context|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|edges|find|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|edges|list|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|edges|recall_status|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|edges|repos|framework-forced|rmcp-tool-router-pre-expansion
-src/mcp/tools_read.rs|edges|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|edges|search|framework-forced|rmcp-tool-router-pre-expansion
+src/mcp/tools_read.rs|edges|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|edges|show|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|find|list|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|find|recall_status|framework-forced|rmcp-tool-router-pre-expansion
-src/mcp/tools_read.rs|find|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|find|search|framework-forced|rmcp-tool-router-pre-expansion
+src/mcp/tools_read.rs|find|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|list|recall_status|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|list|repos|framework-forced|rmcp-tool-router-pre-expansion
-src/mcp/tools_read.rs|list|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|list|search|framework-forced|rmcp-tool-router-pre-expansion
+src/mcp/tools_read.rs|list|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|list|show|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|recall_status|repos|framework-forced|rmcp-tool-router-pre-expansion
-src/mcp/tools_read.rs|recall_status|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|recall_status|search|framework-forced|rmcp-tool-router-pre-expansion
+src/mcp/tools_read.rs|recall_status|search_code|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|recall_status|show|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|repos|show|framework-forced|rmcp-tool-router-pre-expansion
 src/mcp/tools_read.rs|search|search_code|framework-forced|rmcp-tool-router-pre-expansion
+src/serve.rs|embed_cmd|repo|documented-lifecycle|deliberate residual embed_cmd/repo in src/serve.rs
+src/serve/routes/activity_stream.rs|emit|stream|documented-lifecycle|serve handler twin emit/stream
+src/serve/routes/maint/prune.rs|gc|prune_apply|documented-lifecycle|serve handler twin gc/prune_apply
+src/serve/routes/memories/edit.rs|refresh_refs|restore|documented-lifecycle|serve handler twin refresh_refs/restore
+src/serve/routes/memories/edit.rs|restore|update|documented-lifecycle|serve handler twin restore/update
+src/serve/routes/memories/search.rs|context|memories_search|documented-lifecycle|serve handler twin context/memories_search
+src/serve/routes/memories/search.rs|run_context|run_search|documented-lifecycle|serve handler twin run_context/run_search
+src/serve/routes/memories/write.rs|feedback|save|documented-lifecycle|serve handler twin feedback/save
+src/serve/routes/sync_replica.rs|feed_route|json_route|documented-lifecycle|serve handler twin feed_route/json_route
+src/store/activity_rollups.rs|distinct_commands|sample_durations|twin-table|store twin surface distinct_commands/sample_durations in src/store/activity_rollups.rs
+src/store/activity_rollups.rs|rollups|sample_durations|twin-table|store twin surface rollups/sample_durations in src/store/activity_rollups.rs
+src/store/bandit_arms.rs|load|seed|twin-table|store twin surface load/seed in src/store/bandit_arms.rs
+src/store/code_feedback.rs|own_identity|parent_identity|twin-table|mirror SQL helpers own_identity/parent_identity
+src/store/code_generation.rs|active|all|twin-table|store twin surface active/all in src/store/code_generation.rs
+src/store/code_graph_nodes.rs|citing_memories|fetch_node|twin-table|store twin surface citing_memories/fetch_node in src/store/code_graph_nodes.rs
+src/store/code_graph_nodes.rs|citing_memories|top_symbols|twin-table|store twin surface citing_memories/top_symbols in src/store/code_graph_nodes.rs
+src/store/code_ref.rs|for_memory|for_rel_live|twin-table|store twin surface for_memory/for_rel_live in src/store/code_ref.rs
+src/store/code_ref.rs|materialize|upsert|twin-table|store twin surface materialize/upsert in src/store/code_ref.rs
+src/store/code_sync.rs|cursor|set_cursor|twin-table|store twin accessors cursor/set_cursor
+src/store/doctor_probes.rs|live_memory_count|live_memory_hashes|twin-table|store twin accessors live_memory_count/live_memory_hashes
+src/store/feedback.rs|used_events_for_golden|used_query_ids|twin-table|store twin surface used_events_for_golden/used_query_ids in src/store/feedback.rs
+src/store/index_runs.rs|clamp|unsigned|twin-table|store twin surface clamp/unsigned in src/store/index_runs.rs
+src/store/memory_row.rs|live_bodies|live_ids|twin-table|store twin accessors live_bodies/live_ids
+src/store/memory_row.rs|mined_edges|restore_mined_edges|twin-table|store twin surface mined_edges/restore_mined_edges in src/store/memory_row.rs
+src/store/memory_signals.rs|bump_access|update_rank_scores|twin-table|store twin surface bump_access/update_rank_scores in src/store/memory_signals.rs
+src/store/prune_apply.rs|count_orphan_memory_edges|delete_orphan_memory_edges|twin-table|store twin surface count_orphan_memory_edges/delete_orphan_memory_edges in src/store/prune_apply.rs
+src/store/prune_apply.rs|drop_dangling_edges|drop_orphan_code_refs|twin-table|store twin surface drop_dangling_edges/drop_orphan_code_refs in src/store/prune_apply.rs
+src/store/query_expansions.rs|count|insert|twin-table|store twin surface count/insert in src/store/query_expansions.rs
+src/store/rebuild_copy_code.rs|copy_code_virtual_tables|copy_mined_edges|twin-table|store twin accessors copy_code_virtual_tables/copy_mined_edges
+src/store/replica_binding.rs|select|upsert|twin-table|store twin surface select/upsert in src/store/replica_binding.rs
+src/store/replica_pull_hold.rs|list|record|twin-table|store twin surface list/record in src/store/replica_pull_hold.rs
+src/store/replica_replay.rs|next|offer|twin-table|store twin surface next/offer in src/store/replica_replay.rs
+src/store/repository_approval.rs|canonical_for|label_for|twin-table|store twin surface canonical_for/label_for in src/store/repository_approval.rs
+src/store/retrieval_log.rs|distinct_prefix_matches|prefix_matches|twin-table|store twin surface distinct_prefix_matches/prefix_matches in src/store/retrieval_log.rs
+src/store/seed_scan.rs|live_memories_after|unshared_documents_after|twin-table|store twin accessors live_memories_after/unshared_documents_after
+src/store/sync_policy_snapshot.rs|load|save|twin-table|store twin surface load/save in src/store/sync_policy_snapshot.rs
+src/utilities/fetch.rs|download|final_url|documented-lifecycle|utility twin download/final_url
+src/utilities/fetch.rs|exchange_curl|exchange_wget|documented-lifecycle|utility twin exchange_curl/exchange_wget

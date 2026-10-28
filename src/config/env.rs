@@ -107,8 +107,13 @@ fn env_bool(name: &str) -> Result<Option<bool>> {
 }
 
 /// Read a free-form string env var verbatim; `Ok(None)` when unset.
+/// Non-unicode values refuse rather than silently dropping the override.
 fn env_string(name: &str) -> Result<Option<String>> {
-    Ok(std::env::var(name).ok())
+    match std::env::var(name) {
+        Ok(v) => Ok(Some(v)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(e) => Err(Error::Other(format!("invalid env var {name}: {e}"))),
+    }
 }
 
 /// Read `COMEMORY_INDEXING_AUTO_REINDEX` (`lazy|hook|off`); `Ok(None)` when
