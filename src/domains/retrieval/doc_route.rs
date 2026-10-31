@@ -35,7 +35,7 @@ pub enum DocOrigin {
 
 /// One document-leg candidate: a document plus its single best-scoring
 /// chunk, kept as the result's citation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DocHit {
     /// The local `documents.id`, or the 32-hex `shared_id` when
     /// [`Self::origin`] is [`DocOrigin::Shared`] — a pulled revision has no
@@ -60,6 +60,8 @@ pub struct DocHit {
     /// the `shared_id`, whichever this hit carries, so the tie-break does not
     /// depend on which index answered).
     pub bm25_rank: usize,
+    /// Cosine similarity when a compatible document vector matched.
+    pub ann: Option<f32>,
 }
 
 /// Route a document query: BM25 over `document_fts`, coalesced to one hit
@@ -102,7 +104,7 @@ pub fn route_documents(
 /// or `None` when `globs` is empty (no `--path` filtering requested). An
 /// unparsable pattern is rejected as [`Error::Usage`] naming the pattern,
 /// not silently dropped.
-fn build_path_matcher(globs: &[String]) -> Result<Option<GlobSet>> {
+pub(super) fn build_path_matcher(globs: &[String]) -> Result<Option<GlobSet>> {
     if globs.is_empty() {
         return Ok(None);
     }
@@ -180,7 +182,7 @@ fn source_id(source: &HitSource) -> &str {
 /// matched. `None` when the document or chunk vanished between the FTS match
 /// and this read (a concurrent delete, re-index or tombstone), its repo does
 /// not match `repo`, or its path does not match `matcher`.
-fn build_hit(
+pub(super) fn build_hit(
     conn: &Connection,
     repo: Option<&str>,
     matcher: Option<&GlobSet>,
@@ -212,6 +214,7 @@ fn build_hit(
         line_range: found.citation.1,
         snippet: found.citation.2,
         bm25_rank,
+        ann: None,
     }))
 }
 

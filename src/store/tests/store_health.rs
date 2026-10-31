@@ -16,6 +16,8 @@ fn one_migration_behind(dir: &Path) -> PathBuf {
     let db = dir.join("comemory.db");
     drop(comemory::store::connection::open(&db).expect("open"));
     let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch("DROP TABLE code_vector_provenance;")
+        .unwrap();
     conn.execute(
         "DELETE FROM schema_meta WHERE key = (SELECT key FROM schema_meta \
          WHERE key GLOB '[0-9][0-9][0-9][0-9]_*' ORDER BY key DESC LIMIT 1)",

@@ -74,3 +74,5 @@ pause_wait` (`Error::Busy`, HTTP `503`, CLI exit 75 past it), so a save
 contending with an in-place `comemory rebuild`'s writer pause waits, not
 hangs. Reserved before mirror reads, so replaying the same content repairs a
 markdown record whose mirror could not yet be committed.
+
+Configured automatic memory embedding happens in `save::run_with` before the save lock; failures are returned as warnings and do not prevent the lexical save.

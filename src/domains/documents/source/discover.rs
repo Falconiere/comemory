@@ -123,7 +123,9 @@ fn walk_dir(root: &Path, memories_dir: &Path) -> (Vec<Candidate>, bool) {
     for entry in entries {
         let path = entry.path();
         if entry.path_is_symlink() {
-            if let Some(target) = resolve_symlink_file(path, root) {
+            if let Some(target) = resolve_symlink_file(path, root)
+                && !target.starts_with(memories_dir)
+            {
                 out.push(candidate_of(root, path, &target));
             }
             continue;

@@ -39,6 +39,7 @@ const DOCUMENT_TABLES: &[(&str, &str)] = &[
         "document_chunks",
         "document_id, ordinal, heading_path, char_start, char_end, line_start, line_end, simhash, text",
     ),
+    ("document_vectors", "document_id, ordinal, model, embedding"),
     // Named columns — not every FTS5 shape supports `SELECT *` from an
     // attached DB.
     (

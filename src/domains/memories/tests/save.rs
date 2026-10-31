@@ -376,3 +376,23 @@ fn colliding_body_is_refused_before_any_write() {
         .expect("row");
     assert_eq!(stored, A);
 }
+
+#[test]
+fn automatic_embedding_receives_the_folded_saved_body() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    let capture = home.path().join("provider-input");
+    let mut cfg = Config::defaults();
+    cfg.embed_cmd = Some(format!("cat > '{}'; exit 1", capture.display()));
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let mut req = request("Actual body\n  \n");
+    req.title = Some("Chosen title".into());
+    let saved = run(&mut ctx, req).expect("lexical save succeeds");
+    assert!(!saved.warnings.is_empty());
+    let observed = std::fs::read_to_string(capture).expect("provider input");
+    let markdown = std::fs::read_to_string(saved.path).expect("markdown");
+    let (_, body) = Frontmatter::split(&markdown).expect("frontmatter");
+    assert_eq!(observed, "Chosen title\n\nActual body");
+    assert_eq!(observed.trim_end(), body.trim_end());
+}

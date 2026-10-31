@@ -59,6 +59,8 @@ pub mod diversify;
 /// The document retrieval leg: BM25 over `document_fts`, chunk hits
 /// coalesced to their parent document.
 pub mod doc_route;
+/// Fuse document lexical and semantic matches.
+pub mod doc_semantic;
 /// The explain strip derived from a hit's `score_parts`: the log-magnitude
 /// share partition over the multiplicative priors.
 pub mod explain;
@@ -67,6 +69,7 @@ pub mod find;
 pub mod fuse;
 pub mod graph_route;
 pub mod pipeline;
+mod query_embedding;
 pub mod rerank;
 pub mod router;
 /// Created-date window (`--since` / `--until` / `--as-of`) and the

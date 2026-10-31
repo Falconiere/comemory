@@ -126,6 +126,9 @@ pub struct Args {
 /// [`run_memory`] / `cli::search_only`). The `--k` flag overrides
 /// `retrieval.top_k`.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    crate::utilities::blocking::run_blocking(move || run_sync(a, json_flag, data_dir)).await
+}
+fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;
@@ -155,7 +158,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             &conn, &cfg, &a.query, filters, &a.path, window, json_flag,
         );
     }
-    run_memory(&a, json_flag, &paths, &mut conn, &cfg).await
+    run_memory(&a, json_flag, &paths, &mut conn, &cfg)
 }
 
 /// The pre-`--only` memory search path: build the shared `retrieval::search::Request`
@@ -163,7 +166,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 /// CLI-only affordance) and delegate to `retrieval::search::run`, then emit via
 /// `output::search::emit`. Split out of [`run`] to keep it under the
 /// function length gate.
-async fn run_memory(
+fn run_memory(
     a: &Args,
     json_flag: bool,
     paths: &Paths,

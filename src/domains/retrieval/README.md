@@ -28,6 +28,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `doc_semantic.rs` | `route_documents_semantic` | Fuse lexical and compatible document vector matches |
 | `bundle.rs` | `Bundle` | Build the JSON shape emitted by `comemory context`; `assemble` takes `RankedMemory` (id + the pipeline's `final_score`) so each memory row's `score` is the real ranking number |
 | `code_prior.rs` | `RANK_SCALE` | The four bounded code priors: PageRank, ACT-R activation, working-set affinity, Beta feedback |
 | `code_ref_collect.rs` | `RawRef` | Collect a memory's walked code-reference edges into resolved refs |
@@ -47,6 +48,7 @@ One line per file, named after its primary item:
 | `fuse.rs` | `RankedHit` | Reciprocal Rank Fusion across ranked lists |
 | `graph_route.rs` | `ALLOWED_RELS` | Graph-expansion leg: recursive-CTE walk from provisional top hits, fused as a third RRF list |
 | `unified.rs` | `find` | `comemory find`'s entry point and the one-pool/one-paginate rule; weighted fusion lives in `unified/fuse_domains.rs`. `run_legs` is `find` minus fusion and pagination, returning each leg's own rows with their passage text and version anchors intact, for the offline benchmark |
+| `query_embedding.rs` | `for_find` | Select compatible query providers and route explicit vectors |
 | `pipeline.rs` | `SearchOptions` | End-to-end memory search: route → rerank → diversify → top-k + access tracking |
 | `rerank.rs` | `MEMORY_RANK_SCALE` | Multiply fused relevance by activation × feedback × quality × supersede × rank priors |
 | `router.rs` | `CANDIDATE_POOL` | Route to vector, lexical, or hybrid path; the 4-tier lexical fallback ladder |
@@ -61,3 +63,5 @@ When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/domains/retrieval.rs`
 (`pub mod <name>;`) and callers import concrete paths. `unified/` has its own
 [README](unified/README.md).
+
+Ordinary memory search, context, and find queries use the configured provider when no explicit vector is supplied; offline evaluation does not invoke it.

@@ -96,6 +96,8 @@ const CLI_ONLY: &[&str] = &[
 // entry for that command — see the comment there).
 // ---------------------------------------------------------------------
 const EXCLUSIONS: &[(&str, &str)] = &[
+    // `run` selects its operation as a subcommand; the HTTP path selects embedding.
+    ("run", "cmd"),
     // "every `--vector-stdin`" — the stdin-body convenience collapses into
     // one JSON `"vector"` field shared with `--vector`; `--vector-stdin`
     // itself never gets a JSON counterpart. Appears on save/search/

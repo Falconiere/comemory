@@ -21,7 +21,7 @@ use crate::domains::retrieval::{context_result, search_result};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::query_or_json::QueryOrJson;
-use crate::serve::routes::mutate_response::with_ctx;
+use crate::serve::routes::mutate_response::with_independent_ctx;
 use crate::serve::routes::{respond, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::activity::Origin;
@@ -80,7 +80,7 @@ where
 
 fn run_search(state: AppState, req: retrieval::search::Request, origin: Origin) -> Result<Value> {
     let track = track_for(&state)?;
-    with_ctx(&state, Some(origin), |ctx| {
+    with_independent_ctx(&state, origin, |ctx| {
         let result = retrieval::search::run(ctx, req, track)?;
         let envelope = search_result::envelope(
             &result.hits,
@@ -96,7 +96,7 @@ fn run_search(state: AppState, req: retrieval::search::Request, origin: Origin) 
 
 fn run_context(state: AppState, req: retrieval::context::Request, origin: Origin) -> Result<Value> {
     let track = track_for(&state)?;
-    with_ctx(&state, Some(origin), |ctx| {
+    with_independent_ctx(&state, origin, |ctx| {
         let result = retrieval::context::run(ctx, req, track)?;
         let envelope = context_result::envelope(
             &result.bundle,

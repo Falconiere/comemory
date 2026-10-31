@@ -200,6 +200,7 @@ pub fn run_with(
     validate_quality(req.quality)?;
     let title = req.title.take();
     req.body = fold_title(title.as_deref(), &req.body);
+    req.body.truncate(req.body.trim_end().len());
     let cfg = ctx.cfg;
     let paths = ctx.paths;
     // Content-derived id is known before any write, so `supersedes` and the
@@ -212,7 +213,7 @@ pub fn run_with(
         conflicts_with: verbatim.conflicts_with,
         derived_from: verbatim.derived_from,
     };
-    let (references, ref_warnings) = collect_refs(&req, verbatim.references)?;
+    let (references, mut ref_warnings) = collect_refs(&req, verbatim.references)?;
 
     // Validation is now behind us — safe to touch the filesystem/DB/stdin.
     // Mirrors `cli::save::run`'s original ordering exactly (AC-13): a
@@ -221,6 +222,26 @@ pub fn run_with(
     let vector = match req.vector.take() {
         Some(v) => Some(v),
         None => crate::utilities::vector_stdin::read_optional(cli_vector_stdin, cli_vector_csv)?,
+    };
+    let vector = if vector.is_none() {
+        match cfg
+            .embed_cmd
+            .as_deref()
+            .map(|cmd| {
+                let vector = crate::utilities::embed::embed_query(cmd, &req.body)?;
+                embed::guard_dim(&vector, cfg.retrieval.memory_vector_dim)?;
+                Ok::<_, Error>(vector)
+            })
+            .transpose()
+        {
+            Ok(vector) => vector,
+            Err(error) => {
+                ref_warnings.push(format!("embedding failed; memory saved without a new vector: {error}. Check COMEMORY_EMBED_CMD and retry the save"));
+                None
+            }
+        }
+    } else {
+        vector
     };
     paths.ensure_dirs()?;
     // Hold across prior lookup, content-addressed markdown staging and mirror

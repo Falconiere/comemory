@@ -83,6 +83,17 @@ pub(crate) fn with_lazy_ctx<T>(
     run(&mut Ctx::lazy(state.paths(), &cfg))
 }
 
+/// Run a core with its own lazily opened connection, keeping provider work
+/// outside the shared connection mutex.
+pub(crate) fn with_independent_ctx<T>(
+    state: &AppState,
+    origin: Origin,
+    run: impl FnOnce(&mut Ctx<'_>) -> Result<T>,
+) -> Result<T> {
+    let cfg = state.cfg();
+    run(&mut Ctx::lazy(state.paths(), &cfg).with_origin(origin))
+}
+
 /// [`mutate_blocking`] over [`with_ctx`]: the closure sees only the context,
 /// as in [`super::query_response`]. A handler that also needs the state, or
 /// that validates before opening the connection, composes the two itself.

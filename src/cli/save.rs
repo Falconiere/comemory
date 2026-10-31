@@ -116,6 +116,9 @@ pub struct Args {
 /// or stdin is read — exactly as `cli::save::run` did pre-extraction
 /// (AC-13).
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    crate::utilities::blocking::run_blocking(move || run_sync(a, json, data_dir)).await
+}
+fn run_sync(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let body = read_body(&a)?;
 
     let paths = Paths::new(resolve_data_dir(data_dir));

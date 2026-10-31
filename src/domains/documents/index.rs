@@ -23,6 +23,7 @@ use crate::domains::documents::source::registry::Registry;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::utilities::context::Ctx;
+use crate::utilities::progress::ProgressSink;
 
 /// `comemory index <PATH>...` / `POST /api/v1/sources` request.
 #[derive(Deserialize, Debug)]
@@ -76,6 +77,12 @@ pub struct SourceReport {
     /// Previously-indexed files no longer seen by this walk. Always `0` when
     /// [`Self::walk_complete`] is false — see the note there.
     pub removed: usize,
+    /// Chunks newly embedded for the configured document provider.
+    pub embedded: usize,
+    /// Chunks whose embedding failed or became stale during inference.
+    pub embedding_failed: usize,
+    /// Chunks without a vector for the configured provider (or all chunks when unset).
+    pub embedding_pending: usize,
     /// Whether the discovery walk read every entry under the source.
     ///
     /// `false` means at least one entry was unreadable, so this run made no
@@ -99,6 +106,25 @@ pub struct Output {
 /// the module doc for why `req.strict` is accepted but never enforced
 /// here.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Output> {
+    run_with_progress(ctx, req, None)
+}
+
+/// Reconcile sources while reporting progress and honoring cancellation.
+pub fn run_with_progress(
+    ctx: &mut Ctx<'_>,
+    req: Request,
+    sink: Option<&dyn ProgressSink>,
+) -> Result<Output> {
+    run_with_mode(ctx, req, sink, false)
+}
+
+/// Reconcile sources with optional full document-vector refresh.
+pub fn run_with_mode(
+    ctx: &mut Ctx<'_>,
+    req: Request,
+    sink: Option<&dyn ProgressSink>,
+    full: bool,
+) -> Result<Output> {
     let cfg = ctx.cfg;
     let paths = ctx.paths;
     let registry = Registry::new(paths.clone());
@@ -106,6 +132,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Output> {
 
     let mut reports = Vec::with_capacity(req.path.len());
     for raw in &req.path {
+        check_cancelled(sink)?;
         let raw_path = PathBuf::from(raw);
         let canonical = validate_input_path(&raw_path)?;
         let repo = req.repo.clone().or_else(|| infer_repo_label(&canonical));
@@ -113,10 +140,45 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Output> {
         // Reconcile the SQLite mirror before indexing this entry so its
         // `source_roots` row (the FK parent of `source_files`) exists.
         mirror::reconcile(conn, &registry.load()?)?;
-        let report = reconcile_source(conn, &entry, cfg.indexing.max_file_bytes, paths)?;
+        let mut report = reconcile_source(conn, &entry, cfg.indexing.max_file_bytes, paths, sink)?;
+        embed_source(conn, cfg, &mut report, sink, full)?;
         reports.push(report);
     }
     Ok(Output { sources: reports })
+}
+
+fn embed_source(
+    conn: &Connection,
+    cfg: &crate::config::Config,
+    report: &mut SourceReport,
+    sink: Option<&dyn ProgressSink>,
+    full: bool,
+) -> Result<()> {
+    let source = &report.source_id;
+    if let Some(cmd) = cfg
+        .document_embed_cmd
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        let hint = cfg.document_embed_hint.as_deref();
+        let (embedded, errors) =
+            super::chunk_embedding::reconcile(conn, source, cmd, hint, sink, full)?;
+        report.embedded = embedded;
+        report.embedding_failed = errors.len();
+        let model = super::chunk_embedding::provider_id(cmd, hint);
+        report.embedding_pending =
+            crate::store::document_vectors::pending(conn, source, &model)?.len();
+        report
+            .errors
+            .extend(errors.into_iter().map(|message| FileError {
+                path: report.canonical_path.clone(),
+                kind: "embedding",
+                message,
+            }));
+    } else {
+        report.embedding_pending = crate::store::document_vectors::all(conn, source, "")?.len();
+    }
+    Ok(())
 }
 
 /// Canonicalize `path` and confirm it names a file or directory, mapping
@@ -162,8 +224,12 @@ fn reconcile_source(
     entry: &SourceEntry,
     max_file_bytes: u64,
     paths: &crate::config::Paths,
+    sink: Option<&dyn ProgressSink>,
 ) -> Result<SourceReport> {
-    let discovered = discover::discover(&entry.canonical_path, entry.kind, &paths.memories_dir());
+    check_cancelled(sink)?;
+    let data_dir =
+        std::fs::canonicalize(paths.data_dir()).unwrap_or_else(|_| paths.data_dir().to_path_buf());
+    let discovered = discover::discover(&entry.canonical_path, entry.kind, &data_dir);
     let mut report = SourceReport {
         source_id: entry.id.to_string(),
         canonical_path: entry.canonical_path.to_string_lossy().into_owned(),
@@ -174,6 +240,9 @@ fn reconcile_source(
         unsupported: 0,
         ignored: 0,
         removed: 0,
+        embedded: 0,
+        embedding_failed: 0,
+        embedding_pending: 0,
         walk_complete: discovered.complete,
         errors: Vec::new(),
     };
@@ -201,7 +270,8 @@ fn reconcile_source(
             "discovery walk was incomplete; keeping every known file"
         );
     }
-    for c in &discovered.candidates {
+    for (i, c) in discovered.candidates.iter().enumerate() {
+        check_cancelled(sink)?;
         let outcome = writer::update_file(
             conn,
             entry.id.as_str(),
@@ -211,8 +281,18 @@ fn reconcile_source(
             max_file_bytes,
         )?;
         record_outcome(&mut report, c, outcome);
+        if let Some(sink) = sink {
+            sink.on_progress((i + 1) as u64, discovered.candidates.len() as u64);
+        }
     }
     Ok(report)
+}
+
+fn check_cancelled(sink: Option<&dyn ProgressSink>) -> Result<()> {
+    if sink.is_some_and(ProgressSink::is_cancelled) {
+        return Err(Error::Cancelled);
+    }
+    Ok(())
 }
 
 /// Fold one candidate's [`UpdateOutcome`] into `report`'s counters,

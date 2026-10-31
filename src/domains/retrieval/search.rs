@@ -106,12 +106,14 @@ fn search(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult> 
         scope: &scope,
         domains: Domains::all(),
     };
+    let generated = pipeline::query_embedding(cfg, &req.query, req.vector.is_some())?;
+    let vector = req.vector.as_deref().or(generated.as_deref());
     let conn: &Connection = ctx.conn()?;
     let run = pipeline::search(
         cfg,
         conn,
         &req.query,
-        req.vector.as_deref(),
+        vector,
         filters,
         SearchOptions {
             track,

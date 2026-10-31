@@ -5,9 +5,34 @@ embeddings — comemory ships no embedder, so you choose the model and feed it
 the vectors.
 
 comemory works out of the box with lexical FTS5 search; no vector is required.
-A save without a vector is **lexical-only** — no `memory_vec` row is written,
+Without a configured provider, a save without a vector is **lexical-only** — no `memory_vec` row is written,
 and `comemory search` still finds it through FTS5. Supplying a vector adds the
 dense leg that gets fused with the lexical one.
+
+## Configure automatic memory embeddings
+
+Set `COMEMORY_EMBED_CMD` to a command that reads UTF-8 text on stdin and
+writes `{"embedding":[...]}` on stdout. It must return 1024 finite values.
+Unset or blank disables automatic embeddings. Ordinary save, search, find and
+context calls use it; explicit vectors always take precedence. `serve
+--embed-cmd` overrides the environment for that server. Restart the server or
+MCP host after changing its environment: an export in a terminal does not
+configure a GUI host already running. Configure the host's process environment
+without placing credentials in shared instructions.
+
+A failed automatic save embedding returns a warning while retaining the
+markdown and lexical mirror; retry the same save after fixing the provider to
+repair its vector. A failed query embedding returns an error. Doctor reports
+whether the command is configured and whether a probe worked; the probe checks
+width, not model compatibility. The provider gets a bounded execution time;
+for long documents configure the provider's context and batch limits rather
+than truncating content. Existing memories are not backfilled on startup,
+import, restore, or rebuild. Use the explicit `POST /api/v1/doctor/reembed`
+operation to backfill them.
+
+Use the same model and preprocessing for saved bodies and queries: matching
+widths alone do not establish compatibility. `COMEMORY_EMBED_HINT` is a label,
+not enforcement. A model change requires explicit re-embedding.
 
 You pass vectors two ways:
 
@@ -45,7 +70,7 @@ comemory save "Use Postgres for analytics" --kind decision --repo myrepo \
 ## Embed and search
 
 Queries accept the same two flags. With a vector, both the ANN and lexical
-branches run and their results are fused via RRF; without one, only the lexical
+branches run and their results are fused via RRF; without one, a configured provider supplies the memory query vector; otherwise only the lexical
 path runs. Route a query through the same model with the wrapper:
 
 ```bash
@@ -115,3 +140,54 @@ because re-embedding means re-running your embedder. Re-save with `--vector` /
 - [Getting started](../getting-started.md) — the save / search / index loop.
 - [Architecture](../architecture.md) — the save flow, the vector tables, and
   where the dimension literals live.
+
+## Explicit folder reconciliation
+
+Run `comemory run embedding [--path DIR] [--repo LABEL] [--mode incremental|full]`
+for supported documents and code. No flags selects exactly the current directory;
+Git, a project manifest, and `comemory init` are optional. Relative paths resolve
+against the invocation directory. An ancestor Git repository never widens it.
+`--repo` changes metadata/filtering only. Canonical-root source identities isolate
+folders with the same name. Source registration rejects overlapping roots.
+
+TXT, Markdown, HTML/XHTML and CSV/TSV use the existing document extractors;
+Rust, TypeScript, JavaScript, Python and Go use code extraction. Unsupported,
+binary and oversized items are reported. PDF, office, OCR and audio extraction
+are unsupported. Source files are never rewritten. Hidden-file, Git ignore,
+`.comemoryignore`, managed-memory and data-directory boundaries apply.
+
+Documents use a separate 1024-dimensional provider selected by
+`COMEMORY_DOCUMENT_EMBED_CMD` and `COMEMORY_DOCUMENT_EMBED_HINT`. Stored vectors
+belong to a hash of that command/hint and raw-chunk preprocessing version, tied
+to the document revision and chunk ordinal. Provider changes make old vectors
+ineligible; ordinary indexing retries missing compatible vectors. The additive
+vector table cascades deletions from document chunks. Document retrieval fuses
+lexical matches with provider-scoped cosine nearest neighbors and reports their
+contribution as `score_parts.ann`, preserving source/chunk citations.
+
+Memory and document queries share one inference only when command, hint and raw
+text representation agree. Otherwise each selected domain embeds separately.
+Explicit vectors invoke no providers and target only the compatible memory or
+code leg; documents remain lexical in that request. `search` and `context` keep
+their memory contracts; semantic documents are available through `find`.
+
+`COMEMORY_CODE_EMBED_CMD` selects a separate 768-dimensional code provider. Its
+command and `COMEMORY_CODE_EMBED_HINT` identify managed vector generations.
+Code-only queries still require an explicit compatible vector for semantic
+search. Never truncate or pad a vector to cross model spaces.
+
+Incremental runs hash actual file bytes, preserve unchanged compatible vectors
+and retry missing embeddings. Full runs re-extract selected code and refresh configured managed code and
+document embeddings, retaining valid identical-content vectors if refresh fails. Inference happens outside SQLite write transactions.
+Late publication verifies source content and database identity; stale results
+are discarded for retry. A failed code scan rolls back its text transaction;
+document indexing publishes per file and suppresses missing-file reconciliation
+after an incomplete walk. Cancellation can retain already committed document
+files or lexical code, with missing embeddings repaired on the next run.
+Unavailable roots are errors, never an empty authoritative scan.
+
+`comemory index` remains document-only and shares that lifecycle; `index-code`
+remains a deprecated code-only compatibility entry with its existing flags and
+read-only `--extract` mode. Git hooks and HEAD-triggered lazy indexing use the
+shared code core and inherit their process environment. They do not detect every
+unstaged edit; use an explicit folder run for working-tree reconciliation.

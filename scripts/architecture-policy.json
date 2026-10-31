@@ -130,8 +130,16 @@
       "target": "domains::retrieval"
     },
     {
+      "source": "domains::projects",
+      "target": "domains::sync"
+    },
+    {
       "source": "domains::retrieval",
       "target": "domains::code"
+    },
+    {
+      "source": "domains::retrieval",
+      "target": "domains::documents"
     },
     {
       "source": "domains::retrieval",
@@ -164,10 +172,6 @@
     {
       "source": "domains::sync",
       "target": "domains::memories"
-    },
-    {
-      "source": "domains::projects",
-      "target": "domains::sync"
     }
   ],
   "setup_runtime_dependencies": [

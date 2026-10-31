@@ -5,12 +5,8 @@
 //! rule, not a hint: two local documents that normalize onto one shared name
 //! are unrelated files, and merging them would lose one of them.
 //!
-//! There is no deletion function here on purpose. `document_id` is declared
-//! `REFERENCES documents(id) ON DELETE CASCADE`, so the row goes when the
-//! document does — which is what both local deletion paths already do
-//! (`document::deletions` deletes the `documents` row, `unindex`
-//! deletes the `source_roots` row above it). A hand-called purge would be one
-//! more thing for a third deletion path to forget.
+//! A relabel removes the old name only after journalling its tombstone;
+//! deleting a document cascades the name automatically.
 
 use rusqlite::Connection;
 use toolu_orm::core::query_column::CommonOps;
@@ -32,6 +28,17 @@ pub struct Share {
     pub path: String,
     /// Why the secret scan refused it; `None` when it did not.
     pub blocked_reason: Option<String>,
+}
+
+/// Remove a prior portable name after its tombstone has been journalled.
+pub fn remove(conn: &Connection, document_id: &str) -> Result<()> {
+    orm::execute(
+        conn,
+        DocumentShare::delete()
+            .filter(col::document_id.eq(document_id))
+            .to_sql(),
+    )?;
+    Ok(())
 }
 
 /// Record (or refresh) one document's portable name.

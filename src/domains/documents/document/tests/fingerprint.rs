@@ -58,6 +58,31 @@ fn unchanged_size_and_mtime_skip_without_any_write() {
 }
 
 #[test]
+fn same_size_and_mtime_edit_is_reindexed() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut conn = open_db(&tmp);
+    let path = write_fixture(&tmp, "notes.txt", b"first content");
+    let first = index(&mut conn, &path, "notes.txt", DocumentFormat::Txt);
+    let UpdateOutcome::Indexed { document_id } = first else {
+        panic!("expected index")
+    };
+    let modified = fs::metadata(&path)
+        .expect("metadata")
+        .modified()
+        .expect("mtime");
+    fs::write(&path, b"other content").expect("edit");
+    bump_mtime(&path, modified);
+    assert!(matches!(
+        index(&mut conn, &path, "notes.txt", DocumentFormat::Txt),
+        UpdateOutcome::Indexed { .. }
+    ));
+    let chunk = documents::get_chunk(&conn, &document_id, 0)
+        .expect("query")
+        .expect("chunk");
+    assert!(chunk.text.contains("other content"));
+}
+
+#[test]
 fn mtime_touch_without_content_change_touches_fingerprint_but_skips_reextraction() {
     let tmp = TempDir::new().expect("tempdir");
     let mut conn = open_db(&tmp);

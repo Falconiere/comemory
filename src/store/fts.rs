@@ -367,7 +367,12 @@ pub fn search_code(
         .order_by(OrderBy::alias_asc("score"))
         .limit(k as i64);
     if let Some(repo) = repo {
-        select = select.filter(code_symbols::repo.eq(repo));
+        let identities = crate::store::code_labels::identities(conn, repo)?;
+        let values = identities
+            .iter()
+            .map(|id| id.as_str().into())
+            .collect::<Vec<_>>();
+        select = select.filter(code_symbols::repo.in_list(&values));
     }
     if let Some(lang) = lang {
         select = select.filter(code_symbols::lang.eq(lang));

@@ -79,3 +79,4 @@ One line per file:
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.
+| `0034_document_vectors.sql` | v34: provider-scoped document chunk vectors with cascading removal |

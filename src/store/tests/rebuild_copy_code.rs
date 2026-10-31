@@ -116,3 +116,30 @@ fn a_staged_generation_with_no_pending_push_is_left_behind() {
         "an upload that never activated and owes nothing publishes nothing"
     );
 }
+
+#[test]
+fn source_labels_and_embedding_identity_survive_rebuild_copy() {
+    let old_dir = TempDir::new().unwrap();
+    let old_path = old_dir.path().join("old.db");
+    {
+        let old = connection::open(&old_path).unwrap();
+        comemory::store::code_labels::set(&old, "source-root", Some("public-label")).unwrap();
+        old.execute("INSERT INTO schema_meta(key,value) VALUES ('code_vector_model:source-root','provider-v1'),('code_vector_generation:source-root','generation-v1')", []).unwrap();
+    }
+    let new_dir = TempDir::new().unwrap();
+    let mut new = connection::open(new_dir.path().join("new.db")).unwrap();
+    copy_preserved_tables_from_old(&mut new, &old_path).unwrap();
+    assert!(
+        comemory::store::code_labels::identities(&new, "public-label")
+            .unwrap()
+            .contains(&"source-root".to_string())
+    );
+    let model: String = new
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key='code_vector_model:source-root'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(model, "provider-v1");
+}

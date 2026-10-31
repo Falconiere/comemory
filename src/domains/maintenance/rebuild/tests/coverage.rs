@@ -150,12 +150,12 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// v33's `project_transfer_bindings` because where a copy of a project lives
 /// is known only here.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_seventy_eight_tables() {
+fn migration_integrity_derived_live_set_has_exactly_eighty_one_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        78,
-        "expected exactly 78 live tables, got {}: {live:?}",
+        81,
+        "expected exactly 81 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -188,6 +188,8 @@ fn migration_integrity_derived_live_set_has_exactly_seventy_eight_tables() {
         "remote_document_link",
         "remote_document_fts",
         "document_share",
+        "document_vectors",
+        "code_vector_provenance",
         "repository_approval",
         "sync_exchange",
         "sync_policy_snapshot",

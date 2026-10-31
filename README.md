@@ -647,3 +647,9 @@ without a token cap. Stop reminders are advisory across concurrent agents.
 Memory and code feedback commit together, so a failed request leaves no partial verdicts.
 Session receipt capture currently supports Claude Code only. The integration
 is owned here and requires no toolu plugin. See [installation and migration](docs/guides/agent-integration.md).
+
+Explicit folder reconciliation: `comemory run embedding [--path DIR] [--repo LABEL]`
+indexes supported documents and code in exactly the selected folder (current
+directory by default), including ordinary folders without Git. `comemory index`
+continues to reconcile documents only; `index-code` remains a deprecated,
+code-only compatibility entry for installed hooks and external callers.

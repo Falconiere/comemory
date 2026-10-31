@@ -1,9 +1,9 @@
 //! `maintenance::reembed` — `POST /api/v1/doctor/reembed`: re-vectorize memories
 //! and/or code through the server's embed command (console-api spec §8).
 //!
-//! comemory is BYO-vector: nothing in the crate embeds. This is the one
-//! place a vector is *derived* rather than supplied, and only because the
-//! operator handed the server an embed command
+//! Explicit memory/code backfill through an operator-configured embed command,
+//! separate from automatic save/query and selected-folder indexing. The
+//! operator hands the server the command
 //! (`--embed-cmd`/`COMEMORY_EMBED_CMD`) — the route answers `503
 //! embedder_unavailable` when they did not, so [`run`] can take the command
 //! as a plain `&str` and never has to reason about its absence.
@@ -168,7 +168,7 @@ pub fn run(
         }
         return Ok(Response::default());
     }
-    let width = probe_width(embed_cmd)?;
+    let width = probe_width(embed_cmd, sink)?;
     let mut skipped_legs = Vec::new();
     let (memories, code) = fit_legs(
         conn,
@@ -209,9 +209,10 @@ pub fn run(
 /// produces (module doc, "The width probe"). A probe failure is
 /// [`Error::Embedder`] — the command is broken, and nothing has been
 /// touched yet.
-fn probe_width(cmd: &str) -> Result<usize> {
-    match embed::embed_query(cmd, PROBE_TEXT) {
+fn probe_width(cmd: &str, sink: Option<&dyn ProgressSink>) -> Result<usize> {
+    match embed::embed_query_cancellable(cmd, PROBE_TEXT, sink) {
         Ok(vector) => Ok(vector.len()),
+        Err(Error::Cancelled) => Err(Error::Cancelled),
         Err(e) => Err(Error::Embedder(e.to_string())),
     }
 }
@@ -379,13 +380,14 @@ impl<'a> RunState<'a> {
             return Ok(None);
         }
         self.attempted += 1;
-        match embed::embed_query(self.cmd, text) {
+        match embed::embed_query_cancellable(self.cmd, text, self.sink) {
             Ok(vector) => {
                 // A width mismatch is systematic, not per-row: fail the run
                 // here rather than counting every row as `failed`.
                 store_embed::guard_dim(&vector, dim)?;
                 Ok(Some(vector))
             }
+            Err(Error::Cancelled) => Err(Error::Cancelled),
             Err(e) if self.attempted == 1 => Err(Error::Embedder(e.to_string())),
             Err(e) => {
                 tracing::warn!(error = %e, "reembed: embed command failed for one row; continuing");

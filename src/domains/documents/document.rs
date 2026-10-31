@@ -16,12 +16,13 @@ pub mod deletions;
 pub mod delimited;
 /// Format dispatch plus the TXT/Markdown extractors.
 pub mod extract;
-/// Per-candidate fingerprint bundle, the size+mtime skip check, SHA-256
+/// Per-candidate fingerprint bundle, size checking, SHA-256
 /// identity hashing, and the `source_files` fingerprint upsert.
 pub mod fingerprint;
 /// HTML/XHTML extraction via the `tl` crate.
 pub mod html;
-/// Per-file index writer: fingerprint skip, extraction, and the
+mod relabel;
+/// Per-file index writer: content hashing, extraction, and the
 /// one-transaction row replacement that keeps `source_files`/
 /// `documents`/`document_chunks`/`document_fts` current.
 pub mod writer;

@@ -210,6 +210,12 @@ disagree, trust the running server.
 | ● `POST /code/index` | `index-code` | **job**; `path` contained before the job is created |
 | ● `POST /code/ingest` | `ingest-code` | **job**; NDJSON body, 64 MiB route-level limit |
 
+**Folder embedding** (`serve/routes/embedding.rs`)
+
+| Method + path | CLI command | Notes |
+|---|---|---|
+| ● `POST /run/embedding` | `run embedding` | **job**; selected directory contained before acceptance, shared document/code core |
+
 **Sources** (`serve/routes/sources.rs`)
 
 | Method + path | CLI command | Notes |
@@ -784,3 +790,10 @@ curl -s -H "X-Comemory-Token: $TOKEN" "$BASE/api/v1/jobs/$JOB"
   pipeline both surfaces share.
 - [Scenario catalog](../scenarios/README.md) — every command's `/api/v1`
   route and the `tests/serve_scenario_*.rs` journey that drives it.
+
+### Selected-folder embedding
+
+`POST /api/v1/run/embedding` creates a job over `{ "path": "/allowed/folder",
+"repo": "optional-label" }`. Path containment is checked before accepting the job.
+It uses the same core as `comemory run embedding`, with per-domain outcomes.
+Read-only servers refuse this operation.

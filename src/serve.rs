@@ -111,6 +111,11 @@ impl AppState {
         // `sync daemon status` and `doctor` report (#256, B-8).
         let conn = store_health::open_recorded(&paths.db_path())?;
         let token = security::generate_token()?;
+        let mut cfg = opts.cfg;
+        if let Some(command) = opts.embed_cmd.as_ref() {
+            cfg.embed_cmd = (!command.trim().is_empty()).then(|| command.clone());
+        }
+        let embed_cmd = cfg.embed_cmd.clone();
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             paths: Arc::new(paths.clone()),
@@ -118,8 +123,8 @@ impl AppState {
             token: Arc::from(token.as_str()),
             read_only: opts.read_only,
             repo: opts.repo,
-            cfg: Arc::new(Mutex::new(Arc::new(opts.cfg))),
-            embed_cmd: opts.embed_cmd.map(Arc::from),
+            cfg: Arc::new(Mutex::new(Arc::new(cfg))),
+            embed_cmd: embed_cmd.map(Arc::from),
             write_permit: Arc::new(tokio::sync::Semaphore::new(1)),
             jobs: Arc::new(jobs::Registry::new()),
             allow_path: Arc::new(opts.allow_path),
@@ -148,7 +153,8 @@ impl AppState {
     pub(crate) fn reload_cfg(&self, paths: &Paths) -> Result<()> {
         // Load first, lock second: a failed reload must leave the shared
         // config exactly as it was, still usable by later requests.
-        let fresh = crate::cli::load_config(paths)?;
+        let mut fresh = crate::cli::load_config(paths)?;
+        fresh.embed_cmd = self.embed_cmd.as_deref().map(str::to_string);
         *self
             .cfg
             .lock()

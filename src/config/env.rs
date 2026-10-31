@@ -18,6 +18,10 @@ fn env_text(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
+fn env_nonblank(name: &str) -> Option<String> {
+    env_text(name).filter(|value| !value.trim().is_empty())
+}
+
 /// Read an env var and parse it as `T`; `Ok(None)` when unset or not valid
 /// Unicode (see [`env_text`]), `Err` naming the variable on parse failure. A
 /// `String` target takes the value verbatim, which is how the free-form sync
@@ -188,6 +192,11 @@ impl Config {
         self.apply_retrieval_env()?;
         self.apply_sync_env()?;
         self.apply_embed_hint_env();
+        self.embed_cmd = env_nonblank("COMEMORY_EMBED_CMD");
+        self.document_embed_cmd = env_nonblank("COMEMORY_DOCUMENT_EMBED_CMD");
+        self.document_embed_hint = env_nonblank("COMEMORY_DOCUMENT_EMBED_HINT");
+        self.code_embed_cmd = env_nonblank("COMEMORY_CODE_EMBED_CMD");
+        self.code_embed_hint = env_nonblank("COMEMORY_CODE_EMBED_HINT");
         self.apply_tuning_env()?;
         // The `[observations]` reads live beside their own section, in
         // `config::observations`, rather than as another near-identical

@@ -176,3 +176,14 @@ they emit a shared `Page` envelope:
 - `has_more` is `false` at the end of the window. Ranked retrieval pages stably
   within `COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW` — see the
   [architecture notes](architecture.md) on the retrieval pipeline.
+
+## Automatic embedding commands
+
+`COMEMORY_EMBED_CMD` configures automatic 1024-dimensional memory embeddings.
+`COMEMORY_DOCUMENT_EMBED_CMD` and `COMEMORY_DOCUMENT_EMBED_HINT` configure a
+separate document provider and model identity; `COMEMORY_CODE_EMBED_CMD` and
+`COMEMORY_CODE_EMBED_HINT` configure the 768-dimensional code provider. Blank
+values are treated as unset. Commands inherit the process environment; restart
+GUI/MCP hosts to apply changes. `serve --embed-cmd` overrides the memory command.
+See [automatic embeddings](guides/byo-vectors.md#configure-automatic-memory-embeddings)
+for failures, compatibility and explicit backfill.

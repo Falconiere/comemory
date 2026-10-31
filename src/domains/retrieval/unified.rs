@@ -102,6 +102,17 @@ pub fn run_legs(
     query: UnifiedQuery<'_>,
     window: PageWindow,
 ) -> Result<LegRows> {
+    run_legs_with_documents(cfg, conn, query, window, None)
+}
+
+/// Run the legs with an optional document-space query and model identity.
+pub fn run_legs_with_documents(
+    cfg: &Config,
+    conn: &Connection,
+    query: UnifiedQuery<'_>,
+    window: PageWindow,
+    document_embedding: Option<(&[f32], &str)>,
+) -> Result<LegRows> {
     let filters = query.filters;
     let pool = pipeline::pool_size(window.offset, window.limit, cfg.retrieval.max_page_window);
 
@@ -111,7 +122,16 @@ pub fn run_legs(
     // that made this read like a missing guard to three separate reviewers.
     // One visible shape for all three is worth the duplicated condition.
     let memory = if filters.domains.contains(Domain::Memory) {
-        memory_leg(cfg, conn, query.text, query.vector, filters, pool)?
+        memory_leg(
+            cfg,
+            conn,
+            query.text,
+            query
+                .vector
+                .filter(|v| v.len() == cfg.retrieval.memory_vector_dim),
+            filters,
+            pool,
+        )?
     } else {
         Vec::new()
     };
@@ -120,7 +140,9 @@ pub fn run_legs(
             cfg,
             conn,
             query.text,
-            query.vector,
+            query
+                .vector
+                .filter(|v| v.len() == cfg.retrieval.code_vector_dim),
             filters.repo,
             query.domain_filters.lang,
             pool,
@@ -129,12 +151,14 @@ pub fn run_legs(
         Vec::new()
     };
     let documents = if filters.domains.contains(Domain::Document) {
-        doc_route::route_documents(
+        crate::domains::retrieval::doc_semantic::route_documents_semantic(
             conn,
             query.text,
             filters,
             query.domain_filters.path_globs,
             pool,
+            document_embedding.map(|(vector, _)| vector),
+            document_embedding.map(|(_, model)| model),
         )?
     } else {
         Vec::new()

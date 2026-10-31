@@ -70,3 +70,5 @@ One line per file, named after its primary item:
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/serve/routes.rs` (`pub
 mod <name>;`) and callers import concrete paths.
+
+`embedding.rs` mounts contained `POST /run/embedding` jobs over the shared selected-folder core.

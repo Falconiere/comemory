@@ -1,5 +1,8 @@
 # `comemory index-code`
 
+Deprecated compatibility command. Prefer `comemory run embedding` for new folder
+indexing. This entry remains code-only for installed hooks and external callers.
+
 Walk a git working tree, extract symbols (rust/ts/js/py/go), upsert
 `code_symbols` + FTS, mine import/co-change edges, materialize PageRank.
 `--extract` skips the DB and prints ingest-compatible JSONL.
@@ -22,7 +25,7 @@ _None._ `--repo` and `--path` are required flags.
 | `--repo` | **required** | Label stored on every symbol row. A linked `git worktree` is never a repository of its own: if `--path` is one and this label is unknown to the store, the run files under the main worktree's label instead (see [auto-reindex](../guides/auto-reindex.md#worktrees)) |
 | `--path` | **required** | Working-tree root (must live inside a git repo) |
 | `--extract` | off | JSONL on stdout, no DB writes, ignores the blob cursor |
-| `--mode` | `incremental` | `incremental` skips unchanged blobs; `full` re-extracts every file (lossy: drops that repo's `code_vec` and per-symbol access counters) |
+| `--mode` | `incremental` | `incremental` skips unchanged blobs; `full` re-extracts every file (preserves exact unchanged symbol vectors; resets per-symbol access counters) |
 
 ## Scenarios
 
@@ -51,7 +54,7 @@ _None._ `--repo` and `--path` are required flags.
 - **Command:** `comemory index-code --repo r --path /path/to/repo --mode full`
 - **Expect:** the unchanged file is re-extracted (`files_indexed` > 0 on a
   tree that incremental would skip). BYO vectors for that repo are dropped.
-- **Covered by:** `src/domains/code/tests/index_code.rs::full_mode_re_extracts_an_unchanged_file_and_drops_its_code_vectors` (API core; the CLI only maps `--mode`)
+- **Covered by:** `src/domains/code/tests/index_code.rs::full_mode_re_extracts_an_unchanged_file_and_preserves_its_code_vectors` (API core; the CLI only maps `--mode`)
 
 ### index-code-04 Non-git path
 

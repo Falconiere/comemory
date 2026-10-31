@@ -120,7 +120,7 @@ pub struct Report {
     pub repo_roots_ok: u32,
     /// `repo_marker.root_path` entries recorded at all (non-`NULL`).
     pub repo_roots_total: u32,
-    /// The configured `COMEMORY_EMBED_CMD`, if set.
+    /// `configured` when an embed command is present; command contents are redacted.
     pub embed_cmd: Option<String>,
     /// How long the embed probe took, in milliseconds, when it succeeded.
     /// `None` when `embed_cmd` is unset or the probe failed — a failure
@@ -134,6 +134,7 @@ pub struct Report {
 pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Report> {
     let paths = ctx.paths;
     let embed_hint = ctx.cfg.embed_hint.clone();
+    let embed_cmd = ctx.cfg.embed_cmd.clone();
     if !probe_writable(paths) {
         return unwritable_report(paths, embed_hint);
     }
@@ -152,7 +153,9 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Report> {
         // "Forward-compat fallback". Every other error (including a
         // genuinely broken `Error::Migration`) falls through to the arm
         // below and propagates.
-        Err(Error::SchemaTooNew(_)) => forward_compat_report(paths, embed_hint),
+        Err(Error::SchemaTooNew(_)) => {
+            forward_compat_report(paths, embed_hint, embed_cmd.as_deref())
+        }
         Err(e) => Err(e),
     }
 }
@@ -236,10 +239,11 @@ fn unwritable_report(paths: &Paths, embed_hint: Option<String>) -> Result<Report
 fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Report> {
     let paths = ctx.paths;
     let data_dir = paths.data_dir().to_string_lossy().into_owned();
+    let embed_cmd = ctx.cfg.embed_cmd.clone();
     let conn = ctx.conn()?;
     let schema_version = schema_meta::version(conn)?;
     let sqlite_vec_loaded = vector::is_loaded(conn);
-    let extras = checks::run_all(conn, paths, &schema_version)?;
+    let extras = checks::run_all(conn, paths, &schema_version, embed_cmd.as_deref())?;
     let core = CoreFields {
         data_dir,
         db_writable: true,
@@ -263,13 +267,17 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
 /// `Ctx::conn` attempt that already ran (and failed only once past that
 /// registration, inside `preflight`), so every subsequent connection in
 /// this process — including this one — inherits it.
-fn forward_compat_report(paths: &Paths, embed_hint: Option<String>) -> Result<Report> {
+fn forward_compat_report(
+    paths: &Paths,
+    embed_hint: Option<String>,
+    embed_cmd: Option<&str>,
+) -> Result<Report> {
     let data_dir = paths.data_dir().to_string_lossy().into_owned();
     let conn = connection::open_read_only(paths.db_path())?;
     let sqlite_vec_loaded = vector::is_loaded(&conn);
     let unknown_migration_keys = unknown_keys(&conn)?;
     let schema_version = stored_schema_version(&conn, migrate::CURRENT_VERSION);
-    let extras = checks::run_all(&conn, paths, &schema_version)?;
+    let extras = checks::run_all(&conn, paths, &schema_version, embed_cmd)?;
     let core = CoreFields {
         data_dir,
         db_writable: true,

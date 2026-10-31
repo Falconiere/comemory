@@ -64,6 +64,7 @@ fn classify(cmd: &Cmd) -> Classification {
         | Cmd::IndexCode(_)
         | Cmd::IngestCode(_)
         | Cmd::Index(_)
+        | Cmd::Run(_)
         | Cmd::Sources(_)
         | Cmd::Stats(_)
         | Cmd::Repos(_)

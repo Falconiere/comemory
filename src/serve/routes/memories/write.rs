@@ -13,7 +13,9 @@ use serde::Deserialize;
 
 use crate::domains::learning;
 use crate::serve::AppState;
-use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_ctx};
+use crate::serve::routes::mutate_response::{
+    mutate_blocking, mutate_response, with_ctx, with_independent_ctx,
+};
 use crate::serve::routes::{RouteEntry, require_confirm};
 
 /// This resource's route-table entries, appended onto [`super::table_entries`].
@@ -55,10 +57,10 @@ async fn save(
     Json(req): Json<crate::domains::memories::save::Request>,
 ) -> Response {
     let origin = state.http_origin(&headers);
-    mutate_response(state, "save", Some(origin), move |ctx| {
-        // No CLI stdin-vs-flag ambiguity over HTTP: `req.vector` is already
-        // a parsed vector off the JSON body (see `domains::memories::save::run`'s doc).
-        crate::domains::memories::save::run(ctx, req, false, None)
+    mutate_blocking(state, "save", move |state| {
+        with_independent_ctx(state, origin, |ctx| {
+            crate::domains::memories::save::run(ctx, req, false, None)
+        })
     })
     .await
 }

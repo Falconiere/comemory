@@ -86,10 +86,8 @@ fn run_second_run_reports_zero_files_indexed_when_unchanged() {
 }
 
 #[test]
-fn full_mode_re_extracts_an_unchanged_file_and_drops_its_code_vectors() {
-    // The documented cost of `--mode full`: it clears the indexed-file
-    // cursor so every file is extracted again, and re-extraction replaces
-    // the repo's symbol rows — taking the BYO `code_vec` rows with them.
+fn full_mode_re_extracts_an_unchanged_file_and_preserves_its_code_vectors() {
+    // Full re-extraction keeps vectors whose source symbols are unchanged.
     let home = tempdir().expect("tempdir");
     let workspace = tempdir().expect("workspace");
     let repo = git_sample::build_sample_repo(workspace.path());
@@ -135,12 +133,7 @@ fn full_mode_re_extracts_an_unchanged_file_and_drops_its_code_vectors() {
         "full re-extracts the unchanged file that incremental skipped"
     );
     assert_eq!(full.mode, IndexMode::Full, "the response echoes the mode");
-    assert_eq!(
-        vectors(&conn),
-        0,
-        "re-extraction replaced the symbol rows, so the BYO vector is gone — \
-         the loss `--mode full`'s help text warns about"
-    );
+    assert_eq!(vectors(&conn), 1, "unchanged symbol retains its BYO vector");
 }
 
 #[test]

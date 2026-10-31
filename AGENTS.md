@@ -347,3 +347,7 @@ into `~/.cursor/skills/` plus the MCP server entry (hooks are a follow-up)
 and `comemory install hermes` links skills only. Prefer MCP
 `find` with `k: 3`, then `show`; `context` returns full bodies. See
 [installation and migration](docs/guides/agent-integration.md).
+
+`comemory run embedding [--path DIR] [--repo LABEL]` is the explicit selected-folder
+document/code reconciliation entry. Never widen its root through Git discovery.
+Legacy `index-code` remains code-only for compatibility; `index` remains document-only.

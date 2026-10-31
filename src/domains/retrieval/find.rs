@@ -159,16 +159,26 @@ fn find(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
         lang: req.lang.as_deref(),
         path_globs: &req.path,
     };
+    let embeddings = super::query_embedding::for_find(cfg, &req, domains)?;
     let query = unified::UnifiedQuery {
         text: &req.query,
-        vector: req.vector.as_deref(),
+        vector: req.vector.as_deref().or(embeddings.memory.as_deref()),
         filters,
         domain_filters,
     };
     let capturing = observation_capture::armed(cfg, track);
     let conn: &Connection = ctx.conn()?;
     let started = std::time::Instant::now();
-    let legs = unified::run_legs(cfg, conn, query, window)?;
+    let legs = unified::run_legs_with_documents(
+        cfg,
+        conn,
+        query,
+        window,
+        embeddings
+            .document
+            .as_deref()
+            .zip(embeddings.document_model.as_deref()),
+    )?;
     let pool_size = legs.pool;
     // Read while identity is still known: `fuse_legs` flattens the legs and
     // drops the passage text and the version anchors. A failure here costs the

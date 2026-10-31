@@ -54,6 +54,8 @@ pub enum HitParts {
 pub struct DocParts {
     /// 1-based position within the document leg's own BM25 ordering.
     pub bm25_rank: usize,
+    /// Cosine similarity from the document vector leg, when present.
+    pub ann: Option<f32>,
 }
 
 /// One hit in the unified ranking, tagged with the domain it came from.
@@ -243,6 +245,7 @@ fn doc_hit(h: DocHit, rank: usize) -> UnifiedHit {
         tier: None,
         score_parts: HitParts::Document(DocParts {
             bm25_rank: h.bm25_rank,
+            ann: h.ann,
         }),
     }
 }

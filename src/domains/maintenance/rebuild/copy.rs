@@ -61,6 +61,7 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "indexed_files",
     "code_fts",
     "code_vec",
+    "code_vector_provenance",
     "edges",
     "repo_marker",
     "feedback",
@@ -77,6 +78,7 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "documents",
     "document_chunks",
     "document_fts",
+    "document_vectors",
     // A pulled revision cannot be re-derived from anything on this disk — the
     // file it describes may not exist here — and the share mapping is the only
     // record of what a local document is called upstream. Both are copied.
@@ -142,6 +144,10 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
 /// Every live table must appear in [`COPIED_TABLES`] or here — the
 /// coverage test's other half.
 pub(crate) const RECONSTRUCTABLE_TABLES: &[(&str, &str)] = &[
+    (
+        "document_vector_source",
+        "active embedding generations are restarted on the next source scan",
+    ),
     ("memories", "replayed from memories/*.md"),
     ("memory_tags", "replayed from frontmatter"),
     ("memory_fts", "rebuilt by memory_row::insert"),

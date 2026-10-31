@@ -56,6 +56,16 @@ pub(super) fn embed_probe(cmd: Option<&str>) -> (Check, Option<u64>) {
     };
     let started = std::time::Instant::now();
     match crate::utilities::embed::embed_query(cmd, "comemory doctor embed probe") {
+        Ok(vector) if crate::store::embed::guard_dim(&vector, 1024).is_err() => (
+            warn(
+                "embed command",
+                format!(
+                    "probe returned {} dimensions; memory requires 1024",
+                    vector.len()
+                ),
+            ),
+            None,
+        ),
         Ok(vector) => {
             let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
             (
