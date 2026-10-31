@@ -94,6 +94,7 @@ vector_writers! {
     insert_code(symbol_id: i64) => Code, false;
     /// Replace a code symbol's `code_vec` row — the code-side twin of
     /// [`replace_memory`], used by `maintenance::reembed`'s re-vectorize-in-place run.
+    /// Clears managed provenance; automatic publishers restore their provider label.
     replace_code(symbol_id: i64) => Code, true;
 }
 
@@ -279,6 +280,12 @@ fn write_vector(
             .set(&code_vec::embedding, blob),
     };
     orm::execute(conn, insertion.to_sql())?;
+    if let VectorTarget::Code(id) = target {
+        conn.execute(
+            "DELETE FROM code_vector_provenance WHERE symbol_id = ?1",
+            [id],
+        )?;
+    }
     Ok(())
 }
 

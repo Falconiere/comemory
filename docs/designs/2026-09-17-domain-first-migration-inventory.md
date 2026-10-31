@@ -1134,7 +1134,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/documents/embedding.rs | comemory::domains::documents::embedding; preserve | none | none | domains::documents | src/domains/documents/embedding.rs | retain |
 | src/domains/retrieval/doc_semantic.rs | comemory::domains::retrieval::doc_semantic; preserve | none | none | domains::retrieval | src/domains/retrieval/doc_semantic.rs | retain |
 | src/domains/retrieval/query_embedding.rs | private | none | none | domains::retrieval | src/domains/retrieval/query_embedding.rs | retain |
-| src/serve/routes/embedding.rs | comemory::serve::routes::embedding; preserve | none | none | delivery::serve | src/serve/routes/embedding.rs | retain |
+| src/serve/routes/embedding.rs | comemory::serve::routes::embedding; preserve | src/serve/routes/tests/embedding.rs | none | delivery::serve | src/serve/routes/embedding.rs | retain |
 | src/store/code_embedding.rs | private | none | none | infrastructure::store | src/store/code_embedding.rs | retain |
 | src/store/code_labels.rs | comemory::store::code_labels; preserve | none | none | infrastructure::store | src/store/code_labels.rs | retain |
 | src/store/document_vectors.rs | comemory::store::document_vectors; preserve | src/store/tests/document_vectors.rs | none | infrastructure::store | src/store/document_vectors.rs | retain |

@@ -33,6 +33,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `code.rs` | `table_entries` | `GET\|POST /code/search`, `POST /code/ast`, and the job-backed `POST /code/index` / `POST /code/ingest` under their own body-limit layer |
+| `embedding.rs` | `table_entries` | Contained, job-backed `POST /run/embedding` over the selected-folder core |
 | `find.rs` | `table_entries` | `GET\|POST /find` — the unified ranking. Its own resource because it is cross-domain, not a memories sub-resource |
 | `graph.rs` | `table_entries` | `GET /graph` and `GET /edges`, reusing the legacy graph builders — no second query path |
 | `hooks.rs` | `table_entries` | `GET /hooks` (read), `POST /hooks` and `PUT /hooks/{name}` (per-hook toggle, read-only gated, not confirm-gated) |
@@ -70,5 +71,3 @@ One line per file, named after its primary item:
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/serve/routes.rs` (`pub
 mod <name>;`) and callers import concrete paths.
-
-`embedding.rs` mounts contained `POST /run/embedding` jobs over the shared selected-folder core.

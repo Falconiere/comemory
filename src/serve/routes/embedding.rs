@@ -29,21 +29,13 @@ pub fn router(_state: AppState) -> Router<AppState> {
     Router::new().route("/api/v1/run/embedding", post(run))
 }
 
-async fn run(State(state): State<AppState>, Json(mut req): Json<embedding::Request>) -> Response {
+async fn run(State(state): State<AppState>, Json(req): Json<embedding::Request>) -> Response {
     let started = Instant::now();
     if let Err(response) = guard_job("run", &state) {
         return *response;
     }
     let containment_state = state.clone();
-    let result = run_blocking(move || -> Result<embedding::Request> {
-        let conn = containment_state.conn()?;
-        let roots = containment_state.allowed_roots(&conn);
-        drop(conn);
-        let canonical = path_containment::contain_abs(&roots, Path::new(&req.path))?;
-        req.path = canonical.to_string_lossy().into_owned();
-        Ok(req)
-    })
-    .await;
+    let result = run_blocking(move || contain_request(&containment_state, req)).await;
     let req = match result {
         Ok(req) => req,
         Err(error) => return Envelope::err("run", &error, 0),
@@ -55,6 +47,8 @@ async fn run(State(state): State<AppState>, Json(mut req): Json<embedding::Reque
         "run",
         true,
         move |job_id| {
+            // The selected directory may have been replaced while this job queued.
+            let req = contain_request(&job_state, req)?;
             let sink = jobs::worker::RegistryProgressSink::new(job_state.jobs().clone(), job_id);
             let output = with_lazy_ctx(&job_state, |ctx| {
                 embedding::run_with_progress(ctx, req, Some(&sink))
@@ -64,3 +58,15 @@ async fn run(State(state): State<AppState>, Json(mut req): Json<embedding::Reque
     );
     accepted("run", job, started)
 }
+
+fn contain_request(state: &AppState, mut req: embedding::Request) -> Result<embedding::Request> {
+    let conn = state.conn()?;
+    let roots = state.allowed_roots(&conn);
+    let canonical = path_containment::contain_abs(&roots, Path::new(&req.path))?;
+    req.path = canonical.to_string_lossy().into_owned();
+    Ok(req)
+}
+
+#[cfg(test)]
+#[path = "tests/embedding.rs"]
+mod tests;

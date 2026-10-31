@@ -164,25 +164,14 @@ fn index(
     let excluded = ctx.paths.data_dir().canonicalize().ok();
     let max_bytes = ctx.cfg.indexing.max_file_bytes;
     let embed_cmd = ctx.cfg.code_embed_cmd.clone();
-    let embed_model = ctx
-        .cfg
-        .code_embed_hint
-        .clone()
-        .unwrap_or_else(|| "unknown".into());
+    let embed_model = embedding::provider_id(
+        embed_cmd.as_deref().unwrap_or_default(),
+        ctx.cfg.code_embed_hint.as_deref(),
+    );
     // Opened BEFORE the connection: a path that is not a git repo must fail
     // without creating `comemory.db` as a side effect (and with no DB there
     // is nothing to record the failed run into).
-    if !root.is_dir() {
-        return Err(Error::Unavailable(format!(
-            "code source is not a directory: {}",
-            root.display()
-        )));
-    }
-    let git_repo = if folder {
-        None
-    } else {
-        Some(Repository::open(&root).map_err(map_git_err)?)
-    };
+    let git_repo = open_source(&root, folder)?;
     // `None` when the operator turned search→edit reinforcement off
     // (`comemory hooks --disable search-edit-reinforcement`), which is what
     // makes that toggle actually gate the behavior rather than only report it.
@@ -192,19 +181,7 @@ fn index(
         .enabled
         .then_some(ctx.cfg.reinforce.search_edit_days);
     let conn = ctx.conn()?;
-    if !folder && let Some(git_repo) = &git_repo {
-        redirect_worktree_label(conn, &mut req, git_repo)?;
-    }
-    refuse_if_archived(conn, &req.repo)?;
-    if folder
-        && let Some(existing) = repo_marker::root_path(conn, &req.repo)?
-        && Path::new(&existing).canonicalize().ok() != root.canonicalize().ok()
-    {
-        return Err(Error::Conflict(format!(
-            "code source identity {} belongs to another root",
-            req.repo
-        )));
-    }
+    prepare_source(conn, &mut req, &root, git_repo.as_ref(), folder)?;
     let outcome = index_repo(
         conn,
         &req,
@@ -232,6 +209,43 @@ fn index(
     });
     runner::record_run(conn, &req, &root, &started_at, started.elapsed(), &outcome);
     outcome
+}
+
+fn open_source(root: &Path, folder: bool) -> Result<Option<Repository>> {
+    if !root.is_dir() {
+        return Err(Error::Unavailable(format!(
+            "code source is not a directory: {}",
+            root.display()
+        )));
+    }
+    if folder {
+        Ok(None)
+    } else {
+        Ok(Some(Repository::open(root).map_err(map_git_err)?))
+    }
+}
+
+fn prepare_source(
+    conn: &Connection,
+    req: &mut Request,
+    root: &Path,
+    git_repo: Option<&Repository>,
+    folder: bool,
+) -> Result<()> {
+    if let Some(git_repo) = git_repo {
+        redirect_worktree_label(conn, req, git_repo)?;
+    }
+    refuse_if_archived(conn, &req.repo)?;
+    if folder
+        && let Some(existing) = repo_marker::root_path(conn, &req.repo)?
+        && Path::new(&existing).canonicalize().ok() != root.canonicalize().ok()
+    {
+        return Err(Error::Conflict(format!(
+            "code source identity {} belongs to another root",
+            req.repo
+        )));
+    }
+    Ok(())
 }
 
 /// A linked worktree is a second checkout of one repository, never a

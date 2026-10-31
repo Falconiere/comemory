@@ -205,7 +205,10 @@ are discarded for retry. A failed code scan rolls back its text transaction;
 document indexing publishes per file and suppresses missing-file reconciliation
 after an incomplete walk. Cancellation can retain already committed document
 files or lexical code, with missing embeddings repaired on the next run.
-Unavailable roots are errors, never an empty authoritative scan.
+Unavailable roots are errors, never an empty authoritative scan. Scans use the
+live local filesystem, not a snapshot; avoid replacing selected source
+directories during a run. HTTP jobs recheck allowed-root containment when
+execution starts.
 
 `comemory index` remains document-only and shares that lifecycle; `index-code`
 remains a deprecated code-only compatibility entry with its existing flags and

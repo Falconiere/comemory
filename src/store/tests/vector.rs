@@ -289,11 +289,27 @@ fn replace_memory_swaps_the_row_rather_than_duplicating_it() {
 #[test]
 fn replace_code_swaps_the_row_rather_than_duplicating_it() {
     let dir = tempdir().expect("tempdir");
-    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
     seed_code_symbol(&conn, 1, "webapp", "rust");
 
     vector::insert_code(&conn, 1, &code_basis(0)).expect("insert first");
+    conn.execute(
+        "INSERT INTO code_vector_provenance(symbol_id, model) VALUES(1, 'old-provider')",
+        [],
+    )
+    .expect("managed provenance");
     vector::replace_code(&conn, 1, &code_basis(1)).expect("replace");
+    let provenance: i64 = conn
+        .query_row("SELECT count(*) FROM code_vector_provenance", [], |r| {
+            r.get(0)
+        })
+        .expect("provenance count");
+    assert_eq!(
+        provenance, 0,
+        "explicit replacement clears managed provenance"
+    );
+    crate::store::code_embedding::select_model(&mut conn, "webapp", "new-provider")
+        .expect("switch automatic provider");
 
     let count: i64 = conn
         .query_row(

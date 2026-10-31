@@ -113,7 +113,7 @@ fn folder_indexes_untracked_code_and_retries_missing_embeddings() {
     let vector_before: Vec<u8> = conn
         .query_row("SELECT embedding FROM code_vec", [], |row| row.get(0))
         .expect("vector before failed refresh");
-    cfg.code_embed_cmd = Some("exit 1".into());
+    std::fs::write(&payload, "provider returned invalid JSON").expect("fail same provider");
     let failed = crate::domains::code::index_code::run_folder(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         full_req(),
@@ -124,7 +124,19 @@ fn folder_indexes_untracked_code_and_retries_missing_embeddings() {
         .query_row("SELECT embedding FROM code_vec", [], |row| row.get(0))
         .expect("vector after failed refresh");
     assert_eq!(vector_before, vector_after);
-    cfg.code_embed_cmd = Some(format!("cat '{}'", payload.display()));
+    std::fs::write(
+        &payload,
+        serde_json::json!({"embedding": vec![0.5; 768]}).to_string(),
+    )
+    .expect("repair provider");
+    cfg.code_embed_cmd = Some(format!("cat '{}' # changed provider", payload.display()));
+    let command_changed = crate::domains::code::index_code::run_folder(
+        &mut Ctx::borrowed(&paths, &cfg, &mut conn),
+        req(),
+    )
+    .expect("provider command change");
+    assert_eq!(command_changed.files_indexed, 0);
+    assert_eq!(command_changed.embedded, 1);
     cfg.code_embed_hint = Some("next-model".into());
     let changed = crate::domains::code::index_code::run_folder(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
