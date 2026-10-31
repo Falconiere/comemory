@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-10-31
+
+### Added
+
+- unify automatic embeddings and folder indexing ([#412](https://github.com/Falconiere/comemory/pull/412))
+
+### Changed
+
+- consolidate indexing and vector helpers
+
+### Fixed
+
+- update libz-sys to patched build script
+- keep diagnostics out of release notes
+- bound Linux compiler memory
+
 ## [0.59.0] - 2026-10-28
 
 ### Changed
