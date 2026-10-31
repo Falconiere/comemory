@@ -465,7 +465,8 @@ fn sync_daemon_check_warns_disabled_and_reports_ok_once_verified() {
     let assertion2 = cmd2.args(["--json", "doctor"]).assert().success();
     let stdout2 = String::from_utf8(assertion2.get_output().stdout.clone()).expect("utf8");
     let report2: serde_json::Value = serde_json::from_str(stdout2.trim()).expect("json");
-    assert_eq!(find_check(&report2, "sync daemon")["status"], "ok");
+    let check = find_check(&report2, "sync daemon");
+    assert_eq!(check["status"], "ok", "sync daemon report: {check}");
 
     let mut stop = bin(&verified);
     daemon_env(&mut stop);

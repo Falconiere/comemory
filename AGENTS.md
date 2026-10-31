@@ -184,9 +184,11 @@ pushes inline best-effort after local writes.
   it imports through
   `use comemory::...` (`extern crate self as comemory;` in `lib.rs`), addresses
   data via `concat!(env!("CARGO_MANIFEST_DIR"), "/tests/...")`. Real data only.
-- `.config/nextest.toml` serializes two groups: `embedder`
+- `.config/nextest.toml` limits the `embedder` group
   (`embedder|memory_index|code_index`, so the model download cannot race) and
-  `config::env::tests*`. Colocated tests share one lib test binary, so only
+  `config::env::tests*` to one thread each, and bounds real coordinator tests
+  (including the CLI doctor probe) in the existing `daemon` group. Colocated tests
+  share one lib test binary, so only
   that name filter isolates env mutation — a test that calls
   `std::env::set_var` must live under `config::env::tests`.
 
