@@ -31,7 +31,10 @@ use tempfile::TempDir;
 /// (rather than a bare `printf`, which never reads its stdin at all) so the
 /// parent's query write cannot race the child's exit and surface a spurious
 /// broken-pipe failure under load.
-const REAL_EMBED_CMD: &str = r#"cat >/dev/null; printf '{"embedding":[0.1,0.2,0.3]}'"#;
+fn real_embed_cmd() -> String {
+    let payload = serde_json::json!({"embedding": vec![0.1; 1024]});
+    format!("cat >/dev/null; printf '%s' '{payload}'")
+}
 
 fn bin(home: &TempDir) -> Command {
     let mut c = Command::cargo_bin("comemory").expect("cargo_bin comemory");
@@ -274,7 +277,7 @@ fn doctor_reports_at_least_ten_healthy_checks_on_a_real_corpus() {
         .success();
 
     let mut c = bin(&home);
-    c.env("COMEMORY_EMBED_CMD", REAL_EMBED_CMD);
+    c.env("COMEMORY_EMBED_CMD", real_embed_cmd());
     let assertion = c.args(["--json", "doctor"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
@@ -351,7 +354,7 @@ fn doctor_embed_probe_ok_when_set_warn_when_unset() {
     let home = TempDir::new().expect("tempdir");
 
     let mut c = bin(&home);
-    c.env("COMEMORY_EMBED_CMD", REAL_EMBED_CMD);
+    c.env("COMEMORY_EMBED_CMD", real_embed_cmd());
     let assertion = c.args(["--json", "doctor"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");

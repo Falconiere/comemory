@@ -72,8 +72,8 @@ pub struct Args {
     pub repo: Option<String>,
     /// Caller-supplied dense vector as a comma-separated float list. When
     /// provided together with `query`, both ANN and lexical branches run and
-    /// their results are fused via RRF. Without a vector only the lexical
-    /// FTS5 path runs.
+    /// their results are fused via RRF. If omitted, a configured memory
+    /// provider embeds the query; without a provider, only lexical FTS5 runs.
     #[arg(long)]
     pub vector: Option<String>,
     /// Read a JSON `{ "embedding": [..] }` payload from stdin and use it as
@@ -104,6 +104,9 @@ pub struct Args {
 /// footer) so context lookups can receive `comemory feedback` instead of
 /// polluting reformulation mining as permanently-failed queries.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    crate::utilities::blocking::run_blocking(move || run_sync(a, json_flag, data_dir)).await
+}
+fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;

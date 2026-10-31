@@ -26,6 +26,10 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `document_vectors.rs` | `pending`, `publish`, `search` | Provider-scoped document chunk vectors and cosine retrieval |
+| `schema_embeddings.rs` | `DocumentVectors`, `CodeVectorProvenance` | Schema declarations for document vectors and code provider identity |
+| `code_embedding.rs` | `Pending` | Source-scoped pending vectors, model selection and guarded publication |
+| `code_labels.rs` | `set`, `identities` | Map canonical-root code identities to public repository labels for FTS and vector filtering |
 | `activity.rs` | `NewActivityRow`, `ActivityRow`, `ActivityFilter`, `insert`, `list`, `since_cursor`, `newest_id`, `delete_before` | `activity_log` row CRUD: the write behind `utilities::activity::record`, the filtered newest-first page behind `GET /api/v1/activity`, the ascending cursor read its SSE twin polls, and the retention delete `maintenance::gc` sweeps with |
 | `activity_share.rs` | `capture_batch_after`, `stamp_event_id` | The `activity_log` reads and writes sharing a run needs (#254): the capture sweep's batch of runs recorded **here** (an imported run is never returned — re-capturing one is how a loop would start) and stamping the event id a journalled run earned |
 | `activity_rollups.rs` | `ActivityRollup`, `rollups`, `SAMPLE` | Per-command runs/errors from `COUNT(*)`, plus p50/p95 of `duration_ms` computed in Rust over the newest `SAMPLE` durations per command (SQLite has no percentile function) |

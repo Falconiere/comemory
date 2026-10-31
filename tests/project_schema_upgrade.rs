@@ -92,7 +92,10 @@ fn a_v0_52_0_data_directory_upgrades_to_the_project_tables() {
         "the memory survives the upgrade"
     );
 
-    assert_eq!(schema_version(copy.path()), "33");
+    assert_eq!(
+        schema_version(copy.path()),
+        comemory::store::migrate::CURRENT_VERSION
+    );
     let conn = Connection::open(copy.path().join("comemory.db")).expect("open copy");
     for table in PROJECT_TABLES.iter().chain(&["project_changes"]) {
         let rows: i64 = conn

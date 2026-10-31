@@ -157,8 +157,9 @@ id = 8-hex SHA-256 prefix, idempotent replay with `created: false`,
 `409 id_collision` on same-id/different-body, advisory SimHash near-dup) is
 specified in `docs/guides/http-api.md` § Save contract and
 `docs/architecture.md`. Headlines: markdown is source of truth (kept when the
-SQLite mirror fails — run `comemory rebuild`); vectors are BYO (`--vector` /
-`--vector-stdin`, else lexical-only); `serve` never pushes outward, `cli`
+SQLite mirror fails — run `comemory rebuild`); explicit vectors (`--vector` /
+`--vector-stdin`) take precedence over configured automatic memory embeddings;
+without either, search is lexical-only. `serve` never pushes outward; `cli`
 pushes inline best-effort after local writes.
 
 ## Testing
@@ -347,3 +348,7 @@ into `~/.cursor/skills/` plus the MCP server entry (hooks are a follow-up)
 and `comemory install hermes` links skills only. Prefer MCP
 `find` with `k: 3`, then `show`; `context` returns full bodies. See
 [installation and migration](docs/guides/agent-integration.md).
+
+`comemory run embedding [--path DIR] [--repo LABEL]` is the explicit selected-folder
+document/code reconciliation entry. Never widen its root through Git discovery.
+Legacy `index-code` remains code-only for compatibility; `index` remains document-only.

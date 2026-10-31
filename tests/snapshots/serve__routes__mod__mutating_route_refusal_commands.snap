@@ -41,6 +41,7 @@ POST /prune -> prune
 POST /rebuild -> rebuild
 POST /repos -> repos.connect
 POST /repos/{name}/archive -> repos.archive
+POST /run/embedding -> run
 POST /search/{query_id}/feedback -> search.feedback
 POST /sources -> index
 POST /sync/code/import -> sync.code.import

@@ -1,7 +1,7 @@
 # Getting started
 
 A single, linear walk through `comemory` — install the binary, save your first
-memory, search it back, then index a repo and search code. Follow it top to
+memory, search it back, then index a folder and search code. Follow it top to
 bottom once and you'll have a working memory store plus a code index. Where a
 step has variations, this guide picks one happy path and links out.
 
@@ -13,8 +13,8 @@ step has variations, this guide picks one happy path and links out.
 > export COMEMORY_DATA_DIR=$(mktemp -d)
 > ```
 >
-> Steps 4–5 (`index-code` / `search-code`) need a real git repo with code, so
-> run those from inside a checkout.
+> Run steps 4–5 (`run embedding` / `search-code`) from a folder containing
+> code. Git is optional.
 
 ---
 
@@ -228,17 +228,18 @@ comemory search "postgres analytics" --json
 
 ## 4. Index code
 
-Run this from **inside a git repo** (blob OIDs drive the incremental skip path).
-`comemory index-code` walks the tree, extracts symbols, and upserts them into
-the code index. It understands Rust, TypeScript, JavaScript, Python, and Go.
+Run this inside the folder to index. `comemory run embedding` reconciles its
+supported documents and code without requiring Git or widening the selected
+root. Code extraction supports Rust, TypeScript, JavaScript, Python, and Go.
 
 ```bash
-comemory index-code --repo demo --path .
+comemory run embedding --repo demo
 ```
 
-`--repo` is the label stored on each symbol row (reuse it later to scope code
-searches); `--path` is the working-tree root to walk. To emit JSONL for an
-external embedder instead of writing rows, add `--extract`.
+`--repo` supplies a label for scoped searches; `--path` optionally selects a
+different folder. Configure providers for semantic embeddings, or use lexical
+search without them. The legacy `index-code --extract` emits JSONL for an
+external embedder.
 
 ---
 

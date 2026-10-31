@@ -462,3 +462,36 @@ fn a_document_held_on_both_sides_is_returned_once_from_the_local_row() {
         "so every hit has a file behind it: {hits:?}"
     );
 }
+
+#[test]
+fn semantic_document_match_carries_citation_and_similarity() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut conn = open_db(&tmp);
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let UpdateOutcome::Indexed { document_id } =
+        index(&mut conn, &path, "guide.md", DocumentFormat::Markdown, None)
+    else {
+        panic!("expected index")
+    };
+    let chunks =
+        comemory::store::document_vectors::pending(&conn, SOURCE_ID, "provider").expect("pending");
+    let mut vector = vec![0.0; 1024];
+    vector[0] = 1.0;
+    comemory::store::document_vectors::publish(&conn, &chunks[0], "provider", &vector)
+        .expect("publish");
+    let hits = comemory::retrieval::doc_semantic::route_documents_semantic(
+        &conn,
+        "unmatchedzyx",
+        Filters::none(),
+        &[],
+        K,
+        Some(&vector),
+        Some("provider"),
+    )
+    .expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].document_id, document_id);
+    assert_eq!(hits[0].path, "guide.md");
+    assert!(hits[0].ann.is_some());
+    assert!(!hits[0].snippet.is_empty());
+}

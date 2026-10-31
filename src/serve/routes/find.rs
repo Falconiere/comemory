@@ -70,8 +70,7 @@ async fn execute(state: AppState, req: retrieval::find::Request, origin: Origin)
     let result = run_blocking(move || {
         let track = track_for(&state)?;
         let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
+        let mut ctx = Ctx::lazy(state.paths(), &cfg).with_origin(origin);
         let out = retrieval::find::run(&mut ctx, req, track)?;
         Ok(serde_json::json!({
             "hits": out.hits,

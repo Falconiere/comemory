@@ -735,3 +735,133 @@ fn local_id(source: &comemory::store::document_fts::HitSource) -> &str {
         }
     }
 }
+
+#[test]
+fn ineligible_file_retires_stale_document_and_vectors() {
+    use comemory::domains::documents::source::classify::Classification;
+    use comemory::store::document_vectors;
+    let tmp = TempDir::new().expect("tempdir");
+    let mut conn = open_db(&tmp);
+    let path = write_fixture(&tmp, "notes.txt", b"original document content");
+    let UpdateOutcome::Indexed { document_id } =
+        index(&mut conn, &path, "notes.txt", DocumentFormat::Txt)
+    else {
+        panic!("indexed")
+    };
+    let chunk = document_vectors::pending(&conn, SOURCE_ID, "provider")
+        .expect("pending")
+        .remove(0);
+    let mut vector = vec![0.0; 1024];
+    vector[0] = 1.0;
+    document_vectors::publish(&conn, &chunk, "provider", &vector).expect("publish");
+    let mut unsupported = candidate("notes.txt", &path, DocumentFormat::Txt);
+    unsupported.classification = Classification::Unsupported;
+    let root = fs::canonicalize(tmp.path()).expect("root");
+    assert_eq!(
+        writer::update_file(&mut conn, SOURCE_ID, None, &unsupported, &root, MAX_BYTES)
+            .expect("update"),
+        UpdateOutcome::Unsupported
+    );
+    assert!(
+        documents::get_document(&conn, &document_id)
+            .expect("read")
+            .is_none()
+    );
+    assert!(
+        document_vectors::search(&conn, "provider", &vector, 10)
+            .expect("search")
+            .is_empty()
+    );
+    assert_eq!(fts_count(&conn, &document_id), 0);
+}
+
+#[test]
+fn unchanged_document_relabel_preserves_vector() {
+    use comemory::store::document_vectors;
+    let tmp = TempDir::new().expect("tempdir");
+    let mut conn = open_db(&tmp);
+    let path = write_fixture(&tmp, "notes.txt", b"unchanged document content");
+    let candidate = candidate("notes.txt", &path, DocumentFormat::Txt);
+    let root = fs::canonicalize(tmp.path()).expect("root");
+    let UpdateOutcome::Indexed { document_id } = writer::update_file(
+        &mut conn,
+        SOURCE_ID,
+        Some("old"),
+        &candidate,
+        &root,
+        MAX_BYTES,
+    )
+    .expect("index") else {
+        panic!("indexed")
+    };
+    let chunk = document_vectors::pending(&conn, SOURCE_ID, "provider")
+        .expect("pending")
+        .remove(0);
+    let mut vector = vec![0.0; 1024];
+    vector[0] = 1.0;
+    document_vectors::publish(&conn, &chunk, "provider", &vector).expect("publish");
+    assert_eq!(
+        writer::update_file(
+            &mut conn,
+            SOURCE_ID,
+            Some("new"),
+            &candidate,
+            &root,
+            MAX_BYTES
+        )
+        .expect("relabel"),
+        UpdateOutcome::Unchanged
+    );
+    assert_eq!(
+        documents::get_document(&conn, &document_id)
+            .expect("read")
+            .expect("document")
+            .repo
+            .as_deref(),
+        Some("new")
+    );
+    assert_eq!(
+        document_vectors::search(&conn, "provider", &vector, 5)
+            .expect("search")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn relabel_of_shared_document_journals_old_name_tombstone() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = write_fixture(&tmp, "guide.md", GUIDE_MD);
+    let mut conn = open_db(&tmp);
+    let root = fs::canonicalize(tmp.path()).expect("root");
+    approve(&conn, &root);
+    let UpdateOutcome::Indexed { document_id } = index_shared(&mut conn, &path, "guide.md") else {
+        panic!("indexed")
+    };
+    let old = comemory::store::document_share::by_document(&conn, &document_id)
+        .expect("read")
+        .expect("shared");
+    let c = candidate("guide.md", &path, DocumentFormat::Markdown);
+    writer::update_file(
+        &mut conn,
+        SOURCE_ID,
+        Some("unapproved"),
+        &c,
+        &root,
+        MAX_BYTES,
+    )
+    .expect("relabel");
+    assert!(
+        comemory::store::document_share::by_document(&conn, &document_id)
+            .expect("read")
+            .is_none()
+    );
+    assert_eq!(
+        feed_rows(&conn).last().expect("tombstone"),
+        &(
+            "document_revision".to_string(),
+            old.shared_id,
+            "tombstone".to_string()
+        )
+    );
+}

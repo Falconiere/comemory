@@ -16,7 +16,9 @@ use axum::{Json, Router};
 
 use crate::serve::AppState;
 use crate::serve::routes::RouteEntry;
-use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_ctx};
+use crate::serve::routes::mutate_response::{
+    mutate_blocking, mutate_response, with_ctx, with_independent_ctx,
+};
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -63,8 +65,10 @@ async fn update(
     Json(req): Json<crate::domains::memories::update::Request>,
 ) -> Response {
     let origin = state.http_origin(&headers);
-    mutate_response(state, "memories.update", Some(origin), move |ctx| {
-        crate::domains::memories::update::run(ctx, &id, req)
+    mutate_blocking(state, "memories.update", move |state| {
+        with_independent_ctx(state, origin, |ctx| {
+            crate::domains::memories::update::run(ctx, &id, req)
+        })
     })
     .await
 }

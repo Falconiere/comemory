@@ -121,6 +121,10 @@ pub struct CodeSymbolRow<'a> {
 /// stream) so both paths cannot drift on the purge SQL.
 pub fn purge_file_symbols(conn: &Connection, repo: &str, path: &str) -> Result<()> {
     conn.execute(
+        "DELETE FROM code_vector_provenance WHERE symbol_id IN (SELECT id FROM code_symbols WHERE repo = ?1 AND path = ?2)",
+        rusqlite::params![repo, path],
+    )?;
+    conn.execute(
         "DELETE FROM code_vec WHERE symbol_id IN (\
              SELECT id FROM code_symbols WHERE repo = ?1 AND path = ?2)",
         rusqlite::params![repo, path],

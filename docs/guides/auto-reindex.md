@@ -1,7 +1,10 @@
 # Keep the code index fresh
 
 **Goal:** make `search-code` and `context` return results that reflect your
-latest commits, without re-running `index-code` by hand every time.
+latest commits, without re-running `index-code` by hand every time. For an
+explicit working-tree reconciliation of both documents and code, use
+`comemory run embedding [--path DIR]`; it selects exactly that folder and does
+not require Git. Hooks and lazy reindex remain code-only.
 
 comemory stores code symbols in a SQLite index that is built by
 `comemory index-code`. After you commit, that index can drift behind your

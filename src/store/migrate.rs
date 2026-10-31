@@ -40,7 +40,13 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "33";
+pub const CURRENT_VERSION: &str = "35";
+
+/// Code vector provenance.
+pub const M_V35: &str = include_str!("../../migrations/0035_code_vector_provenance.sql");
+
+/// Document chunk vector storage.
+pub const M_V34: &str = include_str!("../../migrations/0034_document_vectors.sql");
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by

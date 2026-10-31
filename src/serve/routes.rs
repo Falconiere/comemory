@@ -33,6 +33,8 @@ pub mod activity;
 pub mod activity_stream;
 /// `GET|POST /code/search`.
 pub mod code;
+/// Selected-folder embedding jobs.
+pub mod embedding;
 /// `GET|POST /find`.
 pub mod find;
 /// `GET /graph`, `GET /edges`.
@@ -149,6 +151,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(maint::prune::table_entries());
     entries.extend_from_slice(maint::admin::table_entries());
     entries.extend_from_slice(sources::table_entries());
+    entries.extend_from_slice(embedding::table_entries());
     entries.extend_from_slice(stats::table_entries());
     entries.extend_from_slice(repos::table_entries());
     entries.extend_from_slice(find::table_entries());
@@ -189,6 +192,7 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(learning::router(state.clone()))
         .merge(maint::router(state.clone()))
         .merge(sources::router(state.clone()))
+        .merge(embedding::router(state.clone()))
         .merge(stats::router(state.clone()))
         .merge(repos::router(state.clone()))
         .merge(find::router(state.clone()))

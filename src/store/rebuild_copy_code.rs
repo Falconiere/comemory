@@ -20,6 +20,11 @@ use crate::store::{Connection, code_row};
 /// `code_symbols.id` in their data streams.
 pub(crate) fn copy_code_tables_inner(conn: &Connection) -> Result<()> {
     copy_code_index_tables(conn)?;
+    copy_if_present(
+        conn,
+        "code_vector_provenance",
+        "INSERT OR IGNORE INTO main.code_vector_provenance(symbol_id, model) SELECT symbol_id, model FROM old.code_vector_provenance WHERE symbol_id IN (SELECT id FROM main.code_symbols);",
+    )?;
     copy_mined_edges(conn)?;
     copy_code_markers(conn)?;
     copy_code_generations(conn)?;
@@ -176,7 +181,10 @@ fn copy_code_markers(conn: &Connection) -> Result<()> {
         &format!(
             "INSERT OR IGNORE INTO main.schema_meta(key, value) \
              SELECT key, value FROM old.schema_meta \
-              WHERE substr(key, 1, {len}) = '{prefix}';",
+              WHERE substr(key, 1, {len}) = '{prefix}' \
+                 OR key GLOB 'code_source_label:*' \
+                 OR key GLOB 'code_vector_model:*' \
+                 OR key GLOB 'code_vector_generation:*';",
             len = prefix.len(),
         ),
     )?;

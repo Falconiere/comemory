@@ -14,6 +14,7 @@ use super::schema_document_revision::{
     DocumentShare, RemoteDocument, RemoteDocumentChunk, RemoteDocumentFts, RemoteDocumentLink,
 };
 use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFiles, SourceRoots};
+use super::schema_embeddings::{CodeVectorProvenance, DocumentVectorSource, DocumentVectors};
 use super::schema_exchange::{
     ReplicaBinding, ReplicaPullHold, ReplicaReplay, SyncExchange, SyncPolicySnapshot,
 };
@@ -50,9 +51,12 @@ pub const DECLARED_TABLES: &[&str] = &[
     "code_ref",
     "code_symbols",
     "code_vec",
+    "code_vector_provenance",
     "document_chunks",
     "document_fts",
     "document_share",
+    "document_vector_source",
+    "document_vectors",
     "documents",
     "edge_fts",
     "edges",
@@ -136,9 +140,12 @@ pub fn registry() -> SchemaRegistry {
         CodeRef::table_def(),
         CodeSymbols::table_def(),
         CodeVec::table_def(),
+        CodeVectorProvenance::table_def(),
         DocumentChunks::table_def(),
         DocumentFts::table_def(),
         DocumentShare::table_def(),
+        DocumentVectorSource::table_def(),
+        DocumentVectors::table_def(),
         Documents::table_def(),
         EdgeFts::table_def(),
         Edges::table_def(),

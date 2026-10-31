@@ -117,3 +117,35 @@ fn walk_stamps_the_canonical_repo_root_on_repo_marker() {
         .expect("repo_marker.root_path written");
     assert_eq!(root_path, canonical.to_string_lossy());
 }
+
+#[test]
+fn full_reindex_preserves_unchanged_child_vector() {
+    let home = tempdir().expect("tempdir");
+    let workspace = tempdir().expect("workspace");
+    let repo = build_oversized_repo(workspace.path());
+    let mut conn = index_big_repo(home.path(), &repo);
+    let child: i64 = conn
+        .query_row(
+            "SELECT id FROM code_symbols WHERE repo='big' AND parent_id IS NOT NULL LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("chunk child");
+    comemory::store::vector::insert_code(&conn, child, &vec![0.5; 768]).expect("vector");
+    let paths = Paths::new(home.path());
+    let cfg = Config::defaults();
+    crate::domains::code::index_code::run(
+        &mut Ctx::borrowed(&paths, &cfg, &mut conn),
+        crate::domains::code::index_code::Request {
+            repo: "big".into(),
+            path: repo.to_string_lossy().into_owned(),
+            mode: comemory::domains::code::index_code::IndexMode::Full,
+        },
+    )
+    .expect("full reindex");
+    let vectors: i64 = conn.query_row(
+        "SELECT count(*) FROM code_vec v JOIN code_symbols s ON s.id = v.symbol_id WHERE s.repo='big' AND s.parent_id IS NOT NULL",
+        [], |row| row.get(0),
+    ).expect("count child vectors");
+    assert_eq!(vectors, 1);
+}

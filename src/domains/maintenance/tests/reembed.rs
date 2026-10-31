@@ -565,3 +565,47 @@ fn a_reembed_that_replaces_every_vector_adds_no_feed_position_and_no_outbox_row(
         "materialization records no write intent either"
     );
 }
+
+#[test]
+fn cancellation_interrupts_the_running_width_probe_without_writes() {
+    struct CancelAfterStart {
+        marker: std::path::PathBuf,
+        started: std::sync::OnceLock<std::time::Instant>,
+    }
+    impl ProgressSink for CancelAfterStart {
+        fn on_progress(&self, _: u64, _: u64) {}
+        fn on_log(&self, _: &str) {}
+        fn is_cancelled(&self) -> bool {
+            self.marker.exists()
+                && self.started.get_or_init(std::time::Instant::now).elapsed()
+                    > std::time::Duration::from_millis(200)
+        }
+    }
+    let home = TempDir::new().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    seed(&paths, 1);
+    let marker = home.path().join("started");
+    let cmd = write_script(
+        &home,
+        "slow-embed",
+        &format!("touch '{}'; sleep 20", marker.display()),
+    );
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let sink = CancelAfterStart {
+        marker,
+        started: std::sync::OnceLock::new(),
+    };
+    let result = maintenance::reembed::run(
+        &mut ctx,
+        maintenance::reembed::Request::default(),
+        &cmd,
+        Some(&sink),
+    );
+    assert!(matches!(result, Err(comemory::errors::Error::Cancelled)));
+    assert!(
+        sink.started.get().expect("provider started").elapsed() < std::time::Duration::from_secs(3)
+    );
+    assert_eq!(count(&paths, "memory_vec"), 0);
+}

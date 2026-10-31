@@ -17,6 +17,15 @@ use crate::prelude::*;
 use crate::store::edges::{GraphEdgeRow, file_node_prefix};
 use crate::store::remote_code_view::SHARED_EDGES;
 
+/// Remove derived file-to-file edges touching a deleted source file.
+pub(crate) fn delete_file_edges(conn: &Connection, node: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM edges WHERE rel IN ('imports', 'co_changed') AND (src_id = ?1 OR dst_id = ?1)",
+        [node],
+    )?;
+    Ok(())
+}
+
 /// What the window and its count are taken over: the local `edges` table plus
 /// the shared half of the graph.
 ///

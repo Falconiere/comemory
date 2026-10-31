@@ -50,6 +50,7 @@ One line per file, named after its primary item:
 | `find.rs` | `Args` | `comemory find` — one ranked list over memories, code, and documents |
 | `graph.rs` | `Format` | `comemory graph` — the clap surface and the `--format` renderers; the graph itself is built by `domains::graph::query` |
 | `hooks.rs` | `Args` | `comemory hooks` — report and toggle the git reindex hooks individually |
+| `run_embedding.rs` | `Args` | `comemory run embedding` — reconcile documents and code in exactly the selected directory |
 | `index.rs` | `Args` | `comemory index <PATH>...` — register document sources and reconcile them |
 | `index_code.rs` | `Args` | `comemory index-code` — incremental symbol extraction over a git repo |
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |

@@ -22,7 +22,9 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `chunk_embedding.rs` | `reconcile` | Embed missing document chunks for the configured provider, guarding source revisions before publication |
 | `document.rs` | `ExtractedDocument` | Format-neutral extraction models (`DocumentFormat`, `Chunk`, `Block`) and the `document/` declarations |
+| `embedding.rs` | `run` | Selected-folder orchestration over the document and code indexing cores |
 | `index.rs` | `run` | `comemory index`: register one or more roots, then walk, extract and write every candidate |
 | `source.rs` | `SourceId` | Source identity (`SourceKind`, `SourceEntry`) and the `source/` declarations |
 | `sources.rs` | `run` | `comemory sources`: list registered sources, with a skippable reconcile side effect |

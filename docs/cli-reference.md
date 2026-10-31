@@ -49,6 +49,7 @@ Commands:
   index-code      Walk a repo, extract symbols, and upsert into the code index
   ingest-code     Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
   index           Register one or more paths as document sources and reconcile them
+  run             Run an explicit folder reconciliation and embedding operation
   sources         List registered document sources with per-status counts
   stats           Report corpus counters and the size of `comemory.db`
   repos           List indexed code repositories with their index freshness
@@ -955,11 +956,11 @@ Options:
           Emit JSONL on stdout instead of inserting rows. Suitable for piping into an external embedder + `comemory ingest-code`
 
       --mode <MODE>
-          `incremental` (default) re-extracts only files whose blob OID moved since the last run; `full` clears the repo's indexed-file cursor first so every file re-extracts. `full` is lossy: re-extracting a file replaces its symbol rows, which drops the repo's BYO code vectors (`code_vec`) and resets per-symbol access counters — re-run `ingest-code` afterwards to restore the semantic leg
+          `incremental` (default) re-extracts only files whose blob OID moved since the last run; `full` clears the repo's indexed-file cursor first so every file re-extracts. Exact unchanged symbol vectors survive; configured code embedding refreshes managed eligible vectors
 
           Possible values:
           - incremental: Only files changed since the last run
-          - full:        Every file. Lossy: re-extraction replaces each file's symbol rows, which drops the repo's BYO `code_vec` rows and resets its per-symbol access counters — re-run `ingest-code` afterwards to restore the semantic leg
+          - full:        Every file; preserve exact unchanged symbol vectors and repair missing ones
 
           [default: incremental]
 
@@ -970,8 +971,7 @@ Examples:
   # Index the current working directory with explicit repo label
   comemory index-code --repo myrepo --path .
 
-  # Re-extract every file, not just the ones whose blob changed (drops the
-  # repo's BYO code vectors — re-run `comemory ingest-code` afterwards)
+  # Re-extract every file while preserving exact unchanged symbol vectors
   comemory index-code --repo myrepo --path . --mode full
 
   # Emit one JSONL row per symbol on stdout (skips DB writes)
@@ -1027,6 +1027,31 @@ Examples:
 
   # Register two sources in one run, failing loudly on any per-file error
   comemory index ~/notes ~/docs --strict
+```
+
+---
+
+## comemory run
+
+```
+Run an explicit folder reconciliation and embedding operation
+
+Usage: comemory run [OPTIONS] <COMMAND>
+
+Commands:
+  embedding  Reconcile supported documents and code in the selected folder
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  comemory run embedding
+  comemory run embedding --path ~/Documents/notes
+  comemory run embedding --path . --repo myrepo
+  comemory run embedding --mode full
 ```
 
 ---
@@ -1539,7 +1564,7 @@ Options:
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --offset <OFFSET>      Number of leading ranked memories to skip (deep paging of the bundle's memory list). Bounded by `retrieval.max_page_window`. Per- memory code refs are not paginated — each surfaced memory keeps its full ref set [default: 0]
       --repo <REPO>          Optional repo filter forwarded to the router
-      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list. When provided together with `query`, both ANN and lexical branches run and their results are fused via RRF. Without a vector only the lexical FTS5 path runs
+      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list. When provided together with `query`, both ANN and lexical branches run and their results are fused via RRF. If omitted, a configured memory provider embeds the query; without a provider, only lexical FTS5 runs
       --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the context lookup. Mutually exclusive with reading the query from stdin
       --since <WHEN>         Only consider memories created at or after this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day)
       --until <WHEN>         Only consider memories created at or before this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (end of that UTC day). Filters candidates only — the supersede penalty stays present-day

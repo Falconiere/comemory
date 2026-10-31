@@ -6,6 +6,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::Path;
 
 use git2::Repository;
@@ -15,14 +16,13 @@ use crate::domains::code::ast::{self, languages};
 use crate::domains::graph::imports;
 use crate::prelude::*;
 use crate::store::code_row::{self, CodeSymbolRow};
-use crate::store::{Connection, fts, indexed_files};
+use crate::store::{Connection, code_embedding, fts, indexed_files};
 use crate::utilities::progress::ProgressSink;
 use crate::utilities::simhash;
 
 /// Index one walked file into the caller's open transaction, returning
-/// whether it was actually (re)indexed. `false` covers every skip reason:
-/// no language detected, no blob OID (untracked, or a canonicalisation
-/// failure already logged inside [`blob_oid`]), or an already-current OID.
+/// whether it was actually (re)indexed. `None` means unsupported or
+/// untracked; `Some(false)` means the working bytes are already indexed.
 /// Errors abort the whole walk, so the caller's transaction rolls back.
 /// `sink`, when given, gets one [`ProgressSink::on_log`] line (the file's
 /// relative path) for each file actually (re)indexed — not for a skip.
@@ -30,31 +30,38 @@ pub(crate) fn index_file(
     tx: &Connection,
     repo: &str,
     root: &Path,
-    git_repo: &Repository,
+    source: (Option<&Repository>, u64),
     path: &Path,
     imports_by_file: &mut BTreeMap<String, Vec<String>>,
     sink: Option<&dyn ProgressSink>,
-) -> Result<bool> {
+) -> Result<Option<bool>> {
     let Some(lang) = languages::detect(path) else {
-        return Ok(false);
+        return Ok(None);
     };
     let rel = relative(root, path);
-    let Some(oid) = blob_oid(git_repo, path) else {
-        return Ok(false);
+    if let Some(git) = source.0
+        && !tracked_file(git, path)?
+    {
+        return Ok(None);
+    }
+    let Some(snippet) = read_source(path, source.1)? else {
+        return Ok(None);
     };
-    if oid_is_indexed(tx, repo, &rel, &oid) {
-        return Ok(false);
+    let oid = git2::Oid::hash_object(git2::ObjectType::Blob, snippet.as_bytes())?.to_string();
+    if oid_is_indexed(tx, repo, &rel, &oid)? {
+        return Ok(Some(false));
     }
     // Drop any prior `code_symbols`/`code_vec`/`code_fts` rows for this
     // `(repo, path)` before re-inserting so a blob_oid change (file edited)
     // does not leave stale symbol rows behind, and so re-inserts with
     // shifted `line_start` values cannot collide on the
     // `UNIQUE(repo, path, symbol, line_start)` constraint mid-transaction.
+    let saved = code_embedding::capture(tx, repo, &rel)?;
     code_row::purge_file_symbols(tx, repo, &rel)?;
-    let snippet = std::fs::read_to_string(path).map_err(Error::Io)?;
     for s in &ast::extract(lang, &snippet)? {
         write_symbol(tx, repo, &rel, &oid, lang, s)?;
     }
+    code_embedding::restore(tx, repo, &rel, &saved)?;
     // Collect this file's raw imports for the graph post-pass. An empty
     // Vec still matters — it clears the file's stale `imports` edges.
     match imports::extract_imports(lang, &snippet) {
@@ -69,7 +76,31 @@ pub(crate) fn index_file(
     if let Some(sink) = sink {
         sink.on_log(&rel);
     }
-    Ok(true)
+    Ok(Some(true))
+}
+
+fn read_source(path: &Path, max: u64) -> Result<Option<String>> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(max.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max || bytes.contains(&0) {
+        return Ok(None);
+    }
+    Ok(String::from_utf8(bytes).ok())
+}
+
+/// Check Git tracking without treating an unreadable index as an absence.
+pub(super) fn tracked_file(repo: &Repository, path: &Path) -> Result<bool> {
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| Error::Other("Git worktree is unavailable".into()))?
+        .canonicalize()?;
+    let file = path.canonicalize()?;
+    let rel = file
+        .strip_prefix(workdir)
+        .map_err(|_| Error::Forbidden("code file leaves Git worktree".into()))?;
+    Ok(repo.index()?.get_path(rel, 0).is_some())
 }
 
 /// Persist the absolute working-tree root so `comemory serve` can resolve a
@@ -170,13 +201,8 @@ pub(crate) fn simhash_of(text: &str) -> i64 {
 
 /// Returns true when `indexed_files` already records `oid` for
 /// `repo + path` — the working-tree blob hasn't changed since the last run.
-fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> bool {
-    // Any query failure (not just "no such cursor") is treated as
-    // "unindexed", exactly as before this SQL moved to `store::indexed_files`
-    // — a deliberately preserved blanket swallow (AGENTS.md's "blanket .ok()
-    // swallows DB errors" note), not a new one.
-    let row = indexed_files::blob_oid_for(conn, repo, path).ok().flatten();
-    matches!(row, Some(v) if v == oid)
+fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> Result<bool> {
+    Ok(indexed_files::blob_oid_for(conn, repo, path)?.as_deref() == Some(oid))
 }
 
 /// Look up the working-tree blob OID for `file` via the repo index. Files

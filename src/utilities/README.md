@@ -41,7 +41,7 @@ One line per file, named after its primary item:
 | `context.rs` | `Ctx` | The execution context every command core runs against: `Paths` + `Config` plus a borrowed or lazily opened connection, so conn-free commands never touch the database and a job worker gets exactly one connection |
 | `dated_id.rs` | `dated_id` | The shared `<prefix>-<yyyymmdd>-<8hex>` id shape, minted and validated in one place, so the `q-` retrieval query id and the `o-` observation id keep one form |
 | `digest.rs` | `sha256_hex` | SHA-256 hex digests and `is_lower_hex`, the shape check the memory-id and query-id contracts share |
-| `embed.rs` | `embed_query` | The `COMEMORY_EMBED_CMD` shell-out, bounded by `EMBED_TIMEOUT`, parsing the child's JSON payload through `embedding_input` |
+| `embed.rs` | `embed_query` | The `COMEMORY_EMBED_CMD` shell-out, bounded by a 120-second whole-invocation deadline, concurrent pipes, 1 MiB stdout and 4 KiB stderr capture, process-group cleanup, parsing the child's JSON payload through `embedding_input` |
 | `embedding_input.rs` | `parse_payload` | Pure decoding of a `--vector` CSV list and a `{"embedding":[..]}` JSON payload — no process I/O |
 | `error_code.rs` | `classify` | The transport-neutral `Error → (code, Class)` mapping: the code words and classes `serve::envelope::status_and_code` emits today, extracted so `serve` (`Class → StatusCode`) and `mcp` (`Class → tool-level error`, `Internal` excepted) share one exhaustive match; `classify_project` is its nested arm for the twenty-two project codes |
 | `exit_code.rs` | `exit_code` | The sysexits code `main.rs` exits with for a returned `Error` (moved out of `main.rs` so it is testable); a project refusal's code follows its `Class` through `exit_for_class` |

@@ -198,6 +198,18 @@
       "name": "0033_project_transfer.sql",
       "hash": "sha256:962358f16d20bed2f2382e6f67d7e61bb8aed23c833ef1b5aa2d3015377eccd1",
       "created_at": 1790666484
+    },
+    {
+      "idx": 33,
+      "name": "0034_document_vectors.sql",
+      "hash": "sha256:bc8f0b55584f2366cd26b8e7be73ae9c0d995d95b2609e1e37243f70ffd0002b",
+      "created_at": 1793419295
+    },
+    {
+      "idx": 34,
+      "name": "0035_code_vector_provenance.sql",
+      "hash": "sha256:9e641f41e13ad14106ef7129e74f0e17410e2dfc6484e38a8f2fbb19d57c45ee",
+      "created_at": 1793419342
     }
   ]
 }

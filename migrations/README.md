@@ -76,6 +76,9 @@ One line per file:
 | `0031_projects.sql` | v31: the engine's project tables (#325), ported from the platform's project schema — `projects`, `project_repositories`, `project_milestones`, `project_criteria`, `project_work_items`, `project_work_item_dependencies`, `project_executions`, `project_work_packets`, `project_plan_proposals`, `project_approvals`, `project_evidence`, `project_evidence_criteria`, `project_activity_events` and `project_command_receipts`, with the platform's composite `(id, project_id)` foreign keys, cascades and indexes. Additive: creates tables, touches no row |
 | `0032_project_changes.sql` | v32: `project_changes` (#324), the body-free project change feed — one id-only row (`seq`, `project_id`, `event_id`, `entity_type`, `op`, `created_at`) per committed project mutation, written in the mutation's own transaction. No foreign key to `projects`, so a deletion row outlives its project; the `AUTOINCREMENT` `seq` is the reader's cursor. Additive: creates one table, touches no row |
 | `0033_project_transfer.sql` | v33: `project_transfer_bindings` (#342), the engine-only per-project transfer record — direction, remote, effective digest, the actor a remap replaced, and when — cascading with its project. Additive: creates one table, touches no row |
+| `0034_document_vectors.sql` | v34: provider-scoped document chunk vectors with cascading removal |
+| `0035_code_vector_provenance.sql` | v35: provenance for managed code vectors, cascading with their symbols |
+| `0035_code_vector_provenance.snapshot.json` | Declared schema snapshot at v35 for the next generated migration |
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

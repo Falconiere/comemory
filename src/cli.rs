@@ -115,6 +115,8 @@ pub mod rebuild;
 pub mod recall_status;
 /// `comemory repos` — the indexed code-repository inventory.
 pub mod repos;
+/// Explicit selected-folder embedding runs.
+pub mod run_embedding;
 /// `comemory save`: write a memory (markdown + store mirror).
 pub mod save;
 /// `comemory search`: hybrid memory retrieval.
@@ -236,6 +238,8 @@ pub enum Cmd {
     IngestCode(ingest_code::Args),
     /// Register one or more paths as document sources and reconcile them.
     Index(index::Args),
+    /// Run an explicit folder reconciliation and embedding operation.
+    Run(run_embedding::Args),
     /// List registered document sources with per-status counts.
     Sources(sources::Args),
     /// Report corpus counters and the size of `comemory.db`.
@@ -369,6 +373,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
         Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
+        Cmd::Run(a) => run_embedding::run(a, cli.json, cli.data_dir).await,
         Cmd::Sources(a) => sources::run(a, cli.json, cli.data_dir).await,
         Cmd::Stats(a) => stats::run(a, cli.json, cli.data_dir).await,
         Cmd::Repos(a) => repos::run(a, cli.json, cli.data_dir).await,

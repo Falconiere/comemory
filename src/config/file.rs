@@ -322,6 +322,21 @@ pub struct Config {
     /// `comemory doctor`; comemory itself never reads it as a switch.
     #[serde(default)]
     pub embed_hint: Option<String>,
+    /// Command for automatic memory embeddings, loaded from the process environment.
+    #[serde(skip)]
+    pub embed_cmd: Option<String>,
+    /// Command for document embeddings, loaded from the process environment.
+    #[serde(skip)]
+    pub document_embed_cmd: Option<String>,
+    /// Document embedding model identity.
+    #[serde(skip)]
+    pub document_embed_hint: Option<String>,
+    /// Command for code embeddings, loaded from the process environment.
+    #[serde(skip)]
+    pub code_embed_cmd: Option<String>,
+    /// Code embedding model identity.
+    #[serde(skip)]
+    pub code_embed_hint: Option<String>,
     /// Cloud sync knobs — see [`SyncConfig`].
     #[serde(default)]
     pub sync: SyncConfig,
@@ -373,6 +388,11 @@ impl Config {
                 color: "auto".into(),
             },
             embed_hint: None,
+            embed_cmd: None,
+            document_embed_cmd: None,
+            document_embed_hint: None,
+            code_embed_cmd: None,
+            code_embed_hint: None,
             sync: SyncConfig::defaults(),
             embed: EmbedConfig::defaults(),
         }

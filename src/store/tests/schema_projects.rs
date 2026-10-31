@@ -87,11 +87,11 @@ fn schema_projects_fresh_open_reaches_v33_with_every_table() {
             |r| r.get(0),
         )
         .expect("version");
-    assert_eq!(version, "33");
-    assert_eq!(migrate::CURRENT_VERSION, "33");
+    assert_eq!(version, migrate::CURRENT_VERSION);
+    assert_eq!(migrate::CURRENT_VERSION, "35");
     assert_eq!(
         MIGRATIONS.len(),
-        33,
+        35,
         "CURRENT_VERSION agrees with MIGRATIONS.len()"
     );
     for table in PROJECT_TABLES {

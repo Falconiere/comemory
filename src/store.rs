@@ -36,6 +36,8 @@ pub mod candidate_judgments;
 /// `candidate_query_observations` + `candidate_observations` row CRUD: the
 /// persisted candidate observation contract and its retention/purge rules.
 pub mod candidate_observations;
+/// Source-scoped code embedding reads and guarded publication.
+pub(crate) mod code_embedding;
 /// `code_feedback` row CRUD: per-symbol counter table + code-tagged
 /// `feedback_events` inserts.
 pub mod code_feedback;
@@ -46,6 +48,8 @@ pub mod code_generation;
 pub mod code_graph_edges;
 /// `code_symbols` node aggregation behind `comemory graph`'s node assembly.
 pub mod code_graph_nodes;
+/// Public metadata over isolated canonical-root code identities.
+pub mod code_labels;
 /// `code_ref` side table: version-anchor store for explicit code references,
 /// plus the live-symbol-ref scan behind `maintenance::retention::stale_code`.
 pub mod code_ref;
@@ -69,6 +73,8 @@ pub mod document_fts;
 /// `document_share` row CRUD — what a local document is called upstream,
 /// and why it is withheld when it is.
 pub mod document_share;
+/// Document chunk vectors and semantic search.
+pub mod document_vectors;
 /// `documents` + `document_chunks` row CRUD.
 pub mod documents;
 /// FTS5 triplet index over `edges` (rendering + refresh + lexical ladder).
@@ -271,6 +277,8 @@ pub mod schema_core;
 pub mod schema_document_revision;
 /// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod schema_documents;
+/// Schema declarations for embedding vectors and provenance.
+pub mod schema_embeddings;
 /// Declared `replica-v1` exchange-client tables: `sync_exchange`,
 /// `sync_policy_snapshot`, `replica_pull_hold`, `replica_binding`,
 /// `replica_replay`.

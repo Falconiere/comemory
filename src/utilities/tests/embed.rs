@@ -75,3 +75,78 @@ fn command_that_never_reads_stdin_still_yields_vector() {
     let v = embed_query(cmd, &big_query).expect("EPIPE on stdin must be tolerated");
     assert_eq!(v, vec![4.0_f32, 5.0]);
 }
+
+#[test]
+fn deadline_covers_blocked_stdin_and_exit_after_stdout_closes() {
+    for command in ["sleep 20", "exec 1>&-; sleep 20", "sleep 20 & wait"] {
+        let start = Instant::now();
+        let result =
+            embed_query_with_timeout(command, &"x".repeat(2 << 20), Duration::from_millis(200));
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+        assert!(start.elapsed() < Duration::from_secs(3));
+    }
+}
+
+#[test]
+fn output_cap_and_diagnostics_do_not_deadlock() {
+    let error = embed_query("yes x", "input").unwrap_err();
+    assert!(error.to_string().contains("response limit"));
+    let error = embed_query(
+        "head -c 100000 /dev/zero >&2; printf 'provider unavailable' >&2; exit 7",
+        "input",
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("exit"));
+    assert!(error.to_string().len() < 5000);
+    let error = embed_query(
+        "printf 'increase num_ctx and num_batch' >&2; exit 9",
+        "input",
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("num_ctx"));
+}
+
+#[test]
+fn descendant_held_pipes_are_terminated() {
+    let start = Instant::now();
+    let error = embed_query_with_timeout("sleep 20 & exit 0", "input", Duration::from_millis(200))
+        .unwrap_err();
+    assert!(error.to_string().contains("timed out"));
+    assert!(start.elapsed() < Duration::from_secs(3));
+}
+
+#[test]
+fn cancellation_interrupts_a_running_provider() {
+    use comemory::utilities::progress::ProgressSink;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Cancellation(AtomicBool);
+    impl ProgressSink for Cancellation {
+        fn on_progress(&self, _: u64, _: u64) {}
+        fn on_log(&self, _: &str) {}
+        fn is_cancelled(&self) -> bool {
+            self.0.load(Ordering::Relaxed)
+        }
+    }
+    let sink = Cancellation(AtomicBool::new(false));
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(100));
+            sink.0.store(true, Ordering::Relaxed);
+        });
+        let start = Instant::now();
+        let error =
+            comemory::embed::embed_query_cancellable("sleep 20", "input", Some(&sink)).unwrap_err();
+        assert!(matches!(error, comemory::errors::Error::Cancelled));
+        assert!(start.elapsed() < Duration::from_secs(3));
+    });
+}
+
+#[test]
+fn diagnostics_do_not_echo_provider_input() {
+    let input = "This private document must never appear in an embedding error";
+    let error = embed_query("cat >&2; exit 9", input)
+        .unwrap_err()
+        .to_string();
+    assert!(!error.contains(input));
+    assert!(error.contains("<input>"));
+}

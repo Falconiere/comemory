@@ -1,4 +1,4 @@
-//! Per-file index writer: the fast fingerprint check (size+mtime → SHA-256
+//! Per-file index writer: the fingerprint check (size → SHA-256
 //! confirm → extract → one-transaction row replacement) that keeps
 //! `source_files`/`documents`/`document_chunks`/`document_fts` current for
 //! one discovered candidate, plus the tombstone reconciliation that
@@ -12,6 +12,7 @@ use std::path::Path;
 
 use time::OffsetDateTime;
 
+use super::deletions;
 use super::fingerprint::{self, FileStat};
 use super::{DocumentFormat, ExtractedDocument, extract};
 use crate::domains::documents::journal;
@@ -61,8 +62,16 @@ pub fn update_file(
     max_file_bytes: u64,
 ) -> Result<UpdateOutcome> {
     match candidate.classification {
-        Classification::Ignored => Ok(UpdateOutcome::Ignored),
-        Classification::Unsupported => record_unsupported(conn, source_id, candidate),
+        Classification::Ignored => {
+            let relative = candidate.relative_path.to_string_lossy();
+            let file_id = fingerprint::file_id(source_id, &relative);
+            let existing = sources::get_file(conn, &file_id)?;
+            deletions::retire_file(conn, existing.as_ref())?;
+            Ok(UpdateOutcome::Ignored)
+        }
+        Classification::Unsupported => {
+            fingerprint::record_unsupported(conn, source_id, candidate, source_root)
+        }
         Classification::Document(format) => update_document(
             conn,
             source_id,
@@ -73,31 +82,6 @@ pub fn update_file(
             max_file_bytes,
         ),
     }
-}
-
-/// Stat-then-record an unsupported candidate: no extraction, no
-/// `documents` row, just a `source_files` diagnostic row. A stat
-/// failure (the file vanished between discovery and now) writes
-/// nothing and reports [`UpdateOutcome::Error`].
-fn record_unsupported(
-    conn: &Connection,
-    source_id: &str,
-    candidate: &Candidate,
-) -> Result<UpdateOutcome> {
-    let relative_path = candidate.relative_path.to_string_lossy().into_owned();
-    let meta = match fs::metadata(&candidate.absolute_path) {
-        Ok(m) => m,
-        Err(e) => return Ok(UpdateOutcome::Error(format!("stat: {e}"))),
-    };
-    let stat = FileStat {
-        source_id,
-        relative_path: &relative_path,
-        file_id: &fingerprint::file_id(source_id, &relative_path),
-        size: meta.len() as i64,
-        mtime: fingerprint::mtime_nanos(&meta)?,
-    };
-    fingerprint::upsert_stat(conn, &stat, "unsupported", "unsupported", None, None)?;
-    Ok(UpdateOutcome::Unsupported)
 }
 
 /// The fingerprint → SHA-256 confirm → extract → one-transaction write
@@ -126,9 +110,10 @@ fn update_document(
         mtime: fingerprint::mtime_nanos(&meta)?,
     };
     let existing = sources::get_file(conn, stat.file_id)?;
-    if let Some(outcome) =
-        fingerprint::fingerprint_shortcut(conn, &stat, existing.as_ref(), max_file_bytes)?
-    {
+    if stat.size as u64 > max_file_bytes {
+        deletions::retire_file(conn, existing.as_ref())?;
+    }
+    if let Some(outcome) = fingerprint::fingerprint_shortcut(conn, &stat, max_file_bytes)? {
         return Ok(outcome);
     }
     let bytes = match read_within_boundary(&candidate.absolute_path, source_root) {
@@ -140,14 +125,26 @@ fn update_document(
         }
     };
     let hash = fingerprint::content_hash(&bytes);
-    if existing.is_some_and(|r| {
+    if existing.as_ref().is_some_and(|r| {
         r.sha256.as_deref() == Some(hash.as_str())
             && fingerprint::was_successfully_processed(&r.status)
     }) {
-        sources::touch_file(conn, stat.file_id, stat.size, stat.mtime, &iso_now()?)?;
+        super::relabel::apply(conn, &stat, source_root, repo, format, &bytes, &hash)?;
+        touch_changed_stat(conn, &stat, existing.as_ref())?;
         return Ok(UpdateOutcome::Unchanged);
     }
     extract_and_write(conn, repo, &stat, source_root, format, &bytes, &hash)
+}
+
+fn touch_changed_stat(
+    conn: &Connection,
+    stat: &FileStat<'_>,
+    existing: Option<&sources::SourceFileRow>,
+) -> Result<()> {
+    if existing.is_some_and(|r| r.size != stat.size || r.mtime != stat.mtime) {
+        sources::touch_file(conn, stat.file_id, stat.size, stat.mtime, &iso_now()?)?;
+    }
+    Ok(())
 }
 
 /// Re-resolve `absolute_path` and read it only if the resolved target

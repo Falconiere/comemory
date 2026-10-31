@@ -15,6 +15,26 @@ use crate::store::retrieval_log::{self, NewLogRow};
 use crate::store::{memory_row, memory_signals};
 use crate::utilities::pagination::PageWindow;
 
+/// Embed an ordinary memory query only when no vector was supplied.
+pub(crate) fn query_embedding(
+    cfg: &Config,
+    query: &str,
+    supplied: bool,
+) -> Result<Option<Vec<f32>>> {
+    if supplied {
+        return Ok(None);
+    }
+    cfg.embed_cmd
+        .as_deref()
+        .map(|cmd| {
+            let vector = crate::utilities::embed::embed_query(cmd, query)?;
+            crate::store::embed::guard_dim(&vector, cfg.retrieval.memory_vector_dim)?;
+            Ok::<_, Error>(vector)
+        })
+        .transpose()
+        .map_err(|error| Error::Config(format!("automatic memory embedding failed: {error}; check COMEMORY_EMBED_CMD and the provider model/context settings")))
+}
+
 /// Caller-facing knobs for one pipeline run.
 #[derive(Debug, Clone, Copy)]
 pub struct SearchOptions {

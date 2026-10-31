@@ -22,6 +22,7 @@ One line per file, named after its primary item:
 | `extract.rs` | `extract` | Format dispatch plus the TXT/Markdown extractors |
 | `fingerprint.rs` | `FileStat` | Per-candidate fingerprint bundle, size+mtime skip check, SHA-256 identity hashing |
 | `html.rs` | `extract` | HTML/XHTML extraction via the `tl` crate (recursive DOM walk) |
+| `relabel.rs` | `apply` | Update an unchanged document's repository and replication identity without replacing its chunks |
 | `writer.rs` | `UpdateOutcome` | Per-file index writer: fingerprint skip, extraction, one-transaction row replacement |
 
 When you add a file here, add its row above so the index stays current. No

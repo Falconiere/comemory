@@ -51,9 +51,14 @@ impl McpHome {
     /// running in `cwd` — which is what the session's default repo scope is
     /// derived from.
     pub async fn spawn(cwd: &Path, extra_args: &[&str]) -> Self {
+        Self::spawn_with_env(cwd, extra_args, &[]).await
+    }
+
+    /// Spawn a session with explicit child environment overrides.
+    pub async fn spawn_with_env(cwd: &Path, extra_args: &[&str], envs: &[(&str, &str)]) -> Self {
         let root = TempDir::new().expect("tempdir");
         let data_dir = root.path().join(".comemory");
-        let client = connect(&data_dir, cwd, extra_args).await;
+        let client = connect(&data_dir, cwd, extra_args, envs).await;
         Self {
             root: Some(root),
             data_dir,
@@ -68,7 +73,7 @@ impl McpHome {
         Self {
             root: None,
             data_dir: self.data_dir.clone(),
-            client: connect(&self.data_dir, cwd, extra_args).await,
+            client: connect(&self.data_dir, cwd, extra_args, &[]).await,
         }
     }
 
@@ -78,7 +83,7 @@ impl McpHome {
         Self {
             root: None,
             data_dir: data_dir.to_path_buf(),
-            client: connect(data_dir, cwd, extra_args).await,
+            client: connect(data_dir, cwd, extra_args, &[]).await,
         }
     }
 
@@ -171,12 +176,16 @@ async fn connect(
     data_dir: &Path,
     cwd: &Path,
     extra_args: &[&str],
+    envs: &[(&str, &str)],
 ) -> RunningService<RoleClient, ()> {
     let mut cmd = tokio::process::Command::new(cargo_bin("comemory"));
     cmd.arg("mcp")
         .args(extra_args)
         .env("COMEMORY_DATA_DIR", data_dir)
         .current_dir(cwd);
+    for (name, value) in envs {
+        cmd.env(name, value);
+    }
     // stderr is inherited (rmcp's builder default), so a server that dies
     // during startup prints its reason into the test output instead of
     // failing as a silent EOF.

@@ -7,7 +7,6 @@
 //! forward-compat read-only fallback (see the parent module doc).
 
 use crate::config::Paths;
-use crate::config::env::env_parse;
 use crate::domains::memories::MemoryStore;
 use crate::domains::sync::daemon::status_view::{self, State};
 use crate::prelude::*;
@@ -130,7 +129,12 @@ impl Extras {
 
 /// Run every doctor probe against `conn`, returning the ordered [`Check`]
 /// list plus every scalar they derive.
-pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) -> Result<Extras> {
+pub(crate) fn run_all(
+    conn: &Connection,
+    paths: &Paths,
+    schema_version: &str,
+    embed_cmd: Option<&str>,
+) -> Result<Extras> {
     let mut checks = Vec::with_capacity(10);
     checks.push(data_dir_writable(true));
 
@@ -156,7 +160,7 @@ pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) ->
     checks.push(repo_check);
 
     let (embed_cmd, embed_probe_ms) =
-        push_embed_and_counts(conn, paths, markdown_files, &mut checks)?;
+        push_embed_and_counts(conn, paths, markdown_files, &mut checks, embed_cmd)?;
 
     checks.push(super::checks_vector::needs_embedding_check(conn)?);
     checks.push(sync_daemon_check(paths));
@@ -189,13 +193,13 @@ fn push_embed_and_counts(
     paths: &Paths,
     markdown_files: u64,
     checks: &mut Vec<Check>,
+    embed_cmd: Option<&str>,
 ) -> Result<(Option<String>, Option<u64>)> {
-    let embed_cmd = env_parse::<String>("COMEMORY_EMBED_CMD")?;
-    let (embed_check, embed_probe_ms) = super::checks_vector::embed_probe(embed_cmd.as_deref());
+    let (embed_check, embed_probe_ms) = super::checks_vector::embed_probe(embed_cmd);
     checks.push(embed_check);
     checks.push(markdown_db_counts(conn, markdown_files)?);
     checks.push(data_dir_layout(paths));
-    Ok((embed_cmd, embed_probe_ms))
+    Ok((embed_cmd.map(|_| "configured".to_string()), embed_probe_ms))
 }
 
 /// `comemory.db`'s file size in bytes, or `0` if it vanished between the

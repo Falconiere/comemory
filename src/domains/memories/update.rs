@@ -12,8 +12,8 @@
 //! *and* anchors — byte-for-byte through [`save::Verbatim`], never
 //! re-qualified against the server process's cwd; only `supersedes` is
 //! replaced, by the old id. It does NOT take the old `memory_vec` row:
-//! vectors are BYO, so the new id starts lexical-only until re-embedded
-//! (`POST /doctor/reembed`, or a `POST /memories` carrying `vector`).
+//! the successor is embedded with the configured provider, or remains
+//! lexical-only until explicitly re-embedded if none is configured or it fails.
 
 use std::time::Instant;
 
@@ -70,6 +70,9 @@ pub struct Response {
     /// Names of the fields this patch actually changed (`kind`, `repo`,
     /// `tags`, `quality`, `body`). Empty for a no-op patch.
     pub changed: Vec<&'static str>,
+    /// Warnings from saving a changed body.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// The patchable fields that feed neither derived artifact, so an in-place
@@ -182,6 +185,7 @@ fn resave(ctx: &mut Ctx<'_>, old: &MemoryRecord, req: &Request, body: String) ->
         derived_stale: false,
         superseded: Some(fm.id.clone()),
         changed,
+        warnings: saved.warnings,
     })
 }
 
@@ -206,6 +210,7 @@ fn patch_in_place(
             derived_stale: false,
             superseded: None,
             changed,
+            warnings: Vec::new(),
         });
     }
     apply(&mut record.frontmatter, req);
@@ -233,6 +238,7 @@ fn patch_in_place(
         derived_stale,
         superseded: None,
         changed,
+        warnings: Vec::new(),
     })
 }
 

@@ -1,17 +1,21 @@
-//! Per-candidate fingerprint bundle, the size+mtime skip check, SHA-256
+//! Per-candidate fingerprint bundle, the size check, SHA-256
 //! identity hashing, and the `source_files` fingerprint upsert — the
 //! fast-path plumbing [`crate::domains::documents::document::writer`] calls before (and
 //! instead of) running a full extraction.
 
 use std::fs;
+use std::io::Read as _;
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use sha2::{Digest, Sha256};
 
+use super::deletions;
 use super::writer::UpdateOutcome;
+use crate::domains::documents::source::discover::Candidate;
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::sources::{self, SourceFileRow, SourceFileUpsert};
+use crate::store::sources::{self, SourceFileUpsert};
 
 /// Common identity + freshly-taken fingerprint for one candidate,
 /// bundled so the write-path helpers in [`crate::domains::documents::document::writer`]
@@ -24,24 +28,12 @@ pub(super) struct FileStat<'a> {
     pub(super) mtime: i64,
 }
 
-/// Fast pre-read checks: exact-fingerprint skip, then the size ceiling.
-/// `Ok(None)` means "proceed to read + hash the content". The exact-match
-/// skip only fires when `existing.status` was a successfully-processed
-/// outcome last run ([`was_successfully_processed`]) — a fingerprint
-/// match on a row still carrying `error`/`too_large` must re-attempt
-/// instead, else a persistent per-file failure would report `Unchanged`
-/// forever and `--strict` would never see it again after its first run.
+/// Apply the size ceiling before reading and hashing content.
 pub(super) fn fingerprint_shortcut(
     conn: &Connection,
     stat: &FileStat<'_>,
-    existing: Option<&SourceFileRow>,
     max_file_bytes: u64,
 ) -> Result<Option<UpdateOutcome>> {
-    if existing.is_some_and(|r| {
-        r.size == stat.size && r.mtime == stat.mtime && was_successfully_processed(&r.status)
-    }) {
-        return Ok(Some(UpdateOutcome::Unchanged));
-    }
     if stat.size as u64 > max_file_bytes {
         upsert_stat(conn, stat, "document", "too_large", None, None)?;
         return Ok(Some(UpdateOutcome::TooLarge));
@@ -50,9 +42,8 @@ pub(super) fn fingerprint_shortcut(
 }
 
 /// Whether `status` reflects a candidate that was fully, successfully
-/// processed last run — the only statuses the fingerprint fast paths
-/// (this module's exact-match skip, and `writer::update_document`'s
-/// content-hash skip) may report as [`UpdateOutcome::Unchanged`] without
+/// processed last run — the only statuses the content-hash comparison
+/// may report as [`UpdateOutcome::Unchanged`] without
 /// re-attempting. Any other status (`error`, `too_large`, `pending`,
 /// `stale`) must fall through and re-attempt: a fingerprint match alone
 /// doesn't mean today's outcome would still be a failure — permissions
@@ -108,7 +99,7 @@ pub(super) fn mtime_nanos(meta: &fs::Metadata) -> Result<i64> {
 /// Full 64-hex-char SHA-256 of `bytes` — the writer's SHA-256 confirm
 /// step, and the value stored as both `source_files.sha256` and
 /// `documents.revision_hash`.
-pub(super) fn content_hash(bytes: &[u8]) -> String {
+pub(crate) fn content_hash(bytes: &[u8]) -> String {
     hex_of(&Sha256::digest(bytes))
 }
 
@@ -146,6 +137,43 @@ fn hex_of(bytes: &[u8]) -> String {
         let _ = write!(hex, "{byte:02x}");
     }
     hex
+}
+
+/// Stat-then-record an unsupported candidate: no extraction, no
+/// `documents` row, just a `source_files` diagnostic row. A stat
+/// failure (the file vanished between discovery and now) writes
+/// nothing and reports [`UpdateOutcome::Error`].
+pub(super) fn record_unsupported(
+    conn: &mut Connection,
+    source_id: &str,
+    candidate: &Candidate,
+    source_root: &Path,
+) -> Result<UpdateOutcome> {
+    let relative_path = candidate.relative_path.to_string_lossy().into_owned();
+    let meta = match fs::metadata(&candidate.absolute_path) {
+        Ok(m) => m,
+        Err(e) => return Ok(UpdateOutcome::Error(format!("stat: {e}"))),
+    };
+    let readable = fs::canonicalize(&candidate.absolute_path).and_then(|path| {
+        if !path.starts_with(source_root) {
+            return Err(std::io::Error::other("source boundary escaped"));
+        }
+        fs::File::open(path).and_then(|mut f| f.read(&mut [0_u8; 1]))
+    });
+    if let Err(e) = readable {
+        return Ok(UpdateOutcome::Error(format!("read: {e}")));
+    }
+    let stat = FileStat {
+        source_id,
+        relative_path: &relative_path,
+        file_id: &file_id(source_id, &relative_path),
+        size: meta.len() as i64,
+        mtime: mtime_nanos(&meta)?,
+    };
+    let existing = sources::get_file(conn, stat.file_id)?;
+    deletions::retire_file(conn, existing.as_ref())?;
+    upsert_stat(conn, &stat, "unsupported", "unsupported", None, None)?;
+    Ok(UpdateOutcome::Unsupported)
 }
 
 #[cfg(test)]

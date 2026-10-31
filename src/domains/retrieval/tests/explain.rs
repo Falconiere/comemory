@@ -200,7 +200,10 @@ fn code_strip_reports_its_own_four_priors_and_partitions_them() {
 
 #[test]
 fn a_document_hit_reports_its_bm25_position_and_no_priors() {
-    let strip = parts_of(&HitParts::Document(DocParts { bm25_rank: 3 }));
+    let strip = parts_of(&HitParts::Document(DocParts {
+        bm25_rank: 3,
+        ann: None,
+    }));
 
     assert_eq!(names(&strip), vec!["bm25_rank".to_string()]);
     assert_eq!(strip[0].value, 3.0);

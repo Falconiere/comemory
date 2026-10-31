@@ -7,7 +7,7 @@
 //! Two invariants make it a facts read rather than a second doctor:
 //!
 //! 1. **It never runs the embed command** (AC-15). `embed_cmd` is reported
-//!    verbatim as the string the caller hands in — the server's own
+//!    as configured or absent — the server's own
 //!    configured command (`serve --embed-cmd` / `COMEMORY_EMBED_CMD`, the one
 //!    `POST /doctor/reembed` and `/health` answer for), never a second read
 //!    of the process env that could disagree with it; nothing spawns it. A
@@ -52,8 +52,7 @@ pub struct System {
     pub backup_path: Option<String>,
     /// That snapshot's size in bytes.
     pub backup_bytes: Option<u64>,
-    /// The server's configured embed command (`serve --embed-cmd` /
-    /// `COMEMORY_EMBED_CMD`), reported but NEVER run.
+    /// `configured` when the server has an embed command; its contents are redacted.
     pub embed_cmd: Option<String>,
     /// The operator's free-form embedder identifier (`embed_hint`).
     pub embed_hint: Option<String>,
@@ -81,7 +80,7 @@ pub fn run(ctx: &mut Ctx<'_>, embed_cmd: Option<&str>) -> Result<System> {
         trash_files: count_files(&paths.trash_dir(), None),
         backup_path,
         backup_bytes,
-        embed_cmd: embed_cmd.map(str::to_string),
+        embed_cmd: embed_cmd.map(|_| "configured".to_string()),
         embed_hint: ctx.cfg.embed_hint.clone(),
         memory_vec_dim: ctx.cfg.retrieval.memory_vector_dim,
         code_vec_dim: ctx.cfg.retrieval.code_vector_dim,

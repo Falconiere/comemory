@@ -10,9 +10,13 @@
 //!
 //! All SQL stays in `store`; this capability calls it and never writes its own.
 
+/// Document chunk embedding lifecycle and provider identity.
+pub mod chunk_embedding;
 /// Pure in-process extraction (TXT/Markdown/HTML/CSV), chunking, and the
 /// per-file index writer.
 pub mod document;
+/// Selected-folder document and code reconciliation.
+pub mod embedding;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
 /// The `replica-v1` feed positions a document mutation owes. Crate-visible

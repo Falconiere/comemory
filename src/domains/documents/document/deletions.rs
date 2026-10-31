@@ -66,3 +66,14 @@ fn tombstone(conn: &mut Connection, row: &SourceFileRow) -> Result<()> {
     tx.commit()?;
     Ok(())
 }
+
+/// Retire a previously indexed file that is now ineligible for extraction.
+pub(super) fn retire_file(conn: &mut Connection, row: Option<&SourceFileRow>) -> Result<()> {
+    if let Some(row) = row {
+        let document_id = fingerprint::document_id_of(&row.id);
+        if documents::get_document(conn, &document_id)?.is_some() {
+            tombstone(conn, row)?;
+        }
+    }
+    Ok(())
+}

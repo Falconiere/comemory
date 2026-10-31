@@ -145,9 +145,10 @@ comemory rebuild
 with the re-materialized `relations`, `references`, and edges. What markdown
 cannot supply — the code index, the document index, the mined code-graph edges,
 and the learning-loop counters — is copied across from the previous database, and
-`source_roots` is reconciled from `sources.toml`. Memory **vectors are not
-repopulated**: the BYO-vector contract means re-embedding is the caller's job
-(see the [BYO-vectors guide](byo-vectors.md)).
+`source_roots` is reconciled from `sources.toml`. Code and document vectors are
+copied too. Memory **vectors are not repopulated**: use explicit re-embedding
+or re-save with a provider or vector
+(see the [embedding guide](byo-vectors.md)).
 
 Before it swaps the new database into place, `rebuild` snapshots the live one to
 `comemory.db.pre-rebuild.bak`, so a rebuild that turns out wrong is recoverable.
