@@ -7,7 +7,7 @@
 # Uncommitted work never reaches the clone.
 #
 # Usage: bash scripts/test-deploy.sh [case...]
-#   args preflight bump formula push skill toolchain   offline (the default set);
+#   args preflight bump formula notes push skill toolchain   offline (the default set);
 #               bump and push run the real release-plz (~90 s a run), the rest are fast
 #   rehearsal   real three-target build through `--dry-run` (Docker, slow)
 #   smoke       installs the already-published v0.57.1 release (network)
@@ -154,6 +154,19 @@ case_formula() {
   if in_lib "$ROOT" "deploy_rewrite_formula '$FIXTURE' 0.58.0 /dev/null" >/dev/null 2>&1; then
     fail "rewrite accepted a sum file without checksums"
   fi
+}
+
+case_notes() {
+  local ver out="$WORK/notes.md" err="$WORK/notes.err"
+  for ver in "$(version_of "$ROOT")" 0.0.0; do
+    (cd "$ROOT" && bash scripts/curate-release-notes.sh "$ver") >"$out" 2>"$err" \
+      || fail "notes extraction failed for $ver"
+    grep -qF "## [$ver]" "$out" || fail "notes lack the $ver heading"
+    if grep -qF '[curate-release-notes]' "$out"; then
+      fail "diagnostics leaked into the release body for $ver"
+    fi
+    grep -qF '[curate-release-notes]' "$err" || fail "notes diagnostics missing from stderr"
+  done
 }
 
 case_push() {
@@ -346,7 +359,7 @@ case_rehearsal() {
 }
 
 cases=("$@")
-[[ ${#cases[@]} -gt 0 ]] || cases=(args preflight bump formula push skill toolchain)
+[[ ${#cases[@]} -gt 0 ]] || cases=(args preflight bump formula notes push skill toolchain)
 for CASE in "${cases[@]}"; do
   declare -F "case_$CASE" >/dev/null || fail "unknown case"
   "case_$CASE"

@@ -9,6 +9,7 @@
 # Output: the markdown body of the matching `## [<version>]` section, with
 # the heading line included, on stdout. If no matching section is found,
 # a friendly fallback (with the GitHub compare URL) is emitted instead.
+# Diagnostics go to stderr so they cannot enter the GitHub Release body.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
@@ -46,7 +47,7 @@ section="$(printf '%s\n' "$section" | awk '
 
 if [[ -n "$section" ]]; then
   printf '%s\n' "$section"
-  log_ok "$step" "extracted section for $ver"
+  log_ok "$step" "extracted section for $ver" >&2
   exit 0
 fi
 
@@ -71,4 +72,4 @@ See the commit log for the full set of changes since the previous release:
 <https://github.com/Falconiere/comemory/compare/${prev_arg}>
 FALLBACK
 
-log_info "$step" "no CHANGELOG.md section for $ver; emitted fallback"
+log_info "$step" "no CHANGELOG.md section for $ver; emitted fallback" >&2
