@@ -157,8 +157,9 @@ id = 8-hex SHA-256 prefix, idempotent replay with `created: false`,
 `409 id_collision` on same-id/different-body, advisory SimHash near-dup) is
 specified in `docs/guides/http-api.md` § Save contract and
 `docs/architecture.md`. Headlines: markdown is source of truth (kept when the
-SQLite mirror fails — run `comemory rebuild`); vectors are BYO (`--vector` /
-`--vector-stdin`, else lexical-only); `serve` never pushes outward, `cli`
+SQLite mirror fails — run `comemory rebuild`); explicit vectors (`--vector` /
+`--vector-stdin`) take precedence over configured automatic memory embeddings;
+without either, search is lexical-only. `serve` never pushes outward; `cli`
 pushes inline best-effort after local writes.
 
 ## Testing

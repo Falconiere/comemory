@@ -72,8 +72,8 @@ pub struct Args {
     pub repo: Option<String>,
     /// Caller-supplied dense vector as a comma-separated float list. When
     /// provided together with `query`, both ANN and lexical branches run and
-    /// their results are fused via RRF. Without a vector only the lexical
-    /// FTS5 path runs.
+    /// their results are fused via RRF. If omitted, a configured memory
+    /// provider embeds the query; without a provider, only lexical FTS5 runs.
     #[arg(long)]
     pub vector: Option<String>,
     /// Read a JSON `{ "embedding": [..] }` payload from stdin and use it as

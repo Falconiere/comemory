@@ -281,15 +281,16 @@ filenames, `edges`, `code_ref`, `sync_log` and every downstream back-link
 carry the 8-hex form. `comemory rebuild` walks markdown last-wins and does
 not re-run this check (an accepted gap).
 
-The two `*_vec` tables hold caller-supplied vectors. `comemory` never
-embeds locally; pass vectors via `--vector` / `--vector-stdin` (see the
-"BYO-Vector workflow" section in the README). The dims (1024 for
+The vector tables hold explicit or provider-generated vectors. Configure
+embedding commands or pass vectors via `--vector` / `--vector-stdin` (see the
+[embedding guide](guides/byo-vectors.md)). The dims (1024 for
 `memory_vec`, 768 for `code_vec`) are baked into the vec0 DDL in
 `migrations/0002_v2_tables.sql` (and declared once more by the
 `#[vec0_table]` structs in `src/store/schema_memory.rs` /
 `schema_code.rs`) and are not env-configurable.
-`COMEMORY_EMBED_HINT` records (and surfaces in `comemory doctor`) the
-identifier of the embedder you used.
+Document vectors also have 1024 dimensions. Provider command and hint select
+compatible document and managed code vector generations; the memory hint is
+reported by `comemory doctor` but does not establish model compatibility.
 
 The `edges` table is a flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)`
 schema (plus an integer `weight`) that replaces the v0.1 kuzu graph for the
@@ -298,9 +299,14 @@ set of edges we actually use (`Supersedes`, `ConflictsWith`, `RelatesTo`,
 `Tagged`, and the mined code-graph kinds `CoChanged` + `Imports`).
 Multi-hop traversals use SQLite recursive CTEs.
 
+Document chunks can also carry 1024-dimensional provider-scoped vectors.
+Unified `find` fuses document lexical matches and compatible semantic neighbors;
+explicit query vectors select the compatible memory or code leg instead.
+
 ## 5. Retrieval pipeline
 
-The pipeline runs entirely in Rust. No LLM calls.
+Retrieval runs in Rust with no in-process LLM. A configured query-embedding
+command runs externally before the relevant semantic retrieval leg.
 
 ```
 search("postgres migration race")
@@ -538,7 +544,8 @@ comemory save "..." --kind=decision [--vector ... | --vector-stdin]
      Error::IdCollision, nothing written, no DB touched. A matching prior
      contributes its `created` (so a replay never re-stamps the markdown)
      and makes the response `created: false`.
-  2a. Validate vector dim (if supplied) against schema_meta — fails fast.
+  2a. Use an explicit vector, or invoke the configured memory provider;
+      validate its dimension. Provider failure is returned as a warning.
   2b. Near-duplicate check (best-effort): scan live memories rows via SimHash
       Hamming distance. If a near-dup is found, record duplicate_of id.
       TTY: stderr warning. JSON: duplicate_of field. Save always proceeds.
@@ -548,7 +555,7 @@ comemory save "..." --kind=decision [--vector ... | --vector-stdin]
   4. SQLite upsert (inside one transaction):
        - memories row (+ simhash column)
        - memory_fts row
-       - memory_vec row (only if a vector was supplied)
+       - memory_vec row (only if a vector was supplied or generated)
        - edges from the links memories::mirror derived before the write
          (ReferencesFile / ReferencesSymbol / ReferencesDocument)
   5. git add + commit + push (best-effort, only when COMEMORY_GIT_AUTO_SYNC is on).
@@ -573,18 +580,18 @@ everything else already in `comemory.db` (§3.2, §7).
 ```
 comemory index-code --repo myrepo --path .
   1. Walk the working tree (respecting .gitignore) and group files by language.
-  2. For each path, look up the git blob OID. If repo_marker says we already
-     ingested that blob, skip.
+  2. Hash each file's actual bytes; skip unchanged indexed content.
   3. ast-grep extracts symbols (rust/ts/js/py/go only — see Cargo features).
      Oversized symbols are split into child chunk rows at AST boundaries
      (cAST); chunks point at their parent via code_symbols.parent_id.
-  4. Upsert code_symbols + code_fts rows in one transaction per file.
+  4. Upsert code_symbols + code_fts rows in the scan transaction; reconcile
+     missing files, stamp the index cursor, and commit.
   5. Mine the code graph: co_changed edges from git history (windowed, with
      a mega-commit guard and a last_mined_commit cursor) and imports edges
      from per-language import resolution.
   6. Run weighted PageRank over the graph and materialize the score into
      code_symbols.rank_score (read by search-code / context reranking).
-  7. Update repo_marker.last_head = git rev-parse HEAD.
+  7. After the graph post-pass, embed eligible symbols outside the transaction.
 
 comemory ingest-code  (BYO embedder)
   • Reads JSONL rows from stdin of the shape
@@ -593,12 +600,11 @@ comemory ingest-code  (BYO embedder)
     code_symbols / code_fts rows.
 ```
 
-**Deleted-files gap (known limitation):** `index-code` only walks files
-that exist in the working tree, so symbols, `indexed_files` cursors, and
-`co_changed`/`imports` edges for files *deleted* from a repo persist in
-the index until a future stale-code prune lands (an M4 candidate — see
-`src/domains/maintenance/retention/stale_code.rs`). Until then, deleted files keep their PageRank
-mass and can still surface in `search-code` results.
+For a selected folder, `comemory run embedding` reconciles supported documents
+and code without widening the root through Git discovery. Incremental runs
+retain compatible unchanged vectors; full runs refresh configured embeddings.
+A completed code scan removes missing files and their indexed symbols and edges.
+See the [embedding guide](guides/byo-vectors.md) for failure and retry behavior.
 
 ### 7.1 Auto-reinforcement reward
 

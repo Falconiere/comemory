@@ -1,12 +1,11 @@
 # Bring your own vectors
 
-**Goal:** add dense/semantic retrieval to comemory by supplying your own
-embeddings — comemory ships no embedder, so you choose the model and feed it
-the vectors.
+**Goal:** add dense/semantic retrieval with a configured embedding provider or
+explicit vectors. comemory ships no model, so you choose and run the embedder.
 
 comemory works out of the box with lexical FTS5 search; no vector is required.
-Without a configured provider, a save without a vector is **lexical-only** — no `memory_vec` row is written,
-and `comemory search` still finds it through FTS5. Supplying a vector adds the
+Without a configured provider, a save without a vector is **lexical-only** —
+no `memory_vec` row is written, and `comemory search` still finds it through FTS5. Supplying a vector adds the
 dense leg that gets fused with the lexical one.
 
 ## Configure automatic memory embeddings
@@ -20,12 +19,31 @@ MCP host after changing its environment: an export in a terminal does not
 configure a GUI host already running. Configure the host's process environment
 without placing credentials in shared instructions.
 
+For example, point the command at your own executable that accepts text on
+stdin and emits the JSON payload described above, then use normal commands:
+
+```bash
+export COMEMORY_EMBED_CMD=/path/to/text-to-vector-command
+# Optional separate providers, with model identity labels:
+export COMEMORY_DOCUMENT_EMBED_CMD=/path/to/document-vector-command
+export COMEMORY_DOCUMENT_EMBED_HINT=my-document-model
+export COMEMORY_CODE_EMBED_CMD=/path/to/code-vector-command
+export COMEMORY_CODE_EMBED_HINT=my-code-model
+comemory save "Use Postgres for analytics" --kind decision
+comemory search "analytics database"
+comemory run embedding --path .
+comemory find "analytics" --domain document
+```
+
+Memory and document providers must emit 1024 values; the code provider must
+emit 768. These paths are examples; supply your own compatible executables.
+
 A failed automatic save embedding returns a warning while retaining the
 markdown and lexical mirror; retry the same save after fixing the provider to
 repair its vector. A failed query embedding returns an error. Doctor reports
 whether the command is configured and whether a probe worked; the probe checks
-width, not model compatibility. The provider gets a bounded execution time;
-for long documents configure the provider's context and batch limits rather
+width, not model compatibility. Each provider invocation has a 120-second
+deadline; for long documents configure the provider's context and batch limits rather
 than truncating content. Existing memories are not backfilled on startup,
 import, restore, or rebuild. Use the explicit `POST /api/v1/doctor/reembed`
 operation to backfill them.
@@ -92,24 +110,26 @@ The same `--vector` / `--vector-stdin` flags work for `comemory search-code` and
 
 ## Dimensions
 
-Vector dimensions are **fixed** and baked into the `vec0` DDL at migration time —
-they are not env-configurable:
+Vector dimensions are **fixed** and are not env-configurable. Memory and code
+dimensions are baked into `vec0` DDL at migration time:
 
 - Memory vectors: **1024** dimensions (`memory_vec`).
+- Document vectors: **1024** dimensions (`document_vectors`).
 - Code vectors: **768** dimensions (`code_vec`).
 
 Always embed with a model whose output dimension matches. A wrong-length vector
 fails fast with `VecDimMismatch` (a dim guard checks the vector against
-`schema_meta` at first insert) rather than corrupting the index. To use a model
-with a different output dimension, change the literal in the DDL — see
+`schema_meta` at first insert) rather than corrupting the index. Models must emit the dimension required for their domain; changing it requires
+coordinated schema and implementation changes. See
 [architecture](../architecture.md).
 
 ## Recording which embedder
 
-Set `COMEMORY_EMBED_HINT` to a free-form label of the embedder you used, e.g.:
+Set `COMEMORY_EMBED_HINT` to a free-form label of your 1024-dimensional memory
+embedder, e.g.:
 
 ```bash
-export COMEMORY_EMBED_HINT="ollama:nomic-embed-text"
+export COMEMORY_EMBED_HINT="my-1024-dimensional-memory-model"
 ```
 
 It is surfaced by `comemory doctor` so you can confirm which model produced the
@@ -128,8 +148,9 @@ comemory rebuild
 `rebuild` rebuilds `comemory.db` from `memories/*.md` (snapshotting the old one
 to `comemory.db.pre-rebuild.bak` first), so no saved memory is lost. Note that
 memory **vectors are not restored** — `memory_vec` is deliberately left empty,
-because re-embedding means re-running your embedder. Re-save with `--vector` /
-`--vector-stdin` to repopulate them; the lexical path works in the meantime.
+because re-embedding means re-running your embedder. Re-save with an explicit
+vector or configured provider, or run the explicit re-embedding operation to repopulate them; lexical search works in the meantime.
+Code and document vectors are copied from the previous database.
 
 ## See also
 

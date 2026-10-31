@@ -53,7 +53,7 @@ _None._ `--repo` and `--path` are required flags.
 - **Setup:** indexed repo, then a `code_vec` row for one symbol
 - **Command:** `comemory index-code --repo r --path /path/to/repo --mode full`
 - **Expect:** the unchanged file is re-extracted (`files_indexed` > 0 on a
-  tree that incremental would skip). BYO vectors for that repo are dropped.
+  tree that incremental would skip). Exact unchanged symbol vectors are preserved.
 - **Covered by:** `src/domains/code/tests/index_code.rs::full_mode_re_extracts_an_unchanged_file_and_preserves_its_code_vectors` (API core; the CLI only maps `--mode`)
 
 ### index-code-04 Non-git path

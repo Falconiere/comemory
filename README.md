@@ -54,7 +54,7 @@ SQLite file is the rebuildable index.
 | | |
 |---|---|
 | 🗒️ **Memory as markdown** | Decisions, bugs, conventions, discoveries — plain `.md` files with YAML frontmatter at `~/.comemory/memories/`. Git-friendly, human-editable, the single source of truth. |
-| 🔎 **Hybrid retrieval** | FTS5 BM25 + optional BYO-vector ANN, fused via Reciprocal Rank Fusion, with a 4-tier lexical fallback ladder ending in *mined* query expansions. |
+| 🔎 **Hybrid retrieval** | FTS5 BM25 + optional provided or automatically generated vector ANN, fused via Reciprocal Rank Fusion, with a 4-tier lexical fallback ladder ending in *mined* query expansions. |
 | 🧬 **Identifier-aware search** | A custom FTS5 tokenizer splits `camelCase` / `snake_case`, so `parseFrontmatter` matches `parse_frontmatter` matches `frontmatter parsing`. |
 | 🕸️ **Two-layer code graph** | `index-code` mines **co-change** edges from git history and **import** edges per language, then materializes a weighted **PageRank** onto every symbol. |
 | 🔗 **Versioned code references** | `save --ref-file` / `--ref-symbol` pin a memory to code at a git anchor (blob + commit); `context` flags each link `fresh` / `stale` / `ghost`. See [linking code to memories](docs/guides/linking-code-to-memories.md). |
@@ -230,7 +230,7 @@ whole of it.
 ```bash
 comemory save "Use Postgres for analytics, not ClickHouse — see ADR-14" \
   --kind decision --repo myrepo --tags db,postgres   # capture a memory
-comemory index-code --repo myrepo --path .           # symbols + graph + PageRank
+comemory run embedding --repo myrepo                 # reconcile this folder's documents + code
 comemory search "what database do we use"            # recall memories (lexical)
 comemory search-code "connection pool retry" --repo myrepo   # ranked code search
 comemory context run_migration --json                # source + memories + neighbors
@@ -269,7 +269,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | Command | Purpose |
 |---------|---------|
 | `comemory save` | Save a memory (body via arg, `-`, or stdin; optional `--vector` / `--vector-stdin`) |
-| `comemory search` | Search memories — lexical by default, hybrid when a vector is supplied |
+| `comemory search` | Search memories — lexical by default, hybrid with an explicit or automatically generated vector |
 | `comemory search-code` | Search the code index (BM25 + optional ANN, reranked by graph priors) |
 | `comemory find` | One ranked list across memories, code, and documents (`--domain` narrows it) |
 | `comemory context` | One-shot bundle for a key: code symbol + related memories + neighborhood |
@@ -484,9 +484,10 @@ to tune them are walked through in
 ## BYO-Vector workflow
 
 comemory ships **without** a bundled embedding model — lexical search works
-immediately, and you supply vectors via `--vector` (CSV) or `--vector-stdin`
-(JSON `{"embedding":[..]}`) to add the dense leg (dims **1024** for `memory_vec`,
-**768** for `code_vec`; mismatches fail fast with `VecDimMismatch`).
+immediately. Configure an embedding command for automatic memory, document, or
+code embeddings, or supply vectors via `--vector` (CSV) or `--vector-stdin`
+(JSON `{"embedding":[..]}`). Memory and document vectors have **1024** dimensions;
+code vectors have **768**. Explicit vectors take precedence.
 
 Full recipe, including the sample Ollama wrapper
 [`scripts/comemory-embed.sh`](scripts/comemory-embed.sh):

@@ -49,7 +49,11 @@ project-skill settings, and migration from toolu.
 | `COMEMORY_DAEMON_SUPERVISOR` | Force the required sync daemon's backend: `launchd` \| `systemd` \| `process` \| `external`. `process` is what a container or a headless host with no session bus falls back to on its own; `external` verifies only and never starts anything (bring your own supervisor). Unset picks the OS-native backend, except for a data directory under a temp root (`/tmp`, `/var/tmp`, `$TMPDIR`), which is throwaway and so always runs as `process` — no LaunchAgent or systemd unit is written for it; setting this variable explicitly overrides that. | unset |
 | `COMEMORY_SYNC_DAEMON` | Test/CI hook: `0` skips every command's daemon preflight and keeps the pre-#257 in-process pass/pull paths. Not a user knob — leaving the required daemon out is not a supported mode. | unset |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
-| `COMEMORY_EMBED_CMD` | Embed command (`sh -c <cmd>`, text on stdin, `{"embedding":[..]}` on stdout) used by `comemory serve`'s `POST /api/v1/doctor/reembed`. `serve --embed-cmd` overrides it. | unset |
+| `COMEMORY_EMBED_CMD` | Embed command (`sh -c <cmd>`, text on stdin, `{"embedding":[..]}` on stdout) used for automatic memory saves and queries, and `POST /api/v1/doctor/reembed`. `serve --embed-cmd` overrides it. | unset |
+| `COMEMORY_DOCUMENT_EMBED_CMD` | Command for 1024-dimensional document chunk and query embeddings. | unset |
+| `COMEMORY_DOCUMENT_EMBED_HINT` | Document provider identity label, combined with its command and preprocessing version. | unset |
+| `COMEMORY_CODE_EMBED_CMD` | Command for 768-dimensional managed code embeddings. | unset |
+| `COMEMORY_CODE_EMBED_HINT` | Managed code provider identity label. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
 | `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to the activation, feedback, and quality boost multipliers (the fixed `0.2` supersede penalty bypasses the clamp). Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
 | `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`. `1.0` = pure relevance; `0.0` = pure diversity. | `0.7` |
@@ -153,11 +157,10 @@ letter.
 
 ## Vector dimensions (not configurable)
 
-The memory and code vector dims (`1024` and `768`) are baked into the
+Memory (`1024`) and code (`768`) vector dimensions are baked into the
 `memory_vec` / `code_vec` `vec0` DDL (`migrations/0002_v2_tables.sql`) at
-migration time and are **not** env-configurable: a divergent value would
-disagree with the vtab and surface as `VecDimMismatch` at first insert. Change
-the DDL literal if you need a different dim. See
+migration time. Document vectors also require `1024` dimensions. None are
+env-configurable; mismatches fail validation. See
 [Bring your own vectors](guides/byo-vectors.md).
 
 ## Pagination envelope

@@ -26,8 +26,9 @@ Task-oriented recipes for a specific job:
 
 - **[Agent skills and hooks](guides/agent-integration.md)** — install the Claude
   Code or Codex integration and migrate from toolu.
-- **[Bring your own vectors](guides/byo-vectors.md)** — embed memories and code
-  with your own model via `--vector` / `--vector-stdin` (dims 1024 / 768).
+- **[Bring your own vectors](guides/byo-vectors.md)** — configure automatic
+  providers for memory, document, and code retrieval, or supply explicit
+  memory and code vectors.
 - **[Keep the code index fresh](guides/auto-reindex.md)** — `lazy` (default),
   `hook`, and `off` auto-reindex modes and how the wired lazy trigger works.
 - **[Measure and tune ranking](guides/ranking-and-eval.md)** — the
