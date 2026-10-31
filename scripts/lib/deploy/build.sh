@@ -46,8 +46,9 @@ deploy_build_macos() {
   cp "$cache/$1/release/comemory" "$DEPLOY_ASSETS/bin/comemory-$1"
 }
 
-# Both Linux targets in one native arm64 container and one cargo run, which
-# builds them in parallel: aarch64 natively, x86_64 through Ubuntu's own cross
+# Both Linux targets in one native arm64 container and one cargo run, with one
+# job so concurrent release compilers cannot exhaust the shared VM's memory:
+# aarch64 natively, x86_64 through Ubuntu's own cross
 # toolchain (same glibc 2.35 as the image, so the 2.34 floor holds). Measured
 # on this Mac: x86_64 under colima's Rosetta 306 s warm, cross 189 s.
 #
@@ -83,7 +84,7 @@ EOF
       -v "comemory-deploy-target-$DEPLOY_RUST-cross:/src/target" \
       -v "comemory-deploy-registry-$DEPLOY_RUST-cross:/root/.cargo/registry" \
       "$image" sh -c 'tar -xmf - -C /src && cd /src \
-        && cargo build --release --locked --bin comemory \
+        && cargo build --release --locked --bin comemory --jobs 1 \
              --target aarch64-unknown-linux-gnu --target x86_64-unknown-linux-gnu >&2 \
         && tar -cf - -C target aarch64-unknown-linux-gnu/release/comemory \
              x86_64-unknown-linux-gnu/release/comemory' \

@@ -113,7 +113,8 @@ deploy_publish_tap() {
   tmp="$(mktemp -d)"
   gh repo clone "$DEPLOY_TAP" "$tmp/tap" -- --quiet --depth 1 \
     && cp "$DEPLOY_ASSETS/comemory.rb" "$tmp/tap/Formula/comemory.rb" \
-    && git -C "$tmp/tap" commit --quiet -am "comemory $DEPLOY_VERSION" \
+    && git -C "$tmp/tap" commit --quiet -am "chore(comemory): release v$DEPLOY_VERSION" \
+      -m "Intent: make the published stable release available through Homebrew" \
     && git -C "$tmp/tap" -c credential.helper='!gh auth git-credential' push --quiet origin HEAD \
     || rc=1
   rm -rf "$tmp"

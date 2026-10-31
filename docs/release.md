@@ -348,7 +348,9 @@ full gate set on the new toolchain.
 
 Both Linux targets build in one native arm64 `ubuntu:22.04` container with
 Rust 1.99.1: aarch64 natively and x86_64 through Ubuntu's
-`crossbuild-essential-amd64`, in a single `cargo build` with two `--target`s.
+`crossbuild-essential-amd64`, in a single `cargo build` with two `--target`s
+and `--jobs 1` so concurrent release compilers cannot exhaust the shared VM's
+memory.
 That is the same glibc 2.35 build host cargo-dist's runners had, and
 `deploy_verify_assets` refuses any Linux binary needing a glibc symbol above
 2.34, the published floor. On this Mac the x86_64 build took 306 s warm under

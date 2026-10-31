@@ -169,6 +169,7 @@ deploy_prepare_bump() {
     || die deploy:bump "release-plz changed more than the bump's three files: $changed"
   git -C "$DEPLOY_WORKTREE" add Cargo.toml Cargo.lock CHANGELOG.md
   git -C "$DEPLOY_WORKTREE" commit --quiet -m "chore(release): $DEPLOY_TAG" \
+    -m "Intent: publish the verified stable release from this machine" \
     || die deploy:bump "release commit refused (see the hook output above)"
   DEPLOY_COMMIT="$(git -C "$DEPLOY_WORKTREE" rev-parse HEAD)"
   (cd "$DEPLOY_WORKTREE" && RELEASE_BRANCH=HEAD bash "$DEPLOY_SCRIPTS/validate-release.sh" "$DEPLOY_VERSION") \

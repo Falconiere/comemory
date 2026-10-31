@@ -30,6 +30,8 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
    running with free disk space, clean tracked files, `gh api user` succeeds.
    If `GH_TOKEN` is set but stale, prefix every command below with
    `env -u GH_TOKEN`.
+   Put Homebrew Bash first on `PATH` (`export PATH="/opt/homebrew/bin:$PATH"`):
+   the gates use `mapfile`, which Apple's Bash 3.2 lacks.
 2. `git fetch --tags origin && git switch main && git pull --ff-only`.
 3. Rehearse: `bash scripts/deploy.sh --dry-run`, in the background. release-plz
    (the pinned 0.3.169 with cargo-semver-checks 0.51.0) computes the version
@@ -80,6 +82,9 @@ before step 1. Every run stops at step 5 for the user's yes on tag and notes.
 - A Docker build failing inside `apt-get` with "invalid signature" usually
   means the Docker disk is full (`docker system df`); ask the user before
   pruning anything — the VM is shared with other projects.
+- Linux builds use `--jobs 1`: two simultaneous release compilers exhausted
+  this Mac's 6 GB Docker VM. A `rustc` SIGKILL warrants checking the VM's kernel
+  OOM log (`colima ssh -- sudo dmesg`) before retrying.
 - No GHCR image and no minisign signature are produced while Actions are off.
 
 ## Verification
