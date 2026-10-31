@@ -1,16 +1,7 @@
-//! The part every mutating route handler used to repeat: refuse on a
-//! read-only server, take the single write permit, run the command on the
-//! blocking pool with the permit held, and envelope the outcome.
-//!
-//! [`mutate_blocking`] owns that tail for any handler. [`with_ctx`] owns the
-//! other repeated block, the shared connection and its [`Ctx`];
-//! [`with_lazy_ctx`] is its connectionless sibling for cores that must not
-//! open the database eagerly. They stay separate because some handlers
-//! validate (confirm gate, body parse, path containment) *before* touching the
-//! connection, and that order decides which error a caller sees;
-//! [`mutate_response`] is the two composed, for the common handler that goes
-//! straight from the request to its core. [`super::query_response`] is the
-//! read-side twin and uses [`with_ctx`] too.
+//! Shared mutating-route gates, blocking execution and response envelopes.
+//! [`with_ctx`] borrows the shared connection; [`with_lazy_ctx`] opens its own
+//! only when needed, keeping provider work outside the shared mutex.
+//! Handlers retain validation order by composing these helpers explicitly.
 
 use std::time::Instant;
 
@@ -81,17 +72,6 @@ pub(crate) fn with_lazy_ctx<T>(
 ) -> Result<T> {
     let cfg = state.cfg();
     run(&mut Ctx::lazy(state.paths(), &cfg))
-}
-
-/// Run a core with its own lazily opened connection, keeping provider work
-/// outside the shared connection mutex.
-pub(crate) fn with_independent_ctx<T>(
-    state: &AppState,
-    origin: Origin,
-    run: impl FnOnce(&mut Ctx<'_>) -> Result<T>,
-) -> Result<T> {
-    let cfg = state.cfg();
-    run(&mut Ctx::lazy(state.paths(), &cfg).with_origin(origin))
 }
 
 /// [`mutate_blocking`] over [`with_ctx`]: the closure sees only the context,

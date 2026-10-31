@@ -16,6 +16,9 @@ errors, optional-row behavior, and caller-owned transactions. Repeated writes
 generate one statement and pass it to `execute_many`, which prepares once
 and binds each row in placeholder order. The bridge avoids creating another
 connection or an async runtime for synchronous store work.
+Code-vector preservation capture uses the shared `reads!` executor with typed
+joins and qualified projections; its left join retains caller-managed vectors
+that have no provider provenance. Document-share deletion uses `writes!`.
 FTS queries use the existing `run_fts_query` helper with generated SQL and
 values so malformed MATCH expressions retain their empty-result behavior.
 

@@ -473,11 +473,11 @@ fn semantic_document_match_carries_citation_and_similarity() {
     else {
         panic!("expected index")
     };
-    let chunks =
-        comemory::store::document_vectors::pending(&conn, SOURCE_ID, "provider").expect("pending");
+    let chunks = comemory::store::document_vectors::pending(&conn, SOURCE_ID, "provider", false)
+        .expect("pending");
     let mut vector = vec![0.0; 1024];
     vector[0] = 1.0;
-    comemory::store::document_vectors::publish(&conn, &chunks[0], "provider", &vector)
+    comemory::store::document_vectors::publish(&conn, &chunks[0], "provider", &vector, None)
         .expect("publish");
     let hits = comemory::retrieval::doc_semantic::route_documents_semantic(
         &conn,

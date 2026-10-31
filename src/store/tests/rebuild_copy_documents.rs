@@ -54,12 +54,13 @@ fn copy_document_tables_inner_copies_source_files_documents_chunks_and_fts() {
         matches!(outcome, UpdateOutcome::Indexed { .. }),
         "{outcome:?}"
     );
-    let chunk = comemory::store::document_vectors::pending(&old_conn, support::SOURCE_ID, "model")
-        .expect("pending")
-        .remove(0);
+    let chunk =
+        comemory::store::document_vectors::pending(&old_conn, support::SOURCE_ID, "model", false)
+            .expect("pending")
+            .remove(0);
     let mut vector = vec![0.0; 1024];
     vector[0] = 1.0;
-    comemory::store::document_vectors::publish(&old_conn, &chunk, "model", &vector)
+    comemory::store::document_vectors::publish(&old_conn, &chunk, "model", &vector, None)
         .expect("publish");
     drop(old_conn);
 

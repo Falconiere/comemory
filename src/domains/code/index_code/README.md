@@ -16,8 +16,8 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `embedding.rs` | `run` | Source-scoped pending symbol inference and guarded publication |
-| `runner.rs` | `walk_repo` | Complete walk, missing-file reconciliation and run history |
+| `embedding.rs` | `run` | Source-scoped pending symbol inference, guarded publication and coverage reporting |
+| `runner.rs` | `walk_repo` | Source preparation, complete walk, missing-file reconciliation, graph refresh and run history |
 | `walk.rs` | `index_file` | Per-file symbol extraction, blob-OID skip check, and import collection inside the caller's transaction |
 
 When you add a file here, add its row above so the index stays current. No

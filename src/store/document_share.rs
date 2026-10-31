@@ -30,15 +30,10 @@ pub struct Share {
     pub blocked_reason: Option<String>,
 }
 
-/// Remove a prior portable name after its tombstone has been journalled.
-pub fn remove(conn: &Connection, document_id: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        DocumentShare::delete()
-            .filter(col::document_id.eq(document_id))
-            .to_sql(),
-    )?;
-    Ok(())
+orm::writes! {
+    /// Remove a prior portable name after its tombstone has been journalled.
+    pub remove(document_id: &str) = DocumentShare::delete()
+        .filter(col::document_id.eq(document_id));
 }
 
 /// Record (or refresh) one document's portable name.

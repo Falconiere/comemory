@@ -580,6 +580,9 @@ tier directly:
 
 ## Contributing
 
+Rust embedding and folder-indexing entry points are described in
+[architecture](docs/architecture.md#rust-embedding-entry-points).
+
 Runtime queries use the declared toolu-orm tables. See the
 [runtime query guide](docs/guides/runtime-orm.md) for supported builders,
 behavior-preserving conversions, and upstream issues for retained SQL.

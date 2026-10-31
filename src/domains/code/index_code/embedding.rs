@@ -6,6 +6,31 @@ use crate::prelude::*;
 use crate::store::{Connection, code_embedding, embed as store_embed, vector};
 use crate::utilities::{embed, progress::ProgressSink};
 
+/// Refresh configured embeddings and report remaining parent-vector coverage.
+pub(super) fn finish(
+    conn: &mut Connection,
+    req: &super::Request,
+    root: &Path,
+    cmd: Option<&str>,
+    model: &str,
+    sink: Option<&dyn ProgressSink>,
+    mut response: super::Response,
+) -> Result<super::Response> {
+    if let Some(cmd) = cmd.filter(|s| !s.trim().is_empty()) {
+        (response.embedded, response.embedding_failed) = run(
+            conn,
+            &req.repo,
+            root,
+            cmd,
+            model,
+            sink,
+            req.mode == super::IndexMode::Full,
+        )?;
+    }
+    response.embedding_pending = code_embedding::pending(conn, &req.repo, false)?.len();
+    Ok(response)
+}
+
 /// Bind managed vectors to the command, hint and parent-input version.
 pub(super) fn provider_id(cmd: &str, hint: Option<&str>) -> String {
     crate::utilities::digest::sha256_hex(

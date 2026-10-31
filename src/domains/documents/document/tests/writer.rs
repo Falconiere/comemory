@@ -748,12 +748,12 @@ fn ineligible_file_retires_stale_document_and_vectors() {
     else {
         panic!("indexed")
     };
-    let chunk = document_vectors::pending(&conn, SOURCE_ID, "provider")
+    let chunk = document_vectors::pending(&conn, SOURCE_ID, "provider", false)
         .expect("pending")
         .remove(0);
     let mut vector = vec![0.0; 1024];
     vector[0] = 1.0;
-    document_vectors::publish(&conn, &chunk, "provider", &vector).expect("publish");
+    document_vectors::publish(&conn, &chunk, "provider", &vector, None).expect("publish");
     let mut unsupported = candidate("notes.txt", &path, DocumentFormat::Txt);
     unsupported.classification = Classification::Unsupported;
     let root = fs::canonicalize(tmp.path()).expect("root");
@@ -794,12 +794,12 @@ fn unchanged_document_relabel_preserves_vector() {
     .expect("index") else {
         panic!("indexed")
     };
-    let chunk = document_vectors::pending(&conn, SOURCE_ID, "provider")
+    let chunk = document_vectors::pending(&conn, SOURCE_ID, "provider", false)
         .expect("pending")
         .remove(0);
     let mut vector = vec![0.0; 1024];
     vector[0] = 1.0;
-    document_vectors::publish(&conn, &chunk, "provider", &vector).expect("publish");
+    document_vectors::publish(&conn, &chunk, "provider", &vector, None).expect("publish");
     assert_eq!(
         writer::update_file(
             &mut conn,

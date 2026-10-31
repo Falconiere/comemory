@@ -1,7 +1,13 @@
 //! Store operations for source-scoped code embedding.
 
 use rusqlite::{Connection, params};
+use toolu_orm::core::query_column::CommonOps;
 
+use super::{
+    orm,
+    schema_code::{CodeSymbols, code_symbols as symbol, code_vec as vec},
+    schema_embeddings::code_vector_provenance as provenance,
+};
 use crate::prelude::*;
 use crate::store::{schema_meta, vector};
 
@@ -25,10 +31,22 @@ pub(crate) struct Preserved {
     model: Option<String>,
 }
 
-/// Capture existing vectors before replacing a file's symbols.
-pub(crate) fn capture(conn: &Connection, repo: &str, path: &str) -> Result<Vec<Preserved>> {
-    let mut stmt = conn.prepare("SELECT s.symbol, s.kind, s.line_start, s.line_end, s.snippet, v.embedding, p.model, s.parent_id IS NULL FROM code_symbols s JOIN code_vec v ON v.symbol_id = s.id LEFT JOIN code_vector_provenance p ON p.symbol_id = s.id WHERE s.repo = ?1 AND s.path = ?2")?;
-    let rows = stmt.query_map(params![repo, path], |r| {
+orm::reads! {
+    /// Capture existing vectors before replacing a file's symbols.
+    pub(crate) capture(repo: &str, path: &str) -> Vec<Preserved> = query_all(
+        CodeSymbols::select().columns_typed(&[])
+            .column_expr(&symbol::symbol.qualified(), "symbol")
+            .column_expr(&symbol::kind.qualified(), "kind")
+            .column_expr(&symbol::line_start.qualified(), "line_start")
+            .column_expr(&symbol::line_end.qualified(), "line_end")
+            .column_expr(&symbol::snippet.qualified(), "snippet")
+            .column_expr(&vec::embedding.qualified(), "embedding")
+            .column_expr(&provenance::model.qualified(), "model")
+            .column_expr(&format!("{} IS NULL", symbol::parent_id.qualified()), "is_parent")
+            .join("code_vec", vec::symbol_id.equals(&symbol::id))
+            .left_join("code_vector_provenance", provenance::symbol_id.equals(&symbol::id))
+            .filter(symbol::repo.eq(repo)).filter(symbol::path.eq(path)).to_sql(),
+        |r| {
         Ok(Preserved {
             symbol: r.get(0)?,
             kind: r.get(1)?,
@@ -39,8 +57,8 @@ pub(crate) fn capture(conn: &Connection, repo: &str, path: &str) -> Result<Vec<P
             model: r.get(6)?,
             parent: r.get(7)?,
         })
-    })?;
-    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        }
+    );
 }
 
 /// Restore vectors only when the exact symbol identity and text survive.

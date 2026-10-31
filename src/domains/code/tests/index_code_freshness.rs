@@ -73,9 +73,10 @@ fn folder_indexes_untracked_code_and_retries_missing_embeddings() {
     };
     cfg.code_embed_cmd = Some("exit 1".into());
     cfg.code_embed_hint = Some("test-model".into());
-    let first = crate::domains::code::index_code::run_folder(
+    let first = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         req(),
+        None,
     )
     .expect("lexical indexing survives provider failure");
     assert_eq!(first.files_indexed, 1);
@@ -87,16 +88,18 @@ fn folder_indexes_untracked_code_and_retries_missing_embeddings() {
     )
     .expect("payload");
     cfg.code_embed_cmd = Some(format!("cat '{}'", payload.display()));
-    let second = crate::domains::code::index_code::run_folder(
+    let second = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         req(),
+        None,
     )
     .expect("retry");
     assert_eq!(second.files_indexed, 0);
     assert_eq!(second.embedded, 1);
-    let third = crate::domains::code::index_code::run_folder(
+    let third = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         req(),
+        None,
     )
     .expect("unchanged");
     assert_eq!(third.embedded, 0);
@@ -104,9 +107,10 @@ fn folder_indexes_untracked_code_and_retries_missing_embeddings() {
         mode: IndexMode::Full,
         ..req()
     };
-    let full = crate::domains::code::index_code::run_folder(
+    let full = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         full_req(),
+        None,
     )
     .expect("full refresh");
     assert_eq!(full.embedded, 1);
@@ -114,9 +118,10 @@ fn folder_indexes_untracked_code_and_retries_missing_embeddings() {
         .query_row("SELECT embedding FROM code_vec", [], |row| row.get(0))
         .expect("vector before failed refresh");
     std::fs::write(&payload, "provider returned invalid JSON").expect("fail same provider");
-    let failed = crate::domains::code::index_code::run_folder(
+    let failed = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         full_req(),
+        None,
     )
     .expect("failed refresh retains lexical index");
     assert_eq!(failed.embedding_failed, 1);
@@ -130,24 +135,27 @@ fn folder_indexes_untracked_code_and_retries_missing_embeddings() {
     )
     .expect("repair provider");
     cfg.code_embed_cmd = Some(format!("cat '{}' # changed provider", payload.display()));
-    let command_changed = crate::domains::code::index_code::run_folder(
+    let command_changed = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         req(),
+        None,
     )
     .expect("provider command change");
     assert_eq!(command_changed.files_indexed, 0);
     assert_eq!(command_changed.embedded, 1);
     cfg.code_embed_hint = Some("next-model".into());
-    let changed = crate::domains::code::index_code::run_folder(
+    let changed = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         req(),
+        None,
     )
     .expect("model change");
     assert_eq!(changed.embedded, 1);
     cfg.indexing.max_file_bytes = 4;
-    let oversized = crate::domains::code::index_code::run_folder(
+    let oversized = crate::domains::code::index_code::run_folder_with_progress(
         &mut Ctx::borrowed(&paths, &cfg, &mut conn),
         req(),
+        None,
     )
     .expect("oversized source is skipped");
     assert_eq!(oversized.unsupported, 1);
@@ -179,8 +187,12 @@ fn real_code_inference_survives_rename_and_removes_deleted_results() {
         mode: IndexMode::Incremental,
     };
     let run = |conn: &mut rusqlite::Connection| {
-        crate::domains::code::index_code::run_folder(&mut Ctx::borrowed(&paths, &cfg, conn), req())
-            .expect("index")
+        crate::domains::code::index_code::run_folder_with_progress(
+            &mut Ctx::borrowed(&paths, &cfg, conn),
+            req(),
+            None,
+        )
+        .expect("index")
     };
     assert!(run(&mut conn).embedded > 0);
     assert_eq!(run(&mut conn).embedded, 0);

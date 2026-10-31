@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::domains::learning;
 use crate::serve::AppState;
 use crate::serve::routes::mutate_response::{
-    mutate_blocking, mutate_response, with_ctx, with_independent_ctx,
+    mutate_blocking, mutate_response, with_ctx, with_lazy_ctx,
 };
 use crate::serve::routes::{RouteEntry, require_confirm};
 
@@ -58,7 +58,8 @@ async fn save(
 ) -> Response {
     let origin = state.http_origin(&headers);
     mutate_blocking(state, "save", move |state| {
-        with_independent_ctx(state, origin, |ctx| {
+        with_lazy_ctx(state, |ctx| {
+            ctx.origin = origin;
             crate::domains::memories::save::run(ctx, req, false, None)
         })
     })

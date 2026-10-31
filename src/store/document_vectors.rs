@@ -35,17 +35,8 @@ pub struct PendingChunk {
     pub file_root: bool,
 }
 
-/// Return chunks belonging to one source that lack a compatible vector.
-pub fn pending(conn: &Connection, source: &str, model: &str) -> Result<Vec<PendingChunk>> {
-    select_chunks(conn, source, model, false)
-}
-
-/// Return every chunk from a source for a full refresh.
-pub fn all(conn: &Connection, source: &str, model: &str) -> Result<Vec<PendingChunk>> {
-    select_chunks(conn, source, model, true)
-}
-
-fn select_chunks(
+/// Return source chunks lacking compatible vectors, or every chunk for a full refresh.
+pub fn pending(
     conn: &Connection,
     source: &str,
     model: &str,
@@ -72,28 +63,8 @@ fn select_chunks(
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
 }
 
-/// Publish only while the same document revision and chunk text still exist.
+/// Publish while revision and text match, checking the source generation when supplied.
 pub fn publish(
-    conn: &Connection,
-    chunk: &PendingChunk,
-    model: &str,
-    vector: &[f32],
-) -> Result<bool> {
-    publish_inner(conn, chunk, model, vector, None)
-}
-
-/// Publish only if the source generation remains current.
-pub fn publish_guarded(
-    conn: &Connection,
-    chunk: &PendingChunk,
-    model: &str,
-    vector: &[f32],
-    generation: &str,
-) -> Result<bool> {
-    publish_inner(conn, chunk, model, vector, Some(generation))
-}
-
-fn publish_inner(
     conn: &Connection,
     chunk: &PendingChunk,
     model: &str,

@@ -352,3 +352,7 @@ and `comemory install hermes` links skills only. Prefer MCP
 `comemory run embedding [--path DIR] [--repo LABEL]` is the explicit selected-folder
 document/code reconciliation entry. Never widen its root through Git discovery.
 Legacy `index-code` remains code-only for compatibility; `index` remains document-only.
+
+Rust callers use `index_code::run_folder_with_progress` with `None` for no progress,
+`document_vectors::pending` with the full-refresh flag, and
+`document_vectors::publish` with an optional source-generation guard.

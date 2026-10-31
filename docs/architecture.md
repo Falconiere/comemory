@@ -788,3 +788,19 @@ The nineteen-tool catalog recommends a small `find` followed by selective
 `recall-status` is repository/window aggregate telemetry, not session
 attribution. Stop hints are therefore advisory. Shared plugin hooks support
 Claude Code and Codex, but receipt capture parses only Claude transcripts.
+
+## Rust embedding entry points
+
+`domains::code::index_code::run_folder_with_progress(ctx, request, None)`
+reconciles a selected folder without requiring Git or progress reporting.
+CLI and HTTP callers retain their existing command surfaces.
+
+`store::document_vectors::pending(conn, source, model, full)` selects missing
+or incompatible vectors when `full` is false, and every source chunk when true.
+`publish(conn, chunk, model, vector, generation)` always checks document revision
+and chunk text; automatic inference supplies `Some(generation)` from `begin`
+to also reject stale provider runs. Explicit caller-managed vectors may use `None`.
+
+HTTP memory operations use the shared lazy-context helper and set their request
+origin in the command closure. Provider work keeps its own connection outside
+the server's shared connection mutex.

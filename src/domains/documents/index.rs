@@ -167,7 +167,7 @@ fn embed_source(
         report.embedding_failed = errors.len();
         let model = super::chunk_embedding::provider_id(cmd, hint);
         report.embedding_pending =
-            crate::store::document_vectors::pending(conn, source, &model)?.len();
+            crate::store::document_vectors::pending(conn, source, &model, false)?.len();
         report
             .errors
             .extend(errors.into_iter().map(|message| FileError {
@@ -176,7 +176,8 @@ fn embed_source(
                 message,
             }));
     } else {
-        report.embedding_pending = crate::store::document_vectors::all(conn, source, "")?.len();
+        report.embedding_pending =
+            crate::store::document_vectors::pending(conn, source, "", true)?.len();
     }
     Ok(())
 }

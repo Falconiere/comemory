@@ -23,11 +23,7 @@ pub fn reconcile(
 ) -> Result<(usize, Vec<String>)> {
     let model = provider_id(cmd, hint);
     let generation = document_vectors::begin(conn, source, &model)?;
-    let pending = if full {
-        document_vectors::all(conn, source, &model)?
-    } else {
-        document_vectors::pending(conn, source, &model)?
-    };
+    let pending = document_vectors::pending(conn, source, &model, full)?;
     let mut embedded = 0;
     let mut errors = Vec::new();
     for chunk in pending {
@@ -38,7 +34,7 @@ pub fn reconcile(
             if !source_unchanged(&chunk) {
                 return Ok(false);
             }
-            document_vectors::publish_guarded(conn, &chunk, &model, &v, &generation)
+            document_vectors::publish(conn, &chunk, &model, &v, Some(&generation))
         }) {
             Ok(true) => embedded += 1,
             Ok(false) => {

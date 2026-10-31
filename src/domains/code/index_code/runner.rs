@@ -13,6 +13,51 @@ use crate::prelude::*;
 use crate::store::{Connection, code_row, index_runs, memory_row, random_id};
 use crate::utilities::progress::ProgressSink;
 
+/// Prepare format and incremental cursors, reusing them only for the same root.
+pub(super) fn prepare_index(
+    tx: &Connection,
+    req: &Request,
+    root: &Path,
+) -> Result<Vec<(String, String)>> {
+    let previous = crate::store::indexed_files::list_for_repo(tx, &req.repo)?;
+    let same_root = match (
+        crate::store::repo_marker::root_path(tx, &req.repo)?,
+        root.canonicalize(),
+    ) {
+        (Some(p), Ok(root)) => Path::new(&p).canonicalize().ok().as_ref() == Some(&root),
+        _ => false,
+    };
+    code_row::ensure_repo_format(tx, &req.repo)?;
+    if req.mode == super::IndexMode::Full {
+        crate::store::indexed_files::delete_for_repo(tx, &req.repo)?;
+    }
+    Ok(if same_root { previous } else { Vec::new() })
+}
+
+/// Refresh graph data best-effort after the symbol transaction is durable.
+pub(super) fn refresh_graph(
+    conn: &mut Connection,
+    req: &Request,
+    root: &Path,
+    imports: &BTreeMap<String, Vec<String>>,
+    lookback_days: Option<u32>,
+    git: bool,
+) {
+    if git
+        && let Err(e) = crate::domains::graph::materialize::materialize(
+            conn,
+            root,
+            &req.repo,
+            imports,
+            lookback_days,
+        )
+    {
+        tracing::warn!(repo = %req.repo, error = %e,
+            "index-code: graph materialization failed; symbol index kept");
+    }
+    let _stale = crate::domains::graph::derived::refresh_derived_best_effort(conn);
+}
+
 /// Insert this run's `index_runs` row from `outcome`. Best-effort: a write
 /// failure is logged, never propagated — the symbols already landed (or
 /// already rolled back), and a history row is not worth failing over.
@@ -84,20 +129,7 @@ pub(super) fn walk_repo(
     sink: Option<&dyn ProgressSink>,
     scope: (&[(String, String)], Option<&Path>, u64),
 ) -> Result<(usize, usize, usize, usize)> {
-    let mut walker = WalkBuilder::new(root);
-    walker.standard_filters(true);
-    walker.add_custom_ignore_filename(".comemoryignore");
-    if let Some(excluded) = scope.1 {
-        let excluded = excluded.to_path_buf();
-        walker.filter_entry(move |entry| !entry.path().starts_with(&excluded));
-    }
-    let entries: Vec<_> = walker
-        .build()
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Other(format!("index-code walk incomplete: {e}")))?
-        .into_iter()
-        .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
-        .collect();
+    let entries = files(root, scope.1)?;
     let total = entries.len() as u64;
     let mut files_indexed = 0usize;
     let mut unchanged = 0usize;
@@ -107,10 +139,7 @@ pub(super) fn walk_repo(
         if sink.is_some_and(ProgressSink::is_cancelled) {
             return Err(Error::Cancelled);
         }
-        let tracked = match git_repo {
-            Some(git) => walk::tracked_file(git, entry.path())?,
-            None => true,
-        };
+        let supported_tracked = supported_tracked(git_repo, entry.path())?;
         match walk::index_file(
             tx,
             repo,
@@ -128,9 +157,7 @@ pub(super) fn walk_repo(
                     unchanged += 1;
                 }
             }
-            None if tracked
-                && crate::domains::code::ast::languages::detect(entry.path()).is_some() =>
-            {
+            None if supported_tracked => {
                 unsupported += 1;
             }
             None => {}
@@ -141,6 +168,31 @@ pub(super) fn walk_repo(
     }
     let removed = remove_missing(tx, repo, scope.0, &seen)?;
     Ok((files_indexed, unchanged, removed, unsupported))
+}
+
+fn files(root: &Path, excluded: Option<&Path>) -> Result<Vec<ignore::DirEntry>> {
+    let mut walker = WalkBuilder::new(root);
+    walker.standard_filters(true);
+    walker.add_custom_ignore_filename(".comemoryignore");
+    if let Some(excluded) = excluded {
+        let excluded = excluded.to_path_buf();
+        walker.filter_entry(move |entry| !entry.path().starts_with(&excluded));
+    }
+    Ok(walker
+        .build()
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("index-code walk incomplete: {e}")))?
+        .into_iter()
+        .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
+        .collect())
+}
+
+fn supported_tracked(git: Option<&Repository>, path: &Path) -> Result<bool> {
+    let tracked = match git {
+        Some(git) => walk::tracked_file(git, path)?,
+        None => true,
+    };
+    Ok(tracked && crate::domains::code::ast::languages::detect(path).is_some())
 }
 
 fn remove_missing(

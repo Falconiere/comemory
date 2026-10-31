@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::domains::code::git_utils::{self, map_git_err};
-use crate::domains::graph::{derived, materialize};
 use crate::prelude::*;
 use crate::store::{Connection, code_row, connection::write_transaction, memory_row, repo_marker};
 use crate::utilities::activity::{self, Outcome, command};
@@ -100,13 +99,8 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     run_with_progress(ctx, req, None)
 }
 
-/// Reconcile supported code in a folder, including files outside Git.
-/// The caller supplies a stable, root-specific repo identity.
-pub fn run_folder(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
-    run_folder_with_progress(ctx, req, None)
-}
-
-/// Reconcile a folder with cooperative cancellation and progress reporting.
+/// Reconcile supported code in a folder, including files outside Git, with
+/// optional cancellation and progress. The caller supplies a root-specific repo identity.
 pub fn run_folder_with_progress(
     ctx: &mut Ctx<'_>,
     req: Request,
@@ -168,13 +162,9 @@ fn index(
         embed_cmd.as_deref().unwrap_or_default(),
         ctx.cfg.code_embed_hint.as_deref(),
     );
-    // Opened BEFORE the connection: a path that is not a git repo must fail
-    // without creating `comemory.db` as a side effect (and with no DB there
-    // is nothing to record the failed run into).
+    // Reject non-Git legacy sources before opening the database.
     let git_repo = open_source(&root, folder)?;
-    // `None` when the operator turned search→edit reinforcement off
-    // (`comemory hooks --disable search-edit-reinforcement`), which is what
-    // makes that toggle actually gate the behavior rather than only report it.
+    // Honor the reinforcement hook toggle when refreshing the graph.
     let lookback_days = ctx
         .cfg
         .reinforce
@@ -191,21 +181,16 @@ fn index(
         sink,
         (excluded.as_deref(), max_bytes),
     )
-    .and_then(|mut response| {
-        if let Some(cmd) = embed_cmd.as_deref().filter(|s| !s.trim().is_empty()) {
-            (response.embedded, response.embedding_failed) = embedding::run(
-                conn,
-                &req.repo,
-                &root,
-                cmd,
-                &embed_model,
-                sink,
-                req.mode == IndexMode::Full,
-            )?;
-        }
-        response.embedding_pending =
-            crate::store::code_embedding::pending(conn, &req.repo, false)?.len();
-        Ok(response)
+    .and_then(|response| {
+        embedding::finish(
+            conn,
+            &req,
+            &root,
+            embed_cmd.as_deref(),
+            &embed_model,
+            sink,
+            response,
+        )
     });
     runner::record_run(conn, &req, &root, &started_at, started.elapsed(), &outcome);
     outcome
@@ -248,24 +233,9 @@ fn prepare_source(
     Ok(())
 }
 
-/// A linked worktree is a second checkout of one repository, never a
-/// repository of its own. When `req.path` is one and `req.repo` is a label
-/// this store has never seen, index under the main worktree's label
-/// ([`git_utils::repo_label`]) rather than create a brand-new repo row.
-///
-/// Narrow on purpose: only the *creation* of a per-worktree label is
-/// refused. A label that already has a `repo_marker` row is left alone — it
-/// is either a repo the operator connected deliberately (possibly under a
-/// custom label, which `crate::domains::code::repo_admin::connect` allows) or a worktree row
-/// minted before this rule existed, and rewriting either would silently
-/// repoint an existing code index at a different checkout.
-///
-/// This is the backstop for callers that pass a label we did not derive: a
-/// git hook or an agent wrapper written before the worktree rule passes
-/// `basename "$(git rev-parse --show-toplevel)"`, so every `git worktree
-/// add` fired `post-checkout` and added one more "repository" to the
-/// console's list. Fixing the shipped hook body cannot fix the copies
-/// already on disk in every repo; this can.
+/// Redirect new linked-worktree labels to the main repository's label, including
+/// labels supplied by old installed hooks. Preserve existing custom/legacy rows
+/// so an established index is never silently repointed to another checkout.
 fn redirect_worktree_label(
     conn: &Connection,
     req: &mut Request,
@@ -291,22 +261,8 @@ fn redirect_worktree_label(
     Ok(())
 }
 
-/// The directory `repo` is RECORDED at (`repo_marker.root_path`), which is not
-/// always the directory that was walked.
-///
-/// When `repo` is the repository's own label, the repo is recorded at its main
-/// working tree: a linked worktree is temporary (`git worktree remove` deletes
-/// it), repo-relative paths resolve the same against either checkout, and
-/// stamping the worktree would only leave `utilities::repo_root` pointing at a
-/// directory that is about to vanish.
-///
-/// For any OTHER label — one the operator connected under a custom name, or a
-/// per-worktree row minted before [`redirect_worktree_label`] existed — the
-/// walked path is recorded verbatim. Those rows keep their own root on
-/// purpose: rewriting one to the main worktree would repoint an existing code
-/// index at a checkout it was never indexed from, and would leave two labels
-/// claiming one root, which `crate::domains::code::repo_admin::connect` refuses to create and
-/// `cli::lazy_reindex` refuses to reindex through.
+/// Record canonical repositories at their durable main worktree. Custom and
+/// legacy labels retain their walked root to preserve their existing index.
 fn recorded_root_for(repo: &str, walked: &Path, git_repo: &Repository) -> PathBuf {
     if git_utils::repo_label(git_repo).as_deref() != Some(repo) {
         return walked.to_path_buf();
@@ -350,15 +306,7 @@ fn index_repo(
     // the upgrade fail with `SQLITE_BUSY` *immediately*. `busy_timeout`
     // cannot wait that case out, so the job died as `store_locked`.
     let tx = write_transaction(conn)?;
-    let previous = crate::store::indexed_files::list_for_repo(&tx, &req.repo)?;
-    let same_root = match (repo_marker::root_path(&tx, &req.repo)?, root.canonicalize()) {
-        (Some(p), Ok(root)) => Path::new(&p).canonicalize().ok().as_ref() == Some(&root),
-        _ => false,
-    };
-    code_row::ensure_repo_format(&tx, &req.repo)?;
-    if req.mode == IndexMode::Full {
-        crate::store::indexed_files::delete_for_repo(&tx, &req.repo)?;
-    }
+    let previous = runner::prepare_index(&tx, req, root)?;
     let (files_indexed, unchanged, removed, unsupported) = runner::walk_repo(
         &tx,
         &req.repo,
@@ -366,7 +314,7 @@ fn index_repo(
         git_repo,
         &mut imports_by_file,
         sink,
-        (if same_root { &previous } else { &[] }, scope.0, scope.1),
+        (&previous, scope.0, scope.1),
     )?;
     code_row::stamp_repo_format(&tx, &req.repo)?;
     let recorded_root = git_repo.map_or_else(
@@ -376,19 +324,14 @@ fn index_repo(
     walk::stamp_repo_root(&tx, &req.repo, &recorded_root)?;
     stamp_last_indexed(&tx, &req.repo, root);
     tx.commit()?;
-    // Best-effort graph post-pass: the symbol index is already durable, so
-    // a failure here (e.g. an unborn HEAD) costs only freshness.
-    if git_repo.is_some()
-        && let Err(e) =
-            materialize::materialize(conn, root, &req.repo, &imports_by_file, lookback_days)
-    {
-        tracing::warn!(
-            repo = %req.repo,
-            error = %e,
-            "index-code: graph materialization failed; symbol index kept",
-        );
-    }
-    let _stale = derived::refresh_derived_best_effort(conn);
+    runner::refresh_graph(
+        conn,
+        req,
+        root,
+        &imports_by_file,
+        lookback_days,
+        git_repo.is_some(),
+    );
     Ok(Response {
         repo: req.repo.clone(),
         files_indexed,

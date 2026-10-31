@@ -24,11 +24,23 @@ fn vector_is_scoped_to_provider_and_removed_on_chunk_replacement() {
     else {
         panic!("indexed")
     };
-    let mut pending = document_vectors::pending(&conn, SOURCE_ID, "model-a").expect("pending");
+    let mut pending =
+        document_vectors::pending(&conn, SOURCE_ID, "model-a", false).expect("pending");
     let chunk = pending.remove(0);
     let mut vector = vec![0.0; document_vectors::DIM];
     vector[0] = 1.0;
-    assert!(document_vectors::publish(&conn, &chunk, "model-a", &vector).expect("publish"));
+    assert!(document_vectors::publish(&conn, &chunk, "model-a", &vector, None).expect("publish"));
+    assert!(
+        document_vectors::pending(&conn, SOURCE_ID, "model-a", false)
+            .expect("pending")
+            .is_empty()
+    );
+    assert_eq!(
+        document_vectors::pending(&conn, SOURCE_ID, "model-a", true)
+            .expect("full")
+            .len(),
+        1
+    );
     assert_eq!(
         document_vectors::search(&conn, "model-a", &vector, 5).expect("search")[0].0,
         document_id
@@ -45,7 +57,7 @@ fn vector_is_scoped_to_provider_and_removed_on_chunk_replacement() {
             .expect("search")
             .is_empty()
     );
-    assert!(!document_vectors::publish(&conn, &chunk, "model-a", &vector).expect("guard"));
+    assert!(!document_vectors::publish(&conn, &chunk, "model-a", &vector, None).expect("guard"));
     assert!(
         documents::get_document(&conn, &document_id)
             .expect("read")
@@ -59,19 +71,15 @@ fn older_provider_generation_cannot_overwrite_newer_vector() {
     let mut conn = support::open_db(&tmp);
     let path = write_fixture(&tmp, "notes.txt", b"document text");
     index(&mut conn, &path, "notes.txt", DocumentFormat::Txt);
-    let chunk = document_vectors::pending(&conn, SOURCE_ID, "old")
+    let chunk = document_vectors::pending(&conn, SOURCE_ID, "old", false)
         .expect("pending")
         .remove(0);
     let old = document_vectors::begin(&conn, SOURCE_ID, "old").expect("begin");
     let new = document_vectors::begin(&conn, SOURCE_ID, "new").expect("begin");
     let mut vector = vec![0.0; document_vectors::DIM];
     vector[0] = 1.0;
-    assert!(
-        document_vectors::publish_guarded(&conn, &chunk, "new", &vector, &new).expect("publish")
-    );
-    assert!(
-        !document_vectors::publish_guarded(&conn, &chunk, "old", &vector, &old).expect("guard")
-    );
+    assert!(document_vectors::publish(&conn, &chunk, "new", &vector, Some(&new)).expect("publish"));
+    assert!(!document_vectors::publish(&conn, &chunk, "old", &vector, Some(&old)).expect("guard"));
     assert_eq!(
         document_vectors::search(&conn, "new", &vector, 1)
             .expect("search")
