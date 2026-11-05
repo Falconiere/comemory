@@ -115,7 +115,7 @@ pub struct Args {
 /// before the vector is parsed, the data dir is created, the DB is opened,
 /// or stdin is read — exactly as `cli::save::run` did pre-extraction
 /// (AC-13).
-pub(crate) fn run_sync(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let body = read_body(&a)?;
 
     let paths = Paths::new(resolve_data_dir(data_dir));

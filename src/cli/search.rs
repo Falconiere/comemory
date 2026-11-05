@@ -124,7 +124,7 @@ pub struct Args {
 /// scope that excludes memory — the interim document-only path (see
 /// [`run_memory`] / `cli::search_only`). The `--k` flag overrides
 /// `retrieval.top_k`.
-pub(crate) fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let (paths, mut conn, cfg) = open_store(data_dir)?;
     let window = page_window(&cfg, a.k, a.offset);
     let scope =

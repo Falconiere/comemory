@@ -197,8 +197,8 @@ A failed image leaves the tag with no release, so fix a flake with
 the image fails, `latest` and `vN` have already moved with no release behind them.
 
 No PR builds the image either, so run `gh workflow run release-image.yml` before
-a release that touches the `Dockerfile`, `.dockerignore`, `release-image.yml` or
-the Rust pin. On a branch that builds both legs without pushing, and the
+a release that touches the `Dockerfile`, `.dockerignore`, `release-image.yml`,
+`Cargo.lock` or the Rust pin. On a branch that builds both legs without pushing, and the
 `manifest` job does not run. With `--ref vX.Y.Z` it publishes that tag, and a
 stable tag moves `latest` and `vN`.
 
@@ -225,8 +225,14 @@ The pool is two runners, `latitude-dal-comemory-<n>`, in
 `HOME` each. That user is in the `docker` group to build the image, which is
 effectively root on a machine other projects share, and these jobs hold the
 release App's key. `gh` lives in `/opt/actions-runner-comemory/bin`; each
-runner's `.path` adds it and its own `.cargo/bin`. Nothing there is ephemeral:
-while the machine is down, release jobs queue.
+runner's `.path` adds it and its own `.cargo/bin`. The jobs also assume `jq`,
+`curl`, `git`, `build-essential`, `cmake`, `pkg-config` and Docker with Buildx,
+installed as root.
+
+Nothing there is ephemeral, and a same-repo branch can target the label from a
+workflow it edits, so only trusted branches belong in this repository. While the
+machine is down, release jobs queue, and GitHub fails a job queued for more than
+24 hours: recover with `gh run rerun <id> --failed`.
 
 Nothing `needs:` the gate. `test` runs in parallel with the review, so a red
 review still leaves you the test results — and a skipped or failed gate can no

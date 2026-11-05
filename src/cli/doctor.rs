@@ -35,7 +35,7 @@ pub struct Args;
 /// `Ctx::lazy` (never `Ctx::borrowed` with an eagerly-opened connection) so
 /// the careful non-creating probe inside `maintenance::doctor` stays in control of
 /// whether a connection ever gets opened.
-pub(crate) fn run_sync(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;

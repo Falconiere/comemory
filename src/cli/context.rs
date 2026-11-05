@@ -101,7 +101,7 @@ pub struct Args {
 /// search, and the resulting `query_id` is surfaced (JSON field / TTY
 /// footer) so context lookups can receive `comemory feedback` instead of
 /// polluting reformulation mining as permanently-failed queries.
-pub(crate) fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let (paths, mut conn, cfg) = open_store(data_dir)?;
     // Non-blocking lazy auto-reindex (see `cli::lazy_reindex`): fire a
     // detached `index-code` when this repo's HEAD moved since the last index,

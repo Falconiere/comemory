@@ -82,7 +82,7 @@ pub struct Args {
 }
 
 /// Run `comemory find`.
-pub(crate) fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let (paths, mut conn, cfg) = open_store(data_dir)?;
     let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
 

@@ -51,7 +51,7 @@ pub struct Args {
 /// Register every `a.path` entry and run its synchronous reconcile via
 /// [`index::run`]. See that module's doc for why `--strict` is re-checked
 /// here rather than inside the shared middle.
-pub(crate) fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;

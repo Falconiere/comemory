@@ -8,7 +8,7 @@
 //! Mirror test for `src/domains/code/index_code.rs`. Real temp git repos built
 //! via the shared `common/git_*` helpers; `crate::domains::code::index_code::run` is called
 //! directly against a `Ctx::borrowed` connection (no CLI process spawned).
-//! `cli::index_code::run_sync` stays byte-compat tested against CLI stdout in
+//! `cli::index_code::run` stays byte-compat tested against CLI stdout in
 //! `tests/cli__index_code.rs` / `tests/cli__index_code_2.rs`; the HTTP job
 //! route (`POST /api/v1/code/index`) lives in `tests/serve__routes__code.rs`.
 
@@ -159,7 +159,7 @@ fn run_on_a_non_git_directory_errors() {
 
 #[test]
 fn run_on_a_non_git_directory_never_creates_the_db() {
-    // `Ctx::lazy` mirrors `cli::index_code::run_sync`'s wiring: the connection
+    // `Ctx::lazy` mirrors `cli::index_code::run`'s wiring: the connection
     // opens only on first `ctx.conn()` use. Since `run` validates the git
     // repo (`Repository::open`) before its own `ctx.conn()` call, an
     // invalid `--path` must fail with zero `comemory.db` side effects —

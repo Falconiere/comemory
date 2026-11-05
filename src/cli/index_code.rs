@@ -83,7 +83,7 @@ impl From<Mode> for crate::domains::code::index_code::IndexMode {
 
 /// `--extract` streams JSONL to stdout; otherwise delegates the DB-write
 /// walk to [`crate::domains::code::index_code::run`].
-pub(crate) fn run_sync(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     if args.extract {

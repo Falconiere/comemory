@@ -328,6 +328,8 @@ jobs:
     needs:
       - plan
       - host
+    # Hand-maintained: stays GitHub-hosted because the tap step needs `brew`, which
+    # the comemory-release runners lack. Re-apply after a future `cargo dist init`.
     runs-on: "ubuntu-22.04"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
