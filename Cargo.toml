@@ -333,6 +333,9 @@ post-announce-jobs = ["./release-finalize"]
 # release.yml's `host` gate on it is hand-maintained, like the finalize call.
 global-artifacts-jobs = ["./release-image"]
 github-custom-job-permissions = { "release-image" = { contents = "read", packages = "write" } }
+# Merged-code jobs run on latitude-dal. Target builds stay on GitHub: building
+# x86_64 on the VPS's glibc 2.39 would raise the minimum for users.
+github-custom-runners = { global = "comemory-release" }
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
 # Where to host releases

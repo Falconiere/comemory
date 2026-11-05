@@ -208,6 +208,26 @@ tag's first job, and that version is spent.
 
 Draft PRs wait for the `ready_for_review` event.
 
+### Runners
+
+Pull requests never run on the VPS: this repository is public, so `test.yml`
+and `code-review.yml` stay on GitHub-hosted runners, and workflow runs from any
+outside contributor need approval (`all_external_contributors`). Never approve
+a fork PR that edits `.github/workflows/` to target `comemory-release`.
+
+| Runs on | Jobs |
+| --- | --- |
+| `comemory-release` (latitude-dal) | `release-plz.yml`; `release.yml`'s `plan`, `build-global-artifacts`, `host`, `announce`; `release-image.yml`'s amd64 leg and `manifest` |
+| GitHub-hosted | everything on a PR; `lifecycle.yml`; all three tarball builds; `publish-homebrew-formula` (needs `brew`); the arm64 image leg (the VPS is x86_64); the `release-finalize` smoke test |
+
+The pool is two runners, `latitude-dal-comemory-<n>`, in
+`/opt/actions-runner-comemory/<n>`, as user `ghrunner-comemory` with a separate
+`HOME` each. That user is in the `docker` group to build the image, which is
+effectively root on a machine other projects share, and these jobs hold the
+release App's key. `gh` lives in `/opt/actions-runner-comemory/bin`; each
+runner's `.path` adds it and its own `.cargo/bin`. Nothing there is ephemeral:
+while the machine is down, release jobs queue.
+
 Nothing `needs:` the gate. `test` runs in parallel with the review, so a red
 review still leaves you the test results — and a skipped or failed gate can no
 longer cascade into an empty release, which is how v0.18.0 and v0.18.1 shipped

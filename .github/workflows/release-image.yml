@@ -5,7 +5,10 @@ name: release-image
 # linux/arm64 legs on native runners -> push both by digest -> merge into one
 # multi-arch manifest at ghcr.io/<owner>/comemory -> print the digest-pinned ref.
 #
-# Each arch compiles on its native runner. This dependency tree is mostly C
+# Each arch compiles on its native runner: amd64 on latitude-dal, arm64 on GitHub,
+# because the VPS is x86_64 only. The VPS keeps its filesystem between jobs, so
+# digests live under RUNNER_TEMP, never a fixed path a later release would reuse.
+# This dependency tree is mostly C
 # built from source (`rusqlite` bundled SQLite, `sqlite-vec`, `git2`'s vendored
 # libgit2), and a QEMU-emulated release build of it is slow enough to be flaky.
 #
@@ -66,7 +69,7 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: comemory-release
             platform: linux/amd64
           - arch: arm64
             runner: ubuntu-24.04-arm
@@ -120,16 +123,16 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           set -euo pipefail
-          mkdir -p /tmp/digests
+          mkdir -p "$RUNNER_TEMP/digests"
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
 
       - name: Upload leg digest
         if: github.ref_type == 'tag'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: digest-${{ matrix.arch }}
-          path: /tmp/digests/*
+          path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
 
   # Merge the per-arch legs into one multi-arch manifest, tag it, and print the
@@ -137,7 +140,7 @@ jobs:
   manifest:
     if: github.ref_type == 'tag'
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: comemory-release
     permissions:
       contents: read
       packages: write # push the merged manifest + tags
@@ -146,7 +149,7 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: digest-*
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           merge-multiple: true
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -194,7 +197,7 @@ jobs:
           # stale the moment the matrix gains an arch — blocking a legitimate
           # publish rather than catching anything.
           refs=()
-          for d in /tmp/digests/*; do
+          for d in "$RUNNER_TEMP"/digests/*; do
             refs+=("${image}@sha256:$(basename "$d")")
           done
 
