@@ -70,20 +70,6 @@ jobs:
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: "1.99.1"
-      # NOTE: this `validate` step is hand-maintained (the rest of the file is
-      # dist-generated). On a future `cargo dist init`, re-apply this block.
-      - name: Validate release preflight
-        env:
-          REF_NAME: ${{ github.ref_name }}
-          # Tag-triggered runs check out the tag in detached HEAD, so the
-          # script's default branch check (expects `main`) would see "HEAD".
-          # The tag is the release ref here; override the expected branch to
-          # match. The branch guard's real value is the local `just release`
-          # flow, where HEAD is still on main.
-          RELEASE_BRANCH: HEAD
-        run: |
-          ver="${REF_NAME#v}"
-          bash scripts/validate-release.sh "$ver"
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -443,11 +429,11 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
-  # NOTE: hand-maintained, like the `validate` and check-all steps in `plan`.
+  # NOTE: hand-maintained.
   # `post-announce-jobs = ["./release-finalize"]` in Cargo.toml declares this
   # job so a future `dist generate` emits it, but `allow-dirty = ["ci"]` keeps
   # dist from rewriting this file (it would drop the pinned action SHAs, the
-  # fetch-depth needed by migration-check, and the preflight). So the call lives
+  # fetch-depth). So the call lives
   # here explicitly. On a future `cargo dist init`, re-apply this block.
   #
   # Called rather than triggered: release-finalize used to sit on

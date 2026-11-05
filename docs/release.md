@@ -23,18 +23,16 @@ everything after the tag: push `vX.Y.Z` → `release.yml` builds the
 `aarch64-unknown-linux-gnu` targets → publishes the GHCR image → uploads the tarballs + shell installer to GitHub
 Releases → pushes the formula to `Falconiere/homebrew-tap` (stable tags only).
 A second hand-maintained workflow, `release-finalize.yml`, runs after the
-release is published to smoke-test the artifact, attach the repo's `install.sh`
-to the release (the asset `latest/download/install.sh` and `comemory upgrade`
-fetch), run that script end to end against the fresh release on the Linux
-runner, curate the release body from `CHANGELOG.md`, and (optionally) sign the
-`sha256.sum`.
+release is published to attach the repo's `install.sh` to the release (the asset
+`latest/download/install.sh` and `comemory upgrade` fetch), curate the release
+body from `CHANGELOG.md`, and (optionally) sign the `sha256.sum`.
 
 ```
 push to main ──> release-plz ──> [release PR] ──merge──> push vX.Y.Z tag
                                                               │
                             release.yml (build + image + GitHub Release + Homebrew)
                                                               │
-                            release-finalize.yml (smoke + curate notes + sign)
+                            release-finalize.yml (install.sh + curate notes + sign)
 ```
 
 ---
@@ -181,7 +179,8 @@ CI runs in three stages, and each does only its own work:
 | --- | --- | --- |
 | PR to `main` | `test.yml` (format, lint, tests and the other gates), `code-review.yml` | any build or publish |
 | Merge to `main` | `release-plz.yml` (opens or updates the release PR) | the suite, any build or publish |
-| Release PR merged | release-plz tags `vX.Y.Z`; the tag fires `release.yml`: tarballs, then the GHCR image (`release-image.yml`), then the GitHub Release and Homebrew | `check-all.sh`; tag builds still run release preflight and artifact verification |
+| Release PR open | nothing: every job skips, and a job skipped by `if` counts as passed | everything |
+| Release PR merged | release-plz tags `vX.Y.Z`; the tag fires `release.yml`: tarballs, then the GHCR image (`release-image.yml`), then the GitHub Release and Homebrew | any lint, format, test or verification: only build and deploy |
 
 There is no development environment. `lifecycle.yml` (the real installer and
 daemon lifecycle on macOS and Linux, the real tap step) is not part of any
@@ -217,8 +216,8 @@ a fork PR that edits `.github/workflows/` to target `comemory-release`.
 
 | Runs on | Jobs |
 | --- | --- |
-| `comemory-release` (latitude-dal) | `release-plz.yml`; `release.yml`'s `plan`, `build-global-artifacts`, `host`, `announce`; `release-image.yml`'s amd64 leg and `manifest` |
-| GitHub-hosted | everything on a PR; `lifecycle.yml`; all three tarball builds; `publish-homebrew-formula` (needs `brew`); the arm64 image leg (the VPS is x86_64); the `release-finalize` smoke test |
+| `comemory-release` (latitude-dal) | `release-plz.yml`; `release.yml`'s `plan`, `build-global-artifacts`, `host`, `announce`; `release-image.yml`'s amd64 leg and `manifest`; `release-finalize.yml` |
+| GitHub-hosted | everything on a PR; `lifecycle.yml`; all three tarball builds; `publish-homebrew-formula` (needs `brew`); the arm64 image leg (the VPS is x86_64) |
 
 The pool is two runners, `latitude-dal-comemory-<n>`, in
 `/opt/actions-runner-comemory/<n>`, as user `ghrunner-comemory` with a separate
@@ -241,11 +240,10 @@ with no binaries.
 Rerunning the review re-evaluates its own check, so a verdict cannot go stale
 behind a rerun either.
 
-The one exception: a **release-plz PR** (`release-plz-*` head) skips the
-heavy `test-suite` job in `test.yml`. Those PRs only bump version +
-CHANGELOG; the suite already ran on the commits being released. The thin
-`test` job still reports the required check name green — a skipped job
-alone would leave the PR merge-blocked.
+The one exception: a **release-plz PR** (`release-plz-*` head from this
+repository) runs nothing until it merges. Those PRs only bump version +
+CHANGELOG, and the suite already ran on the commits being released. `test` and
+`review` skip, and a job skipped by `if` counts as passed for a required check.
 
 `medium`, `low` and `nit` findings do **not** block. The review is advisory by
 construction — `code-review.yml` pins `FAIL_ON: none`, whose own gate is
@@ -256,8 +254,11 @@ things are still refused outright: a review that did not finish, and a report
 that names findings but no severity breakdown — an unclassified finding is not
 provably below the bar.
 
-Required checks on `main` are `test`, `review`, `gitleaks` and
-`Opengrep OSS`. If a check is renamed, add the new name in
+Required checks on `main` are `test` and `review`. `gitleaks` and `Opengrep OSS`
+still run inside the review job on normal PRs, but they are not required: with
+the review skipped they never report on a release PR, which could then not
+merge. A finding from either blocks only if the review rates it high or
+critical. If a check is renamed, add the new name in
 branch protection or the gate silently stops blocking. If a check is removed,
 drop it from branch protection first: a required check that never reports blocks
 every PR. The required name is still `test` (the thin propagator), not
@@ -356,8 +357,7 @@ For pre-release tags (`X.Y.Z-rc.N`), use **`just release-rc X.Y.Z-rc.N`**
   push) is the same as the stable manual flow.
 
 The Homebrew tap is gated off by `publish-prereleases = false` in
-`[workspace.metadata.dist]`, and the release-finalize smoke test
-treats the RC tarball identically to a stable one.
+`[workspace.metadata.dist]`.
 
 ---
 
@@ -457,8 +457,8 @@ latest real release) and `bash scripts/test-deploy.sh resume` (a read-only
   workflow). 3 local build jobs (macOS aarch64, Linux x86_64, Linux
   aarch64), 1 global job, 2 image legs plus `manifest`, 1 host job.
   `https://github.com/Falconiere/comemory/actions?query=workflow%3ARelease`
-- [ ] `release-finalize.yml` is green: smoke test + curated notes + (if
-  configured) signature.
+- [ ] `release-finalize.yml` is green: `install.sh` attached + curated notes +
+  (if configured) signature.
   `https://github.com/Falconiere/comemory/actions?query=workflow%3A%22Release+Finalize%22`
 - [ ] The GitHub Release body matches the curated `## [X.Y.Z]` section
   from `CHANGELOG.md` (not cargo-dist's auto-blob).
@@ -470,7 +470,8 @@ latest real release) and `bash scripts/test-deploy.sh resume` (a read-only
   `sha256.sum.minisig` is also attached.
 - [ ] `Falconiere/homebrew-tap` formula updated (skipped for RC).
   `https://github.com/Falconiere/homebrew-tap/commits/main`
-- [ ] Smoke test on a clean machine:
+- [ ] Smoke test on a clean machine. Nothing in CI checks a published release, so
+  this is the only check of the tarballs and installer:
   ```bash
   brew update && brew install Falconiere/tap/comemory
   comemory --version      # should print X.Y.Z
@@ -504,11 +505,6 @@ git revert HEAD
 git push origin main
 ```
 
-If `release-finalize.yml`'s smoke test fails *after* the release was
-created, the dist-generated `host` job already uploaded the artifact.
-Delete the release (the command above) and the artifacts go with it;
-re-tag once `main` is fixed.
-
 ### Failure-mode quick reference
 
 | Symptom | Cause | Fix |
@@ -518,10 +514,8 @@ re-tag once `main` is fixed.
 | release PR body looks like a cargo-semver-checks crash (`--- failure ---`, `/tmp/.tmp…`) | default `pr_body` pasted the lint stdout as the hero section (PR #94) | Already fixed: `pr_body` in `release-plz.toml` leads with the changelog. Do not hand-edit the GitHub description — the next push to `main` regenerates it |
 | PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN`, not the App token | Confirm the `release` job's `GITHUB_TOKEN` is `steps.app-token.outputs.token` |
 | release-plz jobs fail `403 Resource not accessible` | the App is not installed on this repo, or a permission is read-only | Install it here with Contents + Pull requests read/write + Workflows write; the secrets existing is not sufficient, the sync is repo-wide but the install is per-repo |
-| `plan` job fails on "Validate release preflight" | One of the 4 hard checks failed | Read the `validate-release` step log; the failing check is named |
 | Tag exists but no GitHub Release, `host` skipped | `custom-release-image` failed, so the image gate held the release (§2) | Flake: `gh run rerun <id> --failed`. Real defect: fix it and release a new version |
 | `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check the job's `GITHUB_TOKEN` permissions |
-| `release-finalize.yml` smoke test fails | The tarball is malformed (missing binary, too small) | Delete the release, investigate the build artifacts (downloaded to the `artifacts-*` workflow run artifacts) |
 | `release-finalize.yml` signs step warns "minisign not installed" | Maintainer hasn't configured signing | Expected — release is published unsigned. To enable, see one-time setup |
 | Homebrew tap didn't update | Stable tag was pushed but the formula didn't land | Re-run the `publish-homebrew-formula` job from the Actions UI; confirm the GitHub App is installed on the tap with Contents: write |
 

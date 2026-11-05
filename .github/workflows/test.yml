@@ -19,15 +19,15 @@ jobs:
   # merge; this suite is deterministic and runs regardless, so its result is
   # available even when the review is red.
   #
-  # release-plz PRs (`release-plz-*` heads) only bump version + CHANGELOG —
-  # the suite already ran on the commits being released — so this job is
-  # skipped there. The thin `test` job below still reports the required
-  # check name green; a skipped job alone would leave the PR merge-blocked.
+  # release-plz PRs (`release-plz-*` heads from this repository) only bump
+  # version + CHANGELOG, so nothing runs on them until they merge. Jobs skipped
+  # by `if` count as passed for required checks. The head-repo test stops a fork
+  # skipping the gates by naming its branch `release-plz-x`.
   #
   # The install-lifecycle and tap-publishing jobs live in lifecycle.yml, run by
   # hand: they need macOS runners and real Homebrew, and are not a code gate.
   test-suite:
-    if: ${{ !github.event.pull_request.draft && !startsWith(github.head_ref, 'release-plz-') }}
+    if: ${{ !github.event.pull_request.draft && !(startsWith(github.head_ref, 'release-plz-') && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-22.04
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
@@ -246,13 +246,13 @@ jobs:
           fi
 
   # Required-check facade. Branch protection requires the check name `test`.
-  # When `test-suite` is skipped (release-plz PR) or succeeds, this job is
-  # green; when it fails or is cancelled, this job fails too.
+  # When `test-suite` succeeds this job is green; when it fails or is cancelled,
+  # this job fails too. Both skip on a release-plz PR.
   # `always()` (not `!cancelled()`): a cancelled suite must still turn the
   # required `test` check red rather than leaving it missing.
   test:
     needs: [test-suite]
-    if: ${{ always() && !github.event.pull_request.draft }}
+    if: ${{ always() && !github.event.pull_request.draft && !(startsWith(github.head_ref, 'release-plz-') && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     steps:
       - name: Propagate suite results

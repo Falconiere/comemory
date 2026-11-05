@@ -17,7 +17,8 @@ concurrency:
 
 jobs:
   review:
-    if: ${{ !github.event.pull_request.draft }}
+    # Nothing runs on a release-plz PR until it merges; see test.yml.
+    if: ${{ !github.event.pull_request.draft && !(startsWith(github.head_ref, 'release-plz-') && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

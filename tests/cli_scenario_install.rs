@@ -193,11 +193,10 @@ fn session_end_capture_is_gated_by_host_override() {
     std::fs::create_dir_all(&bin).unwrap();
     let sentinel = task.path().join("comemory-invoked");
     let fake = bin.join("comemory");
-    let mut script = std::fs::File::create(&fake).unwrap();
-    writeln!(
-        script,
-        "#!/bin/sh\ntouch \"{}\"",
-        sentinel.to_str().unwrap()
+    // Written and closed at once: Linux refuses to exec a file open for writing.
+    std::fs::write(
+        &fake,
+        format!("#!/bin/sh\ntouch \"{}\"\n", sentinel.to_str().unwrap()),
     )
     .unwrap();
     #[cfg(unix)]
