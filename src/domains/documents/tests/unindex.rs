@@ -72,6 +72,8 @@ fn unindexing_a_source_removes_its_rows_and_journals_nothing() {
                 repo: Some(REPO.to_string()),
                 strict: false,
             },
+            None,
+            false,
         )
         .expect("index the real fixtures");
         output.sources[0].canonical_path.clone()

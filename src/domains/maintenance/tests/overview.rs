@@ -185,7 +185,9 @@ fn last_run_is_absent_until_a_real_index_run_and_then_mirrors_the_newest_row() {
     assert!(before.last_run.is_none(), "no index run has happened yet");
     assert_eq!(before.index_state.status, "unknown");
 
-    let repo_root = git_sample::build_sample_repo(dir.path());
+    // Outside the data directory, which the code walk deliberately skips.
+    let repo_dir = TempDir::new().unwrap();
+    let repo_root = git_sample::build_sample_repo(repo_dir.path());
     {
         let cfg = Config::defaults();
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);

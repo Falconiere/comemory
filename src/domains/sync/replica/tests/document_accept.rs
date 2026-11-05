@@ -489,6 +489,8 @@ fn index_guides(home: &mut Home) -> tempfile::TempDir {
             repo: Some(REPO.to_string()),
             strict: false,
         },
+        None,
+        false,
     )
     .expect("index the real guides");
     assert_eq!(output.sources[0].indexed, 2, "{output:?}");

@@ -105,8 +105,7 @@ fn walk_dir(root: &Path, memories_dir: &Path) -> (Vec<Candidate>, bool) {
     walker.standard_filters(true);
     walker.follow_links(false);
     walker.add_custom_ignore_filename(".comemoryignore");
-    let pruned = memories_dir.to_path_buf();
-    walker.filter_entry(move |entry| !entry.path().starts_with(&pruned));
+    crate::utilities::path_containment::prune_subtree(&mut walker, memories_dir.to_path_buf());
 
     let mut out = Vec::new();
     let mut complete = true;

@@ -40,6 +40,8 @@ fn seeded_session() -> (Session, TempDir, PathBuf) {
             repo: Some("docs-corpus".into()),
             strict: false,
         },
+        None,
+        false,
     )
     .expect("seed index");
     assert_eq!(out.sources.len(), 1);

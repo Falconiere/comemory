@@ -11,11 +11,10 @@ use axum::routing::{delete, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
+use super::mutate_lazy_response;
 use crate::domains::learning;
 use crate::serve::AppState;
-use crate::serve::routes::mutate_response::{
-    mutate_blocking, mutate_response, with_ctx, with_lazy_ctx,
-};
+use crate::serve::routes::mutate_response::{mutate_blocking, mutate_response, with_ctx};
 use crate::serve::routes::{RouteEntry, require_confirm};
 
 /// This resource's route-table entries, appended onto [`super::table_entries`].
@@ -57,11 +56,8 @@ async fn save(
     Json(req): Json<crate::domains::memories::save::Request>,
 ) -> Response {
     let origin = state.http_origin(&headers);
-    mutate_blocking(state, "save", move |state| {
-        with_lazy_ctx(state, |ctx| {
-            ctx.origin = origin;
-            crate::domains::memories::save::run(ctx, req, false, None)
-        })
+    mutate_lazy_response(state, "save", origin, move |ctx| {
+        crate::domains::memories::save::run(ctx, req, false, None)
     })
     .await
 }

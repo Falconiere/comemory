@@ -105,6 +105,11 @@ pub fn run_legs(
     run_legs_with_documents(cfg, conn, query, window, None)
 }
 
+/// The caller's vector, only when it has the dimension this leg's index stores.
+fn vector_of_dim(vector: Option<&[f32]>, dim: usize) -> Option<&[f32]> {
+    vector.filter(|v| v.len() == dim)
+}
+
 /// Run the legs with an optional document-space query and model identity.
 pub fn run_legs_with_documents(
     cfg: &Config,
@@ -126,9 +131,7 @@ pub fn run_legs_with_documents(
             cfg,
             conn,
             query.text,
-            query
-                .vector
-                .filter(|v| v.len() == cfg.retrieval.memory_vector_dim),
+            vector_of_dim(query.vector, cfg.retrieval.memory_vector_dim),
             filters,
             pool,
         )?
@@ -140,9 +143,7 @@ pub fn run_legs_with_documents(
             cfg,
             conn,
             query.text,
-            query
-                .vector
-                .filter(|v| v.len() == cfg.retrieval.code_vector_dim),
+            vector_of_dim(query.vector, cfg.retrieval.code_vector_dim),
             filters.repo,
             query.domain_filters.lang,
             pool,

@@ -2,11 +2,14 @@
 //! delegates to one-file-per-subcommand modules so each command owns its own
 //! argument shape and output rendering.
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// `comemory architecture`: the component-level architecture model.
 pub mod architecture;
@@ -348,15 +351,25 @@ fn reconcile_pending(data_dir: Option<&std::path::Path>, cmd: &Cmd) -> Result<()
     Ok(())
 }
 
+/// Run a synchronous subcommand on the blocking pool.
+async fn blocking<A: Send + 'static>(
+    command: fn(A, bool, Option<PathBuf>) -> Result<()>,
+    args: A,
+    json: bool,
+    data_dir: Option<PathBuf>,
+) -> Result<()> {
+    crate::utilities::blocking::run_blocking(move || command(args, json, data_dir)).await
+}
+
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
 /// place that knows about every variant, keeping individual subcommand modules
 /// free of cross-references.
 pub async fn run(cli: Cli) -> Result<()> {
     match prepare_command(cli.cmd, cli.data_dir.as_deref())? {
         Cmd::Architecture(a) => architecture::run(a, cli.json, cli.data_dir).await,
-        Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,
+        Cmd::Save(a) => blocking(save::run_sync, a, cli.json, cli.data_dir).await,
         Cmd::Project(a) => project::run(a, cli.json, cli.data_dir).await,
-        Cmd::Search(a) => search::run(a, cli.json, cli.data_dir).await,
+        Cmd::Search(a) => blocking(search::run_sync, a, cli.json, cli.data_dir).await,
         Cmd::SearchCode(a) => search_code::run(a, cli.json, cli.data_dir).await,
         Cmd::List(a) => list::run(a, cli.json, cli.data_dir).await,
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
@@ -369,16 +382,16 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,
         Cmd::Tune(a) => tune::run(a, cli.json, cli.data_dir).await,
         Cmd::Bandit(a) => bandit::run(a, cli.json, cli.data_dir).await,
-        Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
-        Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
+        Cmd::Doctor(a) => blocking(doctor::run_sync, a, cli.json, cli.data_dir).await,
+        Cmd::IndexCode(a) => blocking(index_code::run_sync, a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
-        Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
+        Cmd::Index(a) => blocking(index::run_sync, a, cli.json, cli.data_dir).await,
         Cmd::Run(a) => run_embedding::run(a, cli.json, cli.data_dir).await,
         Cmd::Sources(a) => sources::run(a, cli.json, cli.data_dir).await,
         Cmd::Stats(a) => stats::run(a, cli.json, cli.data_dir).await,
         Cmd::Repos(a) => repos::run(a, cli.json, cli.data_dir).await,
         Cmd::Show(a) => show::run(a, cli.json, cli.data_dir).await,
-        Cmd::Find(a) => find::run(a, cli.json, cli.data_dir).await,
+        Cmd::Find(a) => blocking(find::run_sync, a, cli.json, cli.data_dir).await,
         Cmd::Hooks(a) => hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Unindex(a) => unindex::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
@@ -387,7 +400,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Serve(a) => serve::run(a, cli.json, cli.data_dir).await,
         Cmd::Mcp(a) => mcp::run(a, cli.json, cli.data_dir).await,
         Cmd::Setup(a) => setup::run(a, cli.json, cli.data_dir).await,
-        Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
+        Cmd::Context(a) => blocking(context::run_sync, a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
         Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir),
@@ -425,4 +438,14 @@ pub(crate) fn load_config(paths: &Paths) -> Result<Config> {
     Config::defaults()
         .with_file(paths.config_file().as_path())?
         .with_env()
+}
+
+/// The retrieval commands' shared start: create the data directories, open the
+/// store, then load the config, in that order.
+pub(crate) fn open_store(data_dir: Option<PathBuf>) -> Result<(Paths, Connection, Config)> {
+    let paths = Paths::new(crate::config::paths::resolve_data_dir(data_dir));
+    paths.ensure_dirs()?;
+    let conn = crate::store::connection::open(paths.db_path())?;
+    let cfg = load_config(&paths)?;
+    Ok((paths, conn, cfg))
 }

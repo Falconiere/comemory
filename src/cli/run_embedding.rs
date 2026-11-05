@@ -55,13 +55,14 @@ pub async fn run(args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Resu
         paths.ensure_dirs()?;
         let cfg = load_config(&paths)?;
         let mut ctx = Ctx::lazy(&paths, &cfg);
-        embedding::run(
+        embedding::run_with_progress(
             &mut ctx,
             embedding::Request {
                 path: root.to_string_lossy().into_owned(),
                 repo: args.repo,
                 mode: args.mode.into(),
             },
+            None,
         )
     })
     .await

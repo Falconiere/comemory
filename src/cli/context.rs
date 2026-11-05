@@ -16,11 +16,9 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::cli::output;
-use crate::cli::{lazy_reindex, load_config};
-use crate::config::paths::{Paths, resolve_data_dir};
+use crate::cli::{lazy_reindex, open_store};
 use crate::domains::retrieval;
 use crate::prelude::*;
-use crate::store::connection;
 use crate::utilities::context::Ctx;
 use crate::utilities::vector_stdin;
 
@@ -103,14 +101,8 @@ pub struct Args {
 /// search, and the resulting `query_id` is surfaced (JSON field / TTY
 /// footer) so context lookups can receive `comemory feedback` instead of
 /// polluting reformulation mining as permanently-failed queries.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    crate::utilities::blocking::run_blocking(move || run_sync(a, json_flag, data_dir)).await
-}
-fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
-    let mut conn = connection::open(paths.db_path())?;
-    let cfg = load_config(&paths)?;
+pub(crate) fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let (paths, mut conn, cfg) = open_store(data_dir)?;
     // Non-blocking lazy auto-reindex (see `cli::lazy_reindex`): fire a
     // detached `index-code` when this repo's HEAD moved since the last index,
     // then proceed against the current index. No-op for `hook`/`off`,

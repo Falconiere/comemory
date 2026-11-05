@@ -2,7 +2,7 @@
 //! `comemory index-code`'s DB-write path / `POST /api/v1/code/index`: walk
 //! a real git repo and mirror its symbols into `code_symbols` (+
 //! `code_fts`), then best-effort refresh the code graph. Moved out of
-//! `cli::index_code::run` (Binding Rule 1).
+//! `cli::index_code::run_sync` (Binding Rule 1).
 //!
 //! `--extract` stays CLI-only (documented HTTP-mapping exclusion): it
 //! streams JSONL to stdout and never touches the DB, so `Request` carries
@@ -65,7 +65,7 @@ pub struct Request {
     pub mode: IndexMode,
 }
 
-/// `POST /api/v1/code/index` response. `cli::index_code::run` emits
+/// `POST /api/v1/code/index` response. `cli::index_code::run_sync` emits
 /// nothing on success (silent, unchanged); the HTTP job form carries a
 /// small real count instead of an empty object.
 #[derive(Serialize, Debug)]
@@ -158,7 +158,9 @@ fn index(
     let excluded = ctx.paths.data_dir().canonicalize().ok();
     let max_bytes = ctx.cfg.indexing.max_file_bytes;
     let embed_cmd = ctx.cfg.code_embed_cmd.clone();
-    let embed_model = embedding::provider_id(
+    // Binds managed vectors to the command, hint and parent-input version.
+    let embed_model = crate::utilities::digest::provider_id(
+        "code-parent-raw-v1",
         embed_cmd.as_deref().unwrap_or_default(),
         ctx.cfg.code_embed_hint.as_deref(),
     );
