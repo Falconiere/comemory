@@ -474,6 +474,8 @@ fn index_real_guides(home: &TempDir) -> TempDir {
             repo: Some(SHARE_REPO.to_string()),
             strict: false,
         },
+        None,
+        false,
     )
     .expect("index the real guides");
     assert_eq!(output.sources[0].indexed, 2, "{output:?}");

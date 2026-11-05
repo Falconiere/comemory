@@ -23,21 +23,17 @@ pub fn embed_query(cmd: &str, query: &str) -> Result<Vec<f32>> {
     embed_query_cancellable(cmd, query, None)
 }
 
-/// Execute with an explicit whole-invocation deadline (also useful to tests).
-pub fn embed_query_with_timeout(cmd: &str, query: &str, timeout: Duration) -> Result<Vec<f32>> {
-    execute(cmd, query, timeout, None)
-}
-
 /// Vectorize with cooperative cancellation, terminating the provider group promptly.
 pub fn embed_query_cancellable(
     cmd: &str,
     query: &str,
     sink: Option<&dyn ProgressSink>,
 ) -> Result<Vec<f32>> {
-    execute(cmd, query, EMBED_TIMEOUT, sink)
+    embed_query_with_timeout(cmd, query, EMBED_TIMEOUT, sink)
 }
 
-fn execute(
+/// Execute with an explicit whole-invocation deadline (also useful to tests).
+pub fn embed_query_with_timeout(
     cmd: &str,
     query: &str,
     timeout: Duration,

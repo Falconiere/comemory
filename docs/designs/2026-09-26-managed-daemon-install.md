@@ -5,6 +5,10 @@
 sync coordinator for the data directory, or fails honestly (issue 258,
 epic 248). Builds on `2026-09-25-required-sync-daemon.md` (issue 257).
 
+> **Update 2026-11-05:** the `daemon-install` job (D10, AC-1, AC-8) moved from
+> `test.yml` to the hand-run `lifecycle.yml`. It no longer runs on PRs and is no
+> longer a `needs` of the required `test` check.
+
 ## Problem
 
 Issue 257 made the sync coordinator required and gave it an idempotent

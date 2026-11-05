@@ -50,7 +50,15 @@ ruby -ryaml -e '
   abort "release.yml: no \"Commit formula files\" step" unless step
   print step.fetch("run")' "$ENGINE_ROOT/.github/workflows/release.yml" >"$work/step.sh"
 
-gh release download ${release:+"$release"} --repo Falconiere/comemory \
+# A local deploy (docs/release.md §3b) publishes no dist-manifest.json, so the
+# default input is the newest release that has one, not simply the latest.
+if [[ -z "$release" ]]; then
+  release="$(gh api 'repos/Falconiere/comemory/releases?per_page=30' --jq \
+    '[.[] | select((.draft or .prerelease) | not) | select(any(.assets[]; .name == "dist-manifest.json"))][0].tag_name // empty')"
+  [[ -n "$release" ]] || die "release-formula" "no recent release has a dist-manifest.json; pass --release TAG"
+fi
+
+gh release download "$release" --repo Falconiere/comemory \
   --pattern comemory.rb --pattern dist-manifest.json --dir "$work/release"
 version="$(jq -r '.releases[] | select(.app_name == "comemory") | .app_version' "$work/release/dist-manifest.json")"
 

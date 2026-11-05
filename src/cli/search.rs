@@ -11,16 +11,15 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::load_config;
+use crate::cli::open_store;
 use crate::cli::output;
 use crate::cli::search_only::{self, OnlyDomain};
-use crate::config::paths::{Paths, resolve_data_dir};
+use crate::config::paths::Paths;
 use crate::domains::memories::Kind;
 use crate::domains::retrieval;
 use crate::domains::retrieval::scope::{self, Domain, Filters};
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::connection;
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::page_window;
 use crate::utilities::vector_stdin;
@@ -125,15 +124,8 @@ pub struct Args {
 /// scope that excludes memory — the interim document-only path (see
 /// [`run_memory`] / `cli::search_only`). The `--k` flag overrides
 /// `retrieval.top_k`.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    crate::utilities::blocking::run_blocking(move || run_sync(a, json_flag, data_dir)).await
-}
-fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
-    let mut conn = connection::open(paths.db_path())?;
-
-    let cfg = load_config(&paths)?;
+pub(crate) fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let (paths, mut conn, cfg) = open_store(data_dir)?;
     let window = page_window(&cfg, a.k, a.offset);
     let scope =
         scope::scope_from_flags(a.since.as_deref(), a.until.as_deref(), a.as_of.as_deref())?;

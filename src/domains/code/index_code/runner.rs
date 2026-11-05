@@ -175,8 +175,7 @@ fn files(root: &Path, excluded: Option<&Path>) -> Result<Vec<ignore::DirEntry>> 
     walker.standard_filters(true);
     walker.add_custom_ignore_filename(".comemoryignore");
     if let Some(excluded) = excluded {
-        let excluded = excluded.to_path_buf();
-        walker.filter_entry(move |entry| !entry.path().starts_with(&excluded));
+        crate::utilities::path_containment::prune_subtree(&mut walker, excluded.to_path_buf());
     }
     Ok(walker
         .build()
@@ -206,10 +205,7 @@ fn remove_missing(
         if !seen.contains(path) {
             code_row::purge_file_symbols(tx, repo, path)?;
             crate::store::indexed_files::delete_one(tx, repo, path)?;
-            crate::store::code_graph_edges::delete_file_edges(
-                tx,
-                &crate::store::edges::file_node_id(repo, path),
-            )?;
+            crate::store::code_graph_edges::delete_file_edges(tx, repo, path)?;
             removed += 1;
         }
     }

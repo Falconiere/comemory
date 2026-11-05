@@ -51,10 +51,7 @@ pub struct Args {
 /// Register every `a.path` entry and run its synchronous reconcile via
 /// [`index::run`]. See that module's doc for why `--strict` is re-checked
 /// here rather than inside the shared middle.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    crate::utilities::blocking::run_blocking(move || run_sync(a, json_flag, data_dir)).await
-}
-fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub(crate) fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;
@@ -70,7 +67,7 @@ fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
         repo: a.repo.clone(),
         strict: a.strict,
     };
-    let output = index::run(&mut ctx, req)?;
+    let output = index::run(&mut ctx, req, None, false)?;
 
     let strict_failed = a.strict && output.sources.iter().any(|r| !r.errors.is_empty());
     emit(json_flag, &output)?;

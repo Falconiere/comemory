@@ -158,7 +158,9 @@ fn index(
     let excluded = ctx.paths.data_dir().canonicalize().ok();
     let max_bytes = ctx.cfg.indexing.max_file_bytes;
     let embed_cmd = ctx.cfg.code_embed_cmd.clone();
-    let embed_model = embedding::provider_id(
+    // Binds managed vectors to the command, hint and parent-input version.
+    let embed_model = crate::utilities::digest::provider_id(
+        "code-parent-raw-v1",
         embed_cmd.as_deref().unwrap_or_default(),
         ctx.cfg.code_embed_hint.as_deref(),
     );

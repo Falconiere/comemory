@@ -23,6 +23,12 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     hex
 }
 
+/// Identify an embedding provider configuration without storing its command or
+/// credentials. `domain` versions the input shape the vectors were built from.
+pub(crate) fn provider_id(domain: &str, cmd: &str, hint: Option<&str>) -> String {
+    sha256_hex(format!("{domain}\0{cmd}\0{}", hint.unwrap_or_default()).as_bytes())
+}
+
 /// True when `s` is exactly `len` lowercase hexadecimal characters.
 ///
 /// The shape both id contracts check: `memory::id::is_valid_memory_id` calls

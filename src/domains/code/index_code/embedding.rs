@@ -31,13 +31,6 @@ pub(super) fn finish(
     Ok(response)
 }
 
-/// Bind managed vectors to the command, hint and parent-input version.
-pub(super) fn provider_id(cmd: &str, hint: Option<&str>) -> String {
-    crate::utilities::digest::sha256_hex(
-        format!("code-parent-raw-v1\0{cmd}\0{}", hint.unwrap_or_default()).as_bytes(),
-    )
-}
-
 /// Refresh eligible parent vectors outside the lexical transaction.
 pub(super) fn run(
     conn: &mut Connection,

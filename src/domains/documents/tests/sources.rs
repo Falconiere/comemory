@@ -51,6 +51,8 @@ fn indexed_fixtures() -> (TempDir, TempDir, rusqlite::Connection, String) {
                 repo: Some(REPO.to_string()),
                 strict: false,
             },
+            None,
+            false,
         )
         .expect("index the real fixtures");
         output.sources[0].source_id.clone()
@@ -188,6 +190,8 @@ fn indexed_fixtures_unlabelled() -> (TempDir, TempDir, rusqlite::Connection) {
                 repo: None,
                 strict: false,
             },
+            None,
+            false,
         )
         .expect("index the real fixtures");
     }

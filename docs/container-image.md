@@ -1,9 +1,12 @@
 # Container image
 
 `comemory` publishes a multi-arch image to
-**`ghcr.io/falconiere/comemory`** on every `v*` tag, built by
+**`ghcr.io/falconiere/comemory`** on every release tag, built by
 `.github/workflows/release-image.yml` from the `Dockerfile` at the repository
-root.
+root. `release.yml` calls it before it creates the GitHub Release, so a failed
+image stops the release. A local deploy
+([release runbook §3b](release.md#3b-local-deploy-actions-disabled)) publishes
+no image.
 
 That path is spelled out rather than written as `<owner>` because it is the one
 readers actually pull from. The workflow itself derives the namespace from

@@ -102,24 +102,10 @@ pub struct Output {
     pub sources: Vec<SourceReport>,
 }
 
-/// Register every `req.path` entry and run its synchronous reconcile. See
-/// the module doc for why `req.strict` is accepted but never enforced
-/// here.
-pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Output> {
-    run_with_progress(ctx, req, None)
-}
-
-/// Reconcile sources while reporting progress and honoring cancellation.
-pub fn run_with_progress(
-    ctx: &mut Ctx<'_>,
-    req: Request,
-    sink: Option<&dyn ProgressSink>,
-) -> Result<Output> {
-    run_with_mode(ctx, req, sink, false)
-}
-
-/// Reconcile sources with optional full document-vector refresh.
-pub fn run_with_mode(
+/// Register every `req.path` entry and run its synchronous reconcile, with
+/// optional progress and full document-vector refresh. See the module doc for
+/// why `req.strict` is accepted but never enforced here.
+pub fn run(
     ctx: &mut Ctx<'_>,
     req: Request,
     sink: Option<&dyn ProgressSink>,

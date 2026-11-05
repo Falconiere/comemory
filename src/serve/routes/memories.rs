@@ -14,10 +14,14 @@ use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
 use axum::routing::get;
+use serde::Serialize;
 
+use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::routes::mutate_response::{mutate_blocking, with_lazy_ctx};
 use crate::serve::routes::{RouteEntry, respond};
 use crate::serve::scope::RepoScope;
+use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -31,6 +35,27 @@ pub mod search;
 /// `POST /memories`, `DELETE /memories/{id}`, `POST /feedback` — the
 /// mutating routes (`domains::memories::{save, delete}`, `domains::learning::feedback`).
 pub mod write;
+
+/// [`mutate_blocking`] over [`with_lazy_ctx`], recording who called: for the
+/// memory writes, whose cores open the database themselves.
+async fn mutate_lazy_response<T, F>(
+    state: AppState,
+    command: &str,
+    origin: Origin,
+    run: F,
+) -> Response
+where
+    F: FnOnce(&mut Ctx<'_>) -> Result<T> + Send + 'static,
+    T: Serialize + Send + 'static,
+{
+    mutate_blocking(state, command, move |state| {
+        with_lazy_ctx(state, |ctx| {
+            ctx.origin = origin;
+            run(ctx)
+        })
+    })
+    .await
+}
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

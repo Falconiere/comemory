@@ -7,9 +7,7 @@ use crate::utilities::progress::ProgressSink;
 
 /// Identify a provider configuration without storing its command or credentials.
 pub fn provider_id(cmd: &str, hint: Option<&str>) -> String {
-    crate::utilities::digest::sha256_hex(
-        format!("document-chunk-raw-v1\0{cmd}\0{}", hint.unwrap_or_default()).as_bytes(),
-    )
+    crate::utilities::digest::provider_id("document-chunk-raw-v1", cmd, hint)
 }
 
 /// Embed pending chunks, returning successful count and per-chunk failures.

@@ -46,6 +46,8 @@ fn run_registers_and_indexes_real_fixtures() {
             repo: Some("docs-corpus".into()),
             strict: false,
         },
+        None,
+        false,
     )
     .expect("index run");
     assert_eq!(output.sources.len(), 1);
@@ -75,6 +77,8 @@ fn run_never_fails_on_strict_leaving_the_error_check_to_the_caller() {
             repo: None,
             strict: true,
         },
+        None,
+        false,
     )
     .expect("run must succeed even though strict is set and files are unremarkable");
     let s = &output.sources[0];
@@ -100,6 +104,8 @@ fn run_labels_a_source_inside_a_linked_worktree_with_the_main_repo_name() {
             repo: None,
             strict: false,
         },
+        None,
+        false,
     )
     .expect("index from a worktree");
     assert_eq!(
@@ -122,6 +128,8 @@ fn run_on_a_nonexistent_path_is_a_usage_error() {
             repo: None,
             strict: false,
         },
+        None,
+        false,
     )
     .expect_err("nonexistent path must fail");
     assert!(err.to_string().contains("cannot resolve"), "{err}");
@@ -179,6 +187,8 @@ fn index_shared(
             repo: Some(SHARE_REPO.to_string()),
             strict: false,
         },
+        None,
+        false,
     )
     .expect("index run");
     output.sources.remove(0)

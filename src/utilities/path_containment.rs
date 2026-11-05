@@ -79,6 +79,12 @@ pub fn contain_abs(roots: &[PathBuf], p: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Stop `walker` entering `subtree`. Entries are compared as the walk spells
+/// them, so `subtree` and the walked root must share a spelling to match.
+pub(crate) fn prune_subtree(walker: &mut ignore::WalkBuilder, subtree: PathBuf) {
+    walker.filter_entry(move |entry| !entry.path().starts_with(&subtree));
+}
+
 #[cfg(test)]
 #[path = "tests/path_containment.rs"]
 mod tests;

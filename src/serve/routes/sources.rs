@@ -132,7 +132,9 @@ async fn index_sources(
         "index",
         true,
         move || {
-            let resp = with_lazy_ctx(&job_state, |ctx| documents::index::run(ctx, req))?;
+            let resp = with_lazy_ctx(&job_state, |ctx| {
+                documents::index::run(ctx, req, None, false)
+            })?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

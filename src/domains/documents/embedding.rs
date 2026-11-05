@@ -37,12 +37,8 @@ pub struct Response {
     pub warnings: Vec<String>,
 }
 
-/// Reconcile documents and code through their existing shared cores.
-pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
-    run_with_progress(ctx, req, None)
-}
-
-/// Reconcile with cooperative cancellation between and within domain passes.
+/// Reconcile documents and code through their existing shared cores, with
+/// cooperative cancellation between and within domain passes.
 pub fn run_with_progress(
     ctx: &mut Ctx<'_>,
     req: Request,
@@ -66,7 +62,7 @@ pub fn run_with_progress(
         index_code::refuse_if_archived(ctx.conn()?, &label)?;
     }
     let path = root.to_string_lossy().into_owned();
-    let documents = index::run_with_mode(
+    let documents = index::run(
         ctx,
         index::Request {
             path: vec![path.clone()],

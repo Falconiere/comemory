@@ -9,13 +9,11 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::load_config;
+use crate::cli::open_store;
 use crate::cli::output::json;
-use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::memories::Kind;
 use crate::domains::retrieval;
 use crate::prelude::*;
-use crate::store::connection;
 use crate::utilities::context::Ctx;
 use crate::utilities::vector_stdin;
 
@@ -84,14 +82,8 @@ pub struct Args {
 }
 
 /// Run `comemory find`.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    crate::utilities::blocking::run_blocking(move || run_sync(a, json_flag, data_dir)).await
-}
-fn run_sync(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
-    let mut conn = connection::open(paths.db_path())?;
-    let cfg = load_config(&paths)?;
+pub(crate) fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let (paths, mut conn, cfg) = open_store(data_dir)?;
     let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);

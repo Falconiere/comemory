@@ -39,25 +39,20 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, ready_for_review, reopened]
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
-# Hand-maintained (re-apply on a future `cargo dist init`). Supersede an
-# in-flight PR plan when the branch moves. NEVER cancel a tag run: that one
-# publishes artifacts, and half a release is worse than a slow one.
+# Hand-maintained (re-apply on a future `cargo dist init`). NEVER cancel a tag
+# run: it publishes artifacts, and half a release is worse than a slow one.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: "ubuntu-22.04"
+    runs-on: comemory-release
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
       tag: ${{ !github.event.pull_request && github.ref_name || '' }}
@@ -75,21 +70,6 @@ jobs:
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: "1.99.1"
-      # NOTE: this `validate` step is hand-maintained (the rest of the file is
-      # dist-generated). On a future `cargo dist init`, re-apply this block.
-      - name: Validate release preflight
-        if: ${{ !github.event.pull_request }}
-        env:
-          REF_NAME: ${{ github.ref_name }}
-          # Tag-triggered runs check out the tag in detached HEAD, so the
-          # script's default branch check (expects `main`) would see "HEAD".
-          # The tag is the release ref here; override the expected branch to
-          # match. The branch guard's real value is the local `just release`
-          # flow, where HEAD is still on main.
-          RELEASE_BRANCH: HEAD
-        run: |
-          ver="${REF_NAME#v}"
-          bash scripts/validate-release.sh "$ver"
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -203,7 +183,7 @@ jobs:
     needs:
       - plan
       - build-local-artifacts
-    runs-on: "ubuntu-22.04"
+    runs-on: comemory-release
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
@@ -244,17 +224,36 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+  # NOTE: hand-maintained, like custom-release-finalize below.
+  # `global-artifacts-jobs = ["./release-image"]` in Cargo.toml declares it. On a
+  # future `cargo dist init`, re-apply this block and the `host` gate on it.
+  #
+  # The image is the deploy: the GitHub Release must not exist unless it shipped.
+  # It waits for the artifacts so a failed tarball build cannot move `latest`.
+  custom-release-image:
+    needs:
+      - plan
+      - build-local-artifacts
+      - build-global-artifacts
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/release-image.yml
+
   # Determines if we should publish/announce
   host:
     needs:
       - plan
       - build-local-artifacts
       - build-global-artifacts
-    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+      - custom-release-image
+    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine).
+    # Hand-maintained: the image must have succeeded. `always()` opts out of the
+    # implicit needs gate, so listing it in `needs` alone would not stop this job.
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && needs.custom-release-image.result == 'success' }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: "ubuntu-22.04"
+    runs-on: comemory-release
     outputs:
       val: ${{ steps.host.outputs.manifest }}
     steps:
@@ -315,6 +314,8 @@ jobs:
     needs:
       - plan
       - host
+    # Hand-maintained: stays GitHub-hosted because the tap step needs `brew`, which
+    # the comemory-release runners lack. Re-apply after a future `cargo dist init`.
     runs-on: "ubuntu-22.04"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -419,7 +420,7 @@ jobs:
     # still allowing individual publish jobs to skip themselves (for prereleases).
     # "host" however must run to completion, no skipping allowed!
     if: ${{ always() && needs.host.result == 'success' && (needs.publish-homebrew-formula.result == 'skipped' || needs.publish-homebrew-formula.result == 'success') }}
-    runs-on: "ubuntu-22.04"
+    runs-on: comemory-release
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -428,11 +429,11 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
-  # NOTE: hand-maintained, like the `validate` and check-all steps in `plan`.
+  # NOTE: hand-maintained.
   # `post-announce-jobs = ["./release-finalize"]` in Cargo.toml declares this
   # job so a future `dist generate` emits it, but `allow-dirty = ["ci"]` keeps
   # dist from rewriting this file (it would drop the pinned action SHAs, the
-  # fetch-depth needed by migration-check, and the preflight). So the call lives
+  # fetch-depth). So the call lives
   # here explicitly. On a future `cargo dist init`, re-apply this block.
   #
   # Called rather than triggered: release-finalize used to sit on

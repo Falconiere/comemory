@@ -53,7 +53,7 @@ fn slow_command_times_out_promptly_and_reaps() {
     // be killed+reaped (not waited on for the full 5s). Asserting prompt return
     // proves we don't block on the child; the kill+wait avoids a zombie.
     let start = Instant::now();
-    let err = embed_query_with_timeout("sleep 5", "q", Duration::from_millis(150));
+    let err = embed_query_with_timeout("sleep 5", "q", Duration::from_millis(150), None);
     assert!(err.is_err(), "a command slower than the timeout must error");
     assert!(
         start.elapsed() < Duration::from_secs(3),
@@ -80,8 +80,12 @@ fn command_that_never_reads_stdin_still_yields_vector() {
 fn deadline_covers_blocked_stdin_and_exit_after_stdout_closes() {
     for command in ["sleep 20", "exec 1>&-; sleep 20", "sleep 20 & wait"] {
         let start = Instant::now();
-        let result =
-            embed_query_with_timeout(command, &"x".repeat(2 << 20), Duration::from_millis(200));
+        let result = embed_query_with_timeout(
+            command,
+            &"x".repeat(2 << 20),
+            Duration::from_millis(200),
+            None,
+        );
         assert!(result.unwrap_err().to_string().contains("timed out"));
         assert!(start.elapsed() < Duration::from_secs(3));
     }
@@ -109,8 +113,13 @@ fn output_cap_and_diagnostics_do_not_deadlock() {
 #[test]
 fn descendant_held_pipes_are_terminated() {
     let start = Instant::now();
-    let error = embed_query_with_timeout("sleep 20 & exit 0", "input", Duration::from_millis(200))
-        .unwrap_err();
+    let error = embed_query_with_timeout(
+        "sleep 20 & exit 0",
+        "input",
+        Duration::from_millis(200),
+        None,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("timed out"));
     assert!(start.elapsed() < Duration::from_secs(3));
 }
