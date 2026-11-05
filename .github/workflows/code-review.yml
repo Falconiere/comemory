@@ -57,9 +57,8 @@ jobs:
           # opinion on the whole diff, so on a large PR it reliably emits
           # a fresh crop of stylistic findings each run; PR #82 cleared
           # 230 of them across four rounds without one confirmed defect in
-          # shipped behavior. The gates that must stay red on a real
-          # problem are `test` (scripts/check-all.sh + the nextest suite)
-          # and `plan`.
+          # shipped behavior. The gate that must stay red on a real
+          # problem is `test` (scripts/check-all.sh + the nextest suite).
           #
           # `FAIL_ON` is verdict-driven — `changes` would fail on any
           # request-changes verdict, which is precisely the noise above. The

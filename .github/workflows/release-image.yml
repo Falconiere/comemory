@@ -1,8 +1,9 @@
 name: release-image
 
-# Tag-driven container publish: push vX.Y.Z -> build linux/amd64 + linux/arm64
-# legs on native runners -> push both by digest -> merge into one multi-arch
-# manifest at ghcr.io/<owner>/comemory -> print the digest-pinned ref.
+# Container publish, called by release.yml on a release tag before `host` creates
+# the GitHub Release, so a failed image stops the release: build linux/amd64 +
+# linux/arm64 legs on native runners -> push both by digest -> merge into one
+# multi-arch manifest at ghcr.io/<owner>/comemory -> print the digest-pinned ref.
 #
 # Each arch compiles on its native runner. This dependency tree is mostly C
 # built from source (`rusqlite` bundled SQLite, `sqlite-vec`, `git2`'s vendored
@@ -14,7 +15,8 @@ name: release-image
 # fail. That gate is cargo fmt + clippy + test. This repo's equivalent is
 # test.yml, which runs scripts/check-all.sh plus the coverage and eval gates and
 # builds ast-grep from source first — far too heavy to duplicate on every tag,
-# and it already ran on the commit the tag points at.
+# and it already ran on the commits the tag releases (the tagged version bump
+# itself skips it, as every release-plz PR does).
 #
 # What replaces it is specific to the artefact this workflow produces: the
 # Dockerfile asserts `comemory --version` equals COMEMORY_VERSION inside the
@@ -22,18 +24,15 @@ name: release-image
 # catches the failure this workflow could actually introduce; re-running unit
 # tests would not.
 #
-# Ready PRs to main touching the image inputs build without pushing (catches Dockerfile rot);
-# workflow_dispatch does the same on demand.
+# workflow_dispatch on a branch builds without pushing, to check a Dockerfile
+# change on demand. Dispatched on a tag it publishes that tag, as release.yml does.
 on:
-  push:
-    tags: ['v*']
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, ready_for_review, reopened]
-    paths:
-      - Dockerfile
-      - .dockerignore
-      - .github/workflows/release-image.yml
+  workflow_call:
+    inputs:
+      plan:
+        description: The dist plan, as JSON. A dist-generated caller passes it; unused here.
+        required: false
+        type: string
   workflow_dispatch:
 
 # One image per ref; never cancel a tag publish mid-flight.
@@ -60,7 +59,8 @@ jobs:
   # One leg per arch, compiled natively, pushed by digest only — tags are
   # applied by `manifest` once both legs exist.
   build:
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    # About 8 minutes a leg (v0.57.1). A hung leg must not hold the release for 6 hours.
+    timeout-minutes: 60
     strategy:
       fail-fast: true
       matrix:
@@ -85,7 +85,7 @@ jobs:
           echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASENAME}" >> "$GITHUB_OUTPUT"
           # On a tag this is the released version and the Dockerfile asserts the
           # binary matches it. Off a tag it is empty, which the Dockerfile reads
-          # as "skip the assertion" — a PR build has no version to check against.
+          # as "skip the assertion" — a manual build has no version to check against.
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else

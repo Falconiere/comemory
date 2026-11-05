@@ -1,0 +1,113 @@
+name: Lifecycle
+
+# Run by hand before a release that touches install.sh, the daemon supervisor,
+# `comemory upgrade` or the tap step. Not a pull-request gate: it needs macOS
+# runners and real Homebrew, and scripts/test-daemon-install.sh --native refuses
+# to run outside CI, so a disposable runner is the only place it can execute.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Managed install/update lifecycle (#258): the real installer, real
+  # published old binaries and two real branch builds, against the real user
+  # service manager of a disposable runner (launchd's GUI domain on macOS,
+  # a lingering systemd --user manager on Ubuntu) plus a headless pass with
+  # no user bus. The native modes never run on a developer's session: the
+  # script refuses them outside CI. A missing service manager fails the job
+  # rather than letting a silent `process` fallback pass.
+  daemon-install:
+    # 18 minutes on macOS, 10 on Linux (2026-10-25). macOS bills at 10x, so a hang is costly.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, mode: native }
+          - { os: ubuntu-22.04, mode: native }
+          - { os: ubuntu-22.04, mode: headless }
+    runs-on: ${{ matrix.os }}
+    env:
+      COMEMORY_INDEXING_AUTO_REINDEX: "off"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: "1.99.1"
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: daemon-install-${{ matrix.mode }}
+      - name: Install sqlite3
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+      - name: Require the launchd GUI domain
+        if: runner.os == 'macOS'
+        run: launchctl print "gui/$(id -u)" >/dev/null
+      - name: Start a systemd user manager
+        if: runner.os == 'Linux' && matrix.mode == 'native'
+        run: |
+          set -euo pipefail
+          sudo loginctl enable-linger "$USER"
+          uid="$(id -u)"
+          for _ in $(seq 1 30); do
+            [ -S "/run/user/$uid/bus" ] && break
+            sleep 1
+          done
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+      - name: Require systemd --user
+        if: runner.os == 'Linux' && matrix.mode == 'native'
+        run: systemctl --user show-environment >/dev/null
+      - name: Run the lifecycle suite
+        run: bash scripts/test-daemon-install.sh --${{ matrix.mode }}
+      # GitHub's ubuntu images ship Homebrew under /home/linuxbrew, off PATH.
+      - name: Put Homebrew on PATH (Linux)
+        if: runner.os == 'Linux'
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+      - name: Update Homebrew to current
+        run: brew update
+      # Falconiere/homebrew-tap#1: real brew keeps the old keg after an
+      # upgrade (macOS); the next ordinary command must still move the
+      # daemon onto the newly linked keg.
+      - name: Run the real-brew keg upgrade
+        run: bash scripts/test-brew-keg-upgrade.sh --${{ matrix.mode }}
+      # Falconiere/homebrew-tap#1 (F-4): a reinstall's eviction re-bootstraps
+      # the still-loaded launchd label; repeat that path until any
+      # bootout/bootstrap race shows.
+      - name: Run the launchd re-bootstrap rounds
+        if: runner.os == 'macOS'
+        run: bash scripts/test-launchd-rebootstrap.sh --rounds 25
+
+  # The Homebrew publishing path (Falconiere/homebrew-tap#1): release.yml's
+  # real "Commit formula files" step against a real tap clone and the real
+  # formula and manifest of the newest release that has a manifest (a local
+  # deploy publishes none), pushing to a local bare remote.
+  # TAP_REFS lists the tap branches to publish into.
+  release-formula:
+    runs-on: ubuntu-22.04
+    # One real release step (brew update + style) takes about a minute.
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAP_REFS: "main"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - name: Put Homebrew on PATH
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+      - name: Run the release formula step
+        run: |
+          set -euo pipefail
+          for ref in $TAP_REFS; do
+            echo "::group::tap $ref"
+            bash scripts/test-release-formula-step.sh --tap-ref "$ref"
+            echo "::endgroup::"
+          done

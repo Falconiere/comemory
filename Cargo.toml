@@ -329,12 +329,16 @@ publish-jobs = ["homebrew"]
 # workflows from events that token raises. Declared here rather than by editing
 # release.yml, which dist regenerates.
 post-announce-jobs = ["./release-finalize"]
+# The image is the deploy, so it runs before `host` creates the GitHub Release.
+# release.yml's `host` gate on it is hand-maintained, like the finalize call.
+global-artifacts-jobs = ["./release-image"]
+github-custom-job-permissions = { "release-image" = { contents = "read", packages = "write" } }
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
 # Which actions to run on pull requests
-pr-run-mode = "plan"
+pr-run-mode = "skip"
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Whether to install an updater program
