@@ -80,6 +80,9 @@ Understanding-oriented background:
 
 - **[Architecture](architecture.md)** — the design: storage layout, the
   retrieval pipeline, the edge graph, auto-reinforcement, and pagination.
+- **[Architecture diagrams](architecture-diagrams.md)** — Mermaid views of the
+  components, save flow, search pipeline, `find`, and code indexing, checked
+  against the code.
 - **[Sync daemon design](designs/2026-09-14-sync-daemon.md)** — user-level
   OS daemon + exhaustive post-login sync (replaces in-process auto-sync hooks).
 - **[Replication harness](designs/2026-09-21-replication-e2e-harness.md)** —
