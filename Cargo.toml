@@ -59,8 +59,8 @@ ignore = "0.4"
 indexmap = { version = "2", features = ["serde"] }
 # Direct dep on the raw SQLite bindings for the FTS5 tokenizer FFI in
 # src/store/tokenizer/ffi.rs. Already transitive via rusqlite's `bundled`
-# feature; keep the version line in sync with the rusqlite lock (0.38.x).
-libsqlite3-sys = "0.38"
+# feature; keep the version line in sync with the rusqlite lock (0.39.x).
+libsqlite3-sys = "0.39"
 once_cell = "1"
 owo-colors = "4"
 nix = { version = "0.31", default-features = false, features = ["process", "resource"] }
@@ -68,15 +68,15 @@ regex = "1"
 # The MCP stdio adapter (`src/mcp/`): Apache-2.0, server side only — no client,
 # no HTTP transports, so `default-features = false` keeps the tree to the
 # `server` handler, the `transport-io` stdio pair and the `macros` derives.
-rmcp = { version = "3.4", default-features = false, features = ["server", "transport-io", "macros"] }
+rmcp = { version = "3.10", default-features = false, features = ["server", "transport-io", "macros"] }
 # The `libsqlite3-sys` FEATURE selects rusqlite's native FFI backend (rusqlite
 # 0.40 made that backend optional so a wasm one can be chosen instead), and
 # `bundled` only applies through it. The `libsqlite3-sys` VERSION line above
-# tracks the series rusqlite 0.40 pins (0.38). `backup` exposes SQLite's online
+# tracks the patched series rusqlite 0.41 pins (0.39). `backup` exposes SQLite's online
 # backup API, which `store::replace_in_place` uses to rebuild the live database
 # in place instead of renaming a file over it (#256).
-rusqlite = { version = "0.40", features = ["libsqlite3-sys", "bundled", "load_extension", "vtab", "blob", "backup"] }
-# JSON-schema derive for the MCP tool parameter types; rmcp 3.4 requires schemars ^1.
+rusqlite = { version = "0.41", features = ["libsqlite3-sys", "bundled", "load_extension", "vtab", "blob", "backup"] }
+# JSON-schema derive for the MCP tool parameter types; rmcp 3 requires schemars ^1.
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 # `raw_value` lets the cursor `mcp.json` merge pass foreign server entries
@@ -101,7 +101,8 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"
 # driver feature (the query crate compiles for exactly one backend). Runtime
 # migration APPLY stays comemory's own `store::migrate` — see
 # docs/guides/schema-migrations.md.
-toolu-orm = { version = "0.12.0", default-features = false, features = ["rusqlite"] }
+# Pin the SQLite security fix until the next ORM release (toolu-orm PR #271).
+toolu-orm = { version = "0.12.0", git = "https://github.com/Falconiere/toolu-orm", rev = "0a332580619e51914144bd984c4c5c705b62a888", default-features = false, features = ["rusqlite"] }
 # Pure-Rust HTML/XHTML tag-stripping (src/domains/documents/document/html.rs); MIT, zero deps.
 tl = "0.7"
 tokio = { version = "1", features = ["full"] }
@@ -234,7 +235,7 @@ assert_is_empty = "allow"  # 151 — clippy's suggestions mis-resolve paths
 assert_cmd = "2"
 # The MCP journey drives the real `comemory mcp` binary through the real rmcp
 # client over child stdio — no hand-rolled JSON-RPC framing in the test.
-rmcp = { version = "3.4", default-features = false, features = ["client", "transport-child-process"] }
+rmcp = { version = "3.10", default-features = false, features = ["client", "transport-child-process"] }
 criterion = { version = "0.8", default-features = false, features = ["html_reports", "async_tokio"] }
 insta = { version = "1", features = ["json", "yaml"] }
 predicates = "3"
@@ -251,7 +252,7 @@ tempfile = "3"
 # `run_generate` (struct → snapshot diff → `migrations/NNNN_<name>.sql`) for
 # `examples/migrations.rs` and the schema-drift test; never linked into the
 # release binary.
-toolu-orm-cli = { version = "0.12.0", default-features = false, features = ["rusqlite"] }
+toolu-orm-cli = { version = "0.12.0", git = "https://github.com/Falconiere/toolu-orm", rev = "0a332580619e51914144bd984c4c5c705b62a888", default-features = false, features = ["rusqlite"] }
 # Tests construct `OffsetDateTime` values to drive the query-id round-trip
 # (`utilities::query_id::generate_query_id`); same version line as the main dep.
 time = { version = "0.3", features = ["macros"] }

@@ -237,7 +237,7 @@ fn code_feedback_waits_for_an_existing_writer_before_reading_identity() {
     let handle = thread::spawn(move || {
         let mut contender = StatsDb::open(path).expect("open contender");
         contender
-            .conn()
+            .conn_mut()
             .busy_handler(Some(|_| {
                 CONTENDED.store(true, Ordering::SeqCst);
                 thread::sleep(Duration::from_millis(1));
