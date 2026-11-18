@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-11-18
+
+### Changed
+
+- remove redundant quality-gate work ([#415](https://github.com/Falconiere/comemory/pull/415))
+
 ## [0.60.0] - 2026-10-31
 
 ### Added
