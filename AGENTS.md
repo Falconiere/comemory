@@ -199,24 +199,33 @@ ready-for-review PRs). It runs, in order:
 
 ```
 scripts/fmt-check.sh             # cargo fmt --check
-scripts/type-check.sh            # cargo check --all-targets --all-features
-scripts/lint-check.sh            # cargo clippy --all-targets --all-features -- -D warnings
+scripts/typos-check.sh           # typos
 scripts/guardrails-check.sh      # scripts/guardrails/run.sh
 scripts/architecture-check.sh    # module ownership and dependency policy
 scripts/store-chokepoint-check.sh # rusqlite confined to src/store/
-scripts/typos-check.sh           # typos
-scripts/cli-docs-check.sh        # docs/cli-reference.md vs the real --help output
-scripts/http-docs-check.sh       # docs/guides/http-api.md documents every live /api/v1 route
 scripts/migration-check.sh       # shipped migrations/*.sql byte-identical to first release tag
 scripts/replication-coverage-check.sh # replication harness coverage
+scripts/lint-check.sh            # cargo clippy --all-targets --all-features -- -D warnings (also type-checks)
+scripts/cli-docs-check.sh         # docs/cli-reference.md vs the real dev-binary --help output
+scripts/http-docs-check.sh       # docs/guides/http-api.md documents every live /api/v1 route
 ```
+
+The gate stops at the first failure and prints per-gate and total elapsed
+seconds. Clippy owns type-checking here; `scripts/type-check.sh` remains a
+standalone command. Docs and eval share a dev-binary build helper instead of
+building with LTO. Empty binary test/bench harnesses are disabled; the CLI
+integration tests still build the real executable. Use focused behavior tests
+while editing; see `docs/build-perf.md` for the development loop. Do not add
+tests that merely pin script spelling or gate order. Migration history is
+scanned once per tag; `bash scripts/test-migration-check.sh` exercises the
+first-release and deletion protections against disposable Git history.
 
 `guardrails.config.json` is the single declaration of every structural
 ceiling; nothing else declares a competing number. One rule, one enforcer:
 
 | Rule | Owner |
 | --- | --- |
-| Formatting / type-check | `rustfmt.toml` + `scripts/fmt-check.sh`; `scripts/type-check.sh` |
+| Formatting / type-check | `rustfmt.toml` + `scripts/fmt-check.sh`; `scripts/lint-check.sh` (standalone: `scripts/type-check.sh`) |
 | unwrap/expect/panic/todo/unimplemented/print_*/`too_many_lines`/pedantic | `Cargo.toml [lints]` + `clippy.toml`, `scripts/lint-check.sh` |
 | File size 300 / function size 100 | `guardrails.config.json` (`fileSize`, `functionSize`), `file-size` check + `clippy::too_many_lines` |
 | No `mod.rs` barrels; folder tree shape; `snake_case` names; folder READMEs | `guardrails.config.json` (`barrelNames`, `src.nested`, `filenameCase`, `src.requireReadme`), guardrails checks |

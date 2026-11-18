@@ -188,6 +188,8 @@ jobs:
           cargo install cargo-dupes --version "$matches" --locked
       - name: Run check-all gate
         run: bash scripts/check-all.sh
+      - name: Check migration gate against release history
+        run: bash scripts/test-migration-check.sh
       - name: Run duplication gate
         # Deliberately a separate step rather than an entry in check-all.sh's
         # GATES array: it needs a separately installed tool, and check-all runs

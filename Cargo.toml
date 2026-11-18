@@ -11,6 +11,9 @@ rust-version = "1.99"
 [[bin]]
 name = "comemory"
 path = "src/main.rs"
+# CLI behavior is exercised by the real-binary integration tests.
+test = false
+bench = false
 
 [lib]
 path = "src/lib.rs"
