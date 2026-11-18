@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts/ — sourced, not executed.
-# Provides: PROJECT_ROOT, log_info, log_err, log_ok, die, run_cargo, require_cmd
+# Provides: PROJECT_ROOT, logging, run_cargo, build_dev_binary, require_cmd
 
 set -euo pipefail
 
@@ -24,6 +24,17 @@ die()      { log_err "${1:-script}" "${2:-failed}"; exit 1; }
 # Run a cargo command from PROJECT_ROOT.
 run_cargo() {
   cd "$PROJECT_ROOT" && cargo "$@"
+}
+
+# Build only the executable needed by docs/eval; honor Cargo's artifact directory.
+build_dev_binary() {
+  local bin
+  require_cmd jq "apt-get install jq | brew install jq"
+  bin="$(run_cargo build --bin comemory --all-features --locked --quiet --message-format=json \
+    | jq -r 'select(.reason == "compiler-artifact" and .target.name == "comemory")
+      | .executable // empty')" || return $?
+  [[ -x "$bin" ]] || die "build-dev" "Cargo did not report a comemory executable"
+  printf '%s\n' "$bin"
 }
 
 # Fail with an install hint if a required command is missing.

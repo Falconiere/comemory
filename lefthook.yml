@@ -3,9 +3,9 @@
 #
 # Install after editing:  lefthook install
 #
-# type-check and clippy deliberately do NOT run pre-commit: they compile the
-# crate (bundled SQLite + vendored libgit2 + 5 tree-sitter parsers) and stall a
-# commit for minutes. They run pre-push, inside check-all.
+# Clippy (including type-checking) deliberately runs pre-push, inside check-all.
+# Compiling bundled SQLite, vendored libgit2 and tree-sitter parsers can stall
+# a commit for minutes.
 
 pre-commit:
   parallel: true

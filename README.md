@@ -611,14 +611,17 @@ stack, plus its own stricter local ceilings):
 The umbrella quality gate is one command — CI runs the same scripts:
 
 ```bash
-bash scripts/check-all.sh     # fmt · type · lint · guardrails · architecture · store-chokepoint · typos · cli-docs · http-docs · migration · replication-coverage
+bash scripts/check-all.sh     # cheap repository checks · Clippy (includes type-check) · CLI/HTTP docs
 just check                    # alias of the above
 just test                     # cargo nextest run --all-features
 just qa                       # check-all + cargo-deny + dup-check + machete
 just e2e                      # real-binary end-to-end harness
 ```
 
-A task isn't done until `scripts/check-all.sh` exits 0.
+The gate stops at the first failure and prints per-gate timings. Docs and eval
+use the dev binary; they do not need an optimized build. See
+[build performance](docs/build-perf.md#quality-gates) for focused development
+checks. A task isn't done until `scripts/check-all.sh` exits 0.
 
 ---
 

@@ -1,5 +1,45 @@
 # Build Performance
 
+## Quality gates
+
+`just check` runs cheap repository checks first, then Clippy over all targets
+and features (which also type-checks), then the CLI and HTTP documentation
+checks. It stops at the first failed gate and reports elapsed seconds per gate
+and for the complete run. `scripts/type-check.sh` remains available for a
+standalone type-check; the umbrella does not repeat it before Clippy.
+
+Documentation regeneration and retrieval evaluation build only the dev
+`comemory` binary. Neither needs optimization or LTO; release and installation
+profiles keep their existing settings. Cargo supplies the executable path,
+including when `CARGO_TARGET_DIR` changes the artifact directory.
+
+Migration immutability records each SQL file's first tag/path during one scan
+of release history, rather than searching the tags again for each file. A local
+run over 94 tags and 35 migrations fell from 84 seconds to 3.8 seconds (individual
+runs under concurrent build load). The first-release anchor and the union of
+shipped files are preserved across the legacy directory move. Run
+`bash scripts/test-migration-check.sh` to exercise edits, moves, conflicting
+legacy/current paths, unreleased files, and deletion from later releases using
+real SQL files and disposable Git history; CI runs this regression too.
+
+The binary target has no unit tests or benchmarks, so its empty test/bench
+harnesses are disabled. CLI integration tests still build and exercise the
+real binary. Keep the behavior tests; do not add tests that only assert script
+spelling, gate order, or the shape of a configuration file. Verify gate changes
+with the actual checks and a disposable failing input.
+
+Use focused tests during development, for example:
+
+```bash
+cargo nextest run --test cli__save --all-features
+```
+
+Run `just check` before pushing; `just test` runs the complete behavior suite.
+The broader `just qa` and CI coverage/security gates remain separate. Vendored
+`scripts/guardrails/` is unchanged.
+
+## Build history
+
 History of `just perf` runs. One row per measured run. Append rows via
 `bash scripts/build-perf.sh --append-md`.
 

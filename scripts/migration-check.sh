@@ -45,18 +45,6 @@ fi
 
 mapfile -t SQL_FILES < <(git ls-files "$CURRENT_DIR/*.sql" | sort)
 
-# The path a basename lived at in tag $1, if any: CURRENT_DIR first (the
-# only place a post-move tag has it), then LEGACY_DIR. Prints nothing when
-# the tag predates the file.
-path_in_tag() {
-  local tag="$1" base="$2"
-  if git cat-file -e "$tag:$CURRENT_DIR/$base" 2>/dev/null; then
-    printf '%s\n' "$CURRENT_DIR/$base"
-  elif git cat-file -e "$tag:$LEGACY_DIR/$base" 2>/dev/null; then
-    printf '%s\n' "$LEGACY_DIR/$base"
-  fi
-}
-
 # `git ls-files` only walks paths that still exist, so DELETING a shipped
 # migration file passes the modification loop below vacuously — nothing
 # left to compare it against. That breaks a live user's database exactly as
@@ -70,14 +58,22 @@ path_in_tag() {
 # lands, since the deleted file drops out of every later tag's tree too, and
 # the gate would silently stop detecting the violation it exists to catch.
 # Fail on any basename, from any tag, missing from the working tree.
-declare -A EVER_SHIPPED=()
+declare -A FIRST_TAG=() FIRST_PATH=()
 for t in "${TAGS[@]}"; do
-  mapfile -t tagged_at_t < <(git ls-tree -r --name-only "$t" -- "$CURRENT_DIR" "$LEGACY_DIR" | grep '\.sql$' || true)
-  for f in "${tagged_at_t[@]}"; do
-    EVER_SHIPPED["$(basename "$f")"]=1
-  done
+  tagged_at_t="$(git ls-tree -r --name-only "$t" -- "$CURRENT_DIR" "$LEGACY_DIR")"
+  while IFS= read -r f; do
+    [[ "$f" == *.sql ]] || continue
+    base=${f##*/}
+    # Git lists migrations/ before src/store/sql/, preserving current-path priority.
+    if [[ -z "${FIRST_TAG[$base]:-}" ]]; then
+      FIRST_TAG["$base"]=$t
+      FIRST_PATH["$base"]=$f
+    fi
+  done <<< "$tagged_at_t"
 done
-mapfile -t EVER_SHIPPED_FILES < <(printf '%s\n' "${!EVER_SHIPPED[@]}" | sort)
+mapfile -t EVER_SHIPPED_FILES < <(
+  for base in "${!FIRST_TAG[@]}"; do printf '%s\n' "$base"; done | sort
+)
 
 deleted=0
 for base in "${EVER_SHIPPED_FILES[@]}"; do
@@ -91,16 +87,9 @@ done
 
 modified=0
 for f in "${SQL_FILES[@]}"; do
-  base="$(basename "$f")"
-  first_tag=""
-  first_path=""
-  for t in "${TAGS[@]}"; do
-    first_path="$(path_in_tag "$t" "$base")"
-    if [[ -n "$first_path" ]]; then
-      first_tag="$t"
-      break
-    fi
-  done
+  base=${f##*/}
+  first_tag=${FIRST_TAG[$base]:-}
+  first_path=${FIRST_PATH[$base]:-}
 
   if [[ -z "$first_tag" ]]; then
     log_info "$STEP" "$f: not yet released, skipping"

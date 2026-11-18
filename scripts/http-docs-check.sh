@@ -5,4 +5,4 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE/.."
-exec cargo nextest run --test http_api_docs_check
+exec cargo nextest run --locked --all-features --test http_api_docs_check

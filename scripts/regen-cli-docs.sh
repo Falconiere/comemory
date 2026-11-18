@@ -11,11 +11,8 @@ STEP="regen-cli-docs"
 
 OUT="${1:-$PROJECT_ROOT/docs/cli-reference.md}"
 
-log_info "$STEP" "building release-quick binary"
-run_cargo build --profile release-quick --locked --quiet
-
-BIN="$PROJECT_ROOT/target/release-quick/comemory"
-[[ -x "$BIN" ]] || die "$STEP" "expected binary at $BIN"
+log_info "$STEP" "building dev binary"
+BIN="$(build_dev_binary)"
 
 # Discover visible canonical names from clap's command rows. A fixed list can
 # silently omit commands while the drift check still passes. Capture first so
