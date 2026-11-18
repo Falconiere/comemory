@@ -3,6 +3,9 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
 ignore = [
+  # rmcp still requires chrono, including its latest published 3.11 release.
+  # This is an unmaintained-only notice; keep vulnerability advisories enforced.
+  { id = "RUSTSEC-2026-0543", reason = "unmaintained chrono required by rmcp 3.x; no compatible upstream replacement released" },
   # unsafe-libyaml is unmaintained (not a vulnerability). It reaches us only
   # through the direct dep serde_yaml 0.9, which is itself deprecated and has
   # no release that drops it, so there is no safe upgrade.
